@@ -41,7 +41,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       expect(rejected.message).not.toContain("Retry with these anchors");
       expect(rejected.message).not.toMatch(servedRowRe());
       expect(rejected.message).toContain(`line 3 in ${path}`);
-      expect(ERROR_REGISTRY.E_TARGET_LOST.remedy).toBe("Read the file and re-target.");
+      expect(ERROR_REGISTRY.E_TARGET_LOST.options).toBeUndefined();
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ndelta\n");
     });
   });

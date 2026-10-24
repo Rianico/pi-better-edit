@@ -308,33 +308,34 @@ Pure single-file views (`cat`, `head`, `tail`, `sed -n` prints, and the admitted
 - `[E_*]` marks a refusal from the call that raised it: `read`, `edit`, or `undo_last_edit`. Nothing was written to disk.
 - `[W_*]` indicates an **applied mutation** with an informational warning.
 - Range-family rejections carry structured `details.cause` values (`retirement`, `never-served`, `served-range staleness`) — `never-served` on a leased span means a **boundary** row, because an unread interior between two leased boundaries is accepted ([ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)).
+- Facts are the default: a rejection states what happened. An `Options:` list is served only when two or more neutral moves preserve the model's choice ([ADR-0047](docs/adr/0047-remediation-options-are-refusal-scoped-and-neutral.md)).
 
 ### Domain Rejections (`[E_*]`)
 
-| Error Code | Description | Remedy / Agent Action |
+| Error Code | Description | Served options (refusal only) |
 | --- | --- | --- |
-| `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Fix the payload fields and retry. |
-| `[E_MALFORMED_ANCHOR]` | Anchor is not valid — not a bare 4-char anchor (e.g. carries `│`, a diff prefix, or a row suffix). | Pass the bare 4-char anchor (e.g. `"szJx"`) and retry. |
-| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | The latest known status is in this rejection. Retry as it directs. |
-| `[E_UNKNOWN_ANCHOR]` | The path has not served the anchor in this session. | Re-read the file to establish fresh anchor leases. |
-| `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not for the targeted one. | Ensure anchors match the target file path. |
-| `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a **boundary** line was never served (an unread interior between leased boundaries applies, [ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | Current range served as a fresh read; decide next edit from fresh rows. |
-| `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted. | Named window served as fresh read; decide next edit from fresh rows. |
-| `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | Read the file and re-target. |
-| `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor. | Omit the copied anchors or declare `mode: "literal"`. |
-| `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge the overlapping ranges into a single edit, or split them into separate calls. |
-| `[E_NOOP_LOOP]` | Identical edit submitted 3 consecutive times without change; the range already has this text. | Inspect the current range; the range already contains the target content. |
-| `[E_EMPTY_RANGE]` | Edit would result in an empty non-empty file. | Use `write` to clear the file. |
-| `[E_NOT_FOUND]` | Target file does not exist on disk. | Check the parent directory and retry with the corrected file. |
-| `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | Fix the path or permissions and retry. |
-| `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | Choose a text file and retry. |
-| `[E_LOSSY_TEXT]` | File bytes do not round-trip a UTF-8 decode; a line-addressed rewrite would destroy the original bytes. | Re-encode the file as valid UTF-8 with a byte-level tool, then retry. |
-| `[E_UNDO_STALE]` | Cannot undo on the target path: the file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read the file. |
-| `[E_UNDO_UNAVAILABLE]` | Cannot persist undo history to the hash store. The edit was not applied. The file is unchanged. | Retry the edit. If the store cannot be recovered, use `write`. |
-| `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure. The next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors; `mode: "verbatim"` reads are not capped. | Split the file or use a non-line-based approach for very large files. |
-| `[E_INTERNAL_INVARIANT]` | Internal tool invariant failure (the message names the failed invariant). | No remedy; check the error message details. |
-| `[E_UNKNOWN]` | Unknown filesystem or invariant failure (first message line reported). | Check the error message details. |
+| `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | — |
+| `[E_MALFORMED_ANCHOR]` | Anchor is not valid — not a bare 4-char anchor (e.g. carries `│`, a diff prefix, or a row suffix). | — |
+| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | — (the served rows are the state) |
+| `[E_UNKNOWN_ANCHOR]` | The path has not served the anchor in this session. | — |
+| `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not for the targeted one. | — |
+| `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a **boundary** line was never served (an unread interior between leased boundaries applies, [ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | — (the fresh read is the state) |
+| `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted. | — (the fresh read is the state) |
+| `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | — |
+| `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor. | Omit the anchors from `text` (or `content` for `write`) and retry with the same anchors; or declare `mode: "literal"` to write the lines verbatim. |
+| `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge the overlapping items into one span; or split them across separate calls. |
+| `[E_NOOP_LOOP]` | Identical edit submitted 3 consecutive times without change; the range already has this text. | — |
+| `[E_EMPTY_RANGE]` | Edit would result in an empty non-empty file. | — |
+| `[E_NOT_FOUND]` | Target file does not exist on disk. | — |
+| `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | — |
+| `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | — |
+| `[E_LOSSY_TEXT]` | File bytes do not round-trip a UTF-8 decode; a line-addressed rewrite would destroy the original bytes. | — |
+| `[E_UNDO_STALE]` | Cannot undo on the target path: the file was modified or deleted after the last edit. | — |
+| `[E_UNDO_UNAVAILABLE]` | Cannot persist undo history to the hash store. The edit was not applied. The file is unchanged. | Retry the edit; or use `write` if the store stays unavailable. |
+| `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | — (the next edit repairs the revert) |
+| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors; `mode: "verbatim"` reads are not capped. | — (fact-only until the payload names the invoking tool) |
+| `[E_INTERNAL_INVARIANT]` | Internal tool invariant failure (the message names the failed invariant). | — |
+| `[E_UNKNOWN]` | Unknown filesystem or invariant failure (first message line reported). | — |
 
 ### Applied Warnings (`[W_*]`)
 

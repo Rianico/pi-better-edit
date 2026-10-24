@@ -138,7 +138,7 @@ describe("write served hash guard", () => {
       expect((result as { reason?: string }).reason).not.toContain("tool output, not file content");
       expect((result as { reason?: string }).reason).not.toContain("Nothing was written");
       expect((result as { reason?: string }).reason).toContain(
-        'Lines declared with mode: "literal" are written verbatim.',
+        'declare mode: "literal" to write the lines verbatim',
       );
       expect(await readFile(path)).toEqual(beforeBytes);
 
@@ -232,7 +232,7 @@ describe("write served hash guard", () => {
       expect(reason).toContain("for line 1");
       expect(reason).not.toContain("tool output, not file content");
       expect(reason).not.toContain("Nothing was written");
-      expect(reason).toContain('Lines declared with mode: "literal" are written verbatim.');
+      expect(reason).toContain('declare mode: "literal" to write the lines verbatim');
       expect(reason).not.toContain("Re-read");
       // the guard message must not become a paste source
       const firstRow = previewText.split("\n")[0]!;

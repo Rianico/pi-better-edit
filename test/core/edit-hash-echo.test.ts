@@ -230,7 +230,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
       expect(msg).toContain("line 3");
       expect(msg).not.toContain("tool output, not file content");
       expect(msg).not.toContain("Nothing was written");
-      expect(msg).toContain('Lines declared with mode: "literal" are written verbatim.');
+      expect(msg).toContain('declare mode: "literal" to write the lines verbatim');
       expect(msg).not.toContain("Re-read");
       expect(msg).not.toContain(`${hashes[2]}${HASH_SEP}three`);
     }

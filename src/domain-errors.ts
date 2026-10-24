@@ -12,21 +12,20 @@
  * test/arch/domain-error-registry.test.ts. This is what makes the registry a
  * contract instead of a list.
  *
- * WHY: payload text reports facts; a remedy clause may appear only when it is
- * helpful, unharmful and fail-closed, AND the evidence pins a single cause.
- * When the intent is ambiguous the payload states the fact and carries NO
- * remedy, because an intent-guessing suggestion steers the model's next
- * action. The remedy field is absent BY RULE for `E_UNKNOWN` (no cause is
- * knowable at all), `E_UNKNOWN_ANCHOR` and `E_FOREIGN_ANCHOR` (the tool
- * cannot tell a wrong file value from wrong anchors from another session,
- * so any suggestion would steer on a guess), `E_UNVERIFIED_RANGE`
- * (the model decides from the fresh read), `E_STALE_RANGE` (the served rows
- * prove the named lines no longer match what was served, but not whether the
- * model's anchors, the disk, or the tool's own record is wrong — the model
- * decides from the fresh read), and `E_NOOP_LOOP` (the refusal
- * pins the fact that the range already contains the text, but not the
- * model's intent), and `E_INTERNAL_INVARIANT` (a tool-facing invariant
- * failure names no field the model could fix, so it carries no remedy).
+ * WHY: payload text reports facts. A served `Options:` section may appear only
+ * when it is neutral, unharmful and fail-closed, AND the evidence pins a single
+ * cause. Neutral means an explicit list of admissible next moves that keeps the
+ * model's choice — never one directive, because a biased suggestion steers the
+ * model's next action. A code with no neutral option declares none and renders
+ * facts only.
+ *
+ * WHY: options live on the refusal, never in a prompt or on a success path. They
+ * render only for `MODEL` audience. `E_LARGE_FILE` stays fact-only until its
+ * payload can name the invoking tool, because read and edit need different
+ * options. `E_SUSPICIOUS_TEXT` is the reference: two options, and the payload
+ * arm selects text vs content.
+ *
+ * See ADR-0047.
  */
 
 import { HASH_LEN } from "./hashline/alphabet.js";
@@ -258,7 +257,12 @@ export interface ErrorPayloadMap {
 export interface CodeSpec<P> {
   audience: Audience;
   format: (payload: P) => string;
-  remedy?: string;
+  /**
+   * Neutral, refusal-scoped next moves, rendered as `Options: a; or b.` after the
+   * format. NEVER on a success path, never in prompt prose. WHY a list: two or
+   * more admissible moves keep the model's choice; one directive biases it.
+   */
+  options?: readonly string[] | ((payload: P) => readonly string[]);
 }
 
 /** SAFETY: exact heading for an unverified fresh-read serve — machine-checkable. */
@@ -277,12 +281,23 @@ function suspiciousTail(count: number): string {
 }
 
 function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string {
+  const times = payload.count === 1 ? "time" : "times";
   return (
     `Write/Edit to ${payload.path} rejected: line ${payload.line} starts with the served anchor ` +
-    `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} times)` +
-    suspiciousTail(payload.count) +
-    ' Lines declared with mode: "literal" are written verbatim.'
+    `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} ${times})` +
+    suspiciousTail(payload.count)
   );
+}
+
+/** Resolve a spec's options for this payload; nothing renders for a USER audience. */
+function optionsFor<P>(spec: CodeSpec<P>, payload: P): readonly string[] | undefined {
+  if (spec.audience !== "MODEL" || spec.options === undefined) return undefined;
+  return typeof spec.options === "function" ? spec.options(payload) : spec.options;
+}
+
+/** `Options: a; or b.` — one owned shape for every served remediation. */
+function renderOptions(options: readonly string[]): string {
+  return `\nOptions: ${options.join("; or ")}.`;
 }
 
 function unsupportedFormat(payload: ErrorPayloadMap["E_UNSUPPORTED_FILE"]): string {
@@ -364,8 +379,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       isPayloadSubject(subject)
         ? `The ${subject} payload is not valid: ${message}`
         : `The payload is not valid: ${message}`,
-    // WHY remedy: validation rejected the payload before any resolution, so the field fix is the only next action. See ADR-0021.
-    remedy: "Fix the payload fields and retry.",
   },
   E_INTERNAL_INVARIANT: {
     audience: "MODEL",
@@ -382,14 +395,10 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_EMPTY_RANGE: {
     audience: "MODEL",
     format: () => "Cannot empty a non-empty file via edit.",
-    // WHY remedy: the resolved edit empties a non-empty file and the payload carries no fields, so the clear belongs to write. See ADR-0021.
-    remedy: "Use write to clear the file.",
   },
   E_STALE_ANCHOR: {
     audience: "MODEL",
     format: staleAnchorFormat,
-    // WHY remedy: a row was served for this path and its line identity is retired, so the served window pins the retry. See ADR-0021.
-    remedy: "The latest known status is in this rejection. Retry as it directs.",
   },
   E_UNKNOWN_ANCHOR: {
     audience: "MODEL",
@@ -421,8 +430,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: ({ servedLine, path }) =>
       `line ${servedLine}${path ? ` in ${path}` : ""} no longer resolves to the line identity it was served with.`,
-    // WHY remedy: the leased identity is gone with no surviving window to serve — `servedLine` names the dead line, so recovery is a read. See ADR-0021.
-    remedy: "Read the file and re-target.",
   },
   E_UNVERIFIED_RANGE: {
     audience: "MODEL",
@@ -444,15 +451,23 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
     format: ({ rawAnchor, reason }) => `The anchor "${rawAnchor}" is not valid: ${reason}.`,
-    // WHY remedy: the parse rejected the token before any resolution — `rawAnchor` and `reason` name the shape failure. See ADR-0021.
-    remedy: `Pass the bare ${HASH_LEN}-char anchor and retry.`,
   },
   E_SUSPICIOUS_TEXT: {
     audience: "MODEL",
     format: suspiciousFormat,
-    // WHY remedy: the replacement reproduces a served hash echo for this session, path and line — `target`, `hash` and `servedLine` pin the row. See ADR-0021.
-    remedy:
-      'Omit the copied anchors from text and retry with the same anchors, or declare intent with mode: "literal".',
+    // WHY: the replacement reproduces a served hash echo for this session, path and line.
+    // WHY: the refusal proves the served hash echo; two neutral moves leave intent with the model.
+    // WHY: the write arm guards `content` and the edit arm `text`, so the first option branches.
+    options: ({ target }) =>
+      target === "write"
+        ? [
+            "omit the anchors from content and retry",
+            'declare mode: "literal" to write the lines verbatim',
+          ]
+        : [
+            "omit the anchors from text and retry with the same anchors",
+            'declare mode: "literal" to write the lines verbatim',
+          ],
   },
   E_BATCH_ABORT: {
     audience: "MODEL",
@@ -476,8 +491,8 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
         (servedBlock ? `Current range:\n${servedBlock}` : `No current range is served.`)
       );
     },
-    // WHY remedy: the resolved coordinates prove the two spans overlap — `earlierStart`/`earlierEnd` and `laterStart`/`laterEnd` pin the pair. See ADR-0021.
-    remedy: "Merge the overlapping ranges into a single edit, or split them into separate calls.",
+    // WHY: both moves are structural and preserve intent; neither is preferred.
+    options: ["merge the overlapping items into one span", "split them across separate calls"],
   },
   E_NOOP_LOOP: {
     audience: "MODEL",
@@ -493,20 +508,14 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",
     format: unsupportedFormat,
-    // WHY remedy: detection classified the target — `kind` (directory, binary or image) proves it is not an editable text file. See ADR-0021.
-    remedy: "Choose a text file and retry.",
   },
   E_ACCESS: {
     audience: "MODEL",
     format: accessFormat,
-    // WHY remedy: detection classified the target by path — `kind` (denied, symlink-loop or unreachable) proves the access failure. See ADR-0021.
-    remedy: "Fix the path or permissions and retry.",
   },
   E_NOT_FOUND: {
     audience: "MODEL",
     format: ({ path }) => `File not found: ${path}.`,
-    // WHY remedy: the filesystem answered ENOENT — `path` names a file that does not exist to edit. See ADR-0021.
-    remedy: "Check the parent directory and retry with the corrected file.",
   },
   E_UNDO_STALE: {
     audience: "MODEL",
@@ -519,8 +528,8 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: ({ path }) =>
       `Cannot persist undo history to the hash store. The edit was not applied. ${path} is unchanged.`,
-    // WHY remedy: the hash store persist failed with the edit unapplied and the file unchanged, so retrying the edit is safe. See ADR-0021.
-    remedy: "Retry the edit. If the store cannot be recovered, use write.",
+    // WHY: the edit did not apply, so retry is safe; write is the fallback, not the order.
+    options: ["retry the edit", "use write if the store stays unavailable"],
   },
   E_LOSSY_TEXT: {
     audience: "MODEL",
@@ -531,8 +540,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: ({ path }) =>
       `Cannot edit ${path}: its bytes do not round-trip UTF-8. ` +
       `A line-addressed rewrite would destroy the original bytes.`,
-    // WHY remedy: the failed round-trip pins exactly one safe action — re-encode with a byte-level tool before retrying. See ADR-0021 d4.
-    remedy: "Re-encode the file as valid UTF-8 with a byte-level tool, then retry.",
   },
   E_UNDO_REVERT_FAILED: {
     audience: "MODEL",
@@ -543,8 +550,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       `Undo of the cut transaction was interrupted: ${path} could not be restored while other ` +
       `files of the transaction already were. No undo history was cleared; the files stay in the ` +
       `half-reverted state the durable repair record describes.`,
-    // WHY remedy: a re-undo would fight the pending repair — let the repair complete after the file access failure is fixed. See ADR-0021 d4.
-    remedy: "Fix the file access failure. The next run repairs the interrupted revert.",
   },
   E_UNKNOWN: {
     audience: "MODEL",
@@ -554,8 +559,8 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_LARGE_FILE: {
     audience: "MODEL",
     format: largeFileFormat,
-    // WHY remedy: the named limit was exceeded — `limitKind` (lines: `lineCount` only from the preloaded gate — or hash-space) and `limit` pin the capacity. See ADR-0021.
-    remedy: "Split the file or use a non-line-based approach for very large files.",
+    // WHY: no options — read needs `mode: "verbatim"` and edit needs a split, but the payload
+    // WHY: names neither tool. Add `subject` before serving advice (ADR-0047).
   },
 };
 
@@ -698,7 +703,10 @@ export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Er
 
   constructor(code: K, payload: ErrorPayloadMap[K]) {
     const spec = ERROR_REGISTRY[code] as CodeSpec<ErrorPayloadMap[K]>;
-    super(`[${spec.audience}] [${code}] ${spec.format(payload)}`);
+    const options = optionsFor(spec, payload);
+    super(
+      `[${spec.audience}] [${code}] ${spec.format(payload)}${options ? renderOptions(options) : ""}`,
+    );
     this.name = "DomainError";
     this.code = code;
     this.audience = spec.audience;

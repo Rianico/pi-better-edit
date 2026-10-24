@@ -68,7 +68,7 @@ export function parseText(edit: string): string[] {
   if (typeof edit !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        '"text" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+        '"text" must be a string with \\n line separators, not an array. Multiple lines belong in one string, such as "line1\\nline2". An empty string deletes a range. Nothing was written.',
     });
   }
   const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");

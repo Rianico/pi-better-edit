@@ -483,7 +483,7 @@ const NEVER_SERVED_FOREIGN_CODES: ReadonlySet<DomainErrorCode> = new Set([
 ]);
 
 // WHY: (item (ii)) these codes HOLD a lease — retirement or drift must surface with the code that
-// WHY: means it, never rewritten as E_STALE_ANCHOR with its "The latest known status is in this rejection. Retry as it directs." remedy.
+// WHY: means it; an E_STALE_ANCHOR rewrite would name the wrong cause and serve no rows this call holds.
 const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
   "E_UNVERIFIED_RANGE",
   "E_STALE_RANGE",
@@ -532,7 +532,7 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     return new DomainError("E_STALE_ANCHOR", {
       headline:
         `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
-        `(rejection: ${error.code}). Nothing was written; read ${refFile} and copy fresh anchors from its served rows.`,
+        `(rejection: ${error.code}). Nothing was written; no rows of ${refFile} were served by this call.`,
       cause,
     });
   }
@@ -546,12 +546,12 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
 // WHY: rows belong to the FOREIGN file and were never leased by this call, so they are dropped and
 // WHY: the headline names `refFile` — the model re-reads the foreign file itself. The code is
 // WHY: preserved verbatim (§0's exact-code pins): retirement or drift must still surface under the
-// WHY: code that means it, never rewritten as `E_STALE_ANCHOR` with its "The latest known status is in this rejection. Retry as it directs." remedy.
+// WHY: code that means it; an `E_STALE_ANCHOR` rewrite would name the wrong cause and offer no rows.
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
     `state (rejection: ${error.code}). No rows of ${refFile} were served by this call. Nothing ` +
-    `was written; read ${refFile} and copy fresh anchors from that read.`;
+    `was written.`;
   const cause = error.cause ?? error.details.cause ?? "never-served";
   const firstOffending =
     error.firstOffendingLine !== undefined ? { firstOffendingLine: error.firstOffendingLine } : {};

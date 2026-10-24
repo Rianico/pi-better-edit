@@ -8,7 +8,6 @@ import { servedHashEchoDenial } from "../../src/write-hook.js";
 import { resolveTarget } from "../../src/fs-write.js";
 import { toCwd } from "../../src/paths.js";
 import { readFile as readFsFile } from "node:fs/promises";
-import { ERROR_REGISTRY } from "../../src/domain-errors.js";
 
 const writeAtomicGate = vi.hoisted(() => ({ fail: false }));
 
@@ -140,7 +139,7 @@ describe("edit served-row gate with declaration", () => {
       expect(first.message).toContain("line 2");
       expect(first.message).not.toContain("tool output, not file content");
       expect(first.message).not.toContain("Nothing was written");
-      expect(ERROR_REGISTRY.E_SUSPICIOUS_TEXT.remedy).toContain('mode: "literal"');
+      expect(first.message).toContain('mode: "literal"');
       expect(first.message).not.toContain("Re-read");
       expect(first.message).not.toContain(`${hashes[1]}│two`);
       expect(first.message).toContain("submission 1");
@@ -249,7 +248,7 @@ describe("write served-row gate with declaration", () => {
       const refused = await servedHashEchoDenial(io, path, verbatim, cwd, "sess-w");
       expect(refused).toMatch(/E_SUSPICIOUS_TEXT/);
       expect(refused).not.toContain("Nothing was written");
-      expect(ERROR_REGISTRY.E_SUSPICIOUS_TEXT.remedy).toContain('mode: "literal"');
+      expect(refused).toContain('mode: "literal"');
       const ambiguous = await servedHashEchoDenial(
         io,
         path,

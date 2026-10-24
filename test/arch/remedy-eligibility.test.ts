@@ -4,56 +4,93 @@ import { describe, expect, it } from "vitest";
 import {
   DomainError,
   ERROR_REGISTRY,
-  UNVERIFIED_HEADLINE,
+  WARNING_REGISTRY,
   type DomainErrorCode,
+  type DomainWarningCode,
   type ErrorPayloadMap,
 } from "../../src/domain-errors.js";
+import { batchAbortFor, batchAbortForMany } from "../../src/edit-response.js";
 
 /**
- * Remedy-eligibility oracle (review ruling: the check that encodes the
- * principle rather than trusting prose). The declared policy is read as
- * data from `src/domain-errors.ts` — the `remedy` field on each
- * `ERROR_REGISTRY` entry — so a future code handed a remedy without a
- * matching declaration fails here. Both directions are asserted: a
- * code declared remedy-free carries no remedy field and renders no
- * imperative suggestion in its model-facing text, while every declared
- * remedy satisfies the eligibility rule (helpful, unharmful,
- * fail-closed, evidence-pinned to a single cause).
+ * Options-disclosure oracle (ADR-0047). Facts are the default: every rejection
+ * renders what happened. A served `Options:` section is the exception, and it is
+ * pinned to a curated set, shaped as a list of admissible moves — never a single
+ * directive, because one suggestion biases the model's next call.
  *
- * Falsifiability: `freeViolations` fails a planted remedy on a
- * remedy-free code and a planted imperative in its text, while
- * `remedyProblems` fails a planted ineligible remedy (see the
- * negative controls below).
+ * This replaces the remedy-eligibility oracle: the old `remedy` string was
+ * declared per code and rendered by no path, so the six defects found in it were
+ * invisible and unenforced. An unserved action cannot be kept honest.
+ *
+ * Falsifiability: `optionProblems` fails a one-item list, a duplicate, a
+ * terminal period, a harmful verb and a preference adverb (negative controls
+ * below), and the curated-set check fails any code that declares options
+ * without joining the set.
  */
 
-type RemedyFreeCode =
-  | "E_UNKNOWN"
-  | "E_UNKNOWN_ANCHOR"
-  | "E_FOREIGN_ANCHOR"
-  | "E_UNVERIFIED_RANGE"
-  | "E_STALE_RANGE"
-  | "E_NOOP_LOOP"
-  | "E_INTERNAL_INVARIANT"
-  | "E_UNDO_STALE";
+type OptionsCode = "E_SUSPICIOUS_TEXT" | "E_BATCH_ABORT" | "E_UNDO_UNAVAILABLE";
+type FreeCode = Exclude<DomainErrorCode, OptionsCode>;
 
-const REMEDY_FREE: RemedyFreeCode[] = [
-  "E_UNKNOWN",
-  "E_UNKNOWN_ANCHOR",
-  "E_FOREIGN_ANCHOR",
-  "E_UNVERIFIED_RANGE",
-  "E_STALE_RANGE",
-  "E_NOOP_LOOP",
-  "E_INTERNAL_INVARIANT",
-  "E_UNDO_STALE",
+const OPTIONS_CODES: readonly OptionsCode[] = [
+  "E_SUSPICIOUS_TEXT",
+  "E_BATCH_ABORT",
+  "E_UNDO_UNAVAILABLE",
 ];
 
-// WHY: one payload per code was the #128 gap: a multi-arm `format` left every arm but the
-// WHY: exercised one unpoliced, and `E_UNDO_STALE` — remedy-free because it declares no remedy —
-// WHY: was never rendered at all, because it was missing from the union, the array and this map.
-// WHY: One ordered payload LIST per code instead; `BRANCH_MARKERS` names the arm each entry must
-// WHY: take, and the ticket report carries the mutation table that proves each arm is reached.
-const FREE_BRANCH_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K][] } = {
-  E_UNKNOWN: [{ errorName: "Error", message: "boom" }],
+// WHY: two arms for the suspicious code (text vs content) — the branch is the
+// WHY: reason the options are a function there. Two blocks for BATCH_ABORT so
+// WHY: the options line is rendered after both a served block and its absence.
+const OPTIONS_FIXTURES: { [K in OptionsCode]: ErrorPayloadMap[K][] } = {
+  E_SUSPICIOUS_TEXT: [
+    { target: "edit", path: "src/a.ts", line: 2, hash: "aB3x", servedLine: 1, count: 1 },
+    { target: "write", path: "src/a.ts", line: 2, hash: "aB3x", servedLine: 1, count: 2 },
+  ],
+  E_BATCH_ABORT: [
+    {
+      earlierIndex: 0,
+      laterIndex: 1,
+      earlierStart: 1,
+      earlierEnd: 3,
+      laterStart: 2,
+      laterEnd: 4,
+      path: "a.py",
+      servedBlock: "aB3x│alpha",
+    },
+    {
+      earlierIndex: 0,
+      laterIndex: 1,
+      earlierStart: 1,
+      earlierEnd: 3,
+      laterStart: 2,
+      laterEnd: 4,
+      path: "a.py",
+      servedBlock: "",
+    },
+  ],
+  E_UNDO_UNAVAILABLE: [{ path: "a.py" }],
+};
+
+// WHY: one payload per fact-only code. The assertion is per-code and total —
+// WHY: every non-curated code renders zero `Options:` lines. Distinct arms are
+// WHY: other tests' business; this matrix polices the disclosure set.
+// WHY: ordered arms per code, not one payload each. The #128 lesson: a multi-arm renderer
+// WHY: checked on one arm leaves every other arm unpoliced. Single-arm codes still carry one.
+const FACT_ONLY_FIXTURES: { [K in FreeCode]: ErrorPayloadMap[K][] } = {
+  E_BAD_PAYLOAD: [{ message: "probe refused." }, { message: "probe refused.", subject: "read" }],
+  E_EMPTY_RANGE: [{}],
+  E_STALE_ANCHOR: [
+    {
+      headline: "line 1 no longer resolves to the line identity it was served with.",
+      servedRows: [{ position: 0, hash: "aB3x" }],
+      servedBlock: "aB3x│alpha",
+      cause: "retirement",
+    },
+    {
+      headline: "no rows are served for this rejection.",
+      servedRows: [],
+      servedBlock: "",
+      cause: "never-served",
+    },
+  ],
   E_UNKNOWN_ANCHOR: [
     { path: "a.py", anchors: ["ZZZ"] },
     { path: "a.py", anchors: [] },
@@ -65,20 +102,11 @@ const FREE_BRANCH_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K][] } = {
     { path: "a.py", anchors: ["wUp"], homes: [] },
     { path: "a.py", anchors: ["wUp"], homes: ["b.py", "c.py", "d.py", "e.py"] },
   ],
-  E_UNVERIFIED_RANGE: [
-    {
-      headline: "bound 1 no longer resolves.",
-      servedRows: [{ position: 0, hash: "abc" }],
-      servedBlock: "abcc│alpha",
-      cause: "retirement",
-    },
-    { servedRows: [], servedBlock: "", cause: "retirement" },
-  ],
   E_STALE_RANGE: [
     {
       headline: "line 1 differs from what was served.",
-      servedRows: [{ position: 0, hash: "abc" }],
-      servedBlock: "abcc│alpha",
+      servedRows: [{ position: 0, hash: "aB3x" }],
+      servedBlock: "aB3x│alpha",
       cause: "served-range staleness",
     },
     {
@@ -88,29 +116,65 @@ const FREE_BRANCH_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K][] } = {
       cause: "served-range staleness",
     },
   ],
+  E_TARGET_LOST: [
+    { servedLine: 3, path: "a.py", cause: "retirement" },
+    { servedLine: 3, cause: "retirement" },
+  ],
+  E_UNVERIFIED_RANGE: [
+    {
+      headline: "bound 1 no longer resolves.",
+      servedRows: [{ position: 0, hash: "aB3x" }],
+      servedBlock: "aB3x│alpha",
+      cause: "retirement",
+    },
+    { servedRows: [], servedBlock: "", cause: "retirement" },
+  ],
+  E_MALFORMED_ANCHOR: [
+    { rawAnchor: "aB3x│alpha", reason: "Expected a 4-char anchor" },
+    { rawAnchor: "aB3x", reason: "Expected a 4-char anchor." },
+  ],
   E_NOOP_LOOP: [
     {
-      ref: "edit[0] (probe.ts)",
-      removeFrom: "abc",
-      removeTo: "def",
+      ref: "edit[0] (a.py)",
+      removeFrom: "aB3x",
+      removeTo: "cD4e",
       count: 3,
       batch: false,
-      servedRows: [{ position: 0, hash: "abc" }],
-      servedBlock: "abcc│alpha",
+      servedRows: [{ position: 0, hash: "aB3x" }],
+      servedBlock: "aB3x│alpha",
     },
     {
-      ref: "edit[0] (probe.ts)",
-      removeFrom: "abc",
-      removeTo: "def",
+      ref: "edit[0] (a.py)",
+      removeFrom: "aB3x",
+      removeTo: "cD4e",
       count: 3,
       batch: true,
-      servedRows: [{ position: 0, hash: "abc" }],
-      servedBlock: "abcc│alpha",
+      servedRows: [{ position: 0, hash: "aB3x" }],
+      servedBlock: "aB3x│alpha",
     },
   ],
+  E_UNSUPPORTED_FILE: [
+    { path: "a", kind: "directory" },
+    { path: "a", kind: "image" },
+    { path: "a", kind: "binary", description: "UTF-16LE" },
+  ],
+  E_ACCESS: [
+    { path: "a", kind: "denied" },
+    { path: "a", kind: "denied", access: "write" },
+    { path: "a", kind: "symlink-loop" },
+    { path: "a", kind: "unreachable" },
+  ],
+  E_NOT_FOUND: [{ path: "a.py" }],
   E_UNDO_STALE: [
     { path: "a.py", reason: "deleted" },
     { path: "a.py", reason: "modified" },
+  ],
+  E_LOSSY_TEXT: [{ path: "a.py" }],
+  E_UNDO_REVERT_FAILED: [{ path: "a.py" }],
+  E_UNKNOWN: [{ errorName: "Error", message: "boom" }],
+  E_LARGE_FILE: [
+    { path: "big.log", limitKind: "lines", lineCount: 250000, limit: 200000 },
+    { path: "big.log", limitKind: "hash-space", limit: 14766336 },
   ],
   E_INTERNAL_INVARIANT: [
     { message: "Path contains null byte" },
@@ -118,55 +182,14 @@ const FREE_BRANCH_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K][] } = {
   ],
 };
 
-// WHY: the matrix is evidence only if its payloads take DIFFERENT arms, so each arm the #128
-// WHY: inventory names is pinned by a substring only that arm can produce. The companion proof is
-// WHY: the mutation table in the ticket report: plant an imperative in an arm's returned text and
-// WHY: the render check fails, which is how "this payload reaches that arm" is measured.
-const BRANCH_MARKERS: { code: RemedyFreeCode; index: number; marker: string }[] = [
-  { code: "E_INTERNAL_INVARIANT", index: 1, marker: "The read invariant failed:" },
-  { code: "E_UNKNOWN_ANCHOR", index: 1, marker: "has not served an anchor." },
-  { code: "E_UNKNOWN_ANCHOR", index: 2, marker: 'has not served the anchors "ZZZ", "wUp".' },
-  { code: "E_FOREIGN_ANCHOR", index: 1, marker: "the anchors" },
-  { code: "E_FOREIGN_ANCHOR", index: 2, marker: "was not served for a.py." },
-  { code: "E_FOREIGN_ANCHOR", index: 3, marker: "and 1 more" },
-  { code: "E_UNVERIFIED_RANGE", index: 0, marker: "bound 1 no longer resolves." },
-  { code: "E_UNVERIFIED_RANGE", index: 1, marker: UNVERIFIED_HEADLINE },
-  { code: "E_STALE_RANGE", index: 0, marker: "Current range (fresh read):" },
-  { code: "E_STALE_RANGE", index: 1, marker: "no rows are served for this rejection." },
-  { code: "E_NOOP_LOOP", index: 1, marker: "Rejecting the batch." },
-  { code: "E_UNDO_STALE", index: 0, marker: "file no longer exists" },
-  { code: "E_UNDO_STALE", index: 1, marker: "file modified after edit" },
-];
+const FREE_CODES = Object.keys(FACT_ONLY_FIXTURES) as FreeCode[];
 
-// WHY: an intent-guessing suggestion steers the model's next action, so a
-// WHY: remedy-free payload must state the fact with no imperative clause.
-// WHY: Checked against the rendered envelope (block content in the examples
-// WHY: is benign, so a hit names real suggestion text, never file bytes).
+// WHY: an intent-guessing suggestion steers the next call, so a fact-only code
+// WHY: must not render an imperative in its own text either.
 const IMPERATIVE = /\b(retry|use|run|execute|omit|declare|choose|merge|pass|send|fix)\b/i;
 
-// WHY: structural proxy for helpful, unharmful, fail-closed, and
-// WHY: evidence-pinned: a remedy names one concrete next action on the
-// WHY: evidence at hand, ends the thought, and never reaches for harm,
-// WHY: dismissal, or guesswork.
-const ACTION_TOKENS = [
-  "retry",
-  "read",
-  "write",
-  "file",
-  "anchor",
-  "range",
-  "served",
-  "edit",
-  "call",
-  "choose",
-  "merge",
-  "omit",
-  "declare",
-  "ls",
-  "text",
-  "permissions",
-];
-
+// WHY: a served option must be non-destructive and non-coercive; "prefer" words
+// WHY: turn a list of choices back into a recommendation.
 const HARMFUL = [
   "delete",
   "destroy",
@@ -181,64 +204,130 @@ const HARMFUL = [
   "might",
   "guess",
 ];
+const BIASED = /\b(should|must|best|just|simply|always|never)\b/i;
 
-function freeViolations(args: {
-  code: DomainErrorCode;
-  remedy: string | undefined;
-  message: string;
-}): string[] {
-  const problems: string[] = [];
-  if (args.remedy !== undefined) problems.push(`${args.code} declares a remedy`);
-  if (IMPERATIVE.test(args.message)) problems.push(`${args.code} renders an imperative`);
-  return problems;
+/** The `Options:` line of a rendered message, or undefined when none is served. */
+function optionsLine(message: string): string | undefined {
+  return message.split("\n").find((line) => line.startsWith("Options: "));
 }
 
-function remedyProblems(code: DomainErrorCode, remedy: string): string[] {
+/** Parse a rendered `Options: a; or b.` line into its alternatives. */
+function parseOptions(message: string): string[] {
+  const line = optionsLine(message);
+  if (line === undefined) return [];
+  const body = line.slice("Options: ".length);
+  expect(body.endsWith("."), line).toBe(true);
+  return body.slice(0, -1).split("; or ");
+}
+
+function optionProblems(options: readonly string[]): string[] {
   const problems: string[] = [];
-  if (remedy.length < 10 || remedy.length > 140) problems.push("length");
-  if (!remedy.endsWith(".")) problems.push("terminal");
-  const lower = remedy.toLowerCase();
-  if (!ACTION_TOKENS.some((token) => lower.includes(token))) problems.push("no-action-token");
-  for (const token of HARMFUL) {
-    if (lower.includes(token)) problems.push(`harmful:${token}`);
+  if (options.length < 2) problems.push("fewer-than-two");
+  if (new Set(options).size !== options.length) problems.push("duplicate");
+  for (const option of options) {
+    if (option.length < 5 || option.length > 90) problems.push(`length:${option}`);
+    if (/[.;]$/.test(option)) problems.push(`terminal:${option}`);
+    const lower = option.toLowerCase();
+    for (const token of HARMFUL) {
+      if (lower.includes(token)) problems.push(`harmful:${token}`);
+    }
+    if (BIASED.test(option)) problems.push(`biased:${option}`);
   }
-  if (lower.includes("no action is required")) problems.push("filler");
-  if (problems.length > 0) problems.unshift(code);
   return problems;
 }
 
-describe("remedy eligibility oracle: both directions over the registry", () => {
-  it("remedy-free codes declare no remedy in the registry", () => {
-    for (const code of REMEDY_FREE) {
-      expect(ERROR_REGISTRY[code].remedy).toBeUndefined();
+function renderFree(code: FreeCode): string[] {
+  return FACT_ONLY_FIXTURES[code].map((payload) => new DomainError(code, payload).message);
+}
+
+function renderOptions(code: OptionsCode, payload: ErrorPayloadMap[OptionsCode]): string {
+  return new DomainError(code, payload).message;
+}
+
+describe("options disclosure oracle: facts by default, neutral lists by exception", () => {
+  it("declares options on exactly the curated three", () => {
+    const declared = (Object.keys(ERROR_REGISTRY) as DomainErrorCode[])
+      .filter((code) => ERROR_REGISTRY[code].options !== undefined)
+      .sort();
+    expect(declared).toEqual([...OPTIONS_CODES].sort());
+  });
+
+  it("no warning code declares options: formatWarning renders format only", () => {
+    for (const code of Object.keys(WARNING_REGISTRY) as DomainWarningCode[]) {
+      expect(WARNING_REGISTRY[code].options, code).toBeUndefined();
     }
   });
 
-  it("remedy-free codes render no imperative suggestion in ANY branch", () => {
-    for (const code of REMEDY_FREE) {
-      const payloads = FREE_BRANCH_EXAMPLES[code];
-      // WHY: an empty list would silently skip a code, which is the gap #128 closes, so it fails.
-      expect(payloads.length).toBeGreaterThan(0);
-      for (const payload of payloads) {
-        const rendered = new DomainError(code, payload).message;
-        expect(
-          freeViolations({ code, remedy: ERROR_REGISTRY[code].remedy, message: rendered }),
-        ).toEqual([]);
+  it("indents an options block inside a batch item", () => {
+    const error = new DomainError("E_SUSPICIOUS_TEXT", {
+      target: "edit",
+      path: "a.py",
+      line: 2,
+      hash: "aB3x",
+      servedLine: 1,
+      count: 1,
+    });
+    const single = batchAbortFor({ error, index: 1, path: "a.py" });
+    const many = batchAbortForMany({ failures: [{ error, index: 1 }], path: "a.py" });
+    for (const wrapped of [single, many]) {
+      expect(wrapped.message).toContain("\n  Options: ");
+      expect(wrapped.message).not.toMatch(/^Options: /m);
+      expect(wrapped.message).not.toContain("then resubmit");
+    }
+  });
+
+  it("every non-curated code renders facts only, in every arm", () => {
+    for (const code of FREE_CODES) {
+      for (const message of renderFree(code)) {
+        expect(message, code).not.toContain("\nOptions:");
+        expect(optionsLine(message), code).toBeUndefined();
+        expect(IMPERATIVE.test(message), `${code}: ${message}`).toBe(false);
       }
     }
   });
 
-  it("every arm the matrix claims is actually taken", () => {
-    for (const { code, index, marker } of BRANCH_MARKERS) {
-      const rendered = new DomainError(code, FREE_BRANCH_EXAMPLES[code][index]).message;
-      expect(rendered).toContain(marker);
+  it("a served section is a list of two or more alternatives", () => {
+    for (const code of OPTIONS_CODES) {
+      for (const payload of OPTIONS_FIXTURES[code]) {
+        const message = renderOptions(code, payload);
+        const options = parseOptions(message);
+        expect(options.length, message).toBeGreaterThanOrEqual(2);
+        expect(new Set(options).size, message).toBe(options.length);
+        expect(optionProblems(options), message).toEqual([]);
+        expect((optionsLine(message) ?? "").length).toBeLessThanOrEqual(200);
+      }
     }
   });
 
-  it("refuses the both-empty range pair at construction instead of rendering a bare header", () => {
-    // WHY: (04b 12.2) an empty headline over an empty block renders a header with no information,
-    // WHY: so both range codes refuse the pair inside `format`. The refusal is asserted rather than
-    // WHY: skipped: it renders nothing, and silently skipping it is the gap, not the fix.
+  it("E_SUSPICIOUS_TEXT branches on the guarded field", () => {
+    const [edit, write] = OPTIONS_FIXTURES.E_SUSPICIOUS_TEXT as [
+      ErrorPayloadMap["E_SUSPICIOUS_TEXT"],
+      ErrorPayloadMap["E_SUSPICIOUS_TEXT"],
+    ];
+    const editOptions = parseOptions(renderOptions("E_SUSPICIOUS_TEXT", edit)).join("; ");
+    const writeOptions = parseOptions(renderOptions("E_SUSPICIOUS_TEXT", write)).join("; ");
+    expect(editOptions).toContain("from text");
+    expect(editOptions).not.toContain("from content");
+    expect(writeOptions).toContain("from content");
+    expect(writeOptions).not.toContain("from text");
+    expect(editOptions).toContain('mode: "literal"');
+    expect(writeOptions).toContain('mode: "literal"');
+  });
+
+  it("the literal disclosure is rendered exactly once", () => {
+    const message = renderOptions("E_SUSPICIOUS_TEXT", OPTIONS_FIXTURES.E_SUSPICIOUS_TEXT[0]!);
+    expect(message.match(/mode: "literal"/g)).toHaveLength(1);
+  });
+
+  it("the submission tally agrees with its count", () => {
+    const first = renderOptions("E_SUSPICIOUS_TEXT", OPTIONS_FIXTURES.E_SUSPICIOUS_TEXT[0]!);
+    const second = renderOptions("E_SUSPICIOUS_TEXT", OPTIONS_FIXTURES.E_SUSPICIOUS_TEXT[1]!);
+    expect(first).toContain("(submission 1 time)");
+    expect(first).not.toContain("1 times");
+    expect(second).toContain("(submission 2 times)");
+  });
+
+  it("refuses the both-empty range pair at construction instead of a bare header (04b §12.2)", () => {
     expect(
       () =>
         new DomainError("E_STALE_RANGE", {
@@ -259,88 +348,40 @@ describe("remedy eligibility oracle: both directions over the registry", () => {
     ).toThrow(TypeError);
   });
 
-  it("the hand list cannot drift from the registry-derived remedy-free set", () => {
-    // WHY: `RemedyFreeCode` is a hand-written union, so omitting a member is not a type error:
-    // WHY: `E_UNDO_STALE` sat outside the union, the array and the matrix until #128. Equality in
-    // WHY: BOTH directions is what makes a newly declared remedy-free code fail loudly here instead
-    // WHY: of rendering nothing.
-    expect(new Set(REMEDY_FREE)).toEqual(new Set(REMEDY_FREE_CODES));
+  it("negative control: one option fails the list shape", () => {
+    expect(optionProblems(["retry the edit"])).toContain("fewer-than-two");
   });
 
-  it("the matrix covers every remedy-free code the registry declares", () => {
-    for (const code of REMEDY_FREE_CODES) {
-      const payloads = FREE_BRANCH_EXAMPLES[code as RemedyFreeCode] as
-        | ErrorPayloadMap[RemedyFreeCode][]
-        | undefined;
-      // WHY: this is the exhaustiveness guard. A code declared remedy-free but absent from the
-      // WHY: matrix fails here by name (`toBeDefined`) instead of rendering nothing, and adding it
-      // WHY: to the union without a matrix entry is a type error at the declaration above.
-      expect(payloads, `${code} is remedy-free but the matrix has no payloads`).toBeDefined();
-      expect(payloads?.length ?? 0).toBeGreaterThan(0);
-    }
+  it("negative control: duplicates, terminal periods, harmful verbs and preference fail", () => {
+    expect(optionProblems(["retry the edit", "retry the edit"])).toContain("duplicate");
+    expect(optionProblems(["retry the edit.", "use write"])).toContain("terminal:retry the edit.");
+    expect(optionProblems(["ignore the rows", "use write"])).toContain("harmful:ignore");
+    expect(optionProblems(["just retry", "use write"])).toContain("biased:just retry");
   });
-
-  it("every declared remedy satisfies the eligibility rule", () => {
-    const problems: string[][] = [];
-    for (const code of Object.keys(ERROR_REGISTRY) as DomainErrorCode[]) {
-      const remedy = ERROR_REGISTRY[code].remedy;
-      if (remedy !== undefined) {
-        const found = remedyProblems(code, remedy);
-        if (found.length > 0) problems.push(found);
-      }
-    }
-    expect(problems).toEqual([]);
-  });
-
-  it("negative control: a planted remedy on a free code fails the free check", () => {
-    expect(
-      freeViolations({
-        code: "E_UNKNOWN",
-        remedy: "Retry the edit.",
-        message: "unexpected Error: boom",
-      }),
-    ).not.toEqual([]);
-  });
-
-  it("negative control: a planted imperative in free text fails the free check", () => {
-    expect(
-      freeViolations({
-        code: "E_UNKNOWN_ANCHOR",
-        remedy: undefined,
-        message: 'a.py has not served the anchor "ZZZ"; retry with fresh anchors.',
-      }),
-    ).not.toEqual([]);
-  });
-
-  it("negative control: a planted ineligible remedy fails eligibility", () => {
-    expect(remedyProblems("E_STALE_RANGE", "Just proceed and ignore the error.")).not.toEqual([]);
+  it("negative control: a planted option on a real entry fails the set check", () => {
+    const planted = {
+      ...ERROR_REGISTRY,
+      E_NOT_FOUND: { ...ERROR_REGISTRY.E_NOT_FOUND, options: ["first", "second"] },
+    };
+    const declared = (Object.keys(planted) as DomainErrorCode[])
+      .filter((code) => planted[code].options !== undefined)
+      .sort();
+    expect(declared).not.toEqual([...OPTIONS_CODES].sort());
   });
 });
 
 /**
- * Producer half of the oracle (#125). The checks above read the registry as data — each code's
- * declared `remedy` and each remedy-free code's own example payload — so the strings real producers
- * pass are invisible to them: three `E_INTERNAL_INVARIANT` sites kept "Pass a plain file string and
- * retry." through #93 for exactly that reason, and `FREE_BRANCH_EXAMPLES` still carries the trimmed
- * text as its first payload. This half reads the producers themselves.
- *
- * The scanned set is derived from `ERROR_REGISTRY` entries with no `remedy` field rather than from a
- * literal list, so a code that becomes remedy-free is scanned the moment it is declared. The
- * hand-maintained `REMEDY_FREE` array above missed `E_UNDO_STALE` until #128 added it and pinned the
- * array to this derived set in both directions. The `W_*` codes are deliberately outside it: they
- * carry remedies in the registry and are rendered through `WARNING_REGISTRY` for a user audience,
- * where telling the reader what to do is the point.
+ * Producer half. The checks above read the registry as data; the strings real
+ * producers pass are invisible to them. A fact-only code's producer `message:`
+ * literal is model-facing too, so it must not smuggle an imperative back in.
+ * The scanned set is derived from the registry, so a code that gains options
+ * leaves the scan the moment it is declared.
  */
 
-// WHY: comment prose talks ABOUT codes and remedies. `src/mutation-engine/pipeline.ts` lists the
-// WHY: remedy-free `E_UNKNOWN_ANCHOR`/`E_FOREIGN_ANCHOR` strings and, a few lines later, quotes the
-// WHY: *eligible* `E_STALE_ANCHOR`'s remedy ("… Retry as it directs.") inside a WHY comment, so any
-// WHY: scan reading text near a code string reports innocent comments as offenders. Extraction
-// WHY: therefore requires `new DomainError("<code>"`, slices that call's argument list, and reads
-// WHY: only the literal bound to `message:` — the payload the producer actually builds — with
-// WHY: comments removed from the slice first, so even a commented-out payload cannot match.
-
-/** Index just past the string or template literal that starts at `at`. */
+// WHY: comment prose talks ABOUT codes and options. Extraction therefore
+// WHY: requires `new DomainError("<code>"`, slices that call's argument list,
+// WHY: reads only the literal bound to `message:`, and strips comments first, so
+// WHY: even a commented-out payload cannot match.
 function skipLiteral(source: string, at: number): number {
   const quote = source[at];
   let index = at + 1;
@@ -360,7 +401,6 @@ function skipLiteral(source: string, at: number): number {
   return index;
 }
 
-/** Index just past the balanced `{…}` group that starts at `at`. */
 function skipBalanced(source: string, at: number): number {
   let depth = 0;
   let index = at;
@@ -380,7 +420,6 @@ function skipBalanced(source: string, at: number): number {
   return index;
 }
 
-/** `source` with line and block comments removed; string and template literals preserved. */
 function stripComments(source: string): string {
   let out = "";
   let index = 0;
@@ -408,7 +447,6 @@ function stripComments(source: string): string {
   return out;
 }
 
-/** The text between the parentheses of the call whose opening `(` sits at `open`. */
 function callArguments(source: string, open: number): string {
   let depth = 0;
   let index = open;
@@ -438,7 +476,6 @@ function callArguments(source: string, open: number): string {
   return source.slice(open + 1);
 }
 
-/** The static text from `at` to its closing quote; template holes are dropped. */
 function literalText(source: string, at: number): string {
   const quote = source[at];
   let out = "";
@@ -461,7 +498,6 @@ function literalText(source: string, at: number): string {
   return out;
 }
 
-/** The literal a `message:` property is bound to, or undefined when it is not a literal. */
 function messageLiteral(payload: string): string | undefined {
   const clean = stripComments(payload);
   const match = /\bmessage\s*:\s*/.exec(clean);
@@ -472,7 +508,6 @@ function messageLiteral(payload: string): string | undefined {
   return literalText(clean, at);
 }
 
-/** Every `message` literal a producer passes for one of `codes`, in source order. */
 function producerMessages(
   source: string,
   codes: ReadonlySet<string>,
@@ -488,7 +523,6 @@ function producerMessages(
   return found;
 }
 
-/** Every `.ts` file under `dir`, recursively. */
 function sourceFiles(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -500,24 +534,29 @@ function sourceFiles(dir: string): string[] {
 }
 
 // WHY: derived from the registry, so the set cannot drift from the declaration it polices.
-const REMEDY_FREE_CODES: readonly DomainErrorCode[] = (
+const FACT_ONLY_CODES: readonly DomainErrorCode[] = (
   Object.keys(ERROR_REGISTRY) as DomainErrorCode[]
-).filter((code) => ERROR_REGISTRY[code].remedy === undefined);
+).filter((code) => ERROR_REGISTRY[code].options === undefined);
 
-describe("remedy-free producers carry no imperative (#125)", () => {
-  const codes = new Set<string>(REMEDY_FREE_CODES);
+// WHY: E_BAD_PAYLOAD admission text is a separate curated surface (ADR-0036 Option C, ADR-0047 (d)):
+// WHY: the binary Choice A/B wire-shape choice and the required/optional null rule. `analyzeItem`
+// WHY: returns those strings, so this scan cannot see them; test/tools/edit.wire-contract.test.ts
+// WHY: pins them.
 
-  it("scans the registry-derived set, including codes the hand list skips", () => {
-    expect(REMEDY_FREE_CODES).toContain("E_INTERNAL_INVARIANT");
-    // WHY: the code the hand-maintained list above skips — the drift this derivation removes.
-    expect(REMEDY_FREE_CODES).toContain("E_UNDO_STALE");
-    // WHY: warning codes carry a registry remedy and render through `WARNING_REGISTRY`, so their
-    // WHY: prose is a user-facing corpus, not model-facing text: not this oracle's subject.
-    expect(REMEDY_FREE_CODES).not.toContain("W_REVERSED_ANCHORS");
-    expect(new Set(REMEDY_FREE_CODES).size).toBe(REMEDY_FREE_CODES.length);
+describe("fact-only producers carry no imperative", () => {
+  const codes = new Set<string>(FACT_ONLY_CODES);
+
+  it("scans every code the registry declares fact-only", () => {
+    expect(FACT_ONLY_CODES).toHaveLength(19);
+    expect(FACT_ONLY_CODES).not.toContain("E_SUSPICIOUS_TEXT");
+    expect(FACT_ONLY_CODES).not.toContain("E_BATCH_ABORT");
+    expect(FACT_ONLY_CODES).not.toContain("E_UNDO_UNAVAILABLE");
+    expect(FACT_ONLY_CODES).toContain("E_INTERNAL_INVARIANT");
+    expect(FACT_ONLY_CODES).toContain("E_UNDO_STALE");
+    expect(new Set(FACT_ONLY_CODES).size).toBe(FACT_ONLY_CODES.length);
   });
 
-  it("no producer message for a remedy-free code contains an imperative", () => {
+  it("no producer message for a fact-only code contains an imperative", () => {
     const offenders: string[] = [];
     const perCode = new Map<string, number>();
     for (const file of sourceFiles("src")) {
@@ -528,11 +567,9 @@ describe("remedy-free producers carry no imperative (#125)", () => {
     }
     // WHY: a scan that quietly stopped reading producers would satisfy the assertion below on an
     // WHY: empty corpus, so the corpus is pinned too. Measured today: 24 sites carry a literal
-    // WHY: message, across 2 of the 8 remedy-free codes — `E_INTERNAL_INVARIANT` (23, where the
-    // WHY: #125 tails lived) and `E_UNKNOWN` (1). The floor is deliberately below that, because a
-    // WHY: legitimate removal must not fail this test, while a scan that stops reading will. The
-    // WHY: other six remedy-free codes pass structured payloads and no `message`, so their text is
-    // WHY: the registry `format`'s business, which the format half above already pins.
+    // WHY: message, across `E_INTERNAL_INVARIANT` and `E_UNKNOWN`. The floor is deliberately below
+    // WHY: that, because a legitimate removal must not fail this test, while a scan that stops
+    // WHY: reading will.
     expect([...perCode.values()].reduce((sum, count) => sum + count, 0)).toBeGreaterThanOrEqual(20);
     expect(perCode.size).toBeGreaterThanOrEqual(2);
     expect(offenders).toEqual([]);
@@ -547,17 +584,14 @@ describe("remedy-free producers carry no imperative (#125)", () => {
     expect(offenders).toHaveLength(3);
   });
 
-  it("mechanism: comment prose quoting an eligible remedy is never read as a payload", () => {
-    // WHY: the `pipeline.ts` shape verbatim — remedy-free code strings in a Set literal, then a WHY
-    // WHY: comment quoting the eligible `E_STALE_ANCHOR`'s remedy, then one real payload. The naive
-    // WHY: window is asserted as a control so this test shows the false positive it avoids.
+  it("mechanism: comment prose quoting a removed remedy is never read as a payload", () => {
     const source = [
       "const codes: readonly string[] = [",
       '  "E_UNKNOWN_ANCHOR",',
       '  "E_FOREIGN_ANCHOR",',
       "];",
       "// WHY: never rewritten as E_STALE_ANCHOR with its",
-      '// WHY: "The latest known status is in this rejection. Retry as it directs."',
+      '// WHY: "The latest known status is in this rejection. Retry as it directs." remedy.',
       'throw new DomainError("E_INTERNAL_INVARIANT", { message: "Path contains null byte." });',
     ].join("\n");
     const naiveWindow = source.slice(0, source.indexOf("throw") + 600);

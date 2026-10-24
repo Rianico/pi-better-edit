@@ -724,7 +724,7 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     expect(err.message).toMatch(/\[MODEL\] \[E_TARGET_LOST\] line 3/);
     expect(err.message).not.toContain("Current range:");
     expect(err.message).not.toContain("Retry with these anchors");
-    expect(ERROR_REGISTRY.E_TARGET_LOST.remedy).toBe("Read the file and re-target.");
+    expect(ERROR_REGISTRY.E_TARGET_LOST.options).toBeUndefined();
     expect(err.firstOffendingLine).toBe(3);
   });
 
