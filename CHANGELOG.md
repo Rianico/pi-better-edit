@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.13.4] - 2026-10-24
+
 ### Bug Fixes
 
 * **bash:** refuse ambiguous `FILE:LINE:content` splits and non-monotone search rows at the serve seam, so every served row is byte-verified and its interval is ordered; add a real-binary attribution property suite. (#175) (#177)
