@@ -48,6 +48,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "node scripts/build-dist.mjs && pnpm run typecheck && pnpm run lint && pnpm test",
     "canon:audit": "node scripts/canon-churn-audit.mjs",
+    "prompts:show": "node scripts/served-prompts.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs",
     "build": "node scripts/build-dist.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",
