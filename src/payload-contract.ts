@@ -379,7 +379,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   }
   if (hasText) {
     if (typeof text !== "string") {
-      return `edit[${index}] "text" must be a string with \\n line separators, not an array. Use "" to delete the range.`;
+      return `edit[${index}] "text" must be a string with \\n line separators, not an array. An empty string deletes the range.`;
     }
     return undefined;
   }
@@ -588,7 +588,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     }
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        "Edit request must pass through normReq before assertReq: the engine consumes the normalized shape. " +
+        "Edit request reached assertReq without normReq: the engine consumes the normalized shape. " +
         EDIT_PAYLOAD_HINT,
     });
   }

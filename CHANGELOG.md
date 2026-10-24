@@ -6,6 +6,7 @@
 
 * **bash:** refuse ambiguous `FILE:LINE:content` splits and non-monotone search rows at the serve seam, so every served row is byte-verified and its interval is ordered; add a real-binary attribution property suite. (#175) (#177)
 * **prompts:** state what the tools actually do: bash-view and auto-read rows count as served, `[W_*]` is informational and `[E_*]` retries, `cut` removes the source span, undo names its scope and `E_UNDO_STALE` invariant, and a `-` diff row is not served. Read's description drops 2494 → 1377 chars; the guidelines become plain procedural English with glossary terms. The `mode: "literal"` escape stays refusal-only per ADR-0021, now pinned by a test. (#179) (#180)
+* **errors:** replace the never-rendered per-code `remedy` with a refusal-scoped `Options:` list on the three codes whose evidence admits two neutral moves (`E_SUSPICIOUS_TEXT`, `E_BATCH_ABORT`, `E_UNDO_UNAVAILABLE`); every other rejection states facts only. `E_SUSPICIOUS_TEXT` branches `text`/`content`, discloses `mode: "literal"` once, and counts one submission as `1 time`. Fact-only producer messages, foreign-reference headlines and batch trailers lose their embedded imperatives; a wrapped item's options are indented under its bullet. (ADR-0047)
 
 ## [2.13.3] - 2026-10-22
 

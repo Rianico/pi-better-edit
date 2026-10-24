@@ -154,8 +154,9 @@ describe("E_BAD_PAYLOAD renders the neutral wording with no subject (#86)", () =
     );
     expect(unstamped.message).not.toContain("edit");
     expect(unstamped.message).not.toContain("The read payload");
-    // WHY: the remedy is the registry's, unchanged by this ticket.
-    expect(ERROR_REGISTRY.E_BAD_PAYLOAD.remedy).toBe("Fix the payload fields and retry.");
+    // WHY: facts only — the payload message names the invalid field, and ADR-0047 serves no
+    // WHY: options for this code.
+    expect(ERROR_REGISTRY.E_BAD_PAYLOAD.options).toBeUndefined();
   });
 
   it("renders the neutral clause for a subject outside the union", () => {

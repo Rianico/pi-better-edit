@@ -374,20 +374,21 @@ describe("domain error registry: closed contract, not a list", () => {
     // WHY: right retry — a `(no read needed)` mandate trapped models in identical failing retries.
     expect(error.message).not.toContain("Retry with these anchors");
     expect(error.message).not.toContain("no read needed");
-    expect(ERROR_REGISTRY.E_STALE_RANGE.remedy).toBeUndefined();
+    expect(ERROR_REGISTRY.E_STALE_RANGE.options).toBeUndefined();
   });
 
-  it("the remediation codes select their retry (04b-rem P2-1/P2-3, ADR-0021 d4)", () => {
-    // WHY: a rejection whose code selects NO remedy breaks the registry doctrine — "the code
-    // WHY: alone selects the retry". Both codes exist precisely because the failure they name
-    // WHY: has one correct model action: re-encode before editing; let the next run repair a
-    // WHY: defeated revert (never re-undo it).
+  it("serves options only where the remediation is neutral (ADR-0047)", () => {
+    // WHY: facts are the default. The two codes that used to carry a single retry directive are
+    // WHY: fact-only now: re-encoding and the automatic repair describe what must happen, not
+    // WHY: what the model should choose.
     expect(ERROR_REGISTRY.E_LOSSY_TEXT.audience).toBe("MODEL");
-    expect(typeof ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toBe("string");
-    expect(ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toContain("UTF-8");
+    expect(ERROR_REGISTRY.E_LOSSY_TEXT.options).toBeUndefined();
     expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.audience).toBe("MODEL");
-    expect(typeof ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toBe("string");
-    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toContain("repair");
+    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.options).toBeUndefined();
+    expect(ERROR_REGISTRY.E_UNDO_UNAVAILABLE.options).toEqual([
+      "retry the edit",
+      "use write if the store stays unavailable",
+    ]);
   });
 
   it("closes the representable-empty render: an empty headline over an empty block cannot construct (04b §12.2)", () => {

@@ -18,6 +18,8 @@ Amended by [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves
 
 Amended by [ADR-0034 — Message convergence supersedes ADR-0021 decisions 3 and 4](0034-message-convergence-supersedes-adr-0021-decisions-3-and-4.md) (decisions 3 and 4: claims (a)–(d) — the numeric note, remedy duplication, the FOREIGN reading and the LARGE_FILE remedy)
 
+Amended by [ADR-0047 — Remediation is a refusal-scoped `Options:` list](0047-remediation-options-are-refusal-scoped-and-neutral.md) (decision 4: the never-rendered `remedy` field is replaced by a curated, refusal-scoped `options` list; the eligibility gate survives as its curation rule)
+
 ## Context
 
 The design record [`unified-error-and-warning-contract.md`](../spec/unified-error-and-warning-contract.md) proposed a closed, two-tier domain model for every rejection and applied-path diagnostic. The batch implemented it in five code commits: `218ad8a` (tagged `DomainError` registry), `0bc2b65` (unknown / foreign anchor split), `354d98b` (`W_*` tier, reversed anchors always heal), `9b7cd27` (batch and diagnostic gap closure), `e73b806` (spec §6 oracles). Review corrected two wordings against as-built behavior instead of absorbing them silently: the content-path tombstoned-boundary check (ADR-0020 decision 2 prescribed the fresh-read heading; as-built `0bc2b65` serves `[E_STALE_ANCHOR]` rows — decision 3 below amends that sentence) and the "always renders rows" shape claim (the missing-previous-hashes producer carries the headline only — decisions 1 and 3 record the hedge with its line trace).

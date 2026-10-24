@@ -28,11 +28,11 @@ An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves again
 _Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)
 
 **unknown anchor**:
-An anchor this session holds no lease for in any file. Reported as `[E_UNKNOWN_ANCHOR]` with no rows and no remedy — the tool cannot tell a wrong file value from wrong anchors from another session, so it states the fact and the model decides. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+An anchor this session holds no lease for in any file. Reported as `[E_UNKNOWN_ANCHOR]` with no rows and no served options — the tool cannot tell a wrong file value from wrong anchors from another session, so it states the fact and the model decides. Distinct from `anchor staleness`, which names a served anchor whose content changed.
 _Avoid_: unserved anchor, missing anchor, stale anchor
 
 **foreign anchor**:
-An anchor this session holds a lease for, but for a file other than the one the edit names. Reported as `[E_FOREIGN_ANCHOR]` with no rows and no remedy — the message names where the anchors were served. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+An anchor this session holds a lease for, but for a file other than the one the edit names. Reported as `[E_FOREIGN_ANCHOR]` with no rows and no served options — the message names where the anchors were served. Distinct from `anchor staleness`, which names a served anchor whose content changed.
 _Avoid_: cross-file anchor, wrong-file anchor, leaked anchor
 
 **interior**:
@@ -58,7 +58,7 @@ The condition where the `served range` (span between anchors) cannot be reconcil
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never the model remedy (the code alone selects the retry). It fails closed only where there is no identity left to verify: a **boundary** row of a leased span (one of the two anchors the model named) reports `[E_STALE_RANGE]`; an unplaceable boundary (one bound stale, survivor live and unshifted) reports `[E_UNVERIFIED_RANGE]`; an anchor with no lease at all reports `[E_UNKNOWN_ANCHOR]` (no lease in any file) or `[E_FOREIGN_ANCHOR]` (leased for another file) — both rowless without remedy. An **unread interior** row between two leased boundaries is accepted instead, because it carries no identity to verify (ADR-0024). `[E_STALE_ANCHOR]` names a served anchor whose identity is dead (rows served, retry with them).
+A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never a served option (facts are the default; options are the curated exception). It fails closed only where there is no identity left to verify: a **boundary** row of a leased span (one of the two anchors the model named) reports `[E_STALE_RANGE]`; an unplaceable boundary (one bound stale, survivor live and unshifted) reports `[E_UNVERIFIED_RANGE]`; an anchor with no lease at all reports `[E_UNKNOWN_ANCHOR]` (no lease in any file) or `[E_FOREIGN_ANCHOR]` (leased for another file) — both rowless with no options. An **unread interior** row between two leased boundaries is accepted instead, because it carries no identity to verify (ADR-0024). `[E_STALE_ANCHOR]` names a served anchor whose identity is dead (rows served, retry with them).
 
 **unverified range**:
 The named window served when one bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted. Reported as `[E_UNVERIFIED_RANGE]`: the rows of the named window are served as a fresh read under the exact heading `Current range (fresh read):`, with no retry hint and no mandate — the model decides from those rows, and the rows are leased through the normal serve seam. One bound stale covers a retired lease with a live unshifted survivor only — a boundary anchor with no served position reports `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`. Retired: `[E_UNSERVED_RANGE]` (see ADR-0020; interior hole → `[E_STALE_RANGE]`, boundary producer → this code); the library-seam blocked-hash boundary check that also reported `[E_STALE_ANCHOR]` is retired (#10).
@@ -203,7 +203,7 @@ Refusal that the file exceeds the hashline size contract — more than 200,000 l
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:
-The unexpected-error envelope: a throw that is not a `DomainError` (an invariant breach, a filesystem or store failure) is reported through the registry as `[MODEL] [E_UNKNOWN]` carrying only the error name and the first message line — never a scraped bracket token, never the verbatim dump. Carries no remedy by rule: no cause is knowable at all.
+The unexpected-error envelope: a throw that is not a `DomainError` (an invariant breach, a filesystem or store failure) is reported through the registry as `[MODEL] [E_UNKNOWN]` carrying only the error name and the first message line — never a scraped bracket token, never the verbatim dump. Serves no options by rule: no cause is knowable at all.
 _Avoid_: E_UNSPECIFIED (unclaimed code)
 
 **applied warning** (`W_*`):
@@ -218,9 +218,9 @@ _Avoid_: E_REVERSED_ANCHORS (retired refusal; the healed notice is W_REVERSED_AN
 A call whose resolved range already contains the replacement text: nothing changed, so it is not a failure. The first no-op proceeds, the second identical no-op narrates `[USER] [W_NOOP]`, and only the third identical resend refuses as `[E_NOOP_LOOP]` (`NOOP_LOOP_THRESHOLD = 3`, `src/noop-guard.ts:59-99`).
 _Avoid_: E_NOOP (no such code; the warn arm is W_NOOP, the refuse arm is E_NOOP_LOOP)
 
-**remedy-eligibility**:
-Payload text reports facts; a remedy clause may appear only when it is helpful, unharmful and fail-closed AND the evidence pins a single cause. When the intent is ambiguous the payload states the fact and carries no remedy, because an intent-guessing suggestion steers the model's next action. Remedy-free by rule: `E_UNKNOWN`, `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE`, `E_STALE_RANGE`, `E_NOOP_LOOP` (see ADR-0021 decisions 4 and 5).
-_Avoid_: suggestion (an intent-guessing remedy steers the model's next action)
+**remediation options**:
+Refusals state facts. A served `Options:` list is the exception: two or more neutral, non-destructive moves that keep the model's choice, rendered only by the refusal that proved the cause and only for `MODEL` audience. Never a single directive, never prompt prose, never a success path. Curated: `E_SUSPICIOUS_TEXT`, `E_BATCH_ABORT`, `E_UNDO_UNAVAILABLE` (ADR-0047).
+_Avoid_: remedy, suggestion, hint (one directive biases the next call)
 
 **source of truth**:
 The file bytes on disk plus the lease store (`served_leases`, snapshots, `line_lineage`) — the sole authority for retry coordinates. Rendered diff text is never the source of truth; coordinates resolve through leases, never by re-reading a projection.

@@ -348,24 +348,24 @@ function assertItem(edit: Record<string, unknown>): void {
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Field "anchor_from" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
+      message: `Field "anchor_from" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written.`,
     });
   }
   if ("anchor_to" in edit && typeof edit.anchor_to !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Field "anchor_to" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
+      message: `Field "anchor_to" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written.`,
     });
   }
   if (!("text" in edit)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        'The edit requires a "text" field. Provide the replacement text (use "" to delete). Nothing was written.',
+        'The edit requires a "text" field. An empty string deletes the range. Nothing was written.',
     });
   }
   if (typeof edit.text !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        '"text" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+        '"text" must be a string with \\n line separators, not an array. Multiple lines belong in one string, such as "line1\\nline2". An empty string deletes a range. Nothing was written.',
     });
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {

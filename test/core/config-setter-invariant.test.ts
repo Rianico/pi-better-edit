@@ -12,11 +12,11 @@ import { saveStoreJanitorConfig } from "../../src/store-config.js";
 // WHY: (Issue #94) these eight guards are internal contract checks, not payload validation: the
 // WHY: command handlers narrow every token and the settings overlay offers only enum choices, so no
 // WHY: caller can reach them. Their code must read as an invariant failure and their text must state
-// WHY: the fact — a payload remedy would advertise a repair that cannot exist.
+// WHY: the fact — a payload options section would advertise a choice that cannot exist.
 // WHY: The token list mirrors `test/arch/remedy-eligibility.test.ts`, which polices the registry
 // WHY: examples; this oracle drives the eight REAL sites, where a planted imperative would pass it.
 const IMPERATIVE = /\b(retry|use|run|execute|omit|declare|choose|merge|pass|send|fix)\b/i;
-const PAYLOAD_REMEDY = "Fix the payload fields and retry.";
+const PAYLOAD_OPTIONS = "Options:";
 
 interface Site {
   readonly label: string;
@@ -101,10 +101,10 @@ describe("config setter enum guards (Issue #94)", () => {
       );
       expect(error.message).toContain(site.offending);
       expect(error.message).not.toContain("payload");
-      expect(error.message).not.toContain(PAYLOAD_REMEDY);
+      expect(error.message).not.toContain(PAYLOAD_OPTIONS);
       expect(error.message).not.toMatch(IMPERATIVE);
       expect(error.payload.message).toContain(site.offending);
-      expect(error.payload.message).not.toContain(PAYLOAD_REMEDY);
+      expect(error.payload.message).not.toContain(PAYLOAD_OPTIONS);
       expect(error.payload.message).not.toMatch(IMPERATIVE);
       expect(readdirSync(projectDir)).toEqual([]);
     });

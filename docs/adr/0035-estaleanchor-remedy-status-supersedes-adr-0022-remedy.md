@@ -6,6 +6,8 @@ Date: 2026-10-07
 
 accepted — supersedes ADR-0022's `[E_STALE_ANCHOR]` remedy sentence (`Retry with the served rows; no read is needed.`) and nothing else in that record. ADR-0022's Decision is otherwise intact: the canon travels with the row that carries it, the process-global `hash → canon` map stays deleted, and `[E_STALE_RANGE]` still serves the current range as a fresh read. The replaced quote appears in ADR-0022's Context item 2 and is the remedy its Decision 3 keeps.
 
+Amended by [ADR-0047 — Remediation is a refusal-scoped `Options:` list](0047-remediation-options-are-refusal-scoped-and-neutral.md) (the field this record sets is deleted; `E_STALE_ANCHOR` renders its facts and rows with no options)
+
 Amends [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a fresh read](0022-file-scoped-canons-and-fresh-read-stale-range.md)
 
 ## Context

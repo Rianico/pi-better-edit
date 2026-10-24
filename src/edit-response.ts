@@ -416,7 +416,16 @@ function stripModelPrefix(message: string): string {
  * atomicity trailer, which is worse than a neutral clause. Only `E_BAD_PAYLOAD` is re-wrapped.
  */
 function innerDiagnostic(error: Error): string {
-  return stripModelPrefix(withPayloadSubject(error, "edit").message);
+  return indentOptions(stripModelPrefix(withPayloadSubject(error, "edit").message));
+}
+
+/**
+ * Indent a rendered options block under the item it belongs to inside a batch bullet. WHY: a
+ * wrapper renders one line per failing item, so an unindented `Options:` line would read as a
+ * third alternative between bullets.
+ */
+function indentOptions(message: string): string {
+  return message.replace(/^Options: /m, "  Options: ");
 }
 
 /**
@@ -438,7 +447,7 @@ export function batchAbortFor(args: { error: Error; index: number; path: string 
   // WHY: batch abort must preserve the serve block or the retry owes a re-read.
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
-      `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
+      BATCH_ATOMICITY_TRAILER,
   );
   // WHY: the whole forwarded payload moves through the envelope reader/writer pair
   // WHY: (src/error-envelope.ts) — the wrapper stamps exactly the validated slots the
@@ -472,7 +481,7 @@ export function batchAbortForMany(args: {
   const wrapped = new Error(
     `[MODEL] ${failures.length} edits in ${path} failed. The whole edit call was rejected and the file is unchanged.\n` +
       `${bullets.join("\n")}\n` +
-      `${BATCH_ATOMICITY_TRAILER} Fix the failing edits (and any later edits that depend on them), then resubmit.`,
+      BATCH_ATOMICITY_TRAILER,
   );
   const envelopes = failures.map((f) => readEnvelope(f.error) ?? {});
   // WHY: promotion keys off the FIRST item's raw string code — registry member or not —

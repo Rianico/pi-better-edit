@@ -17,18 +17,18 @@ beforeAll(async () => {
 });
 
 describe("E_INTERNAL_INVARIANT rendering (#93)", () => {
-  it("declares no remedy in the registry", () => {
-    expect(ERROR_REGISTRY.E_INTERNAL_INVARIANT.remedy).toBeUndefined();
+  it("declares no served options in the registry", () => {
+    expect(ERROR_REGISTRY.E_INTERNAL_INVARIANT.options).toBeUndefined();
   });
 
-  it("renders without the model-facing payload remedy", () => {
+  it("renders facts only", () => {
     const rendered = new DomainError("E_INTERNAL_INVARIANT", {
       message: "Path contains null byte",
     }).message;
     expect(rendered).toBe(
       "[MODEL] [E_INTERNAL_INVARIANT] An internal invariant failed: Path contains null byte",
     );
-    expect(rendered).not.toContain("Fix the payload fields and retry.");
+    expect(rendered).not.toContain("Options:");
   });
 
   it("keeps the subject arm for a producer that knows its tool", () => {
@@ -39,7 +39,7 @@ describe("E_INTERNAL_INVARIANT rendering (#93)", () => {
     expect(rendered).toBe(
       "[MODEL] [E_INTERNAL_INVARIANT] The read invariant failed: Path contains null byte",
     );
-    expect(rendered).not.toContain("Fix the payload fields and retry.");
+    expect(rendered).not.toContain("Options:");
   });
 
   it("re-wraps with the subject like E_BAD_PAYLOAD", () => {

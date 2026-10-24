@@ -6,6 +6,8 @@ Date: 2026-10-07
 
 accepted — supersedes [ADR-0021](0021-unified-error-and-warning-contract.md) decisions 3 and 4 in the four scoped claims below, and nothing else. No old ADR text was rewritten when this record was created (#58): the reciprocal line on ADR-0021 was deferred then and has since landed there as `Amended by [ADR-0034]`, so both records now declare the supersession (ADR-0019 keeps accepted prose as history).
 
+Amended by [ADR-0047 — Remediation is a refusal-scoped `Options:` list](0047-remediation-options-are-refusal-scoped-and-neutral.md) (the load-bearing assumption resolves: the `remedy` field is deleted, and three codes serve a curated `Options:` list at the refusal)
+
 Supersedes [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md), decisions 3 and 4 (scoped).
 
 ## Context
