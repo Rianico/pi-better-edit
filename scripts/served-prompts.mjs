@@ -35,6 +35,15 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROMPTS_DIR = join(ROOT, "prompts");
 const EDIT_DESCRIPTION_CAP = 800; // `expect(EDIT_DESCRIPTION.length).toBeLessThan(800)`
 
+// WHY: the report is meant to be piped (`| head`, `| jq`). A consumer that closes early raises EPIPE
+// WHY: on stdout; treat that as the reader's stop, not a tool failure.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error) => {
+    if (error.code === "EPIPE") process.exit(0);
+    throw error;
+  });
+}
+
 /** Node's type stripping keeps `.js` specifiers, so map a missing `.js` to its `.ts` sibling. */
 registerHooks({
   resolve(specifier, context, next) {
