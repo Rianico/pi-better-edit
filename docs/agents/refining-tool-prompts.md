@@ -31,6 +31,16 @@ A tool may present **three surfaces** to a model, and they have different lifesp
 grep -n 'loadP\|loadGuide\|_PROMPT_FILES\|_GUIDE_FILES' src/prompts.ts
 ```
 
+**Read the domain model before you name anything.** `CONTEXT.md` binds one term to one concept, and the prompt is where a
+wrong synonym becomes a model action. `cut` removes a span's lines while `text: ""` is the deletion arm, so calling cut
+"delete" collides with another payload; `retirement` is terminal lease state, never a file action; `served hash echo`
+already names the copied-row condition. A paraphrase is a second term for a concept the model must hold once.
+
+**List the producers of each precondition.** The edit precondition is not "seen via `read`/diff": `read`, diffs, bash
+views, auto-read and the `write` hook all record serves with leases. A precondition written from the assumed path excludes a
+working one — `read` rows from a bash view were re-read before this was fixed, which is the exact round trip the feature exists
+to remove.
+
 ## 2 · Map the pins first — BOTH kinds
 
 Before proposing a single edit, extract every assertion that reads the text. There are **two** kinds and they fail differently:
@@ -49,6 +59,22 @@ grep -n 'toMatch(' test/extension/prompts.test.ts
 Bans count as pins. Some are the point of the surface — `read`'s guidelines **must not** contain `re-read`, because that
 surface is required to frame reading as on-demand recovery rather than a per-edit ritual.
 
+
+**Census the repo, not one file.** The pin set for these surfaces is larger than `test/extension/prompts.test.ts`:
+
+```bash
+grep -rn 'EDIT_DESCRIPTION\|EDIT_GUIDELINES\|loadGuide\|prompts/' test --include=*.ts
+```
+
+Four families show up and each fails differently: substring (`toContain`), regex (`toMatch`), **array length** (`read`'s
+guidelines are pinned at exactly 6), and a **cap comparison** (`EDIT_DESCRIPTION.length < 800`). Architecture scans are pins
+too: a literal count word in `src/` (`4-char`) fails `anchor-width-single-owner`, and a filler phrase fails
+`prose-neutrality`.
+
+**A decision with no pin is not enforced.** ADR-0021 decision 6 says no prose surface teaches `mode: "literal"`. Nothing
+tested it, so a guideline that taught the flag passed `pnpm run verify` and shipped in the first commit of #179. Grep
+`docs/adr/` and `CONTEXT.md` for the surface before you write; when an invariant has no pin, add the pin in the same change —
+a scan plus a positive control.
 **A recommendation that breaks a pin is not a finding — it is a contract violation.** Say so, and filter the reviewer's output
 against the map before acting on it.
 
@@ -95,13 +121,25 @@ Run an independent review against `ai-engineering-expert` → `writing-for-agent
 **goal-first ordering · consumer and exclusion · leading words · negation discipline · completion criteria · no-ops ·
 duplication · co-location · progressive disclosure · second-person imperative · token insulation · one term per concept.**
 
-Two cautions learned by paying for them:
+**Measure the text you touched.** The machine flavour is testable: count semicolons (banned), list sentences over 20 words,
+and check that every guard precedes its action. Do this after the edit, not by eye — a draft can add a 66-word bullet while
+claiming plain language. A pinned sentence may exceed the limit; splitting it means re-pinning, so record that instead of
+quietly breaking the pin.
+
+**Separate structural negations from redundant ones.** Delete a negation when the positive sentence already excludes the
+alternative (`no footer`, `never a directory`, `not content`). Keep it when the alternative is the failure mode the model must
+not choose (`never served`, `writes nothing`, `any failure writes nothing`).
+
+Three cautions learned by paying for them:
 
 - **A source-blind review's *judgments* transfer; its *deletions* do not.** It cannot know which sentences are load-bearing for
   reasons that live in the tests. Supply the pin map with the brief and state that breaking a pin is a violation.
 - **STE is a standard, not a defect.** A linter passing proves sentence length, not quality — a lint-clean draft of a prompt
   contained an illegal example. Apply STE where it costs nothing; do not rewrite pinned sentences to satisfy a linter this repo
   never adopted, and never spend a witness on cosmetics.
+- **A reviewer without the recorded decisions approves a violation.** A council approved text that taught a refusal-only flag,
+  because its criteria were the pin map and the source, not `docs/adr/`. Give the reviewer the pin map, the glossary and the
+  decision records, and require it to name the artifact behind each objection.
 
 ## 6 · Ticket the change with match discipline
 
@@ -125,6 +163,12 @@ pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage
 
 - **Print the served form.** For a constant-is-source tool, that is the constant; for a file-is-source tool, the parsed entries.
   Check the *count* of served entries, not only their content.
+  Run `pnpm run prompts:show` to print all three tools from the live loaders (`scripts/served-prompts.mjs`; add
+  `--format json|markdown`, `--surface`, or tool names to narrow it). It executes `loadP`/`loadGuide`, so the
+  report cannot disagree with the served text.
+- **Sweep every prose surface that describes the same change.** The ledger entry, the commit message and the reviewer's brief
+  can outlive a reversal: #179's first `CHANGELOG` entry and commit message still advertised `mode: "literal"` after the
+  prompts had stopped teaching it. Diff the claims, not only the code.
 - **Prove the change is what you claim.** Diff each changed line by common prefix and suffix: an "insertion" claim is only true
   if there is no removal.
 - **Run a positive control.** Mutate a pinned string in **both** the source and the mirror and confirm the suite goes RED.
@@ -173,3 +217,8 @@ to spare.
 independence makes a cross-check possible; **interest independence** makes it work. And when an instrument reports a failure,
 **print the artifact text beside the number** — an accuser's instrument error is indistinguishable from a finder's error and
 arrives with more authority.
+
+**11 · A refusal-only remedy stays in the refusal.** Evidence-gated disclosure is a design decision, not an oversight: the flag
+exists to escape one refusal and must not be taught where no refusal is present (ADR-0021 §6). A "helpful" guideline that
+taught it passed every gate, so the constraint needs a pin. This is the inverse of principle 6 — the refusal may carry the
+remedy, and the prose may not.
