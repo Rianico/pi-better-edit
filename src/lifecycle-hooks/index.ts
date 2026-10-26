@@ -993,7 +993,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   }
 
   /**
-   * WHY: (ADR-0042 D1 — bash serve admission; pending merge) never content matching, no
+   * WHY: (ADR-0048 D1 — bash serve admission) never content matching, no
    * WHY: other-file anchor bleed. The triple regex splits `FILE:LINE:content` non-greedily, so
    * WHY: when two splits of one observed row both resolve into the admitted set, the row is
    * WHY: served under a coordinate bash never printed. Concrete twin: file `a` line 1 ==
@@ -1064,7 +1064,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const parsed = parseTripleStdout(normalizedObserved);
     if (parsed === undefined || parsed.length === 0) return undefined;
     if (parsed.length > SEARCH_MAX_MATCHES) return undefined;
-    // WHY: (ADR-0042 D1 — bash serve admission; pending merge) the ambiguity gate below runs
+    // WHY: (ADR-0048 D1 — bash serve admission) the ambiguity gate below runs
     // WHY: on raw lines, not parsed rows, so every candidate split is enumerated before the
     // WHY: first lease is recorded.
     const rawLines = normalizedObserved.split("\n");
@@ -1497,8 +1497,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
     if (matches === undefined || matches.length === 0) return undefined;
     if (matches.length > SEARCH_MAX_MATCHES) return undefined;
-    // WHY: (serve-seam policy: one row per file line, rows in stream order — ADR-0042, bash
-    // WHY: serve admission, pending merge, states the no-bleed invariant, not an ordering clause)
+    // WHY: (serve-seam policy: one row per file line, rows in stream order — ADR-0048, bash
+    // WHY: serve admission, states the no-bleed invariant, not an ordering clause)
     // WHY: the printed number is a label whose ORDER is proven by the stream, not by matching
     // WHY: content. A descending or repeated label breaks stream order, so the WHOLE serve fails
     // WHY: closed with zero leases. Real `grep`/`rg` on one file always print ascending, so

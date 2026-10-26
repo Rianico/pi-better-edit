@@ -640,7 +640,7 @@ describe("bash serve attribution invariant (#175)", () => {
 
   it("G1 twin: the ambiguous triple fails closed; single-split control still serves", async () => {
     await withTempDir("attr175-g1-", async (dir) => {
-      // WHY: (ADR-0042 D1 — bash serve admission; pending merge) never content matching, no other-file anchor bleed — file `a` line 1
+      // WHY: (ADR-0048 D1 — bash serve admission) never content matching, no other-file anchor bleed — file `a` line 1
       // WHY: (`b.txt:3:x`) and file `a:1:b.txt` line 3 (`x`) produce the identical stdout row
       // WHY: `a:1:b.txt:3:x`, so serving it under either coordinate witnesses bytes bash never
       // WHY: anchored to that file. Fail closed with zero leases.
@@ -687,8 +687,8 @@ describe("bash serve attribution invariant (#175)", () => {
 
   it("G2: descending and duplicate search rows fail closed; ascending serves", async () => {
     const files = { "f.txt": "l1\nl2\nl3\n" };
-    // WHY: (serve-seam rule, one served row per file line — ADR-0042, bash serve admission,
-    // WHY: pending merge, states the no-bleed invariant, not an ordering clause) the printed
+    // WHY: (serve-seam rule, one served row per file line — ADR-0048, bash serve admission,
+    // WHY: states the no-bleed invariant, not an ordering clause) the printed
     // WHY: number is a LABEL whose order is proven by the stream, not by matching content —
     // WHY: descending or repeated labels own no disjoint ordered intervals and no lease↔row
     // WHY: bijection, even when every row byte-matches disk. Real grep/rg on one file always
