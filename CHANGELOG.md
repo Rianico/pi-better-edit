@@ -10,6 +10,7 @@
 
 * **adr:** land the bash serve admission record as ADR-0048 with an explicit accepted/deferred split (D1 accepted and implemented by #175, PR #177; D2 tracked by #176; D3/D4/D5 tracked by #183) together with its corpus analysis, and retarget the #175 serve-seam comments to cite ADR-0048. Comments and docs only; no behavior change. (#178)
 * **adr:** record ADR-0048 D4 as accepted and implemented by #185 instead of deferred, extending the D1 amendment note and splitting the tracking bullet so #183 covers D3/D5 only. Docs only; the behaviour itself ships in the #185 feature entry above. (#185)
+* **adr:** propose ADR-0049 for multi-file bash views: per-file page sections, line-count boundaries, zero-row pages, cross-file `sed` ranges, configurable 10/2,000 caps, and a real-workload evidence gate; implementation remains deferred. (#183)
 
 ## [2.13.4] - 2026-10-24
 
