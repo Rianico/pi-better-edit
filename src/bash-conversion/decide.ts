@@ -280,11 +280,26 @@ export const RULES: readonly ConversionRule[] = [
     why: "ADR-0039 D10 (relaxation A; inert tail accumulation)",
     phase: "segment",
     when: (ctx) => ctx.tailMode && isInertTailNode(segmentOf(ctx).node),
-    run: (ctx) => {
-      const { node } = segmentOf(ctx);
-      ctx.compoundSegs.push({ kind: "raw", command: ctx.command.slice(node.pos, node.end) });
-      return ADVANCE;
+    run: pushRawTail,
+  },
+  {
+    id: "inert-count-tail",
+    // WHY: (ADR-0048 D4) relaxation A is glue-free and single-block, so a glued chain's count tail
+    // WHY: used to reach `unsafe`. D4 admits it after the LAST verified block of a multi-block
+    // WHY: glued chain: at least two blocks are already recorded and every remaining segment is a
+    // WHY: count tail, so no block can follow and no later block competes for attribution (ADR-0039
+    // WHY: D10's second-block guard stays closed — this rule never admits a block). The tail is a
+    // WHY: `raw` segment: its already-observed bytes ride the peel's `rest`, never a block, anchor,
+    // WHY: or lease.
+    why: "ADR-0048 D4 (inert count tail after the last verified block)",
+    phase: "segment",
+    when: (ctx) => {
+      if (!ctx.hasGlue || admittedBlockCount(ctx) < 2) return false;
+      return ctx.segments
+        .slice(ctx.segIndex)
+        .every((segment) => isInertCountTailNode(segment.node));
     },
+    run: pushRawTail,
   },
 
   {
@@ -594,6 +609,37 @@ function recordViewBlock(ctx: RuleContext, current: ViewSeg): void {
 /** A tail command is inert when it is exactly the D10 shape: `wc` with counting flags and file operands. */
 function isInertTailNode(node: Command | Pipeline): boolean {
   return node.type === "Command" && parseInertTail(node) !== undefined;
+}
+
+/**
+ * WHY: (ADR-0048 D4) the count-tail closed set is narrower than D10's inert set: the ADR names
+ * `wc -l`/`-c` only, so `-w`/`-m` stay out on this seam. Every other exclusion (stdin, `--`
+ * escapes, dash-led operands, redirects, prefixes) is `parseInertTail`'s, shared unchanged.
+ * Declining a shape is fail-closed; widening this set is a follow-up with its own safety case —
+ * add a flag here, not a new rule.
+ */
+function isInertCountTailNode(node: Command | Pipeline): boolean {
+  if (node.type !== "Command") return false;
+  const tail = parseInertTail(node);
+  if (tail === undefined) return false;
+  const flags = tail.args.filter((arg) => arg.startsWith("-"));
+  return flags.length > 0 && flags.every((flag) => /^-[lc]+$/.test(flag));
+}
+
+/** Blocks recorded so far — the D4 tail is admitted only after a second one. */
+function admittedBlockCount(ctx: RuleContext): number {
+  return ctx.compoundSegs.filter((segment) => segment.kind === "view" || segment.kind === "search")
+    .length;
+}
+
+/**
+ * WHY: both inert-tail rules accumulate identically — the tail's own source bytes become a `raw`
+ * segment, which the peel passes through as already-observed output (never a block, anchor, or lease).
+ */
+function pushRawTail(ctx: RuleContext): typeof ADVANCE {
+  const { node } = segmentOf(ctx);
+  ctx.compoundSegs.push({ kind: "raw", command: ctx.command.slice(node.pos, node.end) });
+  return ADVANCE;
 }
 
 function failUndecided(where: string): never {

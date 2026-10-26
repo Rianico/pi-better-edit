@@ -178,6 +178,7 @@ describe("bash conversion rule table (#151)", () => {
       "compound-segment",
       "admit-glue",
       "inert-tail",
+      "inert-count-tail",
       "unsafe",
       "skip-redundant-cd",
       "post-block-cd",
