@@ -3039,7 +3039,7 @@ describe("bash serve attribution guards (#175)", () => {
 
   it("G1 twin: identical stdout rows from two admitted files fail closed, zero leases", async () => {
     await withTempDir("bash-attr-g1-", async (dir) => {
-      // WHY: (ADR-0042 D1 — bash serve admission; pending merge) never content matching, no other-file anchor bleed — file `a`
+      // WHY: (ADR-0048 D1 — bash serve admission) never content matching, no other-file anchor bleed — file `a`
       // WHY: line 1 (`b.txt:3:x`) and file `a:1:b.txt` line 3 (`x`) print the identical row
       // WHY: `a:1:b.txt:3:x`, so either coordinate is a guess. Fail closed, zero leases.
       const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
@@ -3123,8 +3123,8 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("G2: descending and duplicated search rows fail closed, ascending serves", async () => {
-    // WHY: (serve-seam rule, one served row per file line — ADR-0042, bash serve admission,
-    // WHY: pending merge, states the no-bleed invariant, not an ordering clause) the printed
+    // WHY: (serve-seam rule, one served row per file line — ADR-0048, bash serve admission,
+    // WHY: states the no-bleed invariant, not an ordering clause) the printed
     // WHY: number is a label whose ORDER is proven by the stream, not by matching content — a
     // WHY: descending or repeated label owns no disjoint ordered intervals and no lease↔row
     // WHY: bijection, even with byte-equal rows.

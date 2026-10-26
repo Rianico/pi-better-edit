@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Documentation
+
+* **adr:** land the bash serve admission record as ADR-0048 with an explicit accepted/deferred split (D1 accepted and implemented by #175, PR #177; D2 tracked by #176; D3/D4/D5 tracked by #183) together with its corpus analysis, and retarget the #175 serve-seam comments to cite ADR-0048. Comments and docs only; no behavior change. (#178)
+
 ## [2.13.4] - 2026-10-24
 
 ### Bug Fixes
