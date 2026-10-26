@@ -5,7 +5,8 @@ Date: 2026-10-18
 ## Status
 
 partially accepted — four-run corpus analysis (3,582 bash calls) and an independent design review.
-D1 is accepted and implemented by #175 (PR #177); D2–D5 are deferred with their tracking issues;
+D1 is accepted and implemented by #175 (PR #177); D4 is accepted and implemented by #185;
+D2/D3/D5 are deferred with their tracking issues;
 D6 is accepted as standing architecture guidance.
 Extends [ADR-0033](0033-bash-view-interception.md) and [ADR-0039](0039-compound-bash-view-interception.md).
 Narrowly amends ADR-0033 D5 for display-only transforms; extends D9 with a second invariant.
@@ -16,13 +17,18 @@ ADR-0033 D7's multi-file **view** non-goal remains in force (see D5).
 | D1 | two-sided serve invariant: prediction **and** attribution | accepted — implemented by #175 (PR #177) |
 | D2 | display-only tails (`cat -A`, `od -c`, `xxd`, `hexdump -C`) | deferred — #176 |
 | D3 | context searches (`-A`/`-B`/`-C`) | deferred — #183 |
-| D4 | verified compound chains with an inert count tail | deferred — #183 |
+| D4 | verified compound chains with an inert count tail | accepted — implemented by #185 |
 | D5 | multi-file views (defined safe subset only) | deferred — #183 |
 | D6 | extend the rule table; do not build an optimizer | accepted |
 
 Amended 2026-10-23 (Issue #175, PR #177, commit `8b6a0b8`): D1 landed and is enforced — the
 two-sided serve invariant is implemented. D2–D5 are still deferred with the tracking issues
 named above.
+
+Amended 2026-10-26 (Issue #185, commit `8362f2f`): D4 landed — the inert count tail is admitted
+only after the last verified block of a multi-block, statically glued compound; the verified
+blocks keep their banners, anchors and per-block leases, and the tail's already-observed bytes
+ride through raw, unleased and without an anchor or a block of its own. D3/D5 remain deferred.
 
 ## Context
 
@@ -149,8 +155,8 @@ result changes.
 
 - **#175** — D1, two-sided serve invariant: landed and closed (PR #177).
 - **#176** — D2, display-only tails: deferred; this record keeps the safe shape and its guards.
-- **#183** — D3/D4/D5, context searches, verified compound chains, and multi-file views: deferred,
-  tracked in one follow-up.
+- **#183** — D3/D5, context searches and multi-file views: deferred, tracked in one follow-up.
+- **#185** — D4, verified compound chains with an inert count tail: landed.
 
 ## Links
 
