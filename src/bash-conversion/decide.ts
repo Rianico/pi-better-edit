@@ -31,6 +31,7 @@ import {
 } from "../bash-classifier.js";
 import type {
   BashClass,
+  BashMultiView,
   CompoundSegment,
   SearchFamily,
   SearchSeg,
@@ -68,6 +69,7 @@ export type DeclineReason =
 export type Decision =
   | { kind: "passThrough"; reason: DeclineReason }
   | Extract<BashClass, { kind: "pureView" }>
+  | Extract<BashClass, { kind: "pureMultiView" }>
   | Extract<BashClass, { kind: "pureSearch" }>
   | Extract<BashClass, { kind: "pureMultiSearch" }>
   | Extract<BashClass, { kind: "pureRecursiveSearch" }>
@@ -108,6 +110,8 @@ interface RuleContext {
   /** The current segment's classification, computed once per walk step (source: one call). */
   current: Segment | undefined;
   view: ViewSeg | undefined;
+  /** ADR-0049 M1: the standalone multi-file view, recorded only when the chain carries nothing else. */
+  multiView: BashMultiView | undefined;
   searchSeg: SearchFamily | undefined;
   baseDir: string | undefined;
   effCwd: string | undefined;
@@ -157,6 +161,14 @@ function applyBaseDir(family: SearchFamily, baseDir: string | undefined): Decisi
     case "pureFilesList":
       return { kind: "pureFilesList", search: { ...family.search, baseDir } };
   }
+}
+
+/**
+ * WHY: (ADR-0049 M1) a multi-file view keeps the chain's single pre-view `cd` for the same reason a
+ * single-file view does — bash resolved the operands under it — so the base rides the same field.
+ */
+function applyMultiViewBaseDir(view: BashMultiView, baseDir: string | undefined): Decision {
+  return { kind: "pureMultiView", view: baseDir === undefined ? view : { ...view, baseDir } };
 }
 
 export const RULES: readonly ConversionRule[] = [
@@ -358,7 +370,13 @@ export const RULES: readonly ConversionRule[] = [
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
-      return current.kind === "silent" && current.cdDir !== undefined && ctx.view !== undefined;
+      // WHY: (ADR-0049 M1) a multi-file view is a view for this rule too: a `cd` after it ran is just
+      // WHY: as late, so the base would misresolve every operand.
+      return (
+        current.kind === "silent" &&
+        current.cdDir !== undefined &&
+        (ctx.view !== undefined || ctx.multiView !== undefined)
+      );
     },
     run: () => ({ kind: "passThrough", reason: "post-view-cd" }),
   },
@@ -412,6 +430,9 @@ export const RULES: readonly ConversionRule[] = [
       if (ctx.segIndex !== 0 || ctx.hasGlue) return false;
       if (ctx.view !== undefined || ctx.searchSeg !== undefined) return false;
       const current = currentOf(ctx);
+      // WHY: (ADR-0049 M1) a multi-file view is standalone: it takes no inert tail, because the
+      // WHY: tail's `raw` segment would be a second block whose attribution this shape never proves.
+      if (current.kind === "multiView") return false;
       if (current.kind !== "search" && !isViewTerminal(current)) return false;
       const tail = ctx.segments.slice(1);
       return tail.length > 0 && tail.every((segment) => isInertTailNode(segment.node));
@@ -491,6 +512,13 @@ export const RULES: readonly ConversionRule[] = [
     when: () => true,
     run: (ctx) => {
       const current = currentOf(ctx);
+      // WHY: (ADR-0049 M1) the multi-file view is the one non-`view` block the trailing else
+      // WHY: records — into its own slot only. It is deliberately NOT pushed into `compoundSegs`, which
+      // WHY: is the compound envelope's segment list: a multi-file view never rides in one.
+      if (current.kind === "multiView") {
+        ctx.multiView = current.view;
+        return ADVANCE;
+      }
       if (!isViewTerminal(current) || current.kind !== "view") {
         throw new Error("[151] unreachable: non-view reached the view arm");
       }
@@ -498,6 +526,28 @@ export const RULES: readonly ConversionRule[] = [
       return ADVANCE;
     },
   },
+  {
+    id: "multi-view-chain",
+    // WHY: (ADR-0049 M1) the multi-file shape is a STANDALONE view: this ADR does not compose it as a
+    // WHY: block inside a chain. Any glue, second block or inert tail means the observed stream carries
+    // WHY: more than the N pages this seam proves, so the whole command passes through with the existing
+    // WHY: `multi-view` reason (ADR-0049 adds no reason to the closed vocabulary).
+    why: "ADR-0049 M1 (standalone only; a chained multi-file view has no admitted envelope)",
+    phase: "post",
+    when: (ctx) => ctx.multiView !== undefined && (ctx.sawGlue || ctx.compoundSegs.length > 0),
+    run: () => ({ kind: "passThrough", reason: "multi-view" }),
+  },
+  {
+    id: "multi-view",
+    why: "ADR-0049 M1/M2 (single-base application for the standalone multi-file view)",
+    phase: "post",
+    when: (ctx) => ctx.multiView !== undefined,
+    run: (ctx) => {
+      if (ctx.multiView === undefined) throw new Error("[151] unreachable: multi view vanished");
+      return applyMultiViewBaseDir(ctx.multiView, ctx.baseDir);
+    },
+  },
+
   {
     id: "compound",
     // WHY: F2-as-restated (ADR-0039): glue alone admits nothing — zero admitted BLOCKS means the
@@ -670,6 +720,7 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
     segIndex: -1,
     current: undefined,
     view: undefined,
+    multiView: undefined,
     searchSeg: undefined,
     baseDir: undefined,
     effCwd: undefined,

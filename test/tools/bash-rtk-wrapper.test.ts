@@ -57,6 +57,10 @@ describe("rtk transparent wrapper (ADR-0033 D8)", () => {
     expect(reasonOf("rtk rtk cat f")).toBe("unsupported-command:rtk");
     expect(reasonOf("rtk ls | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | rtk")).toBe("unsupported-pipeline");
-    expect(reasonOf("rtk cat a b")).toBe("unsupported-command:rtk");
+    // WHY: (ADR-0049 M1) the wrapper stays transparent for the multi-file view too: `rtk cat a b`
+    // WHY: unwraps to the same N-page shape, and the D9 stdout gate verifies it per call. The
+    // WHY: still-refused wrapper shapes are the ones whose inner command is not an admitted view.
+    expect(classifyBashCommand("rtk cat a b").kind).toBe("pureMultiView");
+    expect(reasonOf("rtk cat a b -A")).toBe("unsupported-command:rtk");
   });
 });

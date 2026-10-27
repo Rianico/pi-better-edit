@@ -16,6 +16,7 @@ import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served
 import { notifyMutatedFile } from "../mutated-files.js";
 import { applySliceOps, isSliceOp } from "../bash-classifier.js";
 import { resolveBashViewMode } from "../bash-view-config.js";
+import { resolveBashMultiFileSettings } from "../bash-multifile-config.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import { stripBOM, toLF } from "../edit-diff.js";
@@ -66,6 +67,7 @@ import {
 import type {
   BashFilesList,
   BashMultiSearch,
+  BashMultiView,
   BashRecursiveSearch,
   BashSearch,
   BashSearchContext,
@@ -266,6 +268,103 @@ function searchRowsWithinBudget(
     }
   }
   return matchLines;
+}
+
+/**
+ * WHY: (ADR-0049 M3) one selected row of the concatenated stream: which page it belongs to, its
+ * file-relative line, its stream line, and the bytes the re-read file holds there.
+ */
+interface MultiViewStreamRow {
+  readonly fileIndex: number;
+  readonly fileLine: number;
+  readonly streamLine: number;
+  readonly text: string;
+}
+
+/**
+ * WHY: (ADR-0049 M3) boundaries are LINE COUNTS. The operands are laid end to end; each file owns
+ * `[start, start + count - 1]` of the stream, and a stream line maps to a file line by subtracting
+ * that start. No byte arithmetic and no content matching is involved, so a `sed` range spanning files
+ * (M5) is just interval intersection. A file with no selected line keeps an empty page (M4).
+ *
+ * `undefined` means the selection is not provable as ONE page per file: a stream line outside every
+ * file, or a DISJOINT selection inside one file (one page header names one contiguous range, M5).
+ */
+function multiViewSelection(
+  lineCounts: readonly number[],
+  intervals: ReadonlyArray<{ lo: number; hi: number }>,
+): number[][] | undefined {
+  const starts: number[] = [];
+  let next = 1;
+  for (const count of lineCounts) {
+    starts.push(next);
+    next += count;
+  }
+  const selected: number[][] = lineCounts.map(() => []);
+  for (const interval of intervals) {
+    for (let streamLine = interval.lo; streamLine <= interval.hi; streamLine++) {
+      const index = starts.findIndex((start, fileIndex) => {
+        const count = lineCounts[fileIndex] ?? 0;
+        return count > 0 && streamLine >= start && streamLine < start + count;
+      });
+      if (index === -1) return undefined;
+      selected[index]!.push(streamLine - starts[index]! + 1);
+    }
+  }
+  // WHY: (M5) one page header names one contiguous range, so a file whose selected lines are not a
+  // WHY: single run has no honest header: pass the whole command through instead of inventing one.
+  for (const lines of selected) {
+    const first = lines[0];
+    const last = lines[lines.length - 1];
+    if (first === undefined || last === undefined) continue;
+    if (last - first + 1 !== lines.length) return undefined;
+  }
+  return selected;
+}
+
+/**
+ * WHY: (ADR-0049 M3) the stream rows in stream order, built from the RE-READ files — the observed
+ * stdout is compared against these bytes, so every served row is byte-identical to its disk slice by
+ * construction. `undefined` when the layout and the bytes disagree (an impossible state, refused).
+ */
+function multiViewStreamRows(
+  files: ReadonlyArray<{ allLines: readonly string[] }>,
+  selected: ReadonlyArray<readonly number[]>,
+): MultiViewStreamRow[] | undefined {
+  const rows: MultiViewStreamRow[] = [];
+  let streamStart = 1;
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    const allLines = files[fileIndex]?.allLines ?? [];
+    for (const fileLine of selected[fileIndex] ?? []) {
+      const text = allLines[fileLine - 1];
+      if (text === undefined) return undefined;
+      rows.push({ fileIndex, fileLine, streamLine: streamStart + fileLine - 1, text });
+    }
+    streamStart += allLines.length;
+  }
+  return rows;
+}
+
+/**
+ * The candidate observed renders of one multi-file view, byte-exact and trailing-newline free.
+ *
+ * WHY two numbering candidates (ADR-0049 M3): the numbering transform is `cat -n` / `nl -ba`, and the
+ * STREAM numbering is continuous while GNU `cat -n`/`nl` implement exactly that — but a per-file
+ * restart is what BSD `cat -n` prints, and `nl` there refuses multiple operands. Both renders are
+ * pure functions of line counts, so admitting either is still a length-derived proof: the observed
+ * bytes choose which convention ran, and a stream that matches neither fails closed.
+ */
+function multiViewExpectedTexts(
+  rows: readonly MultiViewStreamRow[],
+  lineNumbered: boolean,
+): string[] {
+  const plain = rows.map((row) => row.text).join("\n");
+  if (!lineNumbered) return [plain];
+  const numbered = (number: (row: MultiViewStreamRow) => number): string =>
+    rows.map((row) => `${String(number(row)).padStart(6)}\t${row.text}`).join("\n");
+  const continuous = numbered((row) => row.streamLine);
+  const perFile = numbered((row) => row.fileLine);
+  return perFile === continuous ? [continuous] : [continuous, perFile];
 }
 
 /**
@@ -732,6 +831,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         if (decision.kind === "pureFilesList") {
           return await handleBashFilesList(event, ctx, decision.search);
         }
+        // WHY: (ADR-0049 M2) the multi-file view is N pages in one result: its own seam, because the
+        // WHY: proof is per-file line-count boundaries and its leases are per file.
+        if (decision.kind === "pureMultiView") {
+          return await handleBashMultiView(event, ctx, decision.view);
+        }
         if (decision.kind === "pureCompound") {
           return await handleBashCompound(event, ctx, decision);
         }
@@ -870,6 +974,127 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           if (typeof text !== "string") return undefined;
           return text.endsWith("\n") ? text : `${text}\n`;
         }
+        /**
+         * WHY (ADR-0049 M2/M3): a served multi-file view is ONE result with ONE page section per file,
+         * in operand order, under the existing page header grammar — no new root
+         * banner and no second chrome dialect. Every page's rows come from its own re-read file and are
+         * leased under the existing `(session, path, anchor)` identity: no anchor is ever shared between files.
+         *
+         * WHY the whole-command gate (M8): boundaries are line counts, so the observed STREAM must
+         * equal the render built from the re-read files before the first lease — one bad file, page,
+         * transform or cap passes the entire command through raw with zero leases. The zero-row page
+         * (M4) has a zero-length observed interval, which is why it cannot weaken that proof.
+         */
+        async function handleBashMultiView(
+          event: ToolResultEvent,
+          ctx: ToolContext,
+          view: BashMultiView,
+        ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+          const caps = resolveBashMultiFileSettings(ctx.cwd, (reason) =>
+            reportWarning("lifecycle-hooks", reason),
+          );
+          // WHY: (M6) the file cap counts EVERY operand, a zero-row page included; the row cap counts
+          // WHY: served rows only, never page headers. Over either cap the whole command is raw.
+          if (view.filePaths.length < 2 || view.filePaths.length > caps.maxFiles) return undefined;
+          const effCwd = view.baseDir === undefined ? ctx.cwd : deps.toCwd(view.baseDir, ctx.cwd);
+          const files: Array<{
+            display: string;
+            absolutePath: string;
+            normalized: string;
+            allLines: string[];
+            fileHashes: string[];
+          }> = [];
+          for (const display of view.filePaths) {
+            const target = await loadTextTarget(display, effCwd);
+            if (target === undefined) return undefined;
+            // WHY: (M1) a page boundary is proved from line counts, so an unterminated final line has
+            // WHY: no provable boundary; a 0-byte file is the zero-line case, not an unterminated one.
+            if (target.normalized !== "" && !target.normalized.endsWith("\n")) return undefined;
+            files.push({ display, ...target });
+          }
+          const lineCounts = files.map((file) => file.allLines.length);
+          const totalLines = lineCounts.reduce((sum, count) => sum + count, 0);
+          const selected = multiViewSelection(lineCounts, applySliceOps(view.ops, totalLines));
+          if (selected === undefined) return undefined;
+          const rows = multiViewStreamRows(files, selected);
+          if (rows === undefined) return undefined;
+          // WHY: (M4) an all-empty command stays raw: serving only synthetic headers would show the
+          // WHY: model no observed byte at all, and every page would lease nothing.
+          if (rows.length === 0) return undefined;
+          if (rows.length > caps.maxRows) return undefined;
+          const stdoutText = singleTextBlock(event);
+          if (stdoutText === undefined) return undefined;
+          const observed = toLF(stripBOM(stdoutText).text);
+          // WHY: (M3 + ADR-0033 D9 + ADR-0048 D1) the stream the shell printed must equal the render
+          // WHY: built from the re-read files, with the same lone-trailing-newline leniency every other
+          // WHY: view seam applies. A missing newline, a numbering mismatch, TOCTOU drift or a reordered
+          // WHY: row fails closed here, before any lease exists.
+          const expected = multiViewExpectedTexts(rows, view.lineNumbered === true);
+          if (!expected.some((text) => observed === text || observed === `${text}\n`)) {
+            return undefined;
+          }
+
+          // WHY: (M8) build every page's rows FIRST — after this loop there is no failure path, so a
+          // WHY: refusal can never leave a partial grant behind.
+          const pages: Array<{
+            header: string;
+            servedRows: ServedRow[];
+            file: (typeof files)[number];
+          }> = [];
+          for (let index = 0; index < files.length; index++) {
+            const file = files[index]!;
+            const lines = selected[index] ?? [];
+            const servedRows: ServedRow[] = [];
+            for (const line of lines) {
+              const hash = file.fileHashes[line - 1];
+              if (hash === undefined) return undefined;
+              servedRows.push({ position: line - 1, hash });
+            }
+            const first = lines[0];
+            const last = lines[lines.length - 1];
+            const wholeFile =
+              first === 1 && last === file.allLines.length && lines.length === file.allLines.length;
+            pages.push({
+              file,
+              servedRows,
+              header: formatPageHeader({
+                label: BASH_VIEW_LABEL,
+                file: file.display,
+                // WHY: (M4) a page that serves nothing reports `0 lines total`, so it claims nothing
+                // WHY: about the file's length — an empty FILE and a file with no selected row are the
+                // WHY: same page, exactly as M4/M5 prescribe.
+                totalLines: servedRows.length === 0 ? 0 : file.allLines.length,
+                ...(wholeFile || first === undefined || last === undefined
+                  ? {}
+                  : { shownRange: { startLine: first, endLine: last } }),
+              }),
+            });
+          }
+
+          const sessionKey = deps.sessionKeyFor(ctx);
+          const sections: string[] = [];
+          for (const page of pages) {
+            if (page.servedRows.length > 0) {
+              await recordServesBestEffort({
+                sessionKey,
+                path: page.file.absolutePath,
+                servedRows: page.servedRows,
+                contentHash: snapshotHashFor(page.file.normalized),
+              });
+              notifyServedSpans({
+                filePath: page.file.absolutePath,
+                spans: servedRowsToSpans(page.servedRows),
+                source: "auto-read",
+                content: page.file.normalized,
+              });
+            }
+            const rowsText = fmtServedRows(page.servedRows, page.file.allLines);
+            sections.push(rowsText === "" ? page.header : `${page.header}\n${rowsText}`);
+          }
+          notifyBashViewOnce(ctx, sessionKey);
+          return { content: [{ type: "text", text: sections.join("\n") }] };
+        }
+
         async function servePureViewBlock(
           view: { filePath: string; baseDir?: string; ops: ViewOp[]; lineNumbered?: boolean },
           rawText: string | undefined,

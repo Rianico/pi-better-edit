@@ -189,6 +189,32 @@ export interface BashFilesList {
 }
 
 /**
+ * WHY: (ADR-0049 M1) a standalone multi-file view: `cat FILE...`, `cat -n FILE...`,
+ * `nl -ba FILE...`, or `sed -n RANGE FILE...` over two or more newline-terminated text files.
+ * The operands stay exactly as written (one page each, in operand order) so the lifecycle layer
+ * resolves the same paths bash opened; `lineNumbered` names the display transform the observed
+ * stdout must reproduce, and `ops` is the numeric print selection folded over the STREAM (files laid
+ * end to end), which is how a `sed -n` range spanning files is expressed without a byte path.
+ *
+ * WHY this is its own tag rather than a widened `BashView`: one `filePath` cannot describe N pages,
+ * and the serve seam that proves line-count boundaries is a different seam from the single-file one.
+ * The single-file shape keeps its exact `toEqual` contract.
+ */
+export interface BashMultiView {
+  /** The program exactly as written (`cat`, `nl`, or `sed`). */
+  program: "cat" | "nl" | "sed";
+  /** Every file operand in operand order, exactly as written; 2 or more.
+   * The file COUNT cap is a configured policy (ADR-0049 M6), enforced at the serve seam. */
+  filePaths: string[];
+  /** Numeric print selection, folded over the concatenated stream; empty means every line. */
+  ops: SliceOp[];
+  /** `cat -n` / `nl -ba`: the stdout is the continuous numbering transform (ADR-0049 M3). */
+  lineNumbered?: boolean;
+  /** Resolution base for a single pre-view literal `cd` — the view rule verbatim (ADR-0033 D1). */
+  baseDir?: string;
+}
+
+/**
  * WHY: (item 10) the admitted search family, tagged by stdout geometry so each shape gets its
  * WHY: own serve seam. `pureSearch` is the Tier-1/2 single-file shape and keeps its exact
  * WHY: `toEqual` contract; the three new tags never reshape it.
@@ -216,6 +242,7 @@ export type CompoundSegment =
   | { kind: "raw"; command: string };
 export type BashClass =
   | { kind: "pureView"; view: BashView }
+  | { kind: "pureMultiView"; view: BashMultiView }
   | { kind: "pureSearch"; search: BashSearch }
   | { kind: "pureMultiSearch"; search: BashMultiSearch }
   | { kind: "pureRecursiveSearch"; search: BashRecursiveSearch }
@@ -850,23 +877,23 @@ function mergeRangeOps(ranges: ReadonlyArray<{ from: number; to: number }>): Sli
   return ops;
 }
 
-/** `-n PROG [FILE]` or `-n -e PROG [-e PROG …] [FILE]`; every PROG numeric print (R4 strict regex, reused). */
-function parseSedArgs(args: string[]): { ops: SliceOp[]; file?: string } | undefined {
+/**
+ * The numeric-print spec of a `sed` stage, with EVERY trailing file operand (ADR-0049 M1/M5).
+ *
+ * WHY one grammar for both shapes: a multi-file `sed -n '2,4p' a b` and the settled single-file
+ * `sed -n '2,4p' a` must admit the same program text or the two would drift — so the range grammar
+ * lives here once and the single-file arity rule stays in `parseSedArgs` (its exact contract).
+ */
+function parseSedPrintSpec(args: string[]): { ops: SliceOp[]; files: string[] } | undefined {
   if (args.length < 2 || args[0] !== "-n") return undefined;
   if (args[1] !== "-e") {
-    // WHY: legacy spelling keeps working byte-identically — contract.
-    if (args.length !== 2 && args.length !== 3) return undefined;
     const printed = SED_NUMERIC_PRINT.exec(args[1]);
     if (!printed) return undefined;
     const from = Number(printed[1]);
     const to = printed[3] === undefined ? from : Number(printed[3]);
     if (to < from) return undefined; // WHY: reversed `10,1p` fails closed (strict-print spirit)
-    const ops: SliceOp[] = [{ kind: "range", from, to }];
-    return args.length === 3 ? { ops, file: args[2] } : { ops };
+    return { ops: [{ kind: "range", from, to }], files: args.slice(2) };
   }
-  // WHY: multi-range shape `-n (-e PROG)+ [FILE]` — the loop consumes `-e PROG`
-  // WHY: pairs; the first non-`-e` token (if any) is the optional trailing FILE,
-  // WHY: which must also be the LAST token.
   const ranges: Array<{ from: number; to: number }> = [];
   let index = 1;
   while (index < args.length) {
@@ -874,18 +901,71 @@ function parseSedArgs(args: string[]): { ops: SliceOp[]; file?: string } | undef
     const prog = args[index + 1];
     if (prog === undefined) return undefined; // WHY: dangling `-e`
     const printed = SED_NUMERIC_PRINT.exec(prog);
-    if (!printed) return undefined; // WHY: ANY unparseable spec fails the WHOLE stage — never partial
+    if (!printed) return undefined; // WHY: ANY unparseable spec fails the WHOLE stage
     const from = Number(printed[1]);
     const to = printed[3] === undefined ? from : Number(printed[3]);
-    if (to < from) return undefined; // WHY: reversed `10,1p` fails closed (strict-print spirit)
+    if (to < from) return undefined;
     ranges.push({ from, to });
     index += 2;
   }
   if (ranges.length === 0) return undefined;
-  const rest = args.length - index;
-  if (rest !== 0 && rest !== 1) return undefined; // WHY: zero or one trailing token: the optional FILE
-  const ops = mergeRangeOps(ranges);
-  return rest === 1 ? { ops, file: args[index] } : { ops };
+  return { ops: mergeRangeOps(ranges), files: args.slice(index) };
+}
+
+/**
+ * WHY: (ADR-0049 M1) the admitted multi-file view shapes, and nothing else. `head`/`tail` are
+ * excluded because their `==> FILE <==` headers are not file bytes; stdin (`-`), redirects,
+ * prefixes, display transforms and pipelines never reach here (`stageShape`/`classifySegment`
+ * already refuse them), and a `-`-leading operand fails closed because option parsing is over.
+ *
+ * WHY the operand count is NOT capped here: the classifier is pure and zero-fs, so the file cap is
+ * operator policy resolved at the serve seam (ADR-0049 M6); this gate only requires the shape.
+ * WHY the `rtk` unwrap applies: ADR-0033 D8 already treats it as a transparent view wrapper and the
+ * D9 stdout gate verifies the claim per call, so `rtk cat a b` is the same view as `cat a b`.
+ */
+function parseMultiViewStage(shape: StageShape): BashMultiView | undefined {
+  const stage = unwrapViewWrapper(shape);
+  if (!stage) return undefined;
+  const files = (args: readonly string[]): string[] | undefined => {
+    if (args.length < 2) return undefined;
+    if (args.some((arg) => arg.startsWith("-") || arg === "")) return undefined;
+    return [...args];
+  };
+  if (stage.name === "cat") {
+    if (stage.args[0] === "-n") {
+      const filePaths = files(stage.args.slice(1));
+      if (filePaths === undefined) return undefined;
+      return { program: "cat", filePaths, ops: [], lineNumbered: true };
+    }
+    const filePaths = files(stage.args);
+    return filePaths === undefined ? undefined : { program: "cat", filePaths, ops: [] };
+  }
+  if (stage.name === "nl") {
+    // WHY: (item 8) the only admitted `nl` spelling stays exactly `nl -ba FILE...`.
+    if (stage.args[0] !== "-ba") return undefined;
+    const filePaths = files(stage.args.slice(1));
+    if (filePaths === undefined) return undefined;
+    return { program: "nl", filePaths, ops: [], lineNumbered: true };
+  }
+  if (stage.name === "sed") {
+    const spec = parseSedPrintSpec(stage.args);
+    if (spec === undefined) return undefined;
+    const filePaths = files(spec.files);
+    return filePaths === undefined ? undefined : { program: "sed", filePaths, ops: spec.ops };
+  }
+  return undefined;
+}
+
+/** `-n PROG [FILE]` or `-n -e PROG [-e PROG …] [FILE]`; every PROG numeric print (R4 strict regex, reused). */
+function parseSedArgs(args: string[]): { ops: SliceOp[]; file?: string } | undefined {
+  const spec = parseSedPrintSpec(args);
+  if (spec === undefined) return undefined;
+  // WHY: (ADR-0049 M1) the settled single-file arity contract, unchanged: the legacy spelling takes
+  // WHY: exactly `-n PROG [FILE]`, so a SECOND operand belongs to the multi-file shape instead.
+  if (args[1] !== "-e" && args.length !== 2 && args.length !== 3) return undefined;
+  const [file] = spec.files;
+  if (file === undefined) return spec.files.length === 0 ? { ops: spec.ops } : undefined;
+  return spec.files.length === 1 ? { ops: spec.ops, file } : undefined;
 }
 
 interface SilentSeg {
@@ -900,12 +980,24 @@ export interface ViewSeg {
   lineNumbered?: boolean;
 }
 
+/** WHY: (ADR-0049 M1) a multi-file view segment. It is deliberately NOT a `ViewSeg`: the compound
+ * chain does not compose multi-file views (M1), and the serve seam proves N pages from line counts. */
+interface MultiViewSeg {
+  kind: "multiView";
+  view: BashMultiView;
+}
+
 export interface SearchSeg {
   kind: "search";
   family: SearchFamily;
 }
 
-export type Segment = SilentSeg | ViewSeg | SearchSeg | { kind: "unsafe"; reason: string };
+export type Segment =
+  | SilentSeg
+  | ViewSeg
+  | MultiViewSeg
+  | SearchSeg
+  | { kind: "unsafe"; reason: string };
 
 /**
  * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed
@@ -1176,6 +1268,10 @@ export function classifySegment(node: Command | Pipeline, prefixPosition = false
     if (!stage) return { kind: "unsafe", reason: "non-literal-command" };
     const silent = parseSilent(stage, prefixPosition);
     if (silent) return silent;
+    // WHY: (ADR-0049 M1) multi-file views are a STANDALONE shape, so they are admitted here —
+    // WHY: the segment dispatch — and never in `parseViewSegment`, which is the pipeline path.
+    const multiView = parseMultiViewStage(stage);
+    if (multiView) return { kind: "multiView", view: multiView };
     const source = parseSourceStage(stage);
     if (source)
       return {

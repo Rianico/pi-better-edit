@@ -193,6 +193,11 @@ describe("bash conversion rule table (#151)", () => {
       "view-prefix",
       "view-second",
       "record-view",
+      // WHY: (ADR-0049 M1) the multi-file guard sits ABOVE the `compound` envelope so a chained
+      // WHY: multi-file view declines before anything could envelope it; its result rule sits above
+      // WHY: `no-view`, which would otherwise fire for every multi-file view.
+      "multi-view-chain",
+      "multi-view",
       "compound",
       "inert-compound",
       "search",

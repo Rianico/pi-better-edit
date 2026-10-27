@@ -373,7 +373,9 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf("cat f | head -5 | cat")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f |& head")).toBe("unsupported-pipeline");
     expect(reasonOf("cat a b | head")).toBe("unsupported-pipeline");
-    expect(reasonOf("cat a b")).toBe("unsupported-command:cat");
+    // WHY: (ADR-0049 M1) `cat a b` is an admitted MULTI-file view now, so the still-refused two-operand
+    // WHY: shapes are the ones carrying an option or a `--` among the operands.
+    expect(reasonOf("cat a b -A")).toBe("unsupported-command:cat");
     expect(reasonOf("paste a b")).toBe("unsupported-command:paste");
   });
 
@@ -987,7 +989,10 @@ describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
     expect(reasonOf("sed -n -e")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n '5p' -e '6p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' f -e '2p'")).toBe("unsupported-command:sed");
-    expect(reasonOf("sed -n -e '1p' -e '2p' f g")).toBe("unsupported-command:sed");
+    // WHY: (ADR-0049 M1) two files are a multi-file view now, so an unparseable spec is what closes the
+    // WHY: whole stage — never a partial range set.
+    expect(reasonOf("sed -n -e '1p' -e 'oops' f g")).toBe("unsupported-command:sed");
+    expect(reasonOf("sed -n -e '1p' -e '2p' f g -e '3p'")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -e '1p' -e '2p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -- f")).toBe("unsupported-command:sed");
     // WHY: pipeline position denies with the pipeline reason, not the command one.
@@ -1045,7 +1050,8 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
     expect(reasonOf("cat -n -n f")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -n")).toBe("unsupported-command:cat");
     expect(reasonOf("cat --number f")).toBe("unsupported-command:cat");
-    expect(reasonOf("cat -n f g")).toBe("unsupported-command:cat");
+    // WHY: (ADR-0049 M1) `cat -n f g` is an admitted multi-file view; a `--` among the operands is not.
+    expect(reasonOf("cat -n -- f g")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -n -f")).toBe("unsupported-command:cat");
     // nl: every other style, split/shuffled flags, longs, counts, extra operands.
     expect(reasonOf("nl f")).toBe("unsupported-command:nl");
@@ -1056,7 +1062,8 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
     expect(reasonOf("nl -b a f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -ba -ba f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl --body-numbering=a f")).toBe("unsupported-command:nl");
-    expect(reasonOf("nl -ba f g")).toBe("unsupported-command:nl");
+    // WHY: (ADR-0049 M1) `nl -ba f g` is an admitted multi-file view; a `--` among the operands is not.
+    expect(reasonOf("nl -ba -- f g")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -ba -f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -v 2 -ba f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -i 2 -ba f")).toBe("unsupported-command:nl");
@@ -1828,5 +1835,101 @@ describe("bash-classifier context search admission (#183)", () => {
         },
       ],
     });
+  });
+});
+
+// WHY multi-file view admission pins (#183, ADR-0049 M1): the admitted surface is exactly `cat FILE…`,
+// `cat -n FILE…`, `nl -ba FILE…` and numeric `sed -n` ranges over TWO OR MORE operands, as a
+// STANDALONE view (no compound envelope, no pipeline). The classifier stays pure and zero-fs, so the
+// operand COUNT is not capped here — the configured file/row caps decide at the serve seam (M6).
+function multiViewOf(command: string) {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureMultiView");
+  if (result.kind !== "pureMultiView") throw new Error(`not a multi view: ${command}`);
+  return result.view;
+}
+
+describe("bash-classifier multi-file view admission (#183)", () => {
+  it("admits the four shapes and keeps operand order", () => {
+    expect(multiViewOf("cat a b")).toEqual({ program: "cat", filePaths: ["a", "b"], ops: [] });
+    expect(multiViewOf("cat a b c").filePaths).toEqual(["a", "b", "c"]);
+    expect(multiViewOf("cat -n a b")).toEqual({
+      program: "cat",
+      filePaths: ["a", "b"],
+      ops: [],
+      lineNumbered: true,
+    });
+    expect(multiViewOf("nl -ba a b")).toEqual({
+      program: "nl",
+      filePaths: ["a", "b"],
+      ops: [],
+      lineNumbered: true,
+    });
+    // WHY the range is folded over the STREAM (M5): a `sed` range may span the operand boundary.
+    expect(multiViewOf("sed -n '2,4p' a b")).toEqual({
+      program: "sed",
+      filePaths: ["a", "b"],
+      ops: [{ kind: "range", from: 2, to: 4 }],
+    });
+    expect(multiViewOf("sed -n -e '1p' -e '5,6p' a b").ops).toEqual([
+      { kind: "range", from: 1, to: 1 },
+      { kind: "range", from: 5, to: 6 },
+    ]);
+  });
+
+  it("keeps the single-operand shapes exactly as they were", () => {
+    // WHY: one operand is still the settled single-file view (and `sed` keeps its arity contract).
+    expect(classifyBashCommand("cat a").kind).toBe("pureView");
+    expect(classifyBashCommand("cat -n a").kind).toBe("pureView");
+    expect(classifyBashCommand("nl -ba a").kind).toBe("pureView");
+    expect(classifyBashCommand("sed -n '2,4p' a").kind).toBe("pureView");
+  });
+
+  it("carries the single pre-view cd and leaves the line-number splice alone", () => {
+    expect(multiViewOf("cd sub && cat a b").baseDir).toBe("sub");
+    // WHY no splice: a view is never rewritten — the model's command runs byte-identically.
+    expect(withSearchLineNumbers("cat a b")).toBe("cat a b");
+    expect(withSearchLineNumbers("sed -n '1,2p' a b")).toBe("sed -n '1,2p' a b");
+  });
+
+  it("admits the rtk-wrapped shape, which D8 already treats as a transparent view wrapper", () => {
+    expect(multiViewOf("rtk cat a b").filePaths).toEqual(["a", "b"]);
+  });
+
+  it("refuses every near-miss shape with the settled reasons", () => {
+    for (const command of [
+      // WHY: excluded programs and shapes (M1) — head/tail headers are not file bytes, stdin has no
+      // WHY: operand, and an option among the operands is past option parsing.
+      "head a b",
+      "tail -n 2 a b",
+      "cat a -",
+      "cat a b -n",
+      "cat -- a b",
+      "cat -n -- a b",
+      "nl -ba -- a b",
+      "cat -b a b",
+      "sed '2,4p' a b",
+      "sed -n '2,4p' a b -e '5p'",
+      "sed -n -e '1p' -e 'oops' a b",
+    ]) {
+      expect(reasonOf(command)).toMatch(/^(unsupported-command|non-literal-command):?/);
+    }
+    // WHY pipelines are refused at the pipeline rule, not the command rule.
+    expect(reasonOf("cat a b | head")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat a b > out.txt")).toBe("non-literal-command");
+    expect(reasonOf("cat *.txt b.txt")).toBe("non-literal-command");
+  });
+
+  it("refuses every compound envelope around a multi-file view", () => {
+    // WHY: (M1) standalone only — any second block, glue or inert tail has no admitted envelope, and
+    // WHY: the reason vocabulary stays closed: the existing `multi-view` covers it.
+    expect(reasonOf("cat a b && cat c")).toBe("multi-view");
+    expect(reasonOf("cat a b; echo hi")).toBe("multi-view");
+    expect(reasonOf("echo hi && cat a b")).toBe("multi-view");
+    expect(reasonOf("cat a b && grep x f")).toBe("multi-view");
+    // WHY `post-view-cd`: a `cd` after the view ran is too late to resolve its operands.
+    expect(reasonOf("cat a b && cd sub")).toBe("post-view-cd");
+    // WHY a silent prefix stays inert, exactly as for a single-file view.
+    expect(multiViewOf("true && cat a b").filePaths).toEqual(["a", "b"]);
   });
 });
