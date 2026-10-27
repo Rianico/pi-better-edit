@@ -60,6 +60,7 @@ import {
   BASH_SEARCH_WALK_MAX_FILES,
   MAX_READ_WINDOWS,
   SEARCH_MAX_MATCHES,
+  SEARCH_MAX_TOTAL_ROWS,
   SERVED_MAX_LINES,
 } from "../constants.js";
 import type {
@@ -67,6 +68,7 @@ import type {
   BashMultiSearch,
   BashRecursiveSearch,
   BashSearch,
+  BashSearchContext,
   CompoundSegment,
   ContentLine,
   SliceOp,
@@ -160,6 +162,16 @@ function isWalkableDirName(name: string): boolean {
 
 /** `grep -n`/`rg --line-number` stdout row: a 1-indexed line number, a colon, the matched text. */
 const SEARCH_STDOUT_LINE = /^(\d+):([\s\S]*)$/;
+/** WHY: (ADR-0048 D3) one parsed search row and which geometry printed it. */
+interface SearchStdoutRow {
+  line: number;
+  kind: "match" | "context";
+  content: string;
+}
+/** `grep -n -C`/`rg --line-number -C` CONTEXT row: line number, `-`, the line's own bytes. */
+const SEARCH_STDOUT_CONTEXT_LINE = /^(\d+)-([\s\S]*)$/;
+/** The group separator `grep -C`/`rg -C` print between non-contiguous context groups. */
+const SEARCH_STDOUT_GROUP_SEPARATOR = "--";
 /** `cat -n`/`nl -ba` stdout row: blank-padded 1-indexed number, a tab, the line content. */
 const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
 /**
@@ -170,24 +182,90 @@ const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
 const COUNT_STDOUT_LINE = /^\s*(\d+)\s*$/;
 
 /**
- * Parse the `LINE:content` rows of a line-numbered single-file search. Fails closed (`undefined`)
- * unless every row is a match row, so a filename prefix, a context header, a match count or any
- * other `grep`/`rg` shape is never mistaken for the admitted geometry. The only empty line
- * tolerated is the trailing newline every search emits.
+ * Parse the rows of a line-numbered single-file search. Fails closed (`undefined`) unless every row is
+ * the admitted geometry, so a filename prefix, a match count, a heading or any other `grep`/`rg` shape
+ * is never mistaken for it. The only empty line tolerated is the trailing newline every search emits.
+ *
+ * WHY: (ADR-0048 D3 — context searches) a row is a MATCH (`LINE:content`) or — only when the command
+ * asked for a window — one of that match's CONTEXT lines (`LINE-content`), and non-contiguous groups
+ * are separated by a bare `--`. The first field is the maximal leading digit run and the very next byte
+ * decides the kind, so the split is deterministic: unlike `FILE:LINE:content`, whose prefix may itself
+ * contain `:`, there is no second reading to enumerate. Context geometry is admitted ONLY when it was
+ * asked for — a `--` or `LINE-content` row in a plain search's stdout is foreign output, not evidence.
  */
-function parseSearchStdout(observed: string): Array<{ line: number; content: string }> | undefined {
+function parseSearchStdout(
+  observed: string,
+  options?: { context: true },
+): SearchStdoutRow[] | undefined {
+  const context = options?.context === true;
   const lines = observed.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   if (lines.length === 0) return undefined;
-  const matches: Array<{ line: number; content: string }> = [];
+  const rows: SearchStdoutRow[] = [];
   for (const text of lines) {
-    const parsed = SEARCH_STDOUT_LINE.exec(text);
-    if (!parsed) return undefined;
-    const line = Number(parsed[1]);
+    // WHY: a separator carries no file byte — it only marks a gap grep did not merge — so it is
+    // WHY: dropped here and the surviving line numbers keep that gap visible in the render.
+    if (context && text === SEARCH_STDOUT_GROUP_SEPARATOR) continue;
+    const matched = SEARCH_STDOUT_LINE.exec(text);
+    if (matched !== null) {
+      const line = Number(matched[1]);
+      if (!Number.isSafeInteger(line) || line < 1) return undefined;
+      rows.push({ line, kind: "match", content: matched[2] ?? "" });
+      continue;
+    }
+    if (!context) return undefined;
+    const surrounding = SEARCH_STDOUT_CONTEXT_LINE.exec(text);
+    if (surrounding === null) return undefined;
+    const line = Number(surrounding[1]);
     if (!Number.isSafeInteger(line) || line < 1) return undefined;
-    matches.push({ line, content: parsed[2] });
+    rows.push({ line, kind: "context", content: surrounding[2] ?? "" });
   }
-  return matches;
+  return rows.length === 0 ? undefined : rows;
+}
+
+/**
+ * WHY: (ADR-0048 D3 — the search's own prediction half of D1) a CONTEXT row is witnessable only when
+ * some match could have printed it: it must lie inside that match's window, and it must not BE a match
+ * line (grep prints a matched line as a match row, never as context). A match row is witnessed by its
+ * own byte equality, so it needs no window. A row that fails this is not this command's output.
+ */
+function contextRowIsWitnessable(
+  row: SearchStdoutRow,
+  matchLines: ReadonlySet<number>,
+  window: BashSearchContext,
+): boolean {
+  if (row.kind === "match") return true;
+  if (matchLines.has(row.line)) return false;
+  for (const matchLine of matchLines) {
+    if (row.line >= matchLine - window.before && row.line <= matchLine + window.after) return true;
+  }
+  return false;
+}
+
+/**
+ * WHY: (ADR-0048 D3) the row-budget and prediction gates of one search, all BEFORE the first lease.
+ * Two INDEPENDENT caps: `SEARCH_MAX_MATCHES` still bounds the pattern hits — the bytes-cost argument
+ * behind it is about matches — while `SEARCH_MAX_TOTAL_ROWS` bounds match+context rows, which one
+ * `-C N` window inflates far past the match count. Both are all-or-nothing: over either one the whole
+ * command passes through raw, because a truncated window names lines bash never printed. With a window
+ * requested, every context row must also be witnessable (see `contextRowIsWitnessable`).
+ *
+ * Returns the MATCH line set the seam reuses for the header counts, or `undefined` to pass through.
+ */
+function searchRowsWithinBudget(
+  rows: readonly SearchStdoutRow[],
+  window: BashSearchContext | undefined,
+): ReadonlySet<number> | undefined {
+  const matchLines = new Set<number>();
+  for (const row of rows) if (row.kind === "match") matchLines.add(row.line);
+  if (matchLines.size > SEARCH_MAX_MATCHES) return undefined;
+  if (rows.length > SEARCH_MAX_TOTAL_ROWS) return undefined;
+  if (window !== undefined) {
+    for (const row of rows) {
+      if (!contextRowIsWitnessable(row, matchLines, window)) return undefined;
+    }
+  }
+  return matchLines;
 }
 
 /**
@@ -1417,6 +1495,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
     const family = segment.family;
     if (family.kind !== "pureSearch") return undefined;
+    // WHY: (ADR-0048 D3 scope) predicting a context block byte-exactly would mean reproducing grep's
+    // WHY: window-merge and `--` separator rules from disk. That prediction is not part of D3, so a
+    // WHY: context search segment halts the peel here: the rest rides through raw with zero leases for
+    // WHY: it — never a guessed block, and never a regression for the plain search segments beside it.
+    if (family.search.context !== undefined) return undefined;
     const resolved = await resolveSegmentFile(family.search.filePath, effCwd);
     if (resolved === undefined) return undefined;
     const rows: ServedRow[] = [];
@@ -1494,17 +1577,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     // WHY: stdout is split or non-text cannot be proven to be this command's output.
     const stdoutText = observedText ?? singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
-    const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
-    if (matches === undefined || matches.length === 0) return undefined;
-    if (matches.length > SEARCH_MAX_MATCHES) return undefined;
+    const rows = parseSearchStdout(
+      toLF(stripBOM(stdoutText).text),
+      search.context === undefined ? undefined : { context: true },
+    );
+    if (rows === undefined || rows.length === 0) return undefined;
+    const matchLines = searchRowsWithinBudget(rows, search.context);
+    if (matchLines === undefined) return undefined;
     // WHY: (serve-seam policy: one row per file line, rows in stream order — ADR-0048, bash
     // WHY: serve admission, states the no-bleed invariant, not an ordering clause)
     // WHY: the printed number is a label whose ORDER is proven by the stream, not by matching
     // WHY: content. A descending or repeated label breaks stream order, so the WHOLE serve fails
     // WHY: closed with zero leases. Real `grep`/`rg` on one file always print ascending, so
     // WHY: nothing served regresses.
-    for (let i = 1; i < matches.length; i++) {
-      if (matches[i]!.line <= matches[i - 1]!.line) return undefined;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i]!.line <= rows[i - 1]!.line) return undefined;
     }
     const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
       search.filePath,
@@ -1516,7 +1603,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     );
     const diskLines = deps.visLines(normalized);
     const servedRows: ServedRow[] = [];
-    for (const { line, content } of matches) {
+    for (const { line, content } of rows) {
       // WHY: [ADR-0033 D9] byte equality per matched line — the witness that the anchored row is the
       // WHY: line bash printed. A stale/forged/stdout-only line fails closed with no lease.
       if (diskLines[line - 1] !== content) return undefined;
@@ -1529,6 +1616,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     // WHY: declines rather than leasing nothing while claiming success (F4).
     const shownRows = applySliceToServedRows(servedRows, search.sliceOps ?? []);
     if (shownRows.length === 0) return undefined;
+    // WHY: (ADR-0048 D3) the header's count names what the block HOLDS: the pattern hits, with the
+    // WHY: context rows named beside them once a window was served. A plain search has no context row,
+    // WHY: so its frozen `[file (N matches)]` literal is byte-identical to before.
+    const shownMatchRows = shownRows.filter((row) => matchLines.has(row.position + 1)).length;
+    const shownContextRows = shownRows.length - shownMatchRows;
     const sessionKey = deps.sessionKeyFor(ctx);
     await recordServesBestEffort({
       sessionKey,
@@ -1544,8 +1636,12 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     });
     // WHY: the header is frozen (spec §3.4): the same search banner literal from `bashBanner` names
     // WHY: the interception seam, and the bracketed count uses the singular for one match.
-    const count = shownRows.length;
-    const header = `${bashBanner("search")}\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
+    const matchNoun = shownMatchRows === 1 ? "match" : "matches";
+    const contextNoun = shownContextRows === 1 ? "line" : "lines";
+    const matches = `${shownMatchRows} ${matchNoun}`;
+    const count =
+      shownContextRows === 0 ? matches : `${matches}, ${shownContextRows} context ${contextNoun}`;
+    const header = `${bashBanner("search")}\n[${search.filePath} (${count})]`;
     notifyBashViewOnce(ctx, sessionKey);
     return {
       content: [{ type: "text", text: `${header}\n${fmtServedRows(shownRows, diskLines)}` }],

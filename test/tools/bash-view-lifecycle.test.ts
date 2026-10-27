@@ -5,7 +5,7 @@ import { join } from "path";
 import register from "../../index";
 import { lineHashes } from "../../src/hashline/hash-identity.js";
 
-import { SEARCH_MAX_MATCHES } from "../../src/constants";
+import { SEARCH_MAX_MATCHES, SEARCH_MAX_TOTAL_ROWS } from "../../src/constants";
 import { clearDiagnostics, readDiagnostics, useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
@@ -925,9 +925,19 @@ describe("bash search interception (I1a #73)", () => {
         "grep --invert-match pat f.txt",
         "grep -o pat f.txt",
         "grep --only-matching pat f.txt",
-        "grep -A 2 pat f.txt",
-        "grep -B 2 pat f.txt",
-        "grep -C 2 pat f.txt",
+        // WHY: (ADR-0048 D3) context is admitted only in the D3 spellings and only on the single-file
+        // WHY: search shape, so these stay raw byte-identically: the attached short form, a
+        // WHY: context+count combination, the recursive shape, and rg's unnamed `-A`/`-B`/long forms.
+        "grep -A2 pat f.txt",
+        "grep -C1 pat f.txt",
+        "grep -B3 pat f.txt",
+        "grep -c -A 2 pat f.txt",
+        "grep -o -A 2 pat f.txt",
+        "grep -r -C 2 pat .",
+        "grep -C 2 pat f.txt f.txt",
+        "rg -A 2 pat f.txt",
+        "rg -B 2 pat f.txt",
+        "rg --context 2 pat f.txt",
         "grep -l pat f.txt",
         "grep -L pat f.txt",
         // WHY: the bare `--max-count` spelling stays denied — spec §3.2 admits the separate
@@ -3405,6 +3415,273 @@ describe("bash serve attribution guards (#175)", () => {
         "5\tfoo",
         "plain",
       ]);
+    });
+  });
+});
+
+// WHY context-search lifecycle pins (#183, ADR-0048 D3): a context search prints match rows
+// (`LINE:content`) AND the context rows around them (`LINE-content`), in groups separated by `--`.
+// D3 requires every one of those rows to be re-read and byte-compared, and the context rows to be
+// SERVED AND LEASED under the same `(session, path, anchor)` key as a match row. The lease is the
+// claim, so each test witnesses it through the edit tool, never through the block's own text — and the
+// observed stdout always comes from real bash, never a hand-written string. D3 also requires a
+// TOTAL-row cap independent of `SEARCH_MAX_MATCHES` (over-cap → whole-command pass-through, never
+// truncation): 31 matches are under the match cap but over the total cap, which is exactly what the
+// boundary test pins.
+describe("bash context search serving (#183)", () => {
+  const CONTEXT_FILE = "l1\nl2\npat3\nl4\nl5\nl6\npat7\nl8\nl9\nl10\n";
+
+  it("serves and leases every match and context row under the frozen banner", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-serve" } };
+      const command = "grep -n -C 1 pat f.txt";
+      // WHY: real bash, not a hand-written string — the observed rows are the bytes grep printed,
+      // WHY: `--` group separator included, so the fixture cannot drift from the real geometry.
+      const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
+      expect(observed).toBe("2-l2\n3:pat3\n4-l4\n--\n6-l6\n7:pat7\n8-l8\n");
+
+      const result = await bashResult(handlers.get("tool_result")!, command, ctx, observed);
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      // WHY: the banner literal is frozen (#150) and unchanged; the bracket names what the block
+      // WHY: HOLDS — the hits, then the context rows served beside them.
+      expect(text.startsWith("[Bash search (anchors)]")).toBe(true);
+      expect(text).toContain("[f.txt (2 matches, 4 context lines)]");
+      const rows = rowsOf(text);
+      const contents = rows.map((row) => row.split("│").slice(1).join("│"));
+      expect(contents).toEqual(["l2", "pat3", "l4", "l6", "pat7", "l8"]);
+      // WHY: the `--` separator carries no file byte, so it is never rendered as a row.
+      expect(contents).not.toContain("--");
+
+      // WHY: line 5 sits in the gap between the two groups — it was never printed, so its (valid)
+      // WHY: anchor carries no lease even though the block exists.
+      const hashes = await lineHashes(CONTEXT_FILE, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: hashes[4]!, anchor_to: hashes[4]!, text: "L5" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+
+      // WHY: (D3) a CONTEXT row's anchor is a real lease — editing through it succeeds.
+      const leased = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            { anchor_from: anchorFor(rows, "l2"), anchor_to: anchorFor(rows, "l2"), text: "L2" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(leased.isError).toBeFalsy();
+    });
+  });
+
+  it("serves end to end after the tool_call splice numbers the context search", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers, handlersAll } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-e2e" } };
+      const calls = handlersAll.get("tool_call") ?? [];
+      const command = "grep -C 1 pat f.txt";
+      const call = { toolName: "bash", input: { command } };
+      for (const handler of calls) await handler(call, ctx);
+      // WHY: the splice is the hook's only mutation and it keeps the model's window verbatim, so the
+      // WHY: bytes bash prints are the numbered geometry this seam parses.
+      expect(call.input.command).toBe("grep -n -C 1 pat f.txt");
+      const observed = execFileSync("bash", ["-c", call.input.command], {
+        cwd: dir,
+        encoding: "utf-8",
+      });
+      const result = await bashResult(handlers.get("tool_result")!, command, ctx, observed);
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text).toContain("[f.txt (2 matches, 4 context lines)]");
+      expect(rowsOf(text)).toHaveLength(6);
+    });
+  });
+
+  it("fails closed when a context row no longer matches the disk", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-forged" } };
+      const command = "grep -n -C 1 pat f.txt";
+      // WHY: only byte 4 of the CONTEXT row is forged; the geometry is perfect, so a seam that
+      // WHY: verified matches alone would serve it — this is the context-row witness under test.
+      const observed = "2-l2\n3:pat3\n4-L4X\n--\n6-l6\n7:pat7\n8-l8\n";
+      expect(
+        await bashResult(handlers.get("tool_result")!, command, ctx, observed),
+      ).toBeUndefined();
+
+      // WHY: the whole serve failed, so even a MATCH row's anchor is unleased (zero partial grants).
+      const hashes = await lineHashes(CONTEXT_FILE, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: hashes[6]!, anchor_to: hashes[6]!, text: "L7" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("fails closed on rows outside every requested window and on a context row that is a match", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-window" } };
+      const command = "grep -n -C 1 pat f.txt";
+
+      // WHY: line 9 is outside `-C 1` of every match, so this row is not the command's output.
+      expect(
+        await bashResult(
+          handlers.get("tool_result")!,
+          command,
+          ctx,
+          "2-l2\n3:pat3\n4-l4\n--\n6-l6\n7:pat7\n8-l8\n9-l9\n",
+        ),
+      ).toBeUndefined();
+
+      // WHY: a matched line is printed as a MATCH row (`3:`), never as context (`3-`) — grep prints a
+      // WHY: matched line inside another match's window that way, so a context row that IS a match
+      // WHY: line cannot come from this command.
+      expect(
+        await bashResult(
+          handlers.get("tool_result")!,
+          command,
+          ctx,
+          "2-l2\n3:pat3\n3-pat3\n4-l4\n",
+        ),
+      ).toBeUndefined();
+    });
+  });
+
+  it("refuses context geometry when the command never asked for a window", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-plain" } };
+      const command = "grep -n pat f.txt";
+      // WHY: a plain search never prints `--` or a `LINE-content` row, so both are foreign output.
+      for (const observed of ["3:pat3\n--\n7:pat7\n", "2-l2\n3:pat3\n", "3:pat3\n4-l4\n"]) {
+        expect(
+          await bashResult(handlers.get("tool_result")!, command, ctx, observed),
+        ).toBeUndefined();
+      }
+      // WHY: positive control — the same file and session serve the plain geometry, so the refusals
+      // WHY: above discriminate on geometry and not on the file.
+      const control = await bashResult(
+        handlers.get("tool_result")!,
+        command,
+        ctx,
+        "3:pat3\n7:pat7\n",
+      );
+      expect(control).toBeDefined();
+      expect(control!.content[0]!.text).toContain("[f.txt (2 matches)]");
+    });
+  });
+
+  it("serves at the total-row cap and passes the whole command through one row over it", async () => {
+    // WHY: every block is 6 lines with its match on the block's third line, so a `-C 2` window is the
+    // WHY: block's first five lines and the sixth line keeps two windows from merging: rows = 5 × matches.
+    const blocks = (n: number): string =>
+      Array.from(
+        { length: n },
+        (_, i) => `f${i}a\nf${i}b\npat${i}\nf${i}c\nf${i}d\ngap${i}\n`,
+      ).join("");
+    const command = "grep -n -C 2 pat f.txt";
+
+    await withTempDir("bash-context-cap-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), blocks(30), "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-cap-at" } };
+      const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
+      const result = await bashResult(handlers.get("tool_result")!, command, ctx, observed);
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text).toContain(`[f.txt (30 matches, ${SEARCH_MAX_TOTAL_ROWS - 30} context lines)]`);
+      expect(rowsOf(text)).toHaveLength(SEARCH_MAX_TOTAL_ROWS);
+    });
+
+    await withTempDir("bash-context-cap-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), blocks(31), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-cap-over" } };
+      const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
+      // WHY: 31 matches are under `SEARCH_MAX_MATCHES`, while the 155 rows are over
+      // WHY: `SEARCH_MAX_TOTAL_ROWS` — so this refusal is the TOTAL-row cap and nothing else. It is
+      // WHY: all-or-nothing: the whole command passes through raw, never a truncated window.
+      expect(
+        await bashResult(handlers.get("tool_result")!, command, ctx, observed),
+      ).toBeUndefined();
+      const hashes = await lineHashes(blocks(31), join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          { file: "f.txt", edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "P" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("halts a compound at a context search segment instead of guessing its window", async () => {
+    await withTempDir("bash-context-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), CONTEXT_FILE, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-compound" } };
+      const command = "echo hi && grep -n -C 1 pat f.txt";
+      const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
+      // WHY: predicting a context block byte-exactly means reproducing grep's window-merge and `--`
+      // WHY: rules from disk; D3 does not add that prediction, so the documented fail-closed outcome
+      // WHY: is the WHOLE command raw (the glue block alone never renders as a compound).
+      expect(
+        await bashResult(handlers.get("tool_result")!, command, ctx, observed),
+      ).toBeUndefined();
+      const hashes = await lineHashes(CONTEXT_FILE, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "L2" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
     });
   });
 });

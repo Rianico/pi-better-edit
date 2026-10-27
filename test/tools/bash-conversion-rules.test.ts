@@ -299,3 +299,39 @@ describe("bash serve attribution admission (#175)", () => {
     expect(reasonOf("cat f && (cat g)")).toBe("compound-andor-operand");
   });
 });
+
+// WHY (ADR-0048 D3 — context searches): D3 adds no `DeclineReason` — a context spelling it does not
+// admit is just another unlisted flag, so it declines through the existing template family with the
+// program it named. What matters for the table is that admission changed for exactly the D3 spellings
+// while every neighbouring refusal (recursion, multi-file, the row-replacing modifiers) still fires
+// with its own reason, so a later widening cannot borrow the same command.
+describe("bash context search admission reasons (#183)", () => {
+  it("admits the D3 spellings as a single-file search", () => {
+    expect(decide("grep -A 2 pat f").kind).toBe("pureSearch");
+    expect(decide("grep --context=2 pat f").kind).toBe("pureSearch");
+    expect(decide("rg -C 2 pat f").kind).toBe("pureSearch");
+  });
+
+  it("declines context-plus-modifier combinations with the program's own reason", () => {
+    // WHY: `-c`/`-o`/`-l` REPLACE or drop rows, so no context geometry exists to witness — the
+    // WHY: combination stays as refused as it was before D3.
+    for (const command of [
+      "grep -c -A 2 pat f",
+      "grep -o -C 1 pat f",
+      "grep -l -B 2 pat f",
+      "grep --count --context 1 pat f",
+      "grep -A2 pat f",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-command:grep");
+    }
+  });
+
+  it("declines recursive and multi-file context, which D3 does not admit", () => {
+    // WHY: recursive context is excluded by D3 (directory order) and the multi-file row geometry is
+    // WHY: `FILE-LINE-content`, a shape D3 does not specify; rg keeps only the `-C` grant.
+    expect(reasonOf("grep -r -C 2 pat dir")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -C 2 pat a.ts b.ts")).toBe("unsupported-command:grep");
+    expect(reasonOf("rg -A 2 pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --context 2 pat f")).toBe("unsupported-command:rg");
+  });
+});

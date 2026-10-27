@@ -115,6 +115,20 @@ export interface BashView {
 }
 
 /**
+ * WHY: (ADR-0048 D3 — context searches) the window one search asked `grep`/`rg` to print around
+ * every match: `-B`/`--before-context` lines before it, `-A`/`--after-context` lines after it, and
+ * `-C`/`--context` both. The seam carries the window, not just "context was requested", because
+ * every served context row must fall inside SOME match's window — that membership check is the
+ * search's own prediction half (ADR-0048 D1) evaluated against the re-read file.
+ */
+export interface BashSearchContext {
+  /** Context lines printed BEFORE each match (`-B N` / `--before-context`); 0 when unasked. */
+  before: number;
+  /** Context lines printed AFTER each match (`-A N` / `--after-context`); 0 when unasked. */
+  after: number;
+}
+
+/**
  * One admitted single-file search: `grep`/`rg` over an allowlisted flag set (spec §3.2).
  * The pattern and file are the operands exactly as written (unquoted by the parser) so the
  * lifecycle layer resolves the same path bash did, and the `-n` injection is a pure splice.
@@ -131,6 +145,11 @@ export interface BashSearch {
   sliceOps?: SliceOp[];
   /** Resolution base for a single pre-view literal `cd` — the view rule verbatim (ADR-0033 D1). */
   baseDir?: string;
+  /**
+   * WHY: (ADR-0048 D3) present only when the search asked for a context window. Absent keeps every
+   * Tier-1 `toEqual` literal byte-identical and the admitted stdout geometry strictly `LINE:content`.
+   */
+  context?: BashSearchContext;
 }
 
 /** The only two intercepted search programs (spec §3.2). */
@@ -224,7 +243,7 @@ const SEARCH_PROGRAMS: ReadonlySet<string> = new Set(["grep", "rg"]);
 
 /** The flags a search may carry verbatim (spec §3.2). The value-taking match-limit forms
  * (`-m N`, `--max-count=N`) are parsed in `parseSearchStage` instead. Everything else —
- * output-altering (`-c -v -o -A -B -C -l -L -q -s -b -H -h`), rg's display shapes
+ * output-altering (`-c -v -o -l -L -q -s -b -H -h`), rg's display shapes
  * (`--column --heading --json --stats --files -r -0 --vimgrep -N`), and every other short
  * or long form — fails closed to raw bash by absence from this set. */
 const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
@@ -253,6 +272,56 @@ const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
  * (`-ePAT` never reaches the cluster loop: any token starting `-e` is the attached
  * explicit-pattern form and is handled before decomposition.) */
 const SEARCH_SHORT_LETTERS: ReadonlySet<string> = new Set(["n", "i", "F", "E", "w", "x", "m", "e"]);
+
+/** The context options' value kind: `-B` prints before a match, `-A` after it, `-C` both. */
+type SearchContextKind = "before" | "after" | "both";
+
+/** WHY: (ADR-0048 D3) the short context letters and what each selects. They are NOT in
+ * `SEARCH_SHORT_LETTERS`: each takes a value from the NEXT argument, exactly like `m`/`e`, and the
+ * cluster loop special-cases them below. ADR-0048 D3 names `grep -A/-B/-C` and `rg -C` only, so rg's
+ * (equally valid) `-A`/`-B` stay denied as unnamed. */
+const SEARCH_CONTEXT_SHORT_LETTERS: ReadonlyMap<string, SearchContextKind> = new Map([
+  ["A", "after"],
+  ["B", "before"],
+  ["C", "both"],
+]);
+
+/** WHY: (ADR-0048 D3) `--after-context`, `--before-context`, `--context` — the long context spellings,
+ * granted to `grep` alone because D3 states them inside the `grep` clause and grants `rg` only `-C`.
+ * Both value spellings (`--context 3` and `--context=3`) are the same option, so both are admitted. */
+const SEARCH_CONTEXT_LONG_FLAGS: ReadonlyMap<string, SearchContextKind> = new Map([
+  ["--after-context", "after"],
+  ["--before-context", "before"],
+  ["--context", "both"],
+]);
+
+/** The attached long spelling only: `--context=3`. An empty or non-numeric value fails closed. */
+const SEARCH_CONTEXT_LONG_ATTACHED = /^--(after-context|before-context|context)=(.*)$/;
+
+/**
+ * Fold one context option into the window already read, or `undefined` when the option is not
+ * admissible. `-A`/`-B` are the two sides, so they COMPOSE (`-B 2 -A 1` is one window), while `-C`
+ * sets both and therefore never composes: it cannot follow a side option and no side option can
+ * follow it. Repeating a side is refused too. A zero side always means "unasked" here, because the
+ * value itself must be strictly positive.
+ */
+function mergeContext(
+  current: BashSearchContext | undefined,
+  kind: SearchContextKind | undefined,
+  value: string | undefined,
+): BashSearchContext | undefined {
+  if (kind === undefined || !isPositiveCount(value)) return undefined;
+  const n = Number(value);
+  if (current === undefined) {
+    if (kind === "before") return { before: n, after: 0 };
+    if (kind === "after") return { before: 0, after: n };
+    return { before: n, after: n };
+  }
+  if (kind === "both") return undefined;
+  if (kind === "before")
+    return current.before === 0 ? { before: n, after: current.after } : undefined;
+  return current.after === 0 ? { before: current.before, after: n } : undefined;
+}
 
 /** Long grep recursion markers (`-R`'s long form is `--dereference-recursive`). */
 const SEARCH_GREP_RECURSIVE_FLAGS: ReadonlySet<string> = new Set([
@@ -522,6 +591,7 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
   let lineNumbered = false;
   let separatorSeen = false;
   let recursive = false;
+  let context: BashSearchContext | undefined;
   let explicitPattern: string | undefined;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -548,7 +618,32 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
         continue;
       }
       // WHY: every other `--…` token is an unlisted long option (`--json`, `--color=always`).
-      if (arg.startsWith("--")) return undefined;
+      // WHY: (ADR-0048 D3 — context searches) the grep long context spellings, with the value
+      // WHY: attached (`--context=3`) or separate (`--context 3`). D3 states them in the `grep`
+      // WHY: clause, so every other `--…` token — and every `--…` token for rg — stays raw.
+      if (arg.startsWith("--")) {
+        if (!isGrep) return undefined;
+        const attached = SEARCH_CONTEXT_LONG_ATTACHED.exec(arg);
+        if (attached !== null) {
+          const parsed = mergeContext(
+            context,
+            SEARCH_CONTEXT_LONG_FLAGS.get(`--${attached[1] ?? ""}`),
+            attached[2],
+          );
+          if (parsed === undefined) return undefined;
+          context = parsed;
+          continue;
+        }
+        const longKind = SEARCH_CONTEXT_LONG_FLAGS.get(arg);
+        if (longKind !== undefined) {
+          const parsed = mergeContext(context, longKind, args.at(index + 1));
+          if (parsed === undefined) return undefined;
+          context = parsed;
+          index += 1;
+          continue;
+        }
+        return undefined;
+      }
       // WHY: explicit `-e` takes its pattern separately (`-e PAT`): exactly once, must have
       // WHY: a next argument, which becomes THE pattern (so operands must then be `[FILE]`).
       // WHY: a `-`-leading value is admitted here — that is the point of `-e`.
@@ -582,6 +677,23 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
           recursive = true;
           continue;
         }
+        // WHY: (ADR-0048 D3 — context searches) `-A`/`-B`/`-C` consume the NEXT argument, exactly
+        // WHY: like `m`, so each must close the cluster (`-nC 2` is admitted, `-C2` is not: an
+        // WHY: attached value would read digits inside the cluster, and that digit-fails-closed rule
+        // WHY: is what keeps `-n5` out). `-A`/`-B` compose into one window, while `-C` sets both and so
+        // WHY: never composes — mixing it with a side option fails closed rather than guessing which wins.
+        const contextKind = SEARCH_CONTEXT_SHORT_LETTERS.get(letter);
+        if (contextKind !== undefined) {
+          // WHY: (ADR-0048 D3) rg is granted `-C` only, so its `-A`/`-B` stay raw.
+          if (!isGrep && contextKind !== "both") return undefined;
+          if (position !== cluster.length - 1) return undefined;
+          const parsed = mergeContext(context, contextKind, args.at(index + 1));
+          if (parsed === undefined) return undefined;
+          context = parsed;
+          index += 1;
+          continue;
+        }
+
         if (!SEARCH_SHORT_LETTERS.has(letter)) return undefined;
         if (letter === "n") lineNumbered = true;
         if (letter === "m") {
@@ -613,6 +725,9 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
     // WHY: grep's recursion marker takes exactly one operand — the dir (or file) to walk.
     // WHY: Recursion and multi-file never mix (`grep -r pat a b` fails the whole stage closed).
     if (fileOperands.length !== 1) return undefined;
+    // WHY: (ADR-0048 D3) recursive context is EXCLUDED by the decision: directory order is
+    // WHY: implementation-defined, so a window over a walk cannot be predicted from a re-read.
+    if (context !== undefined) return undefined;
     const dirPath = fileOperands[0];
     if (dirPath === undefined) return undefined;
     return { kind: "pureRecursiveSearch", search: { program, pattern, dirPath, lineNumbered } };
@@ -622,8 +737,22 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
   if (fileOperands.length === 1) {
     const filePath = fileOperands[0];
     if (filePath === undefined) return undefined;
-    return { kind: "pureSearch", search: { program, pattern, filePath, lineNumbered } };
+    return {
+      kind: "pureSearch",
+      search: {
+        program,
+        pattern,
+        filePath,
+        lineNumbered,
+        ...(context === undefined ? {} : { context }),
+      },
+    };
   }
+  // WHY: (ADR-0048 D3) multi-file context is NOT admitted: D3's geometry is the single-file row
+  // WHY: (`LINE:content` / `LINE-content`). A multi-file run prints context as `FILE-LINE-content`,
+  // WHY: a shape — and a split-ambiguity surface — the decision does not specify, so it stays raw.
+  if (context !== undefined) return undefined;
+
   return {
     kind: "pureMultiSearch",
     search: { program, pattern, filePaths: [...fileOperands], lineNumbered },

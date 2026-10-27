@@ -81,6 +81,15 @@ export const SERVED_ROWS_CAP = 150;
 // WHY: grant (matching ADR-0033 D3's strictly-slice-accurate-or-pass-through rule).
 export const SEARCH_MAX_MATCHES = 50;
 
+// WHY: (ADR-0048 D3 — context searches) the TOTAL anchored-row budget of ONE search, independent
+// WHY: of `SEARCH_MAX_MATCHES`: a context search prints the matches AND their surrounding lines, so
+// WHY: the match cap no longer bounds what this seam would lease. The budget is the per-call anchored
+// WHY: row budget a dense view serve already spends (`SERVED_ROWS_CAP`), so one tool result keeps one
+// WHY: budget whatever shape it came from. Over-cap passes the whole command through raw — never a
+// WHY: truncated or partially leased window, because a context block cut in half names a window bash
+// WHY: never printed.
+export const SEARCH_MAX_TOTAL_ROWS = 150;
+
 // WHY: (item 10) the multi-file / recursive / `--files` DISTINCT-FILE bound: a search that
 // WHY: names more files than this passes through raw rather than exploding one bash call into
 // WHY: an unbounded anchor budget (mirrors the retired per-call read file cap, so one tool result
