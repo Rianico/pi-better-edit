@@ -5,8 +5,8 @@ Date: 2026-10-18
 ## Status
 
 partially accepted — four-run corpus analysis (3,582 bash calls) and an independent design review.
-D1 is accepted and implemented by #175 (PR #177); D4 is accepted and implemented by #185;
-D2/D3/D5 are deferred with their tracking issues;
+D1 is accepted and implemented by #175 (PR #177); D3 is accepted and implemented by #183; D4 is
+accepted and implemented by #185; D2/D5 are deferred with their tracking issues;
 D6 is accepted as standing architecture guidance.
 Extends [ADR-0033](0033-bash-view-interception.md) and [ADR-0039](0039-compound-bash-view-interception.md).
 Narrowly amends ADR-0033 D5 for display-only transforms; extends D9 with a second invariant.
@@ -16,7 +16,7 @@ ADR-0033 D7's multi-file **view** non-goal remains in force (see D5).
 |---|---|---|
 | D1 | two-sided serve invariant: prediction **and** attribution | accepted — implemented by #175 (PR #177) |
 | D2 | display-only tails (`cat -A`, `od -c`, `xxd`, `hexdump -C`) | deferred — #176 |
-| D3 | context searches (`-A`/`-B`/`-C`) | deferred — #183 |
+| D3 | context searches (`-A`/`-B`/`-C`) | accepted — implemented by #183 |
 | D4 | verified compound chains with an inert count tail | accepted — implemented by #185 |
 | D5 | multi-file views (defined safe subset only) | deferred — #183 |
 | D6 | extend the rule table; do not build an optimizer | accepted |
@@ -29,6 +29,20 @@ Amended 2026-10-26 (Issue #185, commit `8362f2f`): D4 landed — the inert count
 only after the last verified block of a multi-block, statically glued compound; the verified
 blocks keep their banners, anchors and per-block leases, and the tail's already-observed bytes
 ride through raw, unleased and without an anchor or a block of its own. D3/D5 remain deferred.
+
+Amended 2026-10-26 (Issue #183): D3 landed on the single-file search shape. `grep -A/-B/-C` and
+`--after-context/--before-context/--context` (value separate or attached), plus `rg -C`, are admitted
+with a strictly positive window; `-A`/`-B` compose into one window while `-C` sets both and never
+composes. Match rows (`LINE:content`) and context rows (`LINE-content`) are parsed around the `--`
+group separators, every row is re-read and byte-compared, and every row — context included — is served
+and leased under the same `(session, path, anchor)` key. A context row must also lie inside some
+match's window and must not itself be a match line: that membership check is the search's prediction
+half of D1. `SEARCH_MAX_TOTAL_ROWS` (150, the same per-call anchored-row budget as `SERVED_ROWS_CAP`)
+bounds match+context rows independently of `SEARCH_MAX_MATCHES`, and over either cap the whole command
+passes through raw. Recursive and multi-file context stay fail-closed (directory order; the
+`FILE-LINE-content` triple geometry is not specified here), as do `-c`/`-o`/`-l` combinations and
+attached short spellings; a compound whose search segment asks for a window halts its peel and rides
+through raw, because context-block prediction is not part of this decision. D5 remains deferred.
 
 ## Context
 
@@ -80,6 +94,13 @@ existing search shapes. Parse match rows (`LINE:content`) and context rows (`LIN
 under the same `(session, path, anchor)` key. Add a total-row cap independent of
 `SEARCH_MAX_MATCHES`; over-cap → pass-through, never truncation. Recursive context is excluded
 (directory order); `-c`/`-o`/`-l` combinations remain refused.
+
+As implemented (#183): the grant reads as `grep`'s three short flags plus its three long spellings, and
+`rg -C` alone — rg's equally valid `-A`/`-B` and every long form stay raw rather than widening the
+decision — on the single-file shape, which is the geometry this paragraph quotes. The block's bracket
+names the served hits and, beside them, the context rows (`[f.txt (2 matches, 4 context lines)]`); the
+frozen banner literal is unchanged. A `--` separator carries no file byte, so it is never rendered as a
+row and the surviving line numbers keep every gap visible.
 
 ### D4. Verified compound chains (extends ADR-0039 D10)
 
@@ -155,7 +176,7 @@ result changes.
 
 - **#175** — D1, two-sided serve invariant: landed and closed (PR #177).
 - **#176** — D2, display-only tails: deferred; this record keeps the safe shape and its guards.
-- **#183** — D3/D5, context searches and multi-file views: deferred, tracked in one follow-up.
+- **#183** — D3, context searches: landed (see the amendment above); D5, multi-file views: deferred.
 - **#185** — D4, verified compound chains with an inert count tail: landed.
 
 ## Links
