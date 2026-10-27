@@ -549,6 +549,14 @@ export const RULES: readonly ConversionRule[] = [
   },
 
   {
+    id: "display-compound",
+    why: "ADR-0048 D2 (display tails are standalone; a compound envelope has no transform attribution)",
+    phase: "post",
+    when: (ctx) => ctx.view?.display !== undefined && (ctx.sawGlue || ctx.tailMode),
+    run: () => ({ kind: "passThrough", reason: "unsupported-pipeline" }),
+  },
+
+  {
     id: "compound",
     // WHY: F2-as-restated (ADR-0039): glue alone admits nothing — zero admitted BLOCKS means the
     // WHY: compound declines even if glue parsed. With a block, the admitted segments envelope.
@@ -607,12 +615,14 @@ export const RULES: readonly ConversionRule[] = [
                 filePath: view.filePath,
                 ops: view.ops,
                 ...(view.lineNumbered === true ? { lineNumbered: true } : {}),
+                ...(view.display === undefined ? {} : { display: view.display }),
               }
             : {
                 filePath: view.filePath,
                 baseDir: ctx.baseDir,
                 ops: view.ops,
                 ...(view.lineNumbered === true ? { lineNumbered: true } : {}),
+                ...(view.display === undefined ? {} : { display: view.display }),
               },
       } satisfies Extract<BashClass, { kind: "pureView" }>;
     },

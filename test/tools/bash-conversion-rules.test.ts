@@ -198,6 +198,8 @@ describe("bash conversion rule table (#151)", () => {
       // WHY: `no-view`, which would otherwise fire for every multi-file view.
       "multi-view-chain",
       "multi-view",
+      // WHY: (ADR-0048 D2) display tails are standalone; this guard sits above `compound`.
+      "display-compound",
       "compound",
       "inert-compound",
       "search",

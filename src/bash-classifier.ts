@@ -100,6 +100,18 @@ export interface LineInterval {
   hi: number;
 }
 
+/**
+ * WHY: (ADR-0048 D2) the closed display-transform set. The transform is never served: the
+ * lifecycle re-runs it over the re-read raw slice to prove the observed stdout, then serves
+ * the raw rows and leases only those rows. `cat -vet` is the BSD/GNU-portable spelling of
+ * `cat -A`; both are admitted because the oracle compares the actual transform bytes.
+ */
+type DisplayTransformKind = "cat-A" | "cat-vet" | "od-c" | "xxd" | "hexdump-C";
+export interface DisplayTransform {
+  kind: DisplayTransformKind;
+  label: string;
+}
+
 export interface BashView {
   /** File path exactly as written (relative or absolute). */
   filePath: string;
@@ -112,6 +124,8 @@ export interface BashView {
   ops: ViewOp[];
   /** Present-and-true only for `cat -n FILE` / `nl -ba FILE`; absent means unnumbered. Optional so Tier-1 `toEqual` literals keep passing. */
   lineNumbered?: boolean;
+  /** (ADR-0048 D2) terminal display transform over this view; absent for a plain view. */
+  display?: DisplayTransform;
 }
 
 /**
@@ -978,6 +992,7 @@ export interface ViewSeg {
   filePath: string;
   ops: ViewOp[];
   lineNumbered?: boolean;
+  display?: DisplayTransform;
 }
 
 /** WHY: (ADR-0049 M1) a multi-file view segment. It is deliberately NOT a `ViewSeg`: the compound
@@ -1159,6 +1174,34 @@ function makeGlue(
 ): GlueSegment {
   return { program, expectedText, expectedBytes: Buffer.byteLength(expectedText, "utf-8") };
 }
+/**
+ * WHY: (ADR-0048 D2) a terminal display-only stage. The stage has no operand and no redirect
+ * (`stageShape` already rejected those); it is the LAST pipeline stage, so nothing can consume
+ * its transformed bytes. `rtk cat -A` is deliberately not admitted: the wrapper is a different
+ * command, and the bare transform is the only spelling whose bytes this oracle can reproduce.
+ */
+function parseDisplayTransform(stage: StageShape): DisplayTransform | undefined {
+  switch (stage.name) {
+    case "cat":
+      if (stage.args.length !== 1) return undefined;
+      if (stage.args[0] === "-A") return { kind: "cat-A", label: "cat -A" };
+      if (stage.args[0] === "-vet") return { kind: "cat-vet", label: "cat -vet" };
+      return undefined;
+    case "od":
+      return stage.args.length === 1 && stage.args[0] === "-c"
+        ? { kind: "od-c", label: "od -c" }
+        : undefined;
+    case "xxd":
+      return stage.args.length === 0 ? { kind: "xxd", label: "xxd" } : undefined;
+    case "hexdump":
+      return stage.args.length === 1 && stage.args[0] === "-C"
+        ? { kind: "hexdump-C", label: "hexdump -C" }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
 function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undefined {
   if (node.type === "Command") {
     const stage = stageShape(node);
@@ -1183,9 +1226,18 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
   if (node.commands.length < 2 || node.commands.length > BASH_VIEW_MAX_PIPELINE_STAGES) {
     return undefined;
   }
+  const lastIndex = node.commands.length - 1;
+  const last = node.commands[lastIndex];
+  if (last === undefined || last.type !== "Command") return undefined;
+  const lastStage = stageShape(last);
+  if (!lastStage) return undefined;
+  const display = parseDisplayTransform(lastStage);
+  const headEnd = display === undefined ? node.commands.length : lastIndex;
+  if (display !== undefined && headEnd < 1) return undefined;
+
   const ops: ViewOp[] = [];
   let filePath: string | undefined;
-  for (let index = 0; index < node.commands.length; index++) {
+  for (let index = 0; index < headEnd; index++) {
     const child = node.commands[index];
     // WHY: every stage must prove itself — a skipped failure here would serve
     // WHY: leases for lines the model never saw (e.g. a `grep` stage silently
@@ -1222,6 +1274,7 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
         return undefined;
       }
       if (searchSource.search.lineNumbered) {
+        if (display !== undefined) return undefined;
         // WHY: [ADR-0039 D3] collect the trailing head/tail slices; anything else fails closed.
         const sliceOps: SliceOp[] = [];
         for (let s = 1; s < node.commands.length; s++) {
@@ -1258,7 +1311,12 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
   // WHY: the whole pipeline rather than admit a stage order the fold cannot model.
   const countAt = ops.findIndex((op) => op.kind === "count");
   if (countAt !== -1 && countAt !== ops.length - 1) return undefined;
-  if (filePath === undefined || ops.length === 0) return undefined;
+  if (filePath === undefined) return undefined;
+  if (display !== undefined) {
+    if (ops.some(isContentOp)) return undefined;
+    return { kind: "view", filePath, ops, display };
+  }
+  if (ops.length === 0) return undefined;
   return { kind: "view", filePath, ops };
 }
 

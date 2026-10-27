@@ -1933,3 +1933,64 @@ describe("bash-classifier multi-file view admission (#183)", () => {
     expect(multiViewOf("true && cat a b").filePaths).toEqual(["a", "b"]);
   });
 });
+
+describe("bash-classifier display tails (ADR-0048 D2)", () => {
+  it("admits a terminal display stage over a raw-slice view", () => {
+    expect(viewOf("cat f | cat -A")).toEqual({
+      filePath: "f",
+      ops: [],
+      display: { kind: "cat-A", label: "cat -A" },
+    });
+    expect(viewOf("cat f | cat -vet")).toEqual({
+      filePath: "f",
+      ops: [],
+      display: { kind: "cat-vet", label: "cat -vet" },
+    });
+    expect(viewOf("head -5 f | cat -A")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "first", n: 5 }],
+      display: { kind: "cat-A", label: "cat -A" },
+    });
+    expect(viewOf("sed -n '2,4p' f | cat -A")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "range", from: 2, to: 4 }],
+      display: { kind: "cat-A", label: "cat -A" },
+    });
+    expect(viewOf("cat f | od -c")).toEqual({
+      filePath: "f",
+      ops: [],
+      display: { kind: "od-c", label: "od -c" },
+    });
+    expect(viewOf("cat f | xxd")).toEqual({
+      filePath: "f",
+      ops: [],
+      display: { kind: "xxd", label: "xxd" },
+    });
+    expect(viewOf("cat f | hexdump -C")).toEqual({
+      filePath: "f",
+      ops: [],
+      display: { kind: "hexdump-C", label: "hexdump -C" },
+    });
+    expect(viewOf("cd sub && cat f | cat -A")).toEqual({
+      filePath: "f",
+      baseDir: "sub",
+      ops: [],
+      display: { kind: "cat-A", label: "cat -A" },
+    });
+  });
+
+  it("refuses non-terminal, operand, redirect, numbered, search, filter, wrapper and compound shapes", () => {
+    expect(reasonOf("cat f | cat -A | head")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | cat -A > out")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | cat -A other")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | rtk cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | cat -A | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat -n f | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("nl -ba f | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("grep pat f | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | sort -u | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | wc -l | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("echo hi && cat f | cat -A")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | cat -A && echo hi")).toBe("unsupported-pipeline");
+  });
+});

@@ -52,6 +52,7 @@ import { resolveTarget as defaultResolveTarget } from "../fs-write.js";
 import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
+import { runDisplayTransform as defaultRunDisplayTransform } from "../bash-display-transform.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
 import { reportDiagnostic, reportInfo, reportWarning } from "../diagnostics.js";
 import { DomainError } from "../domain-errors.js";
@@ -73,6 +74,7 @@ import type {
   BashSearchContext,
   CompoundSegment,
   ContentLine,
+  DisplayTransform,
   SliceOp,
   ViewOp,
 } from "../bash-classifier.js";
@@ -96,6 +98,7 @@ function defaultDeps(): LifecycleDeps {
     sessionKeyFor: defaultSessionKeyFor,
     finalizeToolResult: defaultFinalizeToolResult,
     visLines: defaultVisLines,
+    runDisplayTransform: defaultRunDisplayTransform,
   };
 }
 
@@ -1096,11 +1099,17 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         }
 
         async function servePureViewBlock(
-          view: { filePath: string; baseDir?: string; ops: ViewOp[]; lineNumbered?: boolean },
+          view: {
+            filePath: string;
+            baseDir?: string;
+            ops: ViewOp[];
+            lineNumbered?: boolean;
+            display?: DisplayTransform;
+          },
           rawText: string | undefined,
           ctx: ToolContext,
         ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
-          const { filePath, baseDir, ops, lineNumbered } = view;
+          const { filePath, baseDir, ops, lineNumbered, display } = view;
           // WHY: (item 8) numbered and unnumbered are the same view — full-file, leased.
           // WHY: `lineNumbered` only selects the stdout-verification parser; leases and render
           // WHY: always come from re-read positions, never from parsed stdout numbers.
@@ -1108,6 +1117,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           // WHY: (item 8) numbered views admit no slice ops — the classifier only emits
           // WHY: `ops: []` with the marker, but defense-in-depth fails closed on any drift.
           if (isNumbered && ops.length !== 0) return undefined;
+          if (display !== undefined && (isNumbered || ops.some(isContentOp))) return undefined;
           // WHY: the single pre-view literal `cd` re-bases relative resolution; an absolute
           // WHY: view target ignores it (`toCwd` returns absolutes unchanged). Multi-`cd`
           // WHY: and post-view-`cd` chains never reach here — the classifier fails them
@@ -1120,7 +1130,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
             displayPath: filePath,
           });
           if (file.kind !== "text") return undefined;
-          const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
+          const { normalized, fileHashes, absolutePath, originalEnding } = await deps.readNormFile(
             filePath,
             effCwd,
             {
@@ -1173,7 +1183,32 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           // WHY: implements D9's symmetric CRLF/BOM normalization here; D1's
           // WHY: `;`-chain gate lives in the classifier.
           const observedText = toLF(stripBOM(stdoutText).text);
-          if (isNumbered) {
+          if (display !== undefined) {
+            // WHY: (ADR-0048 D2) the observed bytes are the transform, not the file. Prove the
+            // WHY: exact raw head slice against the same transform; only then serve the raw rows.
+            if (originalEnding === "\r") return undefined;
+            const rawContent = file.text;
+            // WHY: a CRLF file is supported; a lone CR (or a mixed-in CR) is not, because `toLF`
+            // WHY: would change the line count and the raw-head bytes would no longer map to intervals.
+            if (rawContent.replace(/\r\n/g, "").includes("\r")) return undefined;
+            const rawLines = rawContent.split("\n");
+            const rawSelected: string[] = [];
+            for (const iv of intervals) {
+              rawSelected.push(...rawLines.slice(iv.lo - 1, iv.hi));
+            }
+            if (rawSelected.length === 0) return undefined;
+            const lastSelected = intervals[intervals.length - 1];
+            const trailingNewline =
+              lastSelected !== undefined &&
+              (lastSelected.hi < rawLines.length - 1 || rawContent.endsWith("\n"));
+            const rawHead = rawSelected.join("\n") + (trailingNewline ? "\n" : "");
+            const transformed = await deps.runDisplayTransform(display, rawHead);
+            if (transformed === undefined) return undefined;
+            // WHY: (ADR-0033 D9 / ADR-0048 D1) match the observed normalization. BSD `cat -vet`
+            // WHY: leaves a UTF-8 BOM byte-for-byte, so stripping it on only one side would refuse
+            // WHY: exactly the BOM files the display tail is meant to inspect.
+            if (toLF(stripBOM(transformed).text) !== observedText) return undefined;
+          } else if (isNumbered) {
             // WHY: (item 8) strip display numbers, then the SAME byte-equality gate as below.
             // WHY: the numbers are never trusted as coordinates — positions come from `intervals`
             // WHY: (full-file here), and a row-count or content mismatch fails closed with no lease.
@@ -1241,7 +1276,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               ? { shownRange: { startLine: firstInterval.lo, endLine: lastInterval.hi } }
               : {}),
           });
-          return { content: [{ type: "text", text: `${header}\n${preview.text}` }] };
+          const disclosure =
+            display === undefined ? "" : `[${display.label} rendering dropped; raw rows served]\n`;
+          return { content: [{ type: "text", text: `${header}\n${disclosure}${preview.text}` }] };
         }
 
         return await servePureViewBlock(decision.view, singleTextBlock(event), ctx);
