@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { saveBashViewConfig } from "../../src/bash-view-config.js";
+import { saveBashMultiFileConfig } from "../../src/bash-multifile-config.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { saveLensBridgeConfig } from "../../src/integrations/pi-lens/config.js";
 import { saveStoreJanitorConfig } from "../../src/store-config.js";
@@ -43,6 +44,17 @@ const STORE_SETTINGS =
   (dir: string): unknown =>
     saveStoreJanitorConfig(settings, "project", dir);
 
+const MULTI_FILE_SETTINGS =
+  (settings: Parameters<typeof saveBashMultiFileConfig>[0]) =>
+  (dir: string): unknown =>
+    saveBashMultiFileConfig(settings, "project", dir);
+const MULTI_FILE_SCOPE = (scope: unknown, dir: string): unknown =>
+  saveBashMultiFileConfig(
+    { maxFiles: 8 },
+    scope as Parameters<typeof saveBashMultiFileConfig>[1],
+    dir,
+  );
+
 const SITES: readonly Site[] = [
   { label: "lens bridge mode", offending: "nope", trigger: (dir) => LENS_MODE("nope", dir) },
   { label: "lens bridge scope", offending: "mars", trigger: (dir) => LENS_SCOPE("mars", dir) },
@@ -53,6 +65,24 @@ const SITES: readonly Site[] = [
   },
   { label: "bash view scope", offending: "mars", trigger: (dir) => BASH_VIEW_SCOPE("mars", dir) },
   { label: "config scope", offending: "mars", trigger: (dir) => STORE_SCOPE("mars", dir) },
+  {
+    label: "bash multi-file max files",
+    offending: "1",
+    trigger: MULTI_FILE_SETTINGS({ maxFiles: 1 }),
+  },
+  {
+    label: "bash multi-file max rows",
+    offending: "2001",
+    trigger: MULTI_FILE_SETTINGS({ maxRows: 2001 }),
+  },
+  {
+    label: "bash multi-file scope",
+    offending: "mars",
+    trigger: (dir) => MULTI_FILE_SCOPE("mars", dir),
+  },
+  // WHY: the empty-patch guard names no offending VALUE, so it belongs to the multi-file ladder's own
+  // WHY: test (`test/core/bash-multi-file-config.test.ts`), not to this offending-value oracle.
+
   {
     label: "store janitor mode",
     offending: "maybe",

@@ -4,13 +4,35 @@ Date: 2026-10-26
 
 ## Status
 
-proposed — the design is settled; implementation is deferred by the evidence gate in M7. This
-record does not admit multi-file views.
+accepted — implemented by #183. M7's evidence gate is met (a real-workload capture of plain `cat`
+over two or more files, plus the synthetic fixture matrix and its review), so multi-file views are
+admitted for the M1 shape only. The deferrals this record recorded (no composition in a compound,
+no byte-length boundaries, no root banner) are unchanged.
 
 Extends [ADR-0048](0048-bash-serve-admission-display-context-compound.md) D5 and inherits
 [ADR-0033](0033-bash-view-interception.md) D9/D10 and [ADR-0039](0039-compound-bash-view-interception.md)
 D10. ADR-0033 D7's multi-file view non-goal remains in force until this record is accepted for
 implementation.
+
+Amended 2026-10-27 (Issue #183): implemented. The admitted surface is exactly M1's four shapes, the
+serve seam proves M3's line-count boundaries per file and renders M2's page sections, M4's zero-row
+page is emitted only inside an otherwise served result, M5's ranges span operands, M6's caps resolve
+from `bash.multiFile.{maxFiles,maxRows}` through the project/global ladder, and M8's whole-command
+fail-closed rule gates every serve. Implementation notes, each fail-closed:
+
+- **Numbering (M3).** GNU `cat -n`/`nl` number the STREAM continuously; BSD `cat -n` restarts in each
+  file and BSD `nl` refuses multiple operands (a non-zero exit, so it never serves). The seam admits
+  both closed renderings because both are pure functions of the line counts — the observed bytes pick
+  which ran, and a stream matching neither passes through (`test/tools/bash-multifile-view.test.ts`).
+- **Zero-row pages (M4).** The page is literally `(0 lines total)`, as this record prescribes, for
+  both an empty file and a file whose lines were not selected; it never claims the file's length.
+- **BOM (M3/D9).** `stripBOM` is stream-leading, so a BOM on the FIRST operand is normalized away and
+  a BOM on a later operand leaves a byte the line-count proof cannot place — that command passes
+  through rather than serving normalized rows the shell did not print.
+- **Compound (M1).** A multi-file view never rides in a chain; a chained shape declines with the
+  existing `multi-view` reason, so the closed reason vocabulary gains nothing.
+- **Caps (M6).** The classifier admits any operand count (it is pure and zero-fs); the serve seam
+  enforces the configured file and row caps, so the bound is operator policy and not a parse rule.
 
 ## Context
 
@@ -177,12 +199,16 @@ authority.
 
 ## Consequences
 
-- No behaviour changes today: the ADR is proposed and D5 remains deferred.
-- When implemented, multi-file views add model-facing page sections, zero-row pages, a new config
-  subtree, and a new lifecycle seam. Each is covered by the M7 fixture matrix.
-- Risks: synthetic page headers can be mistaken for file bytes; continuous numbering can confuse
-  file-relative line numbers; cross-file `sed` ranges multiply the mapping surface; zero-row pages
-  add chrome without anchors; configuration can lower the caps but must not raise the safety bound.
+- Behaviour today (implemented by #183): a standalone multi-file view serves one page section per file
+  in operand order and leases every row under its own file. A chained multi-file view, an over-cap
+  command, a binary or unterminated operand, and any unprovable boundary still pass through raw.
+- Multi-file views add model-facing page sections, zero-row pages, a `bash.multiFile` config subtree,
+  a `/pi-better-edit bash-view multi-file …` surface and a new lifecycle seam. Each is covered by the
+  M7 fixture matrix.
+- Risks: synthetic page headers can be mistaken for file bytes; numbering can confuse file-relative
+  line numbers (which is why the served rows are raw lines and only the transform is checked); `sed`
+  ranges spanning operands multiply the mapping surface; zero-row pages add chrome without anchors;
+  configuration can lower the caps but must not raise the safety bound.
 - The current single-file A9 behaviour stays intact; a future decision to align single-file empty
   handling would be a separate change, not a side effect of D5.
 
@@ -208,4 +234,4 @@ authority.
 - [ADR-0039 — Compound bash view interception and sequential peeling](0039-compound-bash-view-interception.md)
 - [ADR-0048 — Bash serve admission: display tails, context searches, and verified compound chains](0048-bash-serve-admission-display-context-compound.md)
 - [Bash interception gaps analysis](../analysis/bash-interception-gaps.md)
-- Tracking: #183 (D5 design and deferred implementation), #176 (D2), #185 (D4 landed).
+- Tracking: #183 (D5, landed — see the amendment above), #176 (D2, deferred), #185 (D4, landed).

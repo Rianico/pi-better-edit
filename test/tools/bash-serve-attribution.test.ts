@@ -206,7 +206,15 @@ async function probeLease(
   return leased;
 }
 
-type Shape = "view" | "numbered" | "search" | "triple" | "contentSet" | "compound" | "raw";
+type Shape =
+  | "view"
+  | "numbered"
+  | "search"
+  | "context"
+  | "triple"
+  | "contentSet"
+  | "compound"
+  | "raw";
 
 interface MatrixCase {
   name: string;
@@ -335,6 +343,23 @@ const MATRIX: MatrixCase[] = [
     shape: "search",
     served: { "f.txt": [1, 2] },
   },
+  {
+    name: "grep context groups",
+    files: { "f.txt": "l1\nl2\npat3\nl4\nl5\nl6\npat7\nl8\nl9\nl10\n" },
+    command: "grep -n -C 1 pat f.txt",
+    shape: "context",
+    served: { "f.txt": [2, 3, 4, 6, 7, 8] },
+  },
+  {
+    name: "grep context windows merge",
+    // WHY: (ADR-0048 D3) matches on lines 1 and 2 with `-A 1` overlap, so grep prints one
+    // WHY: contiguous group with no `--`: the lease set is the union, not the union per match.
+    files: { "f.txt": "m1\nm2\nx\ny\n" },
+    command: "grep -n -A 1 m f.txt",
+    shape: "context",
+    served: { "f.txt": [1, 2, 3] },
+  },
+
   {
     name: "sort -u set",
     files: { "f.txt": "dup\ndup\nuniq\n" },
@@ -526,6 +551,41 @@ describe("bash serve attribution invariant (#175)", () => {
             expect(rowContent(rows[i]!)).toBe(onDiskByFile.get(coord.file)![coord.line - 1]);
             expect(rowAnchor(rows[i]!)).toBe(hashesByFile.get(coord.file)![coord.line - 1]);
           }
+        } else if (c.shape === "context") {
+          // WHY: (ADR-0048 D3) every match AND context row is served and leased. The row's label is
+          // WHY: `digits(leased line) + one separator`, so the split width comes from the leased line
+          // WHY: number (a counter), never from the content grep reprinted. The separator set is the
+          // WHY: geometry under test: `:` for a match, `-` for context — both are accepted, and both
+          // WHY: must be present, so a seam that leased matches only cannot pass.
+          const file = Object.keys(c.files)[0]!;
+          const onDisk = await diskLines(dir, file);
+          const hashes = await lineHashes(c.files[file]!, join(dir, file));
+          const leased = c.served[file]!;
+          // WHY: `--` is a group separator, not a row: it is dropped by INDEX here so it can never
+          // WHY: consume a row slot and shift every later coordinate.
+          const rowLines = lines
+            .map((text, index) => ({ text, index }))
+            .filter((entry) => entry.text !== "--");
+          expect(rowLines).toHaveLength(leased.length);
+          const separators: string[] = [];
+          for (let i = 0; i < leased.length; i++) {
+            const n = leased[i]!;
+            const width = `${n}`.length + 1;
+            const line = rowLines[i]!;
+            const prefix = line.text.slice(0, width);
+            expect([`${n}:`, `${n}-`]).toContain(prefix);
+            expect(line.text.slice(width)).toBe(onDisk[n - 1]);
+            const iv = intervals[line.index]!;
+            expect(norm.slice(iv.lo, iv.lo + width)).toBe(prefix);
+            expect(norm.slice(iv.lo + width, iv.hi)).toBe(onDisk[n - 1]);
+            // WHY: the rendered anchor IS the re-read anchor at that coordinate — an independent
+            // WHY: derivation, so a row leased and rendered at the wrong line is visible here.
+            expect(rowAnchor(rows[i]!)).toBe(hashes[n - 1]);
+            expect(servedContents[i]).toBe(onDisk[n - 1]);
+            separators.push(prefix.slice(-1));
+          }
+          expect(separators).toContain(":");
+          expect(separators).toContain("-");
         } else if (c.shape === "compound") {
           // WHY: block extents derived from LENGTHS — the glue literal length plus each block's
           // WHY: re-read disk-slice byte length — then every slice is asserted against the re-read

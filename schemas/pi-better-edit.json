@@ -25,7 +25,16 @@
     "bash": {
       "type": "object",
       "properties": {
-        "view": { "type": "string", "enum": ["on", "off"], "default": "on" }
+        "view": { "type": "string", "enum": ["on", "off"], "default": "on" },
+        "multiFile": {
+          "type": "object",
+          "description": "Multi-file bash view caps (ADR-0049 M6). Values outside the range are ignored with a warning and fall through the ladder.",
+          "properties": {
+            "maxFiles": { "type": "integer", "minimum": 2, "maximum": 10, "default": 10 },
+            "maxRows": { "type": "integer", "minimum": 1, "maximum": 2000, "default": 2000 }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     }

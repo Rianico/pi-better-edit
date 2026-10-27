@@ -158,6 +158,11 @@ describe("registerLensCommand", () => {
       "bash-view on",
       "bash-view off",
       "bash-view status",
+      // WHY: (ADR-0049 M6) the multi-file cap subcommands join the same completion list.
+      "bash-view multi-file",
+      "bash-view multi-file status",
+      "bash-view multi-file max-files",
+      "bash-view multi-file max-rows",
       "bash",
       "bash on",
       "bash off",

@@ -74,6 +74,16 @@ describe("SettingsOverlay", () => {
     overlay.handleInput("\x1b");
     expect(seen).toEqual([undefined]);
   });
+  it("reports the multi-file caps on the bash-view row without making them editable", () => {
+    // WHY read-only here: the overlay's `SettingsList` is enum-only (ADR-0038) and ADR-0049 M6 sends
+    // WHY: numeric editing to the subcommand — but the row still has to REPORT both caps and their
+    // WHY: rungs, because `/pi-better-edit settings` is the headed status surface.
+    const overlay = new SettingsOverlay(projectDir, () => undefined);
+    overlay.selectItem("bash-view");
+    const out = rendered(overlay).replace(/\s+/g, " ");
+    expect(out).toContain("Multi-file caps: maxFiles 10 (source: default)");
+    expect(out).toContain("maxRows 2000 (source: default)");
+  });
 
   it("exposes four rows including the target scope switch", () => {
     const overlay = new SettingsOverlay(projectDir, () => undefined);

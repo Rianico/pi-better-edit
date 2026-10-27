@@ -33,6 +33,15 @@ import {
   saveBashViewConfig,
   type BashViewMode,
 } from "../../bash-view-config.js";
+import {
+  BASH_MULTI_FILE_LIMITS,
+  isBashMultiFileMaxFiles,
+  isBashMultiFileMaxRows,
+  isBashMultiFileScope,
+  readBashMultiFileConfig,
+  resolveBashMultiFileSettingsWithSources,
+  saveBashMultiFileConfig,
+} from "../../bash-multifile-config.js";
 import { CONFIG_REL, configFileDisplayPath, type ConfigScope } from "../../json-config.js";
 import { DomainError } from "../../domain-errors.js";
 import { SettingsOverlay } from "./settings-overlay.js";
@@ -58,6 +67,9 @@ const BASH_VIEW_USAGE = [
   `  /${COMMAND_NAME} bash-view              pick a mode interactively`,
   `  /${COMMAND_NAME} bash-view off global   write the global default`,
   `  /${COMMAND_NAME} bash-view status       show effective mode and config sources`,
+  `  /${COMMAND_NAME} bash-view multi-file status                show the multi-file caps and sources`,
+  `  /${COMMAND_NAME} bash-view multi-file max-files 8 project   lower the file cap (2-10)`,
+  `  /${COMMAND_NAME} bash-view multi-file max-rows 1000 global  lower the row cap (1-2000)`,
   `Alias: /${COMMAND_NAME} bash [on|off|status] [project|global]`,
 ].join("\n");
 
@@ -78,6 +90,10 @@ const COMMAND_COMPLETIONS: readonly string[] = [
   "bash-view on",
   "bash-view off",
   "bash-view status",
+  "bash-view multi-file",
+  "bash-view multi-file status",
+  "bash-view multi-file max-files",
+  "bash-view multi-file max-rows",
   "bash",
   "bash on",
   "bash off",
@@ -163,15 +179,17 @@ function statusText(cwd: string): string {
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > auto",
   ];
-  // WHY: a blank line between the blocks — they are four subjects: the bridge, the store,
-  // WHY: the bash view and the diagnostics log, and each one keeps the shape the others taught
-  // WHY: the reader.
+  // WHY: a blank line between the blocks — they are five subjects: the bridge, the store, the bash
+  // WHY: view, its multi-file caps, and the diagnostics log — and each one keeps the shape the others
+  // WHY: taught the reader.
   return [
     lensLines.join("\n"),
     "",
     storeStatusText(cwd),
     "",
     bashViewStatusText(cwd),
+    "",
+    multiFileStatusText(cwd),
     "",
     diagnosticsStatusText(),
   ].join("\n");
@@ -237,6 +255,36 @@ function bashViewStatusText(cwd: string): string {
     `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
     `  env ${BASH_VIEW_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > on",
+    ...warnings.map((reason) => `  warning: ${reason}`),
+  ].join("\n");
+}
+
+/**
+ * The multi-file caps' half of the status output (ADR-0049 M6).
+ *
+ * WHY its own block rather than two more lines in the bash-view block: the two ladders have different
+ * precedence (`view` has an env override; the caps resolve project > global > default), and one
+ * precedence line per block is the only honest way to say so. WHY both file values are printed beside
+ * the effective ones: the losing value is the one an operator edits next.
+ */
+function multiFileStatusText(cwd: string): string {
+  const warnings: string[] = [];
+  const effective = resolveBashMultiFileSettingsWithSources(cwd, (reason) => warnings.push(reason));
+  const config = readBashMultiFileConfig(cwd);
+  const scopeLine = (
+    scope: ConfigScope,
+    patch: { readonly maxFiles?: number; readonly maxRows?: number } | undefined,
+    path: string,
+  ): string =>
+    `  ${scope} (${path}): maxFiles=${patch?.maxFiles ?? "unset"}, maxRows=${patch?.maxRows ?? "unset"}`;
+  return [
+    `${COMMAND_NAME} bash multi-file`,
+    `  bash.multiFile.maxFiles: ${effective.maxFiles.value} (${effective.maxFiles.source})`,
+    `  bash.multiFile.maxRows: ${effective.maxRows.value} (${effective.maxRows.source})`,
+    scopeLine("project", config.project, CONFIG_REL),
+    scopeLine("global", config.global, configFileDisplayPath("global", cwd)),
+    `  allowed: maxFiles ${BASH_MULTI_FILE_LIMITS.maxFiles.min}-${BASH_MULTI_FILE_LIMITS.maxFiles.max}, maxRows ${BASH_MULTI_FILE_LIMITS.maxRows.min}-${BASH_MULTI_FILE_LIMITS.maxRows.max}`,
+    "  precedence: project > global > default",
     ...warnings.map((reason) => `  warning: ${reason}`),
   ].join("\n");
 }
@@ -353,11 +401,69 @@ async function pickBashViewInteractively(ctx: ExtensionCommandContext): Promise<
   notify(ctx, applyBashViewMode(choice.mode, choice.scope, ctx.cwd));
 }
 
+/**
+ * `/pi-better-edit bash-view multi-file …` — the caps' command surface (ADR-0049 M6).
+ *
+ * WHY numbers live here and not in the settings overlay: the overlay is an enum-only `SettingsList`
+ * (ADR-0038), so arbitrary numeric editing belongs to the subcommand — exactly as M6 says. A value
+ * outside the allowed range is refused with the range named, and nothing is written; the caps can be
+ * LOWERED below the safety bound, never raised past it.
+ */
+function handleMultiFile(tokens: string[], ctx: ExtensionCommandContext): void {
+  const sub = tokens[1] ?? "status";
+  if (sub === "status") {
+    if (tokens.length > 2) {
+      notify(ctx, `Too many arguments.\n${BASH_VIEW_USAGE}`, "warning");
+      return;
+    }
+    notify(ctx, multiFileStatusText(ctx.cwd));
+    return;
+  }
+  const key = sub === "max-files" ? "maxFiles" : sub === "max-rows" ? "maxRows" : undefined;
+  if (key === undefined) {
+    notify(ctx, `Unknown multi-file option "${sub}".\n${BASH_VIEW_USAGE}`, "warning");
+    return;
+  }
+  if (tokens.length > 4) {
+    notify(ctx, `Too many arguments.\n${BASH_VIEW_USAGE}`, "warning");
+    return;
+  }
+  const rawValue = tokens[2];
+  const limit = BASH_MULTI_FILE_LIMITS[key];
+  const accepted = key === "maxFiles" ? isBashMultiFileMaxFiles : isBashMultiFileMaxRows;
+  const value = rawValue === undefined ? Number.NaN : Number(rawValue);
+  if (!accepted(value)) {
+    notify(
+      ctx,
+      `bash.multiFile.${key} must be an integer in ${limit.min}-${limit.max}.\n${BASH_VIEW_USAGE}`,
+      "warning",
+    );
+    return;
+  }
+  let scope: ConfigScope = "project";
+  const scopeToken = tokens[3];
+  if (scopeToken !== undefined) {
+    if (!isBashMultiFileScope(scopeToken)) {
+      notify(ctx, `Unknown scope "${scopeToken}".\n${BASH_VIEW_USAGE}`, "warning");
+      return;
+    }
+    scope = scopeToken;
+  }
+  const patch = key === "maxFiles" ? { maxFiles: value } : { maxRows: value };
+  const path = saveBashMultiFileConfig(patch, scope, ctx.cwd).path;
+  notify(ctx, `${COMMAND_NAME} bash multi-file ${key} set to ${value} (${scope}) — ${path}`);
+}
 async function handleBashView(args: string, ctx: ExtensionCommandContext): Promise<void> {
   const tokens = args
     .trim()
     .split(/\s+/)
     .filter((token) => token.length > 0);
+  // WHY: the multi-file route is dispatched BEFORE the 3-token ceiling — its own surface takes four
+  // WHY: tokens (`bash-view multi-file max-files 8 global`), and it validates them itself.
+  if (tokens[1] === "multi-file") {
+    handleMultiFile(tokens.slice(1), ctx);
+    return;
+  }
   if (tokens.length > 3) {
     notify(ctx, `Too many arguments.\n${BASH_VIEW_USAGE}`, "warning");
     return;

@@ -14,6 +14,9 @@ import { describe, expect, it } from "vitest";
 const SEAM = join("src", "json-config.ts");
 const SETTINGS_OWNERS = [
   join("src", "bash-view-config.ts"),
+  // WHY: (ADR-0049 M6) the multi-file caps are a second per-key ladder over the same file, so they
+  // WHY: reach the seam exactly like the view owner instead of re-deriving it.
+  join("src", "bash-multifile-config.ts"),
   join("src", "integrations", "pi-lens", "config.ts"),
   join("src", "store-config.ts"),
   // WHY: the janitor settings ladder moved to the kernel (arch-04); it reads the shared seam like every

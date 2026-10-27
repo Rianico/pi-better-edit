@@ -5,12 +5,16 @@
 ### Features
 
 * **bash:** admit an inert `wc -l`/`-c` count tail after the last verified block of a multi-block, statically glued compound (ADR-0048 D4): the verified blocks keep their banners, anchors and per-block leases, and the count's already-observed bytes ride through raw and unleased. Only `wc` with `-l`/`-c` and file operands qualifies; a tail before any block or before a later block, stdin, a redirect, a pipeline, another command, a glued single-block chain, and any post-block `cd` still decline with their original reasons, and D10's single-leading-block behaviour is unchanged. (#185) (#186)
+* **bash:** serve context searches (ADR-0048 D3): admit `grep -A/-B/-C`, long context flags, and `rg -C` on single-file searches; match and context rows around `--` are re-read, byte-compared, and leased under the existing key. `SEARCH_MAX_TOTAL_ROWS` bounds total rows independently; recursive/multi-file context, attached short spellings, mixed options, and `-c`/`-o`/`-l` stay refused. (#183) (#188)
+* **bash:** serve multi-file views (ADR-0049): admit `cat`, `cat -n`, `nl -ba`, and numeric `sed -n` over two or more newline-terminated files as per-file page sections; line-count boundaries, per-file leases, zero-row pages only inside a served result, and whole-command raw on any failed proof. Configurable `bash.multiFile.maxFiles` / `maxRows` (defaults 10 / 2,000) via `/pi-better-edit bash-view multi-file`. (#183) (#188)
 
 ### Documentation
 
 * **adr:** land the bash serve admission record as ADR-0048 with an explicit accepted/deferred split (D1 accepted and implemented by #175, PR #177; D2 tracked by #176; D3/D4/D5 tracked by #183) together with its corpus analysis, and retarget the #175 serve-seam comments to cite ADR-0048. Comments and docs only; no behavior change. (#178)
 * **adr:** record ADR-0048 D4 as accepted and implemented by #185 instead of deferred, extending the D1 amendment note and splitting the tracking bullet so #183 covers D3/D5 only. Docs only; the behaviour itself ships in the #185 feature entry above. (#185)
 * **adr:** propose ADR-0049 for multi-file bash views: per-file page sections, line-count boundaries, zero-row pages, cross-file `sed` ranges, configurable 10/2,000 caps, and a real-workload evidence gate; implementation remains deferred. (#183)
+* **adr:** record ADR-0048 D3 as accepted and implemented by #183 instead of deferred, adding the amendment note, the tracking split, and an "As implemented" paragraph that pins the admitted spellings, the leased-context geometry, the independent total-row cap and the compound boundary. Docs only; the behaviour itself ships in the #183 feature entry above. (#183)
+* **adr:** accept ADR-0049 and record the M7 evidence gate as met, with the captured real-workload shapes, the limitation that only plain `cat` over 2+ files is attested, the twelve-fixture matrix, the implementation notes (numbering conventions, zero-row page literal, stream-leading BOM, no compound envelope, caps as policy); mark ADR-0048 D5 as landed through ADR-0049. Docs only; the behaviour ships in the #183 feature entry above. (#183)
 
 ## [2.13.4] - 2026-10-24
 

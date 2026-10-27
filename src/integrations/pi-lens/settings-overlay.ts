@@ -20,6 +20,7 @@ import {
   saveBashViewConfig,
   type BashViewMode,
 } from "../../bash-view-config.js";
+import { resolveBashMultiFileSettingsWithSources } from "../../bash-multifile-config.js";
 import type { ConfigScope } from "../../json-config.js";
 import {
   readLensBridgeConfig,
@@ -74,6 +75,20 @@ function bashViewLine2(cwd: string): string {
     : line;
 }
 
+/**
+ * The multi-file caps, REPORTED ONLY (ADR-0049 M6): the overlay's `SettingsList` is enum-only
+ * (ADR-0038), so numeric editing belongs to `/pi-better-edit bash-view multi-file …`. This line still
+ * names each cap's rung, because a display that showed the effective numbers without their source
+ * would hide which file to edit.
+ */
+function multiFileLine(cwd: string): string {
+  const caps = resolveBashMultiFileSettingsWithSources(cwd);
+  return (
+    `Multi-file caps: maxFiles ${caps.maxFiles.value} (source: ${caps.maxFiles.source}) ` +
+    `\u2022 maxRows ${caps.maxRows.value} (source: ${caps.maxRows.source})`
+  );
+}
+
 function storeLine2(cwd: string): string {
   const effective = resolveStoreJanitorSettingsWithSources(cwd);
   const config = readStoreJanitorConfig(cwd);
@@ -122,7 +137,7 @@ export class SettingsOverlay extends Container {
       {
         id: "bash-view",
         label: "Bash view",
-        description: `Bash view interception switch\n${bashViewLine2(this.cwd)}`,
+        description: `Bash view interception switch\n${bashViewLine2(this.cwd)}\n${multiFileLine(this.cwd)}`,
         currentValue: resolveBashViewModeWithSource(this.cwd).value,
         values: ["on", "off"],
       },
@@ -198,7 +213,7 @@ export class SettingsOverlay extends Container {
     } else if (id === "bash-view") {
       const effective = resolveBashViewModeWithSource(this.cwd);
       this.list.updateValue(id, effective.value);
-      item.description = `Bash view interception switch\n${bashViewLine2(this.cwd)}`;
+      item.description = `Bash view interception switch\n${bashViewLine2(this.cwd)}\n${multiFileLine(this.cwd)}`;
     } else if (id === "store") {
       const effective = resolveStoreJanitorSettingsWithSources(this.cwd);
       this.list.updateValue(id, effective.mode.value);

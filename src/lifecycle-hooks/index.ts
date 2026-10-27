@@ -16,6 +16,7 @@ import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served
 import { notifyMutatedFile } from "../mutated-files.js";
 import { applySliceOps, isSliceOp } from "../bash-classifier.js";
 import { resolveBashViewMode } from "../bash-view-config.js";
+import { resolveBashMultiFileSettings } from "../bash-multifile-config.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import { stripBOM, toLF } from "../edit-diff.js";
@@ -60,13 +61,16 @@ import {
   BASH_SEARCH_WALK_MAX_FILES,
   MAX_READ_WINDOWS,
   SEARCH_MAX_MATCHES,
+  SEARCH_MAX_TOTAL_ROWS,
   SERVED_MAX_LINES,
 } from "../constants.js";
 import type {
   BashFilesList,
   BashMultiSearch,
+  BashMultiView,
   BashRecursiveSearch,
   BashSearch,
+  BashSearchContext,
   CompoundSegment,
   ContentLine,
   SliceOp,
@@ -160,6 +164,16 @@ function isWalkableDirName(name: string): boolean {
 
 /** `grep -n`/`rg --line-number` stdout row: a 1-indexed line number, a colon, the matched text. */
 const SEARCH_STDOUT_LINE = /^(\d+):([\s\S]*)$/;
+/** WHY: (ADR-0048 D3) one parsed search row and which geometry printed it. */
+interface SearchStdoutRow {
+  line: number;
+  kind: "match" | "context";
+  content: string;
+}
+/** `grep -n -C`/`rg --line-number -C` CONTEXT row: line number, `-`, the line's own bytes. */
+const SEARCH_STDOUT_CONTEXT_LINE = /^(\d+)-([\s\S]*)$/;
+/** The group separator `grep -C`/`rg -C` print between non-contiguous context groups. */
+const SEARCH_STDOUT_GROUP_SEPARATOR = "--";
 /** `cat -n`/`nl -ba` stdout row: blank-padded 1-indexed number, a tab, the line content. */
 const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
 /**
@@ -170,24 +184,187 @@ const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
 const COUNT_STDOUT_LINE = /^\s*(\d+)\s*$/;
 
 /**
- * Parse the `LINE:content` rows of a line-numbered single-file search. Fails closed (`undefined`)
- * unless every row is a match row, so a filename prefix, a context header, a match count or any
- * other `grep`/`rg` shape is never mistaken for the admitted geometry. The only empty line
- * tolerated is the trailing newline every search emits.
+ * Parse the rows of a line-numbered single-file search. Fails closed (`undefined`) unless every row is
+ * the admitted geometry, so a filename prefix, a match count, a heading or any other `grep`/`rg` shape
+ * is never mistaken for it. The only empty line tolerated is the trailing newline every search emits.
+ *
+ * WHY: (ADR-0048 D3 — context searches) a row is a MATCH (`LINE:content`) or — only when the command
+ * asked for a window — one of that match's CONTEXT lines (`LINE-content`), and non-contiguous groups
+ * are separated by a bare `--`. The first field is the maximal leading digit run and the very next byte
+ * decides the kind, so the split is deterministic: unlike `FILE:LINE:content`, whose prefix may itself
+ * contain `:`, there is no second reading to enumerate. Context geometry is admitted ONLY when it was
+ * asked for — a `--` or `LINE-content` row in a plain search's stdout is foreign output, not evidence.
  */
-function parseSearchStdout(observed: string): Array<{ line: number; content: string }> | undefined {
+function parseSearchStdout(
+  observed: string,
+  options?: { context: true },
+): SearchStdoutRow[] | undefined {
+  const context = options?.context === true;
   const lines = observed.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   if (lines.length === 0) return undefined;
-  const matches: Array<{ line: number; content: string }> = [];
+  const rows: SearchStdoutRow[] = [];
   for (const text of lines) {
-    const parsed = SEARCH_STDOUT_LINE.exec(text);
-    if (!parsed) return undefined;
-    const line = Number(parsed[1]);
+    // WHY: a separator carries no file byte — it only marks a gap grep did not merge — so it is
+    // WHY: dropped here and the surviving line numbers keep that gap visible in the render.
+    if (context && text === SEARCH_STDOUT_GROUP_SEPARATOR) continue;
+    const matched = SEARCH_STDOUT_LINE.exec(text);
+    if (matched !== null) {
+      const line = Number(matched[1]);
+      if (!Number.isSafeInteger(line) || line < 1) return undefined;
+      rows.push({ line, kind: "match", content: matched[2] ?? "" });
+      continue;
+    }
+    if (!context) return undefined;
+    const surrounding = SEARCH_STDOUT_CONTEXT_LINE.exec(text);
+    if (surrounding === null) return undefined;
+    const line = Number(surrounding[1]);
     if (!Number.isSafeInteger(line) || line < 1) return undefined;
-    matches.push({ line, content: parsed[2] });
+    rows.push({ line, kind: "context", content: surrounding[2] ?? "" });
   }
-  return matches;
+  return rows.length === 0 ? undefined : rows;
+}
+
+/**
+ * WHY: (ADR-0048 D3 — the search's own prediction half of D1) a CONTEXT row is witnessable only when
+ * some match could have printed it: it must lie inside that match's window, and it must not BE a match
+ * line (grep prints a matched line as a match row, never as context). A match row is witnessed by its
+ * own byte equality, so it needs no window. A row that fails this is not this command's output.
+ */
+function contextRowIsWitnessable(
+  row: SearchStdoutRow,
+  matchLines: ReadonlySet<number>,
+  window: BashSearchContext,
+): boolean {
+  if (row.kind === "match") return true;
+  if (matchLines.has(row.line)) return false;
+  for (const matchLine of matchLines) {
+    if (row.line >= matchLine - window.before && row.line <= matchLine + window.after) return true;
+  }
+  return false;
+}
+
+/**
+ * WHY: (ADR-0048 D3) the row-budget and prediction gates of one search, all BEFORE the first lease.
+ * Two INDEPENDENT caps: `SEARCH_MAX_MATCHES` still bounds the pattern hits — the bytes-cost argument
+ * behind it is about matches — while `SEARCH_MAX_TOTAL_ROWS` bounds match+context rows, which one
+ * `-C N` window inflates far past the match count. Both are all-or-nothing: over either one the whole
+ * command passes through raw, because a truncated window names lines bash never printed. With a window
+ * requested, every context row must also be witnessable (see `contextRowIsWitnessable`).
+ *
+ * Returns the MATCH line set the seam reuses for the header counts, or `undefined` to pass through.
+ */
+function searchRowsWithinBudget(
+  rows: readonly SearchStdoutRow[],
+  window: BashSearchContext | undefined,
+): ReadonlySet<number> | undefined {
+  const matchLines = new Set<number>();
+  for (const row of rows) if (row.kind === "match") matchLines.add(row.line);
+  if (matchLines.size > SEARCH_MAX_MATCHES) return undefined;
+  if (rows.length > SEARCH_MAX_TOTAL_ROWS) return undefined;
+  if (window !== undefined) {
+    for (const row of rows) {
+      if (!contextRowIsWitnessable(row, matchLines, window)) return undefined;
+    }
+  }
+  return matchLines;
+}
+
+/**
+ * WHY: (ADR-0049 M3) one selected row of the concatenated stream: which page it belongs to, its
+ * file-relative line, its stream line, and the bytes the re-read file holds there.
+ */
+interface MultiViewStreamRow {
+  readonly fileIndex: number;
+  readonly fileLine: number;
+  readonly streamLine: number;
+  readonly text: string;
+}
+
+/**
+ * WHY: (ADR-0049 M3) boundaries are LINE COUNTS. The operands are laid end to end; each file owns
+ * `[start, start + count - 1]` of the stream, and a stream line maps to a file line by subtracting
+ * that start. No byte arithmetic and no content matching is involved, so a `sed` range spanning files
+ * (M5) is just interval intersection. A file with no selected line keeps an empty page (M4).
+ *
+ * `undefined` means the selection is not provable as ONE page per file: a stream line outside every
+ * file, or a DISJOINT selection inside one file (one page header names one contiguous range, M5).
+ */
+function multiViewSelection(
+  lineCounts: readonly number[],
+  intervals: ReadonlyArray<{ lo: number; hi: number }>,
+): number[][] | undefined {
+  const starts: number[] = [];
+  let next = 1;
+  for (const count of lineCounts) {
+    starts.push(next);
+    next += count;
+  }
+  const selected: number[][] = lineCounts.map(() => []);
+  for (const interval of intervals) {
+    for (let streamLine = interval.lo; streamLine <= interval.hi; streamLine++) {
+      const index = starts.findIndex((start, fileIndex) => {
+        const count = lineCounts[fileIndex] ?? 0;
+        return count > 0 && streamLine >= start && streamLine < start + count;
+      });
+      if (index === -1) return undefined;
+      selected[index]!.push(streamLine - starts[index]! + 1);
+    }
+  }
+  // WHY: (M5) one page header names one contiguous range, so a file whose selected lines are not a
+  // WHY: single run has no honest header: pass the whole command through instead of inventing one.
+  for (const lines of selected) {
+    const first = lines[0];
+    const last = lines[lines.length - 1];
+    if (first === undefined || last === undefined) continue;
+    if (last - first + 1 !== lines.length) return undefined;
+  }
+  return selected;
+}
+
+/**
+ * WHY: (ADR-0049 M3) the stream rows in stream order, built from the RE-READ files — the observed
+ * stdout is compared against these bytes, so every served row is byte-identical to its disk slice by
+ * construction. `undefined` when the layout and the bytes disagree (an impossible state, refused).
+ */
+function multiViewStreamRows(
+  files: ReadonlyArray<{ allLines: readonly string[] }>,
+  selected: ReadonlyArray<readonly number[]>,
+): MultiViewStreamRow[] | undefined {
+  const rows: MultiViewStreamRow[] = [];
+  let streamStart = 1;
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    const allLines = files[fileIndex]?.allLines ?? [];
+    for (const fileLine of selected[fileIndex] ?? []) {
+      const text = allLines[fileLine - 1];
+      if (text === undefined) return undefined;
+      rows.push({ fileIndex, fileLine, streamLine: streamStart + fileLine - 1, text });
+    }
+    streamStart += allLines.length;
+  }
+  return rows;
+}
+
+/**
+ * The candidate observed renders of one multi-file view, byte-exact and trailing-newline free.
+ *
+ * WHY two numbering candidates (ADR-0049 M3): the numbering transform is `cat -n` / `nl -ba`, and the
+ * STREAM numbering is continuous while GNU `cat -n`/`nl` implement exactly that — but a per-file
+ * restart is what BSD `cat -n` prints, and `nl` there refuses multiple operands. Both renders are
+ * pure functions of line counts, so admitting either is still a length-derived proof: the observed
+ * bytes choose which convention ran, and a stream that matches neither fails closed.
+ */
+function multiViewExpectedTexts(
+  rows: readonly MultiViewStreamRow[],
+  lineNumbered: boolean,
+): string[] {
+  const plain = rows.map((row) => row.text).join("\n");
+  if (!lineNumbered) return [plain];
+  const numbered = (number: (row: MultiViewStreamRow) => number): string =>
+    rows.map((row) => `${String(number(row)).padStart(6)}\t${row.text}`).join("\n");
+  const continuous = numbered((row) => row.streamLine);
+  const perFile = numbered((row) => row.fileLine);
+  return perFile === continuous ? [continuous] : [continuous, perFile];
 }
 
 /**
@@ -654,6 +831,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         if (decision.kind === "pureFilesList") {
           return await handleBashFilesList(event, ctx, decision.search);
         }
+        // WHY: (ADR-0049 M2) the multi-file view is N pages in one result: its own seam, because the
+        // WHY: proof is per-file line-count boundaries and its leases are per file.
+        if (decision.kind === "pureMultiView") {
+          return await handleBashMultiView(event, ctx, decision.view);
+        }
         if (decision.kind === "pureCompound") {
           return await handleBashCompound(event, ctx, decision);
         }
@@ -792,6 +974,127 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           if (typeof text !== "string") return undefined;
           return text.endsWith("\n") ? text : `${text}\n`;
         }
+        /**
+         * WHY (ADR-0049 M2/M3): a served multi-file view is ONE result with ONE page section per file,
+         * in operand order, under the existing page header grammar — no new root
+         * banner and no second chrome dialect. Every page's rows come from its own re-read file and are
+         * leased under the existing `(session, path, anchor)` identity: no anchor is ever shared between files.
+         *
+         * WHY the whole-command gate (M8): boundaries are line counts, so the observed STREAM must
+         * equal the render built from the re-read files before the first lease — one bad file, page,
+         * transform or cap passes the entire command through raw with zero leases. The zero-row page
+         * (M4) has a zero-length observed interval, which is why it cannot weaken that proof.
+         */
+        async function handleBashMultiView(
+          event: ToolResultEvent,
+          ctx: ToolContext,
+          view: BashMultiView,
+        ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+          const caps = resolveBashMultiFileSettings(ctx.cwd, (reason) =>
+            reportWarning("lifecycle-hooks", reason),
+          );
+          // WHY: (M6) the file cap counts EVERY operand, a zero-row page included; the row cap counts
+          // WHY: served rows only, never page headers. Over either cap the whole command is raw.
+          if (view.filePaths.length < 2 || view.filePaths.length > caps.maxFiles) return undefined;
+          const effCwd = view.baseDir === undefined ? ctx.cwd : deps.toCwd(view.baseDir, ctx.cwd);
+          const files: Array<{
+            display: string;
+            absolutePath: string;
+            normalized: string;
+            allLines: string[];
+            fileHashes: string[];
+          }> = [];
+          for (const display of view.filePaths) {
+            const target = await loadTextTarget(display, effCwd);
+            if (target === undefined) return undefined;
+            // WHY: (M1) a page boundary is proved from line counts, so an unterminated final line has
+            // WHY: no provable boundary; a 0-byte file is the zero-line case, not an unterminated one.
+            if (target.normalized !== "" && !target.normalized.endsWith("\n")) return undefined;
+            files.push({ display, ...target });
+          }
+          const lineCounts = files.map((file) => file.allLines.length);
+          const totalLines = lineCounts.reduce((sum, count) => sum + count, 0);
+          const selected = multiViewSelection(lineCounts, applySliceOps(view.ops, totalLines));
+          if (selected === undefined) return undefined;
+          const rows = multiViewStreamRows(files, selected);
+          if (rows === undefined) return undefined;
+          // WHY: (M4) an all-empty command stays raw: serving only synthetic headers would show the
+          // WHY: model no observed byte at all, and every page would lease nothing.
+          if (rows.length === 0) return undefined;
+          if (rows.length > caps.maxRows) return undefined;
+          const stdoutText = singleTextBlock(event);
+          if (stdoutText === undefined) return undefined;
+          const observed = toLF(stripBOM(stdoutText).text);
+          // WHY: (M3 + ADR-0033 D9 + ADR-0048 D1) the stream the shell printed must equal the render
+          // WHY: built from the re-read files, with the same lone-trailing-newline leniency every other
+          // WHY: view seam applies. A missing newline, a numbering mismatch, TOCTOU drift or a reordered
+          // WHY: row fails closed here, before any lease exists.
+          const expected = multiViewExpectedTexts(rows, view.lineNumbered === true);
+          if (!expected.some((text) => observed === text || observed === `${text}\n`)) {
+            return undefined;
+          }
+
+          // WHY: (M8) build every page's rows FIRST — after this loop there is no failure path, so a
+          // WHY: refusal can never leave a partial grant behind.
+          const pages: Array<{
+            header: string;
+            servedRows: ServedRow[];
+            file: (typeof files)[number];
+          }> = [];
+          for (let index = 0; index < files.length; index++) {
+            const file = files[index]!;
+            const lines = selected[index] ?? [];
+            const servedRows: ServedRow[] = [];
+            for (const line of lines) {
+              const hash = file.fileHashes[line - 1];
+              if (hash === undefined) return undefined;
+              servedRows.push({ position: line - 1, hash });
+            }
+            const first = lines[0];
+            const last = lines[lines.length - 1];
+            const wholeFile =
+              first === 1 && last === file.allLines.length && lines.length === file.allLines.length;
+            pages.push({
+              file,
+              servedRows,
+              header: formatPageHeader({
+                label: BASH_VIEW_LABEL,
+                file: file.display,
+                // WHY: (M4) a page that serves nothing reports `0 lines total`, so it claims nothing
+                // WHY: about the file's length — an empty FILE and a file with no selected row are the
+                // WHY: same page, exactly as M4/M5 prescribe.
+                totalLines: servedRows.length === 0 ? 0 : file.allLines.length,
+                ...(wholeFile || first === undefined || last === undefined
+                  ? {}
+                  : { shownRange: { startLine: first, endLine: last } }),
+              }),
+            });
+          }
+
+          const sessionKey = deps.sessionKeyFor(ctx);
+          const sections: string[] = [];
+          for (const page of pages) {
+            if (page.servedRows.length > 0) {
+              await recordServesBestEffort({
+                sessionKey,
+                path: page.file.absolutePath,
+                servedRows: page.servedRows,
+                contentHash: snapshotHashFor(page.file.normalized),
+              });
+              notifyServedSpans({
+                filePath: page.file.absolutePath,
+                spans: servedRowsToSpans(page.servedRows),
+                source: "auto-read",
+                content: page.file.normalized,
+              });
+            }
+            const rowsText = fmtServedRows(page.servedRows, page.file.allLines);
+            sections.push(rowsText === "" ? page.header : `${page.header}\n${rowsText}`);
+          }
+          notifyBashViewOnce(ctx, sessionKey);
+          return { content: [{ type: "text", text: sections.join("\n") }] };
+        }
+
         async function servePureViewBlock(
           view: { filePath: string; baseDir?: string; ops: ViewOp[]; lineNumbered?: boolean },
           rawText: string | undefined,
@@ -1417,6 +1720,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
     const family = segment.family;
     if (family.kind !== "pureSearch") return undefined;
+    // WHY: (ADR-0048 D3 scope) predicting a context block byte-exactly would mean reproducing grep's
+    // WHY: window-merge and `--` separator rules from disk. That prediction is not part of D3, so a
+    // WHY: context search segment halts the peel here: the rest rides through raw with zero leases for
+    // WHY: it — never a guessed block, and never a regression for the plain search segments beside it.
+    if (family.search.context !== undefined) return undefined;
     const resolved = await resolveSegmentFile(family.search.filePath, effCwd);
     if (resolved === undefined) return undefined;
     const rows: ServedRow[] = [];
@@ -1494,17 +1802,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     // WHY: stdout is split or non-text cannot be proven to be this command's output.
     const stdoutText = observedText ?? singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
-    const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
-    if (matches === undefined || matches.length === 0) return undefined;
-    if (matches.length > SEARCH_MAX_MATCHES) return undefined;
+    const rows = parseSearchStdout(
+      toLF(stripBOM(stdoutText).text),
+      search.context === undefined ? undefined : { context: true },
+    );
+    if (rows === undefined || rows.length === 0) return undefined;
+    const matchLines = searchRowsWithinBudget(rows, search.context);
+    if (matchLines === undefined) return undefined;
     // WHY: (serve-seam policy: one row per file line, rows in stream order — ADR-0048, bash
     // WHY: serve admission, states the no-bleed invariant, not an ordering clause)
     // WHY: the printed number is a label whose ORDER is proven by the stream, not by matching
     // WHY: content. A descending or repeated label breaks stream order, so the WHOLE serve fails
     // WHY: closed with zero leases. Real `grep`/`rg` on one file always print ascending, so
     // WHY: nothing served regresses.
-    for (let i = 1; i < matches.length; i++) {
-      if (matches[i]!.line <= matches[i - 1]!.line) return undefined;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i]!.line <= rows[i - 1]!.line) return undefined;
     }
     const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
       search.filePath,
@@ -1516,7 +1828,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     );
     const diskLines = deps.visLines(normalized);
     const servedRows: ServedRow[] = [];
-    for (const { line, content } of matches) {
+    for (const { line, content } of rows) {
       // WHY: [ADR-0033 D9] byte equality per matched line — the witness that the anchored row is the
       // WHY: line bash printed. A stale/forged/stdout-only line fails closed with no lease.
       if (diskLines[line - 1] !== content) return undefined;
@@ -1529,6 +1841,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     // WHY: declines rather than leasing nothing while claiming success (F4).
     const shownRows = applySliceToServedRows(servedRows, search.sliceOps ?? []);
     if (shownRows.length === 0) return undefined;
+    // WHY: (ADR-0048 D3) the header's count names what the block HOLDS: the pattern hits, with the
+    // WHY: context rows named beside them once a window was served. A plain search has no context row,
+    // WHY: so its frozen `[file (N matches)]` literal is byte-identical to before.
+    const shownMatchRows = shownRows.filter((row) => matchLines.has(row.position + 1)).length;
+    const shownContextRows = shownRows.length - shownMatchRows;
     const sessionKey = deps.sessionKeyFor(ctx);
     await recordServesBestEffort({
       sessionKey,
@@ -1544,8 +1861,12 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     });
     // WHY: the header is frozen (spec §3.4): the same search banner literal from `bashBanner` names
     // WHY: the interception seam, and the bracketed count uses the singular for one match.
-    const count = shownRows.length;
-    const header = `${bashBanner("search")}\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
+    const matchNoun = shownMatchRows === 1 ? "match" : "matches";
+    const contextNoun = shownContextRows === 1 ? "line" : "lines";
+    const matches = `${shownMatchRows} ${matchNoun}`;
+    const count =
+      shownContextRows === 0 ? matches : `${matches}, ${shownContextRows} context ${contextNoun}`;
+    const header = `${bashBanner("search")}\n[${search.filePath} (${count})]`;
     notifyBashViewOnce(ctx, sessionKey);
     return {
       content: [{ type: "text", text: `${header}\n${fmtServedRows(shownRows, diskLines)}` }],
