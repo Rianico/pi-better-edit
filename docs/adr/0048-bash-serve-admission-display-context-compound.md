@@ -4,11 +4,11 @@ Date: 2026-10-18
 
 ## Status
 
-partially accepted — four-run corpus analysis (3,582 bash calls) and an independent design review.
-D1 is accepted and implemented by #175 (PR #177); D3 is accepted and implemented by #183; D4 is
-accepted and implemented by #185; D5 is accepted and implemented by #183 through
-[ADR-0049](0049-multi-file-bash-views.md); D2 is deferred with its tracking issue;
-D6 is accepted as standing architecture guidance.
+accepted — four-run corpus analysis (3,582 bash calls) and an independent design review.
+D1 is accepted and implemented by #175 (PR #177); D2 is accepted and implemented by #176; D3 is
+accepted and implemented by #183; D4 is accepted and implemented by #185; D5 is accepted and
+implemented by #183 through [ADR-0049](0049-multi-file-bash-views.md); D6 is accepted as standing
+architecture guidance.
 Extends [ADR-0033](0033-bash-view-interception.md) and [ADR-0039](0039-compound-bash-view-interception.md).
 Narrowly amends ADR-0033 D5 for display-only transforms; extends D9 with a second invariant.
 ADR-0033 D7's multi-file **view** non-goal is narrowed to ADR-0049's admitted subset (see D5).
@@ -16,15 +16,15 @@ ADR-0033 D7's multi-file **view** non-goal is narrowed to ADR-0049's admitted su
 | decision | subject | status |
 |---|---|---|
 | D1 | two-sided serve invariant: prediction **and** attribution | accepted — implemented by #175 (PR #177) |
-| D2 | display-only tails (`cat -A`, `od -c`, `xxd`, `hexdump -C`) | deferred — #176 |
+| D2 | display-only tails (`cat -A`, `cat -vet`, `od -c`, `xxd`, `hexdump -C`) | accepted — implemented by #176 |
 | D3 | context searches (`-A`/`-B`/`-C`) | accepted — implemented by #183 |
 | D4 | verified compound chains with an inert count tail | accepted — implemented by #185 |
 | D5 | multi-file views (defined safe subset only) | accepted — implemented by #183 via ADR-0049 |
 | D6 | extend the rule table; do not build an optimizer | accepted |
 
 Amended 2026-10-23 (Issue #175, PR #177, commit `8b6a0b8`): D1 landed and is enforced — the
-two-sided serve invariant is implemented. D2–D5 are still deferred with the tracking issues
-named above.
+two-sided serve invariant is implemented. At that point D2–D5 were still deferred with the tracking
+issues named above; later amendments landed D3, D4, D5, and D2.
 
 Amended 2026-10-26 (Issue #185, commit `8362f2f`): D4 landed — the inert count tail is admitted
 only after the last verified block of a multi-block, statically glued compound; the verified
@@ -77,15 +77,27 @@ review's "served ⊆ observed with a per-block boundary proof"; D9 alone is nece
 
 ### D2. Display-only tails (amends ADR-0033 D5)
 
-Admit a **terminal** `cat -A`, `od -c`, `xxd`, or `hexdump -C` stage over an already-admitted view.
-The transform output is never served and never leased: serve the raw re-read rows, and disclose the
-drop with one line under the existing banner (for example `[cat -A rendering dropped; raw rows served]`).
-The frozen banner literals do not change.
+Admit a **terminal** `cat -A`, `cat -vet`, `od -c`, `xxd`, or `hexdump -C` stage over an
+already-admitted **raw-slice view** (`cat`, `head`, `tail`, or numeric `sed -n`). The transform output
+is never served and never leased: serve the raw re-read rows, and disclose the drop with one line
+under the existing page header (for example `[cat -A rendering dropped; raw rows served]`). The
+frozen banner literals do not change; the disclosure line carries no anchor and no lease.
 
 Guards: terminal stage only; no operand, redirect, or further pipeline; closed transform set; the
-transform must reproduce observed stdout exactly; mismatch or over-cap → pass-through with zero
-leases. This preserves ADR-0033 D5's reason — anchors never describe transform bytes — while
-allowing the raw rows the model needs.
+head must be unnumbered and free of content filters, searches, multi-file operands, and compound
+envelopes; the transform must reproduce observed stdout exactly under ADR-0033 D9's LF/no-BOM
+normalization; mismatch, a missing transform command, a lone-CR file, or over-cap output →
+pass-through with zero leases. This preserves ADR-0033 D5's reason — anchors never describe
+transform bytes — while allowing the raw rows the model needs.
+
+As implemented (#176): the oracle re-runs the same read-only transform on a temporary copy of the
+exact raw head slice. That keeps platform-specific `od`/`xxd`/`hexdump` layout and the GNU-only
+`cat -A` out of a hand-written encoder; `cat -vet` is the BSD/GNU-portable spelling. CRLF and BOM
+files are supported by re-running the transform on the raw disk bytes while the served rows remain
+the normalized LF/no-BOM rows; a lone CR or a mixed-in CR fails closed. `rtk` display wrappers are
+out of scope (bare transforms only), and a display tail never rides in a compound. The owner
+explicitly waived the issue's real-session net-gain gate: the corpus has 0 real-session display
+tails and the benchmark count is not a demand proof; `bash.view` remains the existing off switch.
 
 ### D3. Context searches (extends ADR-0033 D10)
 

@@ -5,6 +5,8 @@ import type { LFile, LoadFileOptions } from "../file-kind.js";
 import type { Hasher } from "../hashline/hasher.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
+import type { DisplayTransform } from "../bash-classifier.js";
+
 export type ToolResultEvent = {
   toolName: string;
   isError: boolean;
@@ -57,4 +59,6 @@ export type LifecycleDeps = {
     servedRows?: ServedRow[];
   };
   visLines: (s: string) => string[];
+  /** (ADR-0048 D2) re-run the terminal display transform on the exact raw head bytes. */
+  runDisplayTransform: (transform: DisplayTransform, input: string) => Promise<string | undefined>;
 };
