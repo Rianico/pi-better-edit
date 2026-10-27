@@ -6,11 +6,12 @@ Date: 2026-10-18
 
 partially accepted — four-run corpus analysis (3,582 bash calls) and an independent design review.
 D1 is accepted and implemented by #175 (PR #177); D3 is accepted and implemented by #183; D4 is
-accepted and implemented by #185; D2/D5 are deferred with their tracking issues;
+accepted and implemented by #185; D5 is accepted and implemented by #183 through
+[ADR-0049](0049-multi-file-bash-views.md); D2 is deferred with its tracking issue;
 D6 is accepted as standing architecture guidance.
 Extends [ADR-0033](0033-bash-view-interception.md) and [ADR-0039](0039-compound-bash-view-interception.md).
 Narrowly amends ADR-0033 D5 for display-only transforms; extends D9 with a second invariant.
-ADR-0033 D7's multi-file **view** non-goal remains in force (see D5).
+ADR-0033 D7's multi-file **view** non-goal is narrowed to ADR-0049's admitted subset (see D5).
 
 | decision | subject | status |
 |---|---|---|
@@ -18,7 +19,7 @@ ADR-0033 D7's multi-file **view** non-goal remains in force (see D5).
 | D2 | display-only tails (`cat -A`, `od -c`, `xxd`, `hexdump -C`) | deferred — #176 |
 | D3 | context searches (`-A`/`-B`/`-C`) | accepted — implemented by #183 |
 | D4 | verified compound chains with an inert count tail | accepted — implemented by #185 |
-| D5 | multi-file views (defined safe subset only) | deferred — #183 |
+| D5 | multi-file views (defined safe subset only) | accepted — implemented by #183 via ADR-0049 |
 | D6 | extend the rule table; do not build an optimizer | accepted |
 
 Amended 2026-10-23 (Issue #175, PR #177, commit `8b6a0b8`): D1 landed and is enforced — the
@@ -119,9 +120,12 @@ one block per file with a per-file header; offset-based boundary proof; a total 
 bytes and are implementation-dependent. Any non-newline-terminated file, non-text file, or
 unprovable boundary passes through.
 
-Admission waits for a follow-up ADR with the multi-block serve seam, per-file leases, and the
-boundary tests. ADR-0033 D7's multi-file view non-goal remains in force until then. The corpus has
-zero standalone multi-file views, so this decision claims no benchmark gain.
+Admission waited for a follow-up ADR with the multi-block serve seam, per-file leases, and the
+boundary tests. That follow-up is [ADR-0049](0049-multi-file-bash-views.md), which landed the safe
+subset in #183: one page section per file, line-count boundaries, per-file leases, zero-row pages,
+configured caps, and a whole-command fail-closed rule. This paragraph keeps the subset as the record
+of what D5 admitted; the serve seam and its fixtures live in ADR-0049. ADR-0033 D7's multi-file view
+non-goal stays narrowed to this subset.
 
 ### D6. Architecture: extend the rule table; do not build an optimizer
 
@@ -176,7 +180,7 @@ result changes.
 
 - **#175** — D1, two-sided serve invariant: landed and closed (PR #177).
 - **#176** — D2, display-only tails: deferred; this record keeps the safe shape and its guards.
-- **#183** — D3, context searches: landed (see the amendment above); D5, multi-file views: deferred.
+- **#183** — D3, context searches: landed; D5, multi-file views: landed through ADR-0049.
 - **#185** — D4, verified compound chains with an inert count tail: landed.
 
 ## Links
