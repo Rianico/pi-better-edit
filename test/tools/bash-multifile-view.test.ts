@@ -275,6 +275,43 @@ describe("bash multi-file view fixtures (#183, ADR-0049 M7)", () => {
     });
   });
 
+  it("fixture 5b — cat -n BSD per-file numbering (hand-written rendering)", async () => {
+    await withTempDir("bash-multifile-", async (dir) => {
+      await prepare(dir, { "a.txt": "a1\na2\n", "b.txt": "b1\nb2\n" });
+      const command = "cat -n a.txt b.txt";
+      // WHY hand-written BSD bytes: BSD `cat -n` RESTARTS numbering in each file, so this stream
+      // WHY: matches only the per-file candidate of `multiViewExpectedTexts` — the continuous
+      // WHY: candidate (fixture 4's bytes) generates different digits across all four rows. A GNU CI
+      // WHY: host cannot produce these bytes with `realStdout`, which is exactly why they are pinned
+      // WHY: here: without this fixture the per-file branch would be unexercised off a BSD host.
+      const observed = "     1\ta1\n     2\ta2\n     1\tb1\n     2\tb2\n";
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "mf-cat-n-bsd" } };
+      const result = await bashResult(handlers.get("tool_result")!, command, ctx, observed);
+      expect(result).toBeDefined();
+      const rows = rowsOf(result!.content[0]!.text);
+      // WHY raw lines, not the numbering: the transform is display geometry only; leases come from
+      // WHY: the file-relative re-read positions, so a restarted counter cannot shift a coordinate.
+      expect(rows.map(rowContent)).toEqual(["a1", "a2", "b1", "b2"]);
+
+      const edits = await editTool.execute(
+        "e0",
+        {
+          file: "b.txt",
+          edits: [
+            { anchor_from: anchorFor(rows, "b1"), anchor_to: anchorFor(rows, "b1"), text: "B1" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(edits.isError).toBeFalsy();
+    });
+  });
+
   it("fixture 6 — a sed -n range spanning files maps stream lines to file-relative pages", async () => {
     await withTempDir("bash-multifile-", async (dir) => {
       await prepare(dir, { "a.txt": "a1\na2\n", "b.txt": "b1\nb2\n" });
