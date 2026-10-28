@@ -23,6 +23,8 @@
  * noisy). Nothing here throws on the read side.
  */
 import {
+  accessSync,
+  constants,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -110,6 +112,38 @@ export function readScopeConfig(
 }
 
 /**
+ * Whether a write anywhere under `path` would be attempted at all: the nearest EXISTING ancestor has
+ * to accept a write.
+ *
+ * WHY walk up: the directory a write would create does not exist yet on a first adoption, so testing
+ * the destination itself would answer a question about a path nobody has made. The nearest existing
+ * ancestor is the directory the creation would have to modify.
+ *
+ * WHY `accessSync(W_OK)` rather than a trial write: a trial write leaves a file behind on failure and
+ * is the very cost this check removes.
+ */
+function isWritable(path: string): boolean {
+  const ancestor = nearestExistingAncestor(path);
+  if (ancestor === undefined) return false;
+  try {
+    accessSync(ancestor, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function nearestExistingAncestor(path: string): string | undefined {
+  let candidate = path;
+  for (;;) {
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(candidate);
+    if (parent === candidate) return undefined;
+    candidate = parent;
+  }
+}
+
+/**
  * Serve a file left at a retired location, and retire it once the new one holds its keys (#190).
  *
  * WHY every retired source is renamed, not just the one that won: the chain is ordered, so the
@@ -120,8 +154,9 @@ export function readScopeConfig(
  *
  * WHY a failed adoption still returns the object: settings must keep working when the destination
  * is, say, read-only — the write is the only part that can fail, and the read side never depends
- * on it. A project tree that refuses the write is the same case: the old keys serve, nothing is
- * renamed, and one warning names the destination.
+ * on it. A project tree that refuses the write is the same case: the old keys serve and nothing is
+ * renamed — but there the attempt is SKIPPED rather than made and reported (`isWritable`), because a
+ * read-only checkout would otherwise pay a failed write, and a warning, on every session.
  */
 function adoptRetiredConfig(
   scope: ConfigScope,
@@ -133,6 +168,11 @@ function adoptRetiredConfig(
   for (const source of sources) {
     const retired = readConfigObject(source);
     if (retired === undefined) continue;
+    // SAFETY: the project scope skips the write BEFORE attempting it. The design promises the skip,
+    // SAFETY: so there is nothing to report: a warning here would be the same noise per session the
+    // SAFETY: skip exists to remove. The global scope keeps attempt-and-report, because a global
+    // SAFETY: destination that refuses the write means the user's settings were not carried over.
+    if (scope === "project" && !isWritable(dirname(newPath))) return retired;
     adoptSettings(newPath, retired, source, sources);
     return retired;
   }

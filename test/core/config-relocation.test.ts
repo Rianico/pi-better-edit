@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { settingsRoot } from "../../src/config-dir";
+import { settingsRoot, stateRoot } from "../../src/config-dir";
 import { clearDiagnostics, readDiagnostics } from "../support/fixtures";
 import { configFileDisplayPath, configFilePath, readScopeConfig } from "../../src/json-config";
 import { readBashViewConfig } from "../../src/bash-view-config";
@@ -33,12 +33,15 @@ const savedHome = process.env.HOME;
 const savedStoreDir = process.env.PI_BETTER_EDIT_CONFIG_DIR;
 const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 const savedXdgState = process.env.XDG_STATE_HOME;
+const savedXdgConfig = process.env.XDG_CONFIG_HOME;
 
 const retiredXdgPath = (): string => join(home, RETIRED_XDG_REL);
 const retiredFlatPath = (): string => join(home, RETIRED_FLAT_REL);
 const projectRetiredPath = (): string => join(cwd, RETIRED_FLAT_REL);
 const newGlobalPath = (): string => join(storeDir, "settings.json");
 const newProjectPath = (): string => join(cwd, ".pi/agents/pi-better-edit/settings.json");
+const retiredOverridePath = (): string => join(storeDir, "pi-better-edit.json");
+const newStateRoot = (): string => join(storeDir, "state");
 
 async function seed(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -55,6 +58,7 @@ beforeEach(async () => {
   process.env.HOME = home;
   delete process.env.PI_CODING_AGENT_DIR;
   delete process.env.XDG_STATE_HOME;
+  process.env.XDG_CONFIG_HOME = "";
   process.env.PI_BETTER_EDIT_CONFIG_DIR = storeDir;
   clearDiagnostics();
 });
@@ -68,6 +72,8 @@ afterEach(async () => {
   else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
   if (savedXdgState === undefined) delete process.env.XDG_STATE_HOME;
   else process.env.XDG_STATE_HOME = savedXdgState;
+  if (savedXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = savedXdgConfig;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -100,6 +106,61 @@ describe("global settings relocation", () => {
 
     expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
     expect(existsSync(`${retiredFlatPath()}.bak`)).toBe(true);
+  });
+
+  it("adopts the settings file the override itself used to hold", async () => {
+    // WHY: an override user's pre-change file was <override>/pi-better-edit.json — the directory
+    // WHY: WAS both roots, so it is the strongest retired source for them, not an absent one.
+    await seed(retiredOverridePath(), { bash: { view: "off" } });
+
+    expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
+    expect(await readFile(newGlobalPath(), "utf-8")).toContain('"view": "off"');
+    expect(existsSync(retiredOverridePath())).toBe(false);
+    expect(existsSync(`${retiredOverridePath()}.bak`)).toBe(true);
+  });
+
+  it("prefers the override's retired file over the XDG and agents sources", async () => {
+    await seed(retiredOverridePath(), { bash: { view: "off" } });
+    await seed(retiredXdgPath(), { bash: { view: "on" } });
+    await seed(retiredFlatPath(), { bash: { view: "on" } });
+
+    expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
+    // Every retired source retires, not only the winner: a loser left live would resurrect stale
+    // settings the moment the new file went away.
+    for (const source of [retiredOverridePath(), retiredXdgPath(), retiredFlatPath()]) {
+      expect(existsSync(source), source).toBe(false);
+      expect(existsSync(`${source}.bak`), source).toBe(true);
+    }
+  });
+
+  it("adopts a file under an XDG_CONFIG_HOME-relocated retired directory", async () => {
+    const xdgConfig = join(root, "xdg-config");
+    process.env.XDG_CONFIG_HOME = xdgConfig;
+    const relocated = join(xdgConfig, "pi-better-edit", "pi-better-edit.json");
+    await seed(relocated, { bash: { view: "off" } });
+
+    expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
+    expect(existsSync(relocated)).toBe(false);
+    expect(existsSync(`${relocated}.bak`)).toBe(true);
+  });
+
+  it("never derives a NEW path from XDG_CONFIG_HOME", () => {
+    // WHY: adoption is the only reader of the retired XDG base; the new layout is derived from the
+    // WHY: override/agent dir and the state home, so a moved XDG base cannot move a written file.
+    process.env.XDG_CONFIG_HOME = join(root, "xdg-config");
+    const settings = configFilePath("global", cwd);
+    const state = stateRoot();
+
+    process.env.XDG_CONFIG_HOME = join(root, "other-xdg-config");
+
+    expect(configFilePath("global", cwd)).toBe(settings);
+    expect(stateRoot()).toBe(state);
+    expect(settings).toBe(newGlobalPath());
+    expect(state).toBe(newStateRoot());
+
+    process.env.PI_BETTER_EDIT_CONFIG_DIR = "";
+    expect(settingsRoot()).toBe(join(home, ".pi", "agent", "extensions", "pi-better-edit"));
+    expect(stateRoot()).toBe(join(home, ".local", "state", "pi-better-edit"));
   });
 
   it("leaves the retired files alone once the new one exists", async () => {
@@ -157,16 +218,22 @@ describe("project settings relocation", () => {
   });
 
   it.skipIf(process.platform === "win32")(
-    "serves the retired project file and retires nothing when the tree is not writable",
+    "skips the project write entirely, silently, when the tree is not writable",
     async () => {
       await seed(projectRetiredPath(), { store: { janitor: "off" } });
+      clearDiagnostics();
       await chmod(join(cwd, ".pi", "agents"), 0o555);
       try {
-        // The read side keeps working from the retired file; the write is the only part that fails.
+        // The read side keeps working from the retired file; the write is skipped BEFORE it is
+        // attempted, so a read-only checkout pays neither a failed write nor a warning per session.
         expect(configFilePath("project", cwd)).toBe(newProjectPath());
-        await expect(readFile(newProjectPath(), "utf-8")).rejects.toThrow();
+        expect(readScopeConfig("project", cwd)?.store).toEqual({ janitor: "off" });
+        expect(existsSync(newProjectPath())).toBe(false);
         expect(existsSync(projectRetiredPath())).toBe(true);
         expect(existsSync(`${projectRetiredPath()}.bak`)).toBe(false);
+        // WHY no record at all: a failed adoption writes a warning naming the destination, so its
+        // absence is the observable proof that the write was never attempted.
+        expect(readDiagnostics().filter((r) => r.message.includes(newProjectPath()))).toEqual([]);
       } finally {
         await chmod(join(cwd, ".pi", "agents"), 0o755);
       }

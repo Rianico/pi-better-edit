@@ -16,10 +16,13 @@
  * root, so it needs no suffix: `<root>/settings.json` holds the settings and `<root>/state/` holds
  * the store, the legacy JSON and the diagnostics log.
  *
- * WHY HOME is stubbed too: the override moves both roots, but the RETIRED sources are still read
- * from `$HOME` (adoption, #190). A test that left HOME alone could rename the developer's real
- * `~/.pi/agents/pi-better-edit.json` to `.bak`, and a test that cleared the override could open the
- * real `~/.local/state/pi-better-edit/hash-store.sqlite`. Two stubs, no real path reachable.
+ * WHY HOME and XDG_CONFIG_HOME are stubbed too: the override moves both roots, but the RETIRED
+ * sources are still read from `$HOME` and `$XDG_CONFIG_HOME` (adoption, #190). A test that left HOME
+ * alone could rename the developer's real `~/.pi/agents/pi-better-edit.json` to `.bak`, a test that
+ * left XDG_CONFIG_HOME alone could log the developer's real
+ * `$XDG_CONFIG_HOME/pi-better-edit/hash-store.sqlite` and delete their `.corrupt-*` dumps, and a test
+ * that cleared the override could open the real `~/.local/state/pi-better-edit/hash-store.sqlite`.
+ * Three stubs, no real path reachable.
  *
  * GRANULARITY and the guarantee. Guaranteed: every evaluation of this module allocates its own fresh
  * directories with mkdtemp under the OS temp root and publishes them as PI_BETTER_EDIT_CONFIG_DIR
@@ -62,6 +65,9 @@ process.env.HOME = workerHomeDir;
 // WHY: an explicit empty value is the documented "unset" spelling, and an inherited XDG state or
 // WHY: agent dir from the developer's shell would otherwise outrank the stub under the opt-out rule.
 process.env.XDG_STATE_HOME = "";
+// WHY: XDG_CONFIG_HOME is consulted for RETIRED sources only, which is exactly enough to touch the
+// WHY: developer's real config directory (an abandoned store, a log line, a `.corrupt-*` dump).
+process.env.XDG_CONFIG_HOME = "";
 process.env.PI_CODING_AGENT_DIR = "";
 registry.dirs.add(workerStoreDir);
 registry.dirs.add(workerHomeDir);
