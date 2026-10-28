@@ -43,7 +43,8 @@ const PAGE_SIZE_OFFSET = 16;
 /** Enough wide rows that the probe table spans many pages. */
 const PROBE_ROWS = 500;
 
-/** A store dir of its own, published under the env var `configDir()` reads verbatim. */
+/** The extension root this test owns, published under the env var `stateRoot()` reads; the store
+ * lives in its `state/` subdirectory. */
 async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), "pi-usetime-"));
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
@@ -61,7 +62,8 @@ async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> 
  * beside it, so the count that must read exactly one filters on the database file's own name.
  */
 async function quarantinedMain(dir: string): Promise<string[]> {
-  const names = await readdir(dir);
+  // WHY the state subdir: the override names the extension's root, the store lives in `<root>/state`.
+  const names = await readdir(join(dir, "state"));
   return names.filter((name) => name.startsWith("hash-store.sqlite.corrupt-"));
 }
 

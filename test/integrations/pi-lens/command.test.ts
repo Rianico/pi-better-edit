@@ -31,7 +31,7 @@ import {
   STORE_JANITOR_ENV_VAR,
   STORE_JANITOR_INTERVAL_DEFAULT_MS,
 } from "../../../src/store-kernel/settings.js";
-import { configDir } from "../../../src/config-dir.js";
+import { settingsRoot } from "../../../src/config-dir.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const SETTLED_CHOICES = [
@@ -60,7 +60,7 @@ const savedStoreDir = process.env.PI_BETTER_EDIT_CONFIG_DIR;
 let previousBridge: unknown;
 
 const projectConfigPath = (): string => join(projectDir, LENS_CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;
@@ -189,7 +189,7 @@ describe("registerLensCommand", () => {
     expect(text).toContain("precedence: env > project > global > auto");
 
     installBridge();
-    await mkdir(configDir(), { recursive: true });
+    await mkdir(settingsRoot(), { recursive: true });
     await writeFile(globalConfigPath(), JSON.stringify({ lens: { bridge: "off" } }), "utf-8");
     process.env[LENS_BRIDGE_ENV_VAR] = "on";
     notifications.length = 0;
@@ -394,21 +394,26 @@ describe("registerLensCommand", () => {
         `store.janitorIntervalMs: ${STORE_JANITOR_INTERVAL_DEFAULT_MS} (default)`,
       );
       expect(text).toContain(`store.janitorBatchSize: ${STORE_JANITOR_BATCH_DEFAULT} (default)`);
-      expect(text).toContain(`store path: ${join(storeDir ?? "", "hash-store.sqlite")}`);
+      expect(text).toContain(`store path: ${join(storeDir ?? "", "state", "hash-store.sqlite")}`);
+      expect(text).toContain(`settings: ${join(storeDir ?? "", "settings.json")}`);
+      expect(text).toContain(`state root: ${join(storeDir ?? "", "state")}`);
       expect(text).toContain(`override PI_BETTER_EDIT_CONFIG_DIR: ${storeDir}`);
+      expect(text).toContain(
+        `project settings: ${join(projectDir, ".pi", "agents", "pi-better-edit", "settings.json")}`,
+      );
       expect(text).toContain("precedence: env > project > global > default");
       expect(text).toContain("store path is set by PI_BETTER_EDIT_CONFIG_DIR alone");
       expect(text).toContain("no config file key can move it");
     });
 
     it("labels the rung that won per key, so one rung never masks another", async () => {
-      await mkdir(configDir(), { recursive: true });
+      await mkdir(settingsRoot(), { recursive: true });
       await writeFile(
         globalConfigPath(),
         JSON.stringify({ store: { janitorBatchSize: 8 } }),
         "utf-8",
       );
-      await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+      await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
       await writeFile(
         projectConfigPath(),
         JSON.stringify({ store: { janitorIntervalMs: 900 } }),
@@ -433,7 +438,7 @@ describe("registerLensCommand", () => {
     });
 
     it("shows the defaults WITH the reason when a store config file cannot be used", async () => {
-      await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+      await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
       await writeFile(projectConfigPath(), "{ not json", "utf-8");
 
       const text = await statusOf(projectDir);

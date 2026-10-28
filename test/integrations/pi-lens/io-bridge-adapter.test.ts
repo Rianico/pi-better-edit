@@ -22,7 +22,7 @@ import {
   type ServedSpan,
   type ServedSpanNotification,
 } from "../../../src/served-spans.js";
-import { configDir } from "../../../src/config-dir.js";
+import { settingsRoot } from "../../../src/config-dir.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const FILE = "/tmp/pbe-io-bridge/file.ts";
@@ -89,7 +89,7 @@ function notifyServed(
 }
 
 async function seedProjectMode(mode: string): Promise<void> {
-  await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(
     join(projectDir, LENS_CONFIG_REL),
     JSON.stringify({ lens: { bridge: mode } }),
@@ -98,9 +98,9 @@ async function seedProjectMode(mode: string): Promise<void> {
 }
 
 async function seedGlobalMode(mode: string): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(settingsRoot(), { recursive: true });
   await writeFile(
-    join(configDir(), CONFIG_FILE_NAME),
+    join(settingsRoot(), CONFIG_FILE_NAME),
     JSON.stringify({ lens: { bridge: mode } }),
     "utf-8",
   );

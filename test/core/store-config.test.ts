@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DomainError } from "../../src/domain-errors.js";
 import { hashStorePath } from "../../src/hash-store.js";
-import { configDir } from "../../src/config-dir.js";
+import { settingsRoot } from "../../src/config-dir.js";
 import { CONFIG_REL, CONFIG_SCHEMA_ID, CONFIG_FILE_NAME } from "../../src/json-config.js";
 import { saveStoreJanitorConfig } from "../../src/store-config.js";
 import {
@@ -45,15 +45,15 @@ const ALL_ENV_VARS = [
 ] as const;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
-  await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(projectConfigPath(), JSON.stringify(value), "utf-8");
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(settingsRoot(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value), "utf-8");
 }
 
@@ -186,7 +186,7 @@ describe("resolveStoreJanitorSettings — precedence ladder", () => {
 
 describe("resolveStoreJanitorSettings — a broken file degrades with a warning", () => {
   it("reads a malformed file as defaults, warns exactly once and throws nothing", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
 
     let resolved: StoreJanitorSettings | undefined;
@@ -199,8 +199,8 @@ describe("resolveStoreJanitorSettings — a broken file degrades with a warning"
   });
 
   it("warns once per scope that exists but cannot be used, and names each file", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
-    await mkdir(configDir(), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
+    await mkdir(settingsRoot(), { recursive: true });
     await writeFile(projectConfigPath(), "]]]", "utf-8");
     await writeFile(globalConfigPath(), '{"store": ', "utf-8");
 
@@ -227,7 +227,7 @@ describe("resolveStoreJanitorSettings — a broken file degrades with a warning"
     expect(resolveStoreJanitorSettings(projectDir, warn)).toEqual(STORE_JANITOR_DEFAULTS);
     expect(warnings).toEqual([]);
 
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
     expect(() => resolveStoreJanitorSettings(projectDir)).not.toThrow();
     expect(warnings).toEqual([]);
@@ -236,7 +236,7 @@ describe("resolveStoreJanitorSettings — a broken file degrades with a warning"
 
 describe("the store directory is not configurable from the file", () => {
   it("ignores store.dir and leaves the store path on PI_BETTER_EDIT_CONFIG_DIR alone", async () => {
-    const dirBefore = configDir();
+    const dirBefore = settingsRoot();
     const storeBefore = hashStorePath();
     await seedProjectConfig({
       store: { dir: join(root, "elsewhere"), janitor: "off", janitorBatchSize: 2 },
@@ -248,7 +248,7 @@ describe("the store directory is not configurable from the file", () => {
       intervalMs: STORE_JANITOR_INTERVAL_DEFAULT_MS,
       batchSize: 2,
     });
-    expect(configDir()).toBe(dirBefore);
+    expect(settingsRoot()).toBe(dirBefore);
     expect(hashStorePath()).toBe(storeBefore);
     expect(Object.keys(settings)).not.toContain("dir");
     expect(readStoreJanitorConfig(projectDir, warn).project).not.toHaveProperty("dir");
@@ -320,7 +320,7 @@ describe("resolveStoreJanitorSettingsWithSources — the rung each key came from
   });
 
   it("resolves an unusable file to the default rungs and still warns once", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
 
     expect(resolveStoreJanitorSettingsWithSources(projectDir, warn)).toEqual({
@@ -339,7 +339,9 @@ describe("saveStoreJanitorConfig", () => {
     expect(readFileSync(path, "utf-8")).toBe(
       `${JSON.stringify({ $schema: CONFIG_SCHEMA_ID, store: { janitor: "off" } }, null, 2)}\n`,
     );
-    expect(readdirSync(join(projectDir, ".pi", "agents"))).toEqual(["pi-better-edit.json"]);
+    expect(readdirSync(join(projectDir, ".pi", "agents", "pi-better-edit"))).toEqual([
+      "settings.json",
+    ]);
     expect(resolveStoreJanitorSettings(projectDir, warn)).toEqual({
       mode: "off",
       intervalMs: STORE_JANITOR_INTERVAL_DEFAULT_MS,
@@ -366,7 +368,7 @@ describe("saveStoreJanitorConfig", () => {
   });
 
   it("rewrites a canonical file when the existing one is unparseable or not an object", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "]]]", "utf-8");
     saveStoreJanitorConfig({ mode: "on" }, "project", projectDir);
     expect(readJson(projectConfigPath())).toEqual({
