@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-10-28
+
 ### Features
 
 * **bash:** admit an inert `wc -l`/`-c` count tail after the last verified block of a multi-block, statically glued compound (ADR-0048 D4): the verified blocks keep their banners, anchors and per-block leases, and the count's already-observed bytes ride through raw and unleased. Only `wc` with `-l`/`-c` and file operands qualifies; a tail before any block or before a later block, stdin, a redirect, a pipeline, another command, a glued single-block chain, and any post-block `cd` still decline with their original reasons, and D10's single-leading-block behaviour is unchanged. (#185) (#186)
