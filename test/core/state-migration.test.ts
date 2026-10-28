@@ -26,6 +26,7 @@ const savedHome = process.env.HOME;
 const savedStoreDir = process.env.PI_BETTER_EDIT_CONFIG_DIR;
 const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 const savedXdgState = process.env.XDG_STATE_HOME;
+const savedXdgConfig = process.env.XDG_CONFIG_HOME;
 
 const report = (message: string): void => {
   reports.push(message);
@@ -45,6 +46,7 @@ beforeEach(async () => {
   process.env.HOME = home;
   process.env.PI_CODING_AGENT_DIR = "";
   process.env.XDG_STATE_HOME = "";
+  process.env.XDG_CONFIG_HOME = "";
   process.env.PI_BETTER_EDIT_CONFIG_DIR = storeDir;
   reports.length = 0;
 });
@@ -59,6 +61,8 @@ afterEach(async () => {
   else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
   if (savedXdgState === undefined) delete process.env.XDG_STATE_HOME;
   else process.env.XDG_STATE_HOME = savedXdgState;
+  if (savedXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = savedXdgConfig;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -109,6 +113,63 @@ describe("state artifact adoption", () => {
     }
     expect(existsSync(join(stateRoot(), "hash-store.sqlite"))).toBe(false);
     expect(reports.some((line) => line.includes(join(retired, "hash-store.sqlite")))).toBe(true);
+  });
+
+  it("moves artifacts out of the override's own root into <override>/state", async () => {
+    // WHY: an override user's pre-change layout put every artifact directly in <override>; the new
+    // WHY: layout puts them in <override>/state, so the override root is the strongest retired
+    // WHY: source and its abandoned store is the one worth naming.
+    await seed(join(storeDir, "hash-store.json"), JSON.stringify({ version: 1 }));
+    await seed(join(storeDir, "diagnostics.log"), '{"message":"old"}\n');
+    await seed(join(storeDir, "hash-store.sqlite"), "sqlite bytes");
+    await seed(join(storeDir, "hash-store.sqlite-wal"), "wal bytes");
+
+    migrateLegacyState(report);
+
+    expect(await readFile(join(stateRoot(), "hash-store.json"), "utf-8")).toContain('"version"');
+    expect(await readFile(join(stateRoot(), "diagnostics.log"), "utf-8")).toContain('"old"');
+    expect(existsSync(join(storeDir, "hash-store.json"))).toBe(false);
+    // The trio stays where the old session owns it, and the report names THAT path.
+    expect(existsSync(join(storeDir, "hash-store.sqlite"))).toBe(true);
+    expect(existsSync(join(stateRoot(), "hash-store.sqlite"))).toBe(false);
+    expect(reports.some((line) => line.includes(join(storeDir, "hash-store.sqlite")))).toBe(true);
+  });
+
+  it("moves the first retired root that has the artifact, not a later one", async () => {
+    await seed(join(storeDir, "hash-store.json"), "override copy");
+    await seed(join(retired, "hash-store.json"), "home copy");
+
+    migrateLegacyState(report);
+
+    expect(await readFile(join(stateRoot(), "hash-store.json"), "utf-8")).toBe("override copy");
+    expect(existsSync(join(retired, "hash-store.json"))).toBe(true);
+  });
+
+  it("adopts artifacts from an XDG_CONFIG_HOME-relocated retired directory", async () => {
+    const xdgConfig = join(root, "xdg-config");
+    const xdgRetired = join(xdgConfig, "pi-better-edit");
+    process.env.XDG_CONFIG_HOME = xdgConfig;
+    await seed(join(xdgRetired, "hash-store.json"), "xdg copy");
+
+    migrateLegacyState(report);
+
+    expect(await readFile(join(stateRoot(), "hash-store.json"), "utf-8")).toBe("xdg copy");
+    expect(existsSync(join(xdgRetired, "hash-store.json"))).toBe(false);
+  });
+
+  it("deletes forensic dumps from every retired root", async () => {
+    const xdgRetired = join(root, "xdg-config", "pi-better-edit");
+    process.env.XDG_CONFIG_HOME = join(root, "xdg-config");
+    const dumps = [
+      join(storeDir, "hash-store.sqlite.corrupt-1"),
+      join(xdgRetired, "hash-store.json.corrupt-2"),
+      join(retired, "hash-store.sqlite.corrupt-3"),
+    ];
+    for (const dump of dumps) await seed(dump, "dump");
+
+    migrateLegacyState(report);
+
+    for (const dump of dumps) expect(existsSync(dump), dump).toBe(false);
   });
 
   it("deletes the forensic dumps of the abandoned store and nothing else", async () => {

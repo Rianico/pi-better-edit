@@ -48,6 +48,12 @@ const CODING_AGENT_DIR_ENV_VAR = "PI_CODING_AGENT_DIR";
 /** The XDG base for machine-written state. */
 const XDG_STATE_HOME_ENV_VAR = "XDG_STATE_HOME";
 
+/** The XDG base the RETIRED config directory used to resolve against. Read for adoption only. */
+const XDG_CONFIG_HOME_ENV_VAR = "XDG_CONFIG_HOME";
+
+/** The directory name the extension owned before #190, under either config base. */
+const RETIRED_CONFIG_DIR_NAME = "pi-better-edit";
+
 /**
  * The operator's override, read VERBATIM, or `undefined` when unset. An empty value counts as
  * unset. WHY it is exported rather than read where it is used: `settingsRoot`, `stateRoot` and the
@@ -114,27 +120,62 @@ export const SETTINGS_FILE_NAME = "settings.json";
 export const PROJECT_SETTINGS_REL = ".pi/agents/pi-better-edit/settings.json";
 
 /**
- * The retired per-user directory: it held the settings file AND every state artifact, which is
- * exactly the coupling this relocation breaks. Read once for adoption, never written again.
+ * The retired per-user config directories, strongest first: each one held the settings file AND
+ * every state artifact before #190, which is exactly the coupling this relocation breaks. Read once
+ * for adoption, never written again.
+ *
+ * WHY the override comes first: a user who set `PI_BETTER_EDIT_CONFIG_DIR` before the relocation
+ * kept `pi-better-edit.json`, `hash-store.json` and the logs directly in that directory, and the
+ * override is still the strongest statement about where that user meant their files to live.
+ *
+ * WHY the XDG base is read HERE and only here: the pre-#190 ladder honoured `$XDG_CONFIG_HOME`, so a
+ * user who relocated the old directory through it has their settings and state under that base.
+ * Adoption is the one job that has to look where the old ladder looked — every NEW path is derived
+ * from the agent dir and the state home, so changing this variable never moves a file written by
+ * this version. A relative value is ignored, as it was.
+ *
+ * WHY deduped: an unset `$XDG_CONFIG_HOME` resolves to `<home>/.config`, so two rungs collapse into
+ * one and a single artifact must not be visited, moved or reported twice.
  */
-export function retiredConfigRoot(): string {
-  return join(homeBase(), ".config", "pi-better-edit");
+export function retiredConfigRoots(): readonly string[] {
+  const override = configDirOverride();
+  return dedupe([
+    ...(override === undefined ? [] : [override]),
+    join(xdgConfigBase(), RETIRED_CONFIG_DIR_NAME),
+    join(homeBase(), ".config", RETIRED_CONFIG_DIR_NAME),
+  ]);
+}
+
+/** `$XDG_CONFIG_HOME` when it is non-empty AND absolute; otherwise `$HOME/.config`. */
+function xdgConfigBase(): string {
+  const raw = process.env[XDG_CONFIG_HOME_ENV_VAR];
+  if (raw !== undefined && raw.length > 0 && isAbsolute(raw)) return raw;
+  return join(homeBase(), ".config");
+}
+
+/** First occurrence wins, order preserved. */
+function dedupe(paths: readonly string[]): readonly string[] {
+  return [...new Set(paths)];
 }
 
 /** The retired FLAT settings location, relative to either a project root or the home directory. */
 const RETIRED_FLAT_SETTINGS_REL = ".pi/agents/pi-better-edit.json";
 
+/** The settings file name the retired directories held before #190. */
+const RETIRED_SETTINGS_FILE_NAME = "pi-better-edit.json";
+
 /**
- * The retired global settings files, strongest first: the old XDG config directory, then the
- * even older flat `$HOME/.pi/agents/` one. WHY ordered here rather than at the call site: the
- * adoption chain is a contract, and a caller that reordered it would adopt a different file than
- * its neighbour.
+ * The retired global settings files, strongest first: the override's own directory (when set),
+ * the retired directory under the XDG config base, the same directory under `$HOME/.config`, then
+ * the even older flat `$HOME/.pi/agents/` file. WHY one function rather than three rungs at the call
+ * site: the adoption chain is a contract, and a caller that reordered it would adopt a different
+ * file than its neighbour.
  */
 export function retiredGlobalSettingsPaths(): readonly string[] {
-  return [
-    join(retiredConfigRoot(), "pi-better-edit.json"),
+  return dedupe([
+    ...retiredConfigRoots().map((root) => join(root, RETIRED_SETTINGS_FILE_NAME)),
     join(homeBase(), RETIRED_FLAT_SETTINGS_REL),
-  ];
+  ]);
 }
 
 /** The retired PROJECT settings file: the flat file beside the new directory. */
