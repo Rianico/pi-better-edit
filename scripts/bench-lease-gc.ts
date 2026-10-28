@@ -20,6 +20,7 @@ import { STORE_JANITOR_DEFAULTS } from "../src/store-kernel/settings.js";
 import { runJanitor } from "../src/store-janitor";
 import { SERVED_TTL_MS } from "../src/constants";
 import { CANON_VERSION, ANCHOR_GENERATION } from "../src/hashline/hash-identity.js";
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 
 const PATHS = 200;
 const VERSIONS = 5;
@@ -92,7 +93,7 @@ const vacuumSamples = (db: DatabaseSync): { p50: number; p95: number } => {
 };
 
 const dir = await mkdtemp(join(tmpdir(), "pi-bench-lease-gc-"));
-process.env.PI_BETTER_EDIT_CONFIG_DIR = dir;
+Object.assign(process.env, sandboxEnv(dir));
 const store = await loadHashStore();
 const db = store.db;
 const now = Date.now();

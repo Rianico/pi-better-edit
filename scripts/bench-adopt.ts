@@ -14,6 +14,7 @@ import { join } from "node:path";
 import register from "../index";
 import { initHasher } from "../src/hashline/hash-identity.js";
 import { shutdownHashStore } from "../src/hash-store";
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 
 const LINES = 100_000;
 const SAMPLES = 5;
@@ -69,6 +70,9 @@ const ctxFor = (cwd: string) => ({
 });
 
 const dir = await mkdtemp(join(tmpdir(), "pi-bench-adopt-"));
+// WHY: the whole sandbox, not just the override — the retired-source walk reads $HOME and
+// WHY: $XDG_CONFIG_HOME and deletes their `.corrupt-*` dumps (#190).
+Object.assign(process.env, sandboxEnv(dir));
 const path = join(dir, "big.txt");
 await writeFile(path, CONTENT, "utf-8");
 await initHasher();
