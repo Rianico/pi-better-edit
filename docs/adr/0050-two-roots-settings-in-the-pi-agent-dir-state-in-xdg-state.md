@@ -69,7 +69,9 @@ in that one seam module. Both roots resolve from one ladder:
 - `stateHome` = `$XDG_STATE_HOME` when set, non-empty **and absolute**, else `<home>/.local/state`.
 - **state root** = `<override>/state` when the override is set, else `<stateHome>/pi-better-edit`.
 - **project settings file** = `<cwd>/.pi/agents/pi-better-edit/settings.json`.
-- `XDG_CONFIG_HOME` is no longer read anywhere.
+- `XDG_CONFIG_HOME` no longer participates in resolution. It is read in exactly one place — the
+  retired-source list that the one-time adoption consults (§D5) — so changing it can never move a
+  file this version writes.
 
 | artifact | location |
 |---|---|
@@ -110,8 +112,10 @@ and state cannot be moved independently — accepted, and stated in the conseque
 
 ### D3. The store starts fresh; the old one is abandoned in place
 
-`<old config dir>` below is the directory today's ladder resolves: the override when it is set, else
-`$XDG_CONFIG_HOME/pi-better-edit` or `$HOME/.config/pi-better-edit`.
+`<old config dir>` below is the ordered list of retired directories: `PI_BETTER_EDIT_CONFIG_DIR`
+when it is set, then `$XDG_CONFIG_HOME/pi-better-edit` (off Windows in the old ladder, honoured here
+on every platform because the directory existed wherever it existed), then
+`$HOME/.config/pi-better-edit`, deduped. Every artifact below is looked for in that order.
 
 - The old `<old config dir>/hash-store.sqlite` (with `-wal` and `-shm`) is never copied, renamed,
   moved or deleted. An un-restarted older version may still own the file, and a copy would diverge
@@ -129,6 +133,8 @@ and state cannot be moved independently — accepted, and stated in the conseque
 
 | artifact | where it was | what happens |
 |---|---|---|
+| global settings, override directory | `<override>/pi-better-edit.json` | adopted (§D5) |
+| global settings, XDG config directory | `$XDG_CONFIG_HOME/pi-better-edit/pi-better-edit.json` | adopted (§D5) |
 | global settings, old home default | `~/.config/pi-better-edit/pi-better-edit.json` | adopted (§D5) |
 | global settings, agents dir | `~/.pi/agents/pi-better-edit.json` | adopted (§D5) |
 | project settings, flat | `<cwd>/.pi/agents/pi-better-edit.json` | adopted (§D5) |
@@ -141,6 +147,11 @@ The pass is idempotent (marker file `.migration-v1` in the state root), best-eff
 never fails a tool call, and runs before the first store open and the first diagnostics write, so no
 reader can observe a half-moved layout.
 
+The marker records "nothing is left to move", not "the pass ran": a move that cannot be completed
+— and a `rename` that cannot cross a device boundary falls back to copy-then-unlink first — leaves it
+unwritten, so the next session tries again. A failed DELETION is only reported, because it is retried
+by nothing and withholding the marker would re-walk the retired directories on every session forever.
+
 The asymmetry is deliberate. `hash-store.json` is inert data — read only by the migration path of a
 store that has no SQLite file yet. The logs are append-only diagnostics where the loss of the newest
 line is acceptable. The SQLite trio is a live database with a WAL and a lock, so it is the one
@@ -152,8 +163,9 @@ deletes.
 
 Precedence per scope, first match wins:
 
-- global: `<settings root>/settings.json` → `~/.config/pi-better-edit/pi-better-edit.json` →
-  `~/.pi/agents/pi-better-edit.json`;
+- global: `<settings root>/settings.json` → `<override>/pi-better-edit.json` (only when the override
+  is set) → `$XDG_CONFIG_HOME/pi-better-edit/pi-better-edit.json` →
+  `~/.config/pi-better-edit/pi-better-edit.json` → `~/.pi/agents/pi-better-edit.json`;
 - project: `<cwd>/.pi/agents/pi-better-edit/settings.json` →
   `<cwd>/.pi/agents/pi-better-edit.json`.
 
@@ -174,10 +186,12 @@ lose the settings outright on a partial failure. Why rename every retired source
 winner alone: the retired copies must stop being live configuration, or deleting the new file would
 silently resurrect stale settings, and "retired" would describe only one of them.
 
-The retired XDG source is `$HOME/.config/pi-better-edit/pi-better-edit.json` specifically, because
-`XDG_CONFIG_HOME` no longer participates in resolution at all. A user who had relocated the old
-directory through that variable is therefore not adopted; that limit is stated in the consequences
-rather than papered over with a fourth fallback.
+Retired sources are read from the override, the XDG config root and `~/.config`, in that order,
+plus the older flat `~/.pi/agents/pi-better-edit.json`; new paths never consult `XDG_CONFIG_HOME`.
+That is the whole ladder: a user who set the override kept `pi-better-edit.json` in it, a user who
+relocated with `XDG_CONFIG_HOME` kept it under that base, and everyone else kept it under
+`~/.config`. Adoption looks where the old ladder looked, while nothing this version WRITES depends
+on that variable — so moving it moves no new file, and the ceiling is a source nobody had.
 
 ### D6. Fail-fast when the state root cannot be created
 
@@ -209,9 +223,10 @@ lever. A MAJOR would require removing or renaming one of those surfaces, and non
 ## Consequences
 
 - Nothing reads an old config directory after the one-time adoption, and `XDG_CONFIG_HOME` leaves
-  resolution entirely. A user who had relocated the old directory with `XDG_CONFIG_HOME` is not
-  adopted: their settings still sit where the new ladder never looks, and first save creates a fresh
-  file. This is a stated limit, not an oversight.
+  resolution entirely: it names retired sources only. Retired settings and state are therefore read
+  from the override, the XDG config root and `~/.config`, in that order, and a user who had relocated
+  the old directory with `XDG_CONFIG_HOME` is adopted like everyone else — their file is found where
+  the old ladder left it, and their artifacts move with it.
 - An un-restarted older session keeps its own store and is untouched by the move; the two layouts
   cannot contend for a lock because they are different files. If that older session reads its settings
   after the adoption it finds its file renamed `.bak` and falls back to the ladder's defaults — a
