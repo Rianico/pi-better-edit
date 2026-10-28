@@ -122,7 +122,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
     }
   }
   function sqlitePath(home: string): string {
-    return join(home, ".config", "pi-better-edit", "hash-store.sqlite");
+    return join(home, ".local", "state", "pi-better-edit", "hash-store.sqlite");
   }
 
   it("round-trips a snapshot under the current canon version", async () => {

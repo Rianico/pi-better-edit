@@ -80,7 +80,7 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
 }
 
 function sqlitePath(home: string): string {
-  return join(home, ".config", "pi-better-edit", "hash-store.sqlite");
+  return join(home, ".local", "state", "pi-better-edit", "hash-store.sqlite");
 }
 
 /**

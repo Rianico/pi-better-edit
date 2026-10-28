@@ -11,19 +11,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import register from "../../index";
 import { BASH_VIEW_ENV_VAR } from "../../src/bash-view-config.js";
-import { configDir } from "../../src/config-dir.js";
+import { settingsRoot } from "../../src/config-dir.js";
 import { CONFIG_FILE_NAME } from "../../src/json-config.js";
 import { clearDiagnostics, readDiagnostics, useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
 
 /**
- * WHY this reset exists: the global settings file now lives in `configDir()`, which the harness
+ * WHY this reset exists: the global settings file now lives in `settingsRoot()`, which the harness
  * allocates once per FILE — so a `bash-view off global` written by one test would otherwise steer
  * the next one. Before the move it lived under the per-test HOME, which `withTempDir` removed.
  */
 beforeEach(async () => {
-  await rm(join(configDir(), CONFIG_FILE_NAME), { force: true });
+  await rm(join(settingsRoot(), CONFIG_FILE_NAME), { force: true });
 });
 
 function makeFakePi() {
@@ -130,8 +130,8 @@ describe("bash view off-switch lifecycle", () => {
   it("bypasses the search branch too when off, and intercepts again when on", async () => {
     await withTempDir("bash-view-off-search-", async (dir) => {
       await writeFile(join(dir, "f.txt"), numberedLines(30), "utf-8");
-      await mkdir(join(dir, ".pi", "agents"), { recursive: true });
-      const configPath = join(dir, ".pi", "agents", "pi-better-edit.json");
+      await mkdir(join(dir, ".pi", "agents", "pi-better-edit"), { recursive: true });
+      const configPath = join(dir, ".pi", "agents", "pi-better-edit", "settings.json");
       await writeFile(configPath, JSON.stringify({ bash: { view: "off" } }), "utf-8");
       const { pi, handlers } = makeFakePi();
       register(pi);

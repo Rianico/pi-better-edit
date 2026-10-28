@@ -11,15 +11,22 @@
  * fixtures at all, and module-scope store access, because setup files are imported (and awaited)
  * before the test module is.
  *
- * HOW: point PI_BETTER_EDIT_CONFIG_DIR (read by configDir() in src/hash-store.ts) at a fresh temp dir
- * for each evaluation (per test file under the default isolate: true). The variable names the app
- * config dir itself, so it needs no suffix.
+ * HOW: point PI_BETTER_EDIT_CONFIG_DIR at a fresh temp dir for each evaluation (per test file under
+ * the default isolate: true), and point HOME at another one. The variable names the extension's own
+ * root, so it needs no suffix: `<root>/settings.json` holds the settings and `<root>/state/` holds
+ * the store, the legacy JSON and the diagnostics log.
+ *
+ * WHY HOME is stubbed too: the override moves both roots, but the RETIRED sources are still read
+ * from `$HOME` (adoption, #190). A test that left HOME alone could rename the developer's real
+ * `~/.pi/agents/pi-better-edit.json` to `.bak`, and a test that cleared the override could open the
+ * real `~/.local/state/pi-better-edit/hash-store.sqlite`. Two stubs, no real path reachable.
  *
  * GRANULARITY and the guarantee. Guaranteed: every evaluation of this module allocates its own fresh
- * directory with mkdtemp under the OS temp root and publishes it as PI_BETTER_EDIT_CONFIG_DIR before
- * the test module is imported; configDir() returns that value verbatim while it is non-empty, so the
- * store path cannot be derived from HOME, XDG_CONFIG_HOME or the cwd and cannot be a pre-existing
- * config dir. Isolation therefore holds at any granularity and under any pool setting, however many
+ * directories with mkdtemp under the OS temp root and publishes them as PI_BETTER_EDIT_CONFIG_DIR
+ * and HOME before the test module is imported; `settingsRoot()`/`stateRoot()` return the override
+ * verbatim while it is non-empty, so neither root can be derived from HOME, XDG_STATE_HOME or the
+ * cwd and neither can be a pre-existing directory. Isolation therefore holds at any granularity and
+ * under any pool setting, however many
  * files share one dir or however often one is re-allocated. Granularity only decides how often a fresh
  * dir appears: under the default isolate: true the module registry resets per test file, so allocation
  * happens per file (measured with a two-file probe) — nothing asserts two files get different dirs,
@@ -49,8 +56,15 @@ const registry: Registry = (holder.__piBetterEditStoreRegistry ??= {
 });
 
 const workerStoreDir = await mkdtemp(join(tmpdir(), "pi-better-edit-store-"));
+const workerHomeDir = await mkdtemp(join(tmpdir(), "pi-better-edit-home-"));
 process.env.PI_BETTER_EDIT_CONFIG_DIR = workerStoreDir;
+process.env.HOME = workerHomeDir;
+// WHY: an explicit empty value is the documented "unset" spelling, and an inherited XDG state or
+// WHY: agent dir from the developer's shell would otherwise outrank the stub under the opt-out rule.
+process.env.XDG_STATE_HOME = "";
+process.env.PI_CODING_AGENT_DIR = "";
 registry.dirs.add(workerStoreDir);
+registry.dirs.add(workerHomeDir);
 
 function cleanup(): void {
   for (const dir of registry.dirs) {

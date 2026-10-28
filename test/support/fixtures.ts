@@ -59,6 +59,10 @@ export async function setupTestHome(): Promise<{
   const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
+  // WHY: (#190) the two roots this extension resolves are the agent directory and the XDG state
+  // WHY: directory; an inherited value would point them at the developer's real ones.
+  vi.stubEnv("XDG_STATE_HOME", "");
+  vi.stubEnv("PI_CODING_AGENT_DIR", "");
   const testPath = join(tmpHome, "test.txt");
   return {
     home: tmpHome,
@@ -87,18 +91,26 @@ export function useTestHome(): { testPath: string } {
   return state;
 }
 
-// NOTE (#89): with the setupFiles seam active the store no longer follows this HOME stub, so a test that needs a HOME-derived store dir must clear the seam with an empty PI_BETTER_EDIT_CONFIG_DIR.
+// NOTE (#89/#190): with the setupFiles seam active the store no longer follows this HOME stub, so a test that needs a HOME-derived state dir must clear the seam with an empty PI_BETTER_EDIT_CONFIG_DIR.
 export function withHome(home: string | undefined): () => void {
   const previousHome = process.env.HOME;
   const previousXdg = process.env.XDG_CONFIG_HOME;
+  const previousXdgState = process.env.XDG_STATE_HOME;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   if (home === undefined) delete process.env.HOME;
   else process.env.HOME = home;
   process.env.XDG_CONFIG_HOME = "";
+  process.env.XDG_STATE_HOME = "";
+  process.env.PI_CODING_AGENT_DIR = "";
   return () => {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = previousXdg;
+    if (previousXdgState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = previousXdgState;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   };
 }
 
@@ -179,6 +191,10 @@ export async function makeTempDir(prefix: string): Promise<string> {
   // WHY (#89): the setupFiles seam is always set, so without clearing it here the store would be one per
   // WHY: file; HOME is repointed per call, so clearing it restores per-call freshness under this temp HOME.
   process.env.PI_BETTER_EDIT_CONFIG_DIR = "";
+  // WHY (#190): with the seam cleared the two roots now come from HOME, so any inherited XDG state
+  // WHY: or agent directory would outrank the per-call temp HOME this helper just published.
+  process.env.XDG_STATE_HOME = "";
+  process.env.PI_CODING_AGENT_DIR = "";
   return dir;
 }
 

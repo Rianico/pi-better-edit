@@ -1,17 +1,21 @@
 /**
- * One config ladder for `.pi/agents/pi-better-edit.json` (#90, acceptance item 6).
+ * One naming module for the settings locations (#90, #190 acceptance item 1).
  *
- * The file, the two scopes, the read and the preserving atomic write live in `src/json-config.ts`
- * and nowhere else: a second hand-rolled ladder over one file is how two settings owners drift apart,
- * and the boundary test next door already forbids the integration directory from being imported from
- * outside itself. This guard pins the inverse direction — the settings owners reach the seam instead
- * of re-deriving it.
+ * The PATH LITERALS live in `src/config-dir.ts` and nowhere else: a second copy is how an adoption
+ * ladder silently reads a location nobody meant it to, and the relocation moved three of them at
+ * once (settings dir, project dir, retired sources). The read/write/adopt CONTRACT lives in
+ * `src/json-config.ts`, which every settings owner reaches instead of touching the file — the
+ * boundary test next door already forbids the integration directory from being imported from
+ * outside itself, so this guard pins the inverse direction.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SEAM = join("src", "json-config.ts");
+const PATH_OWNER = join("src", "config-dir.ts");
+const CURRENT_PROJECT_LITERAL = ".pi/agents/pi-better-edit/settings.json";
+const RETIRED_FLAT_LITERAL = ".pi/agents/pi-better-edit.json";
 const SETTINGS_OWNERS = [
   join("src", "bash-view-config.ts"),
   // WHY: (ADR-0049 M6) the multi-file caps are a second per-key ladder over the same file, so they
@@ -33,14 +37,17 @@ function tsFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("the config file has one owner (#90)", () => {
-  it("names the config file location in exactly one module", () => {
-    // The literal is what a second copy would hard-code; the seam's own constant is the only one.
-    const namers = tsFiles("src").filter((file) =>
-      readFileSync(file, "utf-8").includes(".pi/agents/pi-better-edit.json"),
-    );
+function namers(literal: string): string[] {
+  return tsFiles("src").filter((file) => readFileSync(file, "utf-8").includes(literal));
+}
 
-    expect(namers).toEqual([SEAM]);
+describe("the settings file has one owner (#90, #190)", () => {
+  it("names the current project location in exactly one module", () => {
+    expect(namers(CURRENT_PROJECT_LITERAL)).toEqual([PATH_OWNER]);
+  });
+
+  it("names the retired flat location in exactly one module", () => {
+    expect(namers(RETIRED_FLAT_LITERAL)).toEqual([PATH_OWNER]);
   });
 
   it("routes every settings owner through the seam rather than reading the file itself", () => {
@@ -57,10 +64,19 @@ describe("the config file has one owner (#90)", () => {
   it("keeps the seam's readers and writer exported for both owners", () => {
     const seam = readFileSync(SEAM, "utf-8");
 
-    for (const symbol of ["readScopeConfig", "updateConfigFile", "configFilePath", "CONFIG_REL"]) {
-      expect(seam, symbol).toContain(
-        `export ${symbol === "CONFIG_REL" ? "const" : "function"} ${symbol}`,
-      );
+    for (const symbol of [
+      "readScopeConfig",
+      "updateConfigFile",
+      "configFilePath",
+      "displayPath",
+      "CONFIG_REL",
+      "CONFIG_FILE_NAME",
+    ]) {
+      expect(seam, symbol).toContain(symbol);
     }
+  });
+
+  it("takes its paths from the naming module instead of spelling them", () => {
+    expect(readFileSync(SEAM, "utf-8")).toMatch(/from "\.\/config-dir\.js"/);
   });
 });

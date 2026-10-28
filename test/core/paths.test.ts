@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { homedir } from "os";
-import { join, dirname } from "path";
-import { configDir, hashStorePath, hashStoreDir } from "../../src/paths";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { hashStoreDir, hashStorePath, legacyHashStorePath } from "../../src/paths";
+import { settingsRoot, stateRoot } from "../../src/config-dir";
 
-// WHY: this file pins the XDG/HOME fallback chain. The worker-wide setupFiles seam
-// WHY: (test/support/isolate-store.ts) sets PI_BETTER_EDIT_CONFIG_DIR for every test file, so each
-// WHY: fallback test opts out explicitly with an empty value — the documented "unset" spelling.
-function withoutConfigDirSeam(run: () => void): void {
-  const previous = process.env.PI_BETTER_EDIT_CONFIG_DIR;
-  process.env.PI_BETTER_EDIT_CONFIG_DIR = "";
-  try {
-    run();
-  } finally {
-    if (previous === undefined) delete process.env.PI_BETTER_EDIT_CONFIG_DIR;
-    else process.env.PI_BETTER_EDIT_CONFIG_DIR = previous;
-  }
-}
-
+/**
+ * The relocation's path ladder (#190): two roots, one rule each.
+ *
+ * WHY these pin the FALLBACKS rather than the override alone: the worker-wide setupFiles seam
+ * (test/support/isolate-store.ts) sets `PI_BETTER_EDIT_CONFIG_DIR` for every test file, so a
+ * fallback test has to opt out — with an empty value, the documented "unset" spelling — and stub
+ * HOME/XDG itself. The override case is the first test here, because it is the only thing that can
+ * move the store.
+ */
 function withEnv(values: Record<string, string | undefined>, run: () => void): void {
   const previous = new Map<string, string | undefined>();
   for (const key of Object.keys(values)) previous.set(key, process.env[key]);
@@ -34,69 +30,109 @@ function withEnv(values: Record<string, string | undefined>, run: () => void): v
   }
 }
 
-describe("configDir", () => {
-  it("returns PI_BETTER_EDIT_CONFIG_DIR verbatim, without a pi-better-edit suffix", () => {
-    withEnv({ PI_BETTER_EDIT_CONFIG_DIR: "/tmp/xyz", XDG_CONFIG_HOME: "/custom/xdg" }, () => {
-      expect(configDir()).toBe("/tmp/xyz");
-      expect(hashStorePath()).toBe(join("/tmp/xyz", "hash-store.sqlite"));
+/** The three variables this ladder reads, all unset, with the worker seam cleared. */
+function withoutOverride(home: string): Record<string, string | undefined> {
+  return {
+    HOME: home,
+    PI_BETTER_EDIT_CONFIG_DIR: "",
+    PI_CODING_AGENT_DIR: undefined,
+    XDG_STATE_HOME: undefined,
+    XDG_CONFIG_HOME: undefined,
+  };
+}
+
+describe("the override layout", () => {
+  it("owns the settings root verbatim and the state root through <override>/state", () => {
+    withEnv({ PI_BETTER_EDIT_CONFIG_DIR: "/tmp/xyz", XDG_STATE_HOME: "/custom/xdg-state" }, () => {
+      expect(settingsRoot()).toBe("/tmp/xyz");
+      expect(stateRoot()).toBe(join("/tmp/xyz", "state"));
+      expect(hashStorePath()).toBe(join("/tmp/xyz", "state", "hash-store.sqlite"));
+      expect(legacyHashStorePath()).toBe(join("/tmp/xyz", "state", "hash-store.json"));
+      expect(hashStoreDir()).toBe(stateRoot());
     });
   });
 
-  it("ignores an empty PI_BETTER_EDIT_CONFIG_DIR and falls through to the XDG path", () => {
-    withEnv({ PI_BETTER_EDIT_CONFIG_DIR: "", XDG_CONFIG_HOME: "/custom/xdg" }, () => {
-      expect(configDir()).toBe(join("/custom/xdg", "pi-better-edit"));
-    });
-  });
-  it("returns the config directory under home when XDG_CONFIG_HOME is unset", () => {
-    withoutConfigDirSeam(() => {
-      const previousXdg = process.env.XDG_CONFIG_HOME;
-      delete process.env.XDG_CONFIG_HOME;
-      try {
-        expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
-      } finally {
-        if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-        else process.env.XDG_CONFIG_HOME = previousXdg;
-      }
-    });
-  });
-
-  it.skipIf(process.platform === "win32")("uses XDG_CONFIG_HOME when set", () => {
-    withoutConfigDirSeam(() => {
-      const previousXdg = process.env.XDG_CONFIG_HOME;
-      process.env.XDG_CONFIG_HOME = "/custom/xdg";
-      try {
-        expect(configDir()).toBe(join("/custom/xdg", "pi-better-edit"));
-      } finally {
-        if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-        else process.env.XDG_CONFIG_HOME = previousXdg;
-      }
-    });
-  });
-
-  it("ignores an empty XDG_CONFIG_HOME", () => {
-    withoutConfigDirSeam(() => {
-      const previousXdg = process.env.XDG_CONFIG_HOME;
-      process.env.XDG_CONFIG_HOME = "";
-      try {
-        expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
-      } finally {
-        if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-        else process.env.XDG_CONFIG_HOME = previousXdg;
-      }
+  it("treats an empty override as unset", () => {
+    withEnv(withoutOverride("/home/probe"), () => {
+      expect(settingsRoot()).toBe(
+        join("/home/probe", ".pi", "agent", "extensions", "pi-better-edit"),
+      );
+      expect(stateRoot()).toBe(join("/home/probe", ".local", "state", "pi-better-edit"));
     });
   });
 });
 
-describe("hashStorePath", () => {
-  it("returns the hash store file path", () => {
-    const path = hashStorePath();
-    expect(path).toBe(join(configDir(), "hash-store.sqlite"));
+describe("the settings root without an override", () => {
+  it("lives under the pi agent directory by default", () => {
+    withEnv(withoutOverride("/home/probe"), () => {
+      expect(settingsRoot()).toBe(
+        join("/home/probe", ".pi", "agent", "extensions", "pi-better-edit"),
+      );
+    });
+  });
+
+  it("honours an absolute PI_CODING_AGENT_DIR", () => {
+    withEnv({ ...withoutOverride("/home/probe"), PI_CODING_AGENT_DIR: "/opt/pi-agent" }, () => {
+      expect(settingsRoot()).toBe(join("/opt/pi-agent", "extensions", "pi-better-edit"));
+    });
+  });
+
+  it("expands ~ in PI_CODING_AGENT_DIR", () => {
+    withEnv({ ...withoutOverride("/home/probe"), PI_CODING_AGENT_DIR: "~/agent-home" }, () => {
+      expect(settingsRoot()).toBe(
+        join("/home/probe", "agent-home", "extensions", "pi-better-edit"),
+      );
+    });
+  });
+
+  it("ignores a relative PI_CODING_AGENT_DIR instead of resolving it against the cwd", () => {
+    withEnv({ ...withoutOverride("/home/probe"), PI_CODING_AGENT_DIR: "relative/agent" }, () => {
+      expect(settingsRoot()).toBe(
+        join("/home/probe", ".pi", "agent", "extensions", "pi-better-edit"),
+      );
+    });
+  });
+
+  it("no longer reads XDG_CONFIG_HOME", () => {
+    withEnv({ ...withoutOverride("/home/probe"), XDG_CONFIG_HOME: "/custom/xdg" }, () => {
+      expect(settingsRoot()).not.toContain("/custom/xdg");
+      expect(settingsRoot()).toBe(
+        join("/home/probe", ".pi", "agent", "extensions", "pi-better-edit"),
+      );
+    });
   });
 });
 
-describe("hashStoreDir", () => {
-  it("returns the directory of the hash store path", () => {
-    const dir = hashStoreDir();
-    expect(dir).toBe(dirname(hashStorePath()));
+describe("the state root without an override", () => {
+  it("defaults to $HOME/.local/state", () => {
+    withEnv(withoutOverride("/home/probe"), () => {
+      expect(stateRoot()).toBe(join("/home/probe", ".local", "state", "pi-better-edit"));
+    });
+  });
+
+  it("honours an absolute XDG_STATE_HOME", () => {
+    withEnv({ ...withoutOverride("/home/probe"), XDG_STATE_HOME: "/xdg/state" }, () => {
+      expect(stateRoot()).toBe(join("/xdg/state", "pi-better-edit"));
+    });
+  });
+
+  it("ignores a relative XDG_STATE_HOME", () => {
+    withEnv({ ...withoutOverride("/home/probe"), XDG_STATE_HOME: "state-under-cwd" }, () => {
+      expect(stateRoot()).toBe(join("/home/probe", ".local", "state", "pi-better-edit"));
+    });
+  });
+
+  it("ignores an empty XDG_STATE_HOME", () => {
+    withEnv({ ...withoutOverride("/home/probe"), XDG_STATE_HOME: "" }, () => {
+      expect(stateRoot()).toBe(join("/home/probe", ".local", "state", "pi-better-edit"));
+    });
+  });
+});
+
+describe("the empty HOME fallback", () => {
+  it("falls back to the OS home so a path is always absolute", () => {
+    withEnv({ ...withoutOverride("/home/probe"), HOME: "" }, () => {
+      expect(stateRoot()).toBe(join(homedir(), ".local", "state", "pi-better-edit"));
+    });
   });
 });

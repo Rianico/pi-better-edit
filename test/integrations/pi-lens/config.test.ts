@@ -17,7 +17,7 @@ import {
   type LensBridgeMode,
   type LensBridgeScope,
 } from "../../../src/integrations/pi-lens/config.js";
-import { configDir } from "../../../src/config-dir.js";
+import { settingsRoot } from "../../../src/config-dir.js";
 
 let root = "";
 let projectDir = "";
@@ -25,15 +25,15 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, LENS_CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
-  await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(projectConfigPath(), JSON.stringify(value), "utf-8");
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(settingsRoot(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value), "utf-8");
 }
 
@@ -90,7 +90,7 @@ describe("readLensBridgeConfig / resolveEffectiveLensMode", () => {
   });
 
   it("ignores a malformed or out-of-enum scope instead of throwing", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
     await seedGlobalConfig({ lens: { bridge: "on" } });
     expect(readLensBridgeConfig(projectDir)).toEqual({ global: "on" });
@@ -162,7 +162,9 @@ describe("saveLensBridgeConfig", () => {
     expect(readFileSync(path, "utf-8")).toBe(
       `${JSON.stringify({ $schema: LENS_SCHEMA_ID, lens: { bridge: "auto" } }, null, 2)}\n`,
     );
-    expect(readdirSync(join(projectDir, ".pi", "agents"))).toEqual(["pi-better-edit.json"]);
+    expect(readdirSync(join(projectDir, ".pi", "agents", "pi-better-edit"))).toEqual([
+      "settings.json",
+    ]);
     expect(readLensBridgeConfig(projectDir)).toEqual({ project: "auto" });
   });
 
@@ -183,7 +185,7 @@ describe("saveLensBridgeConfig", () => {
   });
 
   it("rewrites a canonical file when the existing one is unparseable or not an object", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "]]]", "utf-8");
     saveLensBridgeConfig("off", "project", projectDir);
     expect(readJson(projectConfigPath())).toEqual({

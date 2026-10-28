@@ -74,7 +74,8 @@ beforeAll(async () => {
   await initHasher();
 });
 
-/** A store dir of this file's own, published under the env var `configDir()` reads verbatim. */
+/** The extension root this file owns, published under the env var `stateRoot()` reads; the store
+ * lives in its `state/` subdirectory. */
 async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), "pi-stamp-"));
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
@@ -872,8 +873,8 @@ describe("two sequential opens in one process (#87c)", () => {
       ).toBe(2);
       expectCurrentStamp();
       // The precondition every later leg rests on: the two spellings name ONE store file, not two.
-      expect(await realpath(join(alias, "hash-store.sqlite"))).toBe(
-        await realpath(join(dir, "hash-store.sqlite")),
+      expect(await realpath(join(alias, "state", "hash-store.sqlite"))).toBe(
+        await realpath(join(dir, "state", "hash-store.sqlite")),
       );
 
       // LEG 2 — the stamp leg 1 wrote matches, so the second open of the same store owes no statement.

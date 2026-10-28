@@ -39,16 +39,16 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   }
 }
 
-function configHome(home: string): string {
-  return join(home, ".config", "pi-better-edit");
+function stateHome(home: string): string {
+  return join(home, ".local", "state", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {
-  return join(configHome(home), "hash-store.sqlite");
+  return join(stateHome(home), "hash-store.sqlite");
 }
 
 function legacyPath(home: string): string {
-  return join(configHome(home), "hash-store.json");
+  return join(stateHome(home), "hash-store.json");
 }
 
 async function put(
@@ -67,7 +67,7 @@ async function put(
 }
 
 async function writeLegacyStore(home: string, snapshots: unknown): Promise<void> {
-  await mkdir(configHome(home), { recursive: true });
+  await mkdir(stateHome(home), { recursive: true });
   await writeFile(legacyPath(home), JSON.stringify({ version: 1, snapshots }), "utf-8");
 }
 
@@ -83,7 +83,7 @@ describe("hash-store — loadHashStore", () => {
   it("creates the config directory", async () => {
     await withTempHome(async () => {
       await loadHashStore();
-      const s = await stat(configHome(tmpHome));
+      const s = await stat(stateHome(tmpHome));
       expect(s.isDirectory()).toBe(true);
     });
   });
@@ -297,7 +297,7 @@ describe("hash-store — WAL checkpoint on shutdown", () => {
 describe("hash-store — corrupt database recovery", () => {
   it("rebuilds the store when the database file is corrupt", async () => {
     await withTempHome(async (home) => {
-      await mkdir(configHome(home), { recursive: true });
+      await mkdir(stateHome(home), { recursive: true });
       await writeFile(sqlitePath(home), "this is not a sqlite database", "utf-8");
 
       const store = await loadHashStore();
@@ -316,12 +316,12 @@ describe("hash-store — corrupt database recovery", () => {
 
   it("quarantines the corrupt file instead of deleting it", async () => {
     await withTempHome(async (home) => {
-      await mkdir(configHome(home), { recursive: true });
+      await mkdir(stateHome(home), { recursive: true });
       await writeFile(sqlitePath(home), "garbage bytes", "utf-8");
 
       await loadHashStore();
 
-      const entries = await readdir(configHome(home));
+      const entries = await readdir(stateHome(home));
       expect(entries.some((name) => name.includes(".corrupt-"))).toBe(true);
       expect(existsSync(sqlitePath(home))).toBe(true);
     });
@@ -338,7 +338,7 @@ describe("hash-store — corrupt database recovery", () => {
         content: "b\n",
       });
       expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBBB"]);
-      const entries = await readdir(configHome(home));
+      const entries = await readdir(stateHome(home));
       expect(entries.some((name) => name.includes(".corrupt-"))).toBe(false);
     });
   });

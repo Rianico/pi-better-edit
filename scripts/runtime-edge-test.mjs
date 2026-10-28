@@ -102,7 +102,14 @@ function cleanup() {
 function runPi(extraArgs, prompt) {
   const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
     cwd: root,
-    env: { ...process.env, XDG_CONFIG_HOME: isolatedStore },
+    // WHY the override and not XDG_CONFIG_HOME: #190 moved the store to `<root>/state/`, and
+    // WHY: PI_BETTER_EDIT_CONFIG_DIR is the one variable that moves it. XDG_STATE_HOME is
+    // WHY: pinned inside the same sandbox so a fallback cannot reach the real state root.
+    env: {
+      ...process.env,
+      PI_BETTER_EDIT_CONFIG_DIR: isolatedStore,
+      XDG_STATE_HOME: isolatedStore,
+    },
     encoding: "utf-8",
     timeout: runTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
@@ -114,7 +121,8 @@ function runPi(extraArgs, prompt) {
 }
 
 function readServedHashes() {
-  const storePath = join(isolatedStore, "pi-better-edit", "hash-store.sqlite");
+  // The store lives under the override's state root (#190).
+  const storePath = join(isolatedStore, "state", "hash-store.sqlite");
   if (!existsSync(storePath)) return null;
   const db = new DatabaseSync(storePath, { timeout: 2000 });
   try {

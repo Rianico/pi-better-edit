@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { DomainError } from "./domain-errors.js";
 
-export { hashStorePath, hashStoreDir, legacyHashStorePath, configDir } from "./hash-store.js";
+export { hashStorePath, hashStoreDir, legacyHashStorePath, stateRoot } from "./hash-store.js";
 
 function homeBase(): string {
   const envHome = process.env.HOME;
