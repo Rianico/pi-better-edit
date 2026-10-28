@@ -10,6 +10,14 @@ Amended 2026-10-14 (Issue #94): the write path's enum guards throw `E_INTERNAL_I
 not `E_BAD_PAYLOAD` — they are defensive checks that no caller can reach, since the command and
 the settings overlay narrow every value to the enum.
 
+Amended 2026-10-28 (Issue #190): the paths in this record are superseded by
+[ADR-0050](0050-two-roots-settings-in-the-pi-agent-dir-state-in-xdg-state.md), which moves settings to
+`${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` and state to
+`${XDG_STATE_HOME:-~/.local/state}/pi-better-edit`. §8's global default
+`~/.config/pi-better-edit/pi-better-edit.json` and its store-directory paragraph are superseded; the
+rest of this record — the triggers, the throttle, the batched deletes, the deep check and the WAL
+owner — stands as written.
+
 ## Context
 
 ### The promise this record pays off
@@ -79,7 +87,7 @@ The janitor therefore adds **no** checkpoint site and no second owner of the WAL
 
 ### 8. The config ladder, and the one key that is deliberately absent
 
-The janitor's knobs live in the same JSON seam the lens bridge uses — `<project>/.pi/agents/pi-better-edit.json` (project) and `<configDir>/pi-better-edit.json` (global, default `~/.config/pi-better-edit/pi-better-edit.json`) — resolved **per key** through one ladder: environment, then project file, then global file, then the default. The global file moved out of `~/.pi/agents/` after this record was accepted: a file left there is adopted on first read (written to the new location, renamed `.bak`), so the precedence order is unchanged.
+The janitor's knobs live in the same JSON seam the lens bridge uses — `<project>/.pi/agents/pi-better-edit.json` (project) and `<configDir>/pi-better-edit.json` (global, default `~/.config/pi-better-edit/pi-better-edit.json`) — resolved **per key** through one ladder: environment, then project file, then global file, then the default. The global file moved out of `~/.pi/agents/` after this record was accepted: a file left there is adopted on first read (written to the new location, renamed `.bak`), so the precedence order is unchanged. Both paths are themselves superseded by [ADR-0050](0050-two-roots-settings-in-the-pi-agent-dir-state-in-xdg-state.md): the project file is now `<project>/.pi/agents/pi-better-edit/settings.json` and the global file `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json`, with this record's ladder order unchanged.
 
 | setting | file key | env override | default |
 |---|---|---|---|
@@ -90,7 +98,7 @@ The janitor's knobs live in the same JSON seam the lens bridge uses — `<projec
 - A value outside its accepted shape is ignored (whole numbers ≥ 1 only for interval and batch: a fractional, zero or negative interval would silently turn every open into a sweep, and a batch of zero rows deletes nothing and reports success). An env value outside its shape loses to the file's rung for **its own key** only.
 - The file, the two scopes, the read and the preserving atomic write are **extracted** into the neutral `src/json-config.ts`, which both settings owners import. That is a boundary requirement, not a taste: `test/arch/lens-bridge-boundary.test.ts` forbids importing `src/integrations/pi-lens` from outside that directory, so a second hand-rolled ladder was the alternative. The read/write contract has one owner; owners keep their own keys.
 - **The read degrades with a warning, never throws.** `readConfigObject` catches both `readFileSync` and `JSON.parse`; a missing file is the ordinary "not configured" state and warns about nothing, while a file that **exists** but cannot be read, parsed, or has a non-object root is reported through the new optional `onWarn` and the values fall through the ladder. The lens-bridge path passes no `onWarn` and keeps its silent read, because a hand-edited file must never make a bridge read noisy.
-- **There is deliberately no store-directory key.** `PI_BETTER_EDIT_CONFIG_DIR` alone owns the store path (`configDir`/`configDirOverride` in `src/hash-store.ts`, read verbatim, empty counting as unset, precedence over `XDG_CONFIG_HOME` and `$HOME/.config`). A config file must not be able to move the store — an operator/security decision, owner-ruled — so `store.dir` is an unknown key like any other: preserved on write, ignored on read, resolving to nothing. `test/core/store-config.test.ts` pins that the path stays on the variable alone.
+- **There is deliberately no store-directory key.** `PI_BETTER_EDIT_CONFIG_DIR` alone owns the store path (`configDir`/`configDirOverride` in `src/hash-store.ts`, read verbatim, empty counting as unset, precedence over `XDG_CONFIG_HOME` and `$HOME/.config`). A config file must not be able to move the store — an operator/security decision, owner-ruled — so `store.dir` is an unknown key like any other: preserved on write, ignored on read, resolving to nothing. `test/core/store-config.test.ts` pins that the path stays on the variable alone. The store's **location** is superseded by [ADR-0050](0050-two-roots-settings-in-the-pi-agent-dir-state-in-xdg-state.md): the default is now `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit`, the override owns `<override>/state`, and `XDG_CONFIG_HOME` no longer participates. The rule in this paragraph — no config-file key can move the store, and the override is read verbatim — still stands.
 - Ticket #90's title says "yaml"; there is **no yaml config surface anywhere** in this repository — the only `.yaml` file is `pnpm-lock.yaml` — and the seam is JSON. The title has since been corrected to "JSON/env config seam". The "configurable store directory" as a test-isolation lever (#89) is not this: the lever is the env variable, which already existed.
 
 The published schema (`schemas/pi-better-edit.json`) gains the `store` object with root and per-object `additionalProperties: true`, so an owner's keys need no schema change to be written, only to be validated. The write path (`saveStoreJanitorConfig` → `updateConfigFile`) rebuilds `$schema`, then spreads the existing object, so unknown keys, sibling `store.*` keys and the `lens` block survive; it throws `E_INTERNAL_INVARIANT` and writes nothing for a value outside its accepted shape, because a silently dropped value reads back as a default.
