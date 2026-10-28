@@ -217,7 +217,9 @@ describe("project settings relocation", () => {
     expect(existsSync(`${projectRetiredPath()}.bak`)).toBe(true);
   });
 
-  it.skipIf(process.platform === "win32")(
+  // WHY also skipped as root: root ignores a 0o555 directory, so the write SUCCEEDS and the test
+  // WHY: would assert the opposite of what the code does — a false failure in any root-owned runner.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "skips the project write entirely, silently, when the tree is not writable",
     async () => {
       await seed(projectRetiredPath(), { store: { janitor: "off" } });

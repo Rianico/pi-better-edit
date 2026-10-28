@@ -19,6 +19,7 @@ import { join } from "node:path";
 import register from "../index";
 import { initHasher, lineHashes } from "../src/hashline/hash-identity.js";
 import { shutdownHashStore } from "../src/hash-store";
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 import { pairSnapshots, type LineDescriptor } from "../src/hashline/patience-pairing";
 
 const LINES = 100_000;
@@ -73,6 +74,9 @@ const median = (values: number[]): number => {
 };
 
 const dir = await mkdtemp(join(tmpdir(), "pi-bench-pair-"));
+// WHY: the whole sandbox, not just the override — the retired-source walk reads $HOME and
+// WHY: $XDG_CONFIG_HOME and deletes their `.corrupt-*` dumps (#190).
+Object.assign(process.env, sandboxEnv(dir));
 const path = join(dir, "big.txt");
 const baseContent = BASE.join("\n") + "\n";
 await writeFile(path, baseContent, "utf-8");

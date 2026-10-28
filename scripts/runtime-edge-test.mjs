@@ -12,6 +12,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureLink = "/tmp/hashline-edge-e";
@@ -86,6 +87,7 @@ function setup() {
   rmSync(continuationSessionDir, { recursive: true, force: true });
   mkdirSync(fixtureReal, { recursive: true });
   symlinkSync(fixtureReal, fixtureLink, "dir");
+  mkdirSync(isolatedStore, { recursive: true });
 }
 
 function cleanup() {
@@ -102,14 +104,12 @@ function cleanup() {
 function runPi(extraArgs, prompt) {
   const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
     cwd: root,
-    // WHY the override and not XDG_CONFIG_HOME: #190 moved the store to `<root>/state/`, and
-    // WHY: PI_BETTER_EDIT_CONFIG_DIR is the one variable that moves it. XDG_STATE_HOME is
-    // WHY: pinned inside the same sandbox so a fallback cannot reach the real state root.
-    env: {
-      ...process.env,
-      PI_BETTER_EDIT_CONFIG_DIR: isolatedStore,
-      XDG_STATE_HOME: isolatedStore,
-    },
+    // WHY the whole sandbox map and not just the override: #190 moved the store to
+    // WHY: `<root>/state/`, but the retired sources are still read from $HOME and $XDG_CONFIG_HOME
+    // WHY: and their `.corrupt-*` dumps are DELETED — so a run that pinned only the override would
+    // WHY: walk this developer's real `~/.config/pi-better-edit`. `sandboxEnv` pins every variable
+    // WHY: the walk can read, all at `isolatedStore` (created by `setup`).
+    env: { ...process.env, ...sandboxEnv(isolatedStore) },
     encoding: "utf-8",
     timeout: runTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
