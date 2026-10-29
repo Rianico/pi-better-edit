@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Features
+
+* **config:** relocate user-level settings and all persistent state out of `~/.config/pi-better-edit`: global settings move to `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json`, the project file to `<cwd>/.pi/agents/pi-better-edit/settings.json`, and the store, the pre-SQLite `hash-store.json` and `diagnostics.log`/`.1` to `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/`. `XDG_CONFIG_HOME` leaves resolution, a relative `XDG_STATE_HOME` counts as unset, and an unusable state root fails store-dependent calls closed with `[E_ACCESS]` instead of forking a fallback. (ADR-0050) (#190) (#191)
+* **config:** adopt user settings from the retired locations once, in the order new file → `<PI_BETTER_EDIT_CONFIG_DIR>/pi-better-edit.json` (only when that variable is set) → `$XDG_CONFIG_HOME/pi-better-edit/pi-better-edit.json` → `~/.config/pi-better-edit/pi-better-edit.json` → `~/.pi/agents/pi-better-edit.json` (project: new file → the flat `.pi/agents/pi-better-edit.json`): the bytes are written through the atomic writer, verified by parse, and only then is every retired source renamed `.bak`. A failed adoption still serves the keys it read, project adoption is skipped — without a warning — when the tree is unwritable, and `.bak` files are never warned about or deleted. `XDG_CONFIG_HOME` is read only to find those retired sources. (ADR-0050) (#190) (#191)
+* **config:** start the store fresh under the new state root: the old `hash-store.sqlite` is left untouched and its path logged once per session, because an un-restarted older session may own it, while `hash-store.json` and the diagnostics logs move in and `.corrupt-*` dumps are deleted. Retired roots are searched in one order — the override, `$XDG_CONFIG_HOME/pi-better-edit`, `~/.config/pi-better-edit` — and a failed move withholds the `.migration-v1` marker so the next session retries. `PI_BETTER_EDIT_CONFIG_DIR` keeps its verbatim meaning, remains the only thing that can move the store, and now owns `<override>/settings.json` and `<override>/state/`. (ADR-0050) (#190) (#191)
+
+### Bug Fixes
+
+* **config:** carry an override or `XDG_CONFIG_HOME` user's settings and state across the relocation instead of abandoning them: the retired-source lists become one ordered set (override root, XDG config root, `~/.config`), so `<override>/pi-better-edit.json` is adopted into `<override>/settings.json` and `<override>/hash-store.json` plus the logs move into `<override>/state/`. A `rename` across filesystems now copies and unlinks instead of losing the move, the migration marker is written only when no move failed, and project adoption skips an unwritable tree before attempting the write. (ADR-0050) (#190) (#191)
+
+### Documentation
+
+* **adr:** land ADR-0050 recording the split of settings (pi agent dir) from state (XDG state dir), the verbatim override that now owns `<override>/state` and is still the only mover of the store, the fresh-store policy with the abandoned-store log, the artifact move/delete table, the settings adoption precedence with `.bak` retirement, the `[E_ACCESS]` fail-fast and the MINOR classification; point ADR-0037's store-directory paragraph at it rather than rewriting the record, and update the README, the schema prose and the MVCC spec's path mention. Docs only; the behaviour ships in the `config` entry above. (#190) (#191)
+
 ## [2.14.0] - 2026-10-28
 
 ### Features
@@ -10,6 +24,7 @@
 * **bash:** serve context searches (ADR-0048 D3): admit `grep -A/-B/-C`, long context flags, and `rg -C` on single-file searches; match and context rows around `--` are re-read, byte-compared, and leased under the existing key. `SEARCH_MAX_TOTAL_ROWS` bounds total rows independently; recursive/multi-file context, attached short spellings, mixed options, and `-c`/`-o`/`-l` stay refused. (#183) (#188)
 * **bash:** serve multi-file views (ADR-0049): admit `cat`, `cat -n`, `nl -ba`, and numeric `sed -n` over two or more newline-terminated files as per-file page sections; line-count boundaries, per-file leases, zero-row pages only inside a served result, and whole-command raw on any failed proof. Configurable `bash.multiFile.maxFiles` / `maxRows` (defaults 10 / 2,000) via `/pi-better-edit bash-view multi-file`. (#183) (#188)
 * **bash:** serve terminal display tails (ADR-0048 D2): `cat -A`, `cat -vet`, `od -c`, `xxd`, and `hexdump -C` over raw-slice views are proved by re-running the transform on a temporary copy of the exact re-read slice, then serving the raw anchored rows with a disclosure. Transform bytes are never served or leased; unsupported heads, missing transforms, lone-CR files, and over-cap output pass through raw. (#176) (#189)
+
 
 ### Documentation
 

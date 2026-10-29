@@ -15,7 +15,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { registerLensCommand } from "../../../src/integrations/pi-lens/command.js";
 import { BASH_VIEW_ENV_VAR, resolveBashViewMode } from "../../../src/bash-view-config.js";
 import { CONFIG_REL, CONFIG_FILE_NAME } from "../../../src/json-config.js";
-import { configDir } from "../../../src/config-dir.js";
+import { settingsRoot } from "../../../src/config-dir.js";
 
 const SETTLED_BASH_VIEW_CHOICES = [
   "On (Project)",
@@ -39,7 +39,7 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;
@@ -162,9 +162,9 @@ describe("bash-view command", () => {
   it("labels the rung that won and the file values that lost", async () => {
     const { options } = captureCommand();
     const { ctx, notifications } = fakeCtx({ hasUI: true, cwd: projectDir });
-    await mkdir(configDir(), { recursive: true });
+    await mkdir(settingsRoot(), { recursive: true });
     await writeFile(globalConfigPath(), JSON.stringify({ bash: { view: "off" } }), "utf-8");
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), JSON.stringify({ bash: { view: "on" } }), "utf-8");
     process.env[BASH_VIEW_ENV_VAR] = "off";
 

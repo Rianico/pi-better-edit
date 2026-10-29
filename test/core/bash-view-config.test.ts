@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { configDir } from "../../src/config-dir.js";
+import { settingsRoot } from "../../src/config-dir.js";
 import { CONFIG_REL, CONFIG_SCHEMA_ID, CONFIG_FILE_NAME } from "../../src/json-config.js";
 import { DomainError } from "../../src/domain-errors.js";
 import {
@@ -33,15 +33,15 @@ const warn = (reason: string): void => {
 };
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
-  await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(projectConfigPath(), JSON.stringify(value), "utf-8");
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(settingsRoot(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value), "utf-8");
 }
 
@@ -101,7 +101,7 @@ describe("resolveBashViewMode — precedence ladder", () => {
 
 describe("resolveBashViewMode — a broken file degrades with a warning", () => {
   it("reads a malformed file as the default, warns exactly once and throws nothing", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
 
     let resolved: string | undefined;
@@ -114,8 +114,8 @@ describe("resolveBashViewMode — a broken file degrades with a warning", () => 
   });
 
   it("warns once per scope that exists but cannot be used, and names each file", async () => {
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
-    await mkdir(configDir(), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
+    await mkdir(settingsRoot(), { recursive: true });
     await writeFile(projectConfigPath(), "]]]", "utf-8");
     await writeFile(globalConfigPath(), '{"bash": ', "utf-8");
 
@@ -129,7 +129,7 @@ describe("resolveBashViewMode — a broken file degrades with a warning", () => 
     expect(resolveBashViewMode(projectDir, warn)).toBe("on");
     expect(warnings).toEqual([]);
 
-    await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+    await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
     await writeFile(projectConfigPath(), "{ not json", "utf-8");
     expect(() => resolveBashViewMode(projectDir)).not.toThrow();
     expect(warnings).toEqual([]);
@@ -185,7 +185,9 @@ describe("saveBashViewConfig", () => {
     expect(readFileSync(path, "utf-8")).toBe(
       `${JSON.stringify({ $schema: CONFIG_SCHEMA_ID, bash: { view: "off" } }, null, 2)}\n`,
     );
-    expect(readdirSync(join(projectDir, ".pi", "agents"))).toEqual(["pi-better-edit.json"]);
+    expect(readdirSync(join(projectDir, ".pi", "agents", "pi-better-edit"))).toEqual([
+      "settings.json",
+    ]);
     expect(resolveBashViewMode(projectDir, warn)).toBe("off");
   });
 

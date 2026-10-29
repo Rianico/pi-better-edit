@@ -12,6 +12,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureLink = "/tmp/hashline-edge-e";
@@ -86,6 +87,7 @@ function setup() {
   rmSync(continuationSessionDir, { recursive: true, force: true });
   mkdirSync(fixtureReal, { recursive: true });
   symlinkSync(fixtureReal, fixtureLink, "dir");
+  mkdirSync(isolatedStore, { recursive: true });
 }
 
 function cleanup() {
@@ -102,7 +104,12 @@ function cleanup() {
 function runPi(extraArgs, prompt) {
   const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
     cwd: root,
-    env: { ...process.env, XDG_CONFIG_HOME: isolatedStore },
+    // WHY the whole sandbox map and not just the override: #190 moved the store to
+    // WHY: `<root>/state/`, but the retired sources are still read from $HOME and $XDG_CONFIG_HOME
+    // WHY: and their `.corrupt-*` dumps are DELETED — so a run that pinned only the override would
+    // WHY: walk this developer's real `~/.config/pi-better-edit`. `sandboxEnv` pins every variable
+    // WHY: the walk can read, all at `isolatedStore` (created by `setup`).
+    env: { ...process.env, ...sandboxEnv(isolatedStore) },
     encoding: "utf-8",
     timeout: runTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
@@ -114,7 +121,8 @@ function runPi(extraArgs, prompt) {
 }
 
 function readServedHashes() {
-  const storePath = join(isolatedStore, "pi-better-edit", "hash-store.sqlite");
+  // The store lives under the override's state root (#190).
+  const storePath = join(isolatedStore, "state", "hash-store.sqlite");
   if (!existsSync(storePath)) return null;
   const db = new DatabaseSync(storePath, { timeout: 2000 });
   try {

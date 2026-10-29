@@ -30,7 +30,7 @@
  *   CLEANLY — see the group at the end.
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { copyFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -44,7 +44,8 @@ const HEADER_BYTES = 100;
 const PAGE_SIZE_OFFSET = 16;
 const PAGE_COUNT_OFFSET = 28;
 
-/** A store dir of its own, published under the env var `configDir()` reads verbatim. */
+/** The extension root this test owns, published under the env var `stateRoot()` reads; the store
+ * lives in its `state/` subdirectory. */
 async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), "pi-smoke-"));
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
@@ -59,7 +60,8 @@ async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> 
 
 /** The names this dir holds that look like a quarantined store. */
 async function quarantined(dir: string): Promise<string[]> {
-  const names = await readdir(dir);
+  // WHY the state subdir: the override names the extension's root, the store lives in `<root>/state`.
+  const names = await readdir(join(dir, "state"));
   return names.filter((name) => name.includes(".corrupt-"));
 }
 
@@ -235,7 +237,8 @@ describe("the fast path's smoke check replaces the full integrity sweep (#87c)",
       // The state a second process sees, without the WAL it cannot read.
       const otherDir = await mkdtemp(join(await getWritableTempRoot(), "pi-smoke-wal-"));
       try {
-        await copyFile(path, join(otherDir, "hash-store.sqlite"));
+        await mkdir(join(otherDir, "state"), { recursive: true });
+        await copyFile(path, join(otherDir, "state", "hash-store.sqlite"));
         vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", otherDir);
         shutdownHashStore();
         const store = await loadHashStore();

@@ -10,11 +10,12 @@
  * exactly how `console.error("Bash view interception failed:", error)` surfaced: a stack trace
  * smeared over the view, gone when you tried to select it.
  *
- * WHY the file lives in `configDir()` and nowhere else: `PI_BETTER_EDIT_CONFIG_DIR` is already the
- * single operator-owned base directory for everything this extension persists (the store, its WAL,
- * its janitor's bookkeeping). A second base (XDG_STATE_HOME, a log dir, `~/Library/Logs`) would be
- * a second precedence ladder to document and a second seam to isolate in tests. One directory, one
- * override, one rule: `<configDir>/diagnostics.log`, rotated to `<configDir>/diagnostics.log.1`.
+ * WHY the file lives in `stateRoot()` and nowhere else: the log is STATE — machine-written,
+ * disposable, rotated by size — and the state root is the one base directory this extension writes
+ * at runtime (the store, its WAL, the janitor's bookkeeping and the pre-SQLite JSON store). ONE
+ * rule: `<stateRoot>/diagnostics.log`, rotated to `<stateRoot>/diagnostics.log.1`. The operator's
+ * `PI_BETTER_EDIT_CONFIG_DIR` still moves it, through `<override>/state/`; settings deliberately do
+ * NOT share this directory, so clearing state never deletes configuration.
  *
  * WHY JSONL and not prose: the records carry stack traces, and a stack trace in prose needs either
  * multi-line records (unparseable) or escaped newlines (unreadable). One JSON object per line is
@@ -30,11 +31,12 @@
  */
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { configDir } from "./config-dir.js";
+import { stateRoot } from "./config-dir.js";
+import { migrateLegacyState } from "./state-migration.js";
 
 type DiagnosticLevel = "error" | "warn" | "info";
 
-/** Fixed file name inside `configDir()`; exported so the status display and tests agree on it. */
+/** Fixed file name inside `stateRoot()`; exported so the status display and tests agree on it. */
 export const DIAGNOSTICS_LOG_NAME = "diagnostics.log";
 
 /**
@@ -62,10 +64,10 @@ interface DiagnosticRecord {
   readonly pid: number;
 }
 
-/** `<configDir>/diagnostics.log` — the sibling of `hash-store.sqlite`. */
+/** `<stateRoot>/diagnostics.log` — the sibling of `hash-store.sqlite`. */
 export function diagnosticsLogPath(): string {
-  // SAFETY: join of trusted configDir with a fixed file name — constant suffix, no traversal.
-  return join(configDir(), DIAGNOSTICS_LOG_NAME);
+  // SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
+  return join(stateRoot(), DIAGNOSTICS_LOG_NAME);
 }
 
 /**
@@ -176,8 +178,11 @@ function stackFrames(error: Error): string[] {
 }
 
 function appendRecord(line: string): void {
+  // WHY: the retired log is adopted BEFORE the first record is written — afterwards the new file
+  // WHY: exists and the old one would be skipped forever, taking the pre-upgrade history with it.
+  migrateLegacyState((message) => reportInfo("state-migration", message));
   const path = diagnosticsLogPath();
-  // SAFETY: mkdir of a path derived from the operator-owned configDir with a constant suffix.
+  // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
   mkdirSync(dirname(path), { recursive: true });
   rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
   appendFileSync(path, line, "utf-8");

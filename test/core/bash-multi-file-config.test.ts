@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { configDir } from "../../src/config-dir.js";
+import { settingsRoot } from "../../src/config-dir.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { CONFIG_FILE_NAME, CONFIG_REL, CONFIG_SCHEMA_ID } from "../../src/json-config.js";
 import { saveBashViewConfig } from "../../src/bash-view-config.js";
@@ -35,15 +35,15 @@ const warn = (reason: string): void => {
 };
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
-  await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(projectDir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(projectConfigPath(), JSON.stringify(value, null, 2), "utf-8");
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
+  await mkdir(settingsRoot(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value, null, 2), "utf-8");
 }
 

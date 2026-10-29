@@ -20,6 +20,7 @@ import {
   type LensBridgeScope,
 } from "./config.js";
 import { configDirOverride, hashStorePath, STORE_CONFIG_DIR_ENV_VAR } from "../../hash-store.js";
+import { stateRoot } from "../../config-dir.js";
 import {
   resolveStoreJanitorSettingsWithSources,
   STORE_JANITOR_KEY_NAMES,
@@ -42,7 +43,13 @@ import {
   resolveBashMultiFileSettingsWithSources,
   saveBashMultiFileConfig,
 } from "../../bash-multifile-config.js";
-import { CONFIG_REL, configFileDisplayPath, type ConfigScope } from "../../json-config.js";
+import {
+  CONFIG_REL,
+  configFileDisplayPath,
+  configFilePath,
+  displayPath,
+  type ConfigScope,
+} from "../../json-config.js";
 import { DomainError } from "../../domain-errors.js";
 import { SettingsOverlay } from "./settings-overlay.js";
 import {
@@ -222,7 +229,10 @@ function storeStatusText(cwd: string): string {
     `  store.${STORE_JANITOR_KEY_NAMES.intervalMs}: ${settings.intervalMs.value} (${settings.intervalMs.source})`,
     `  store.${STORE_JANITOR_KEY_NAMES.batchSize}: ${settings.batchSize.value} (${settings.batchSize.source})`,
     `  store path: ${hashStorePath()}`,
+    `  settings: ${configFileDisplayPath("global", cwd)}`,
+    `  state root: ${displayPath(stateRoot())}`,
     `  override ${STORE_CONFIG_DIR_ENV_VAR}: ${override ?? "unset"}`,
+    `  project settings: ${displayPath(configFilePath("project", cwd))}`,
     "  precedence: env > project > global > default",
     `  store path is set by ${STORE_CONFIG_DIR_ENV_VAR} alone: no config file key can move it`,
     ...warnings.map((reason) => `  warning: ${reason}`),

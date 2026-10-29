@@ -470,7 +470,7 @@ CREATE TABLE IF NOT EXISTS file_undo (
 );
 
 -- 7. Operational Upgrade Policy & Backward-Compatible Table Staging:
--- To prevent breaking active, un-restarted v6 sessions or concurrent worktrees sharing ~/.config/pi-better-edit/hash-store.sqlite,
+-- To prevent breaking active, un-restarted v6 sessions or concurrent worktrees sharing ${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/hash-store.sqlite,
 -- buildStore does NOT drop legacy tables. Instead, it creates/maintains complete v6 compatibility shells:
 --   CREATE TABLE IF NOT EXISTS snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL);
 --   CREATE TABLE IF NOT EXISTS served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL DEFAULT '[]', reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (session_id, path));

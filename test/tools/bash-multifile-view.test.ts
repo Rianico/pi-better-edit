@@ -119,7 +119,7 @@ async function prepare(
 
 /** Seeds a project config file so the caps resolve from a real ladder rung, not a default. */
 async function seedProjectMultiFile(dir: string, multiFile: unknown): Promise<void> {
-  await mkdir(join(dir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(dir, ".pi", "agents", "pi-better-edit"), { recursive: true });
   await writeFile(join(dir, CONFIG_REL), JSON.stringify({ bash: { multiFile } }, null, 2), "utf-8");
 }
 

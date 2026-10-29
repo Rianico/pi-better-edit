@@ -18,24 +18,41 @@ import { ANCHOR_GENERATION, CANON_VERSION } from "./hashline/hash-identity.js";
 import { DomainError } from "./domain-errors.js";
 import { reportDiagnostic } from "./diagnostics.js";
 
-import { configDir } from "./config-dir.js";
-// WHY: these three have been this module's surface since before the diagnostics sink existed, so
-// WHY: callers keep importing them here; the implementation moved to config-dir.ts only to break the
+import { reportInfo } from "./diagnostics.js";
+import { migrateLegacyState } from "./state-migration.js";
+
+import { stateRoot } from "./config-dir.js";
+// WHY: these have been this module's surface since before the diagnostics sink existed, so callers
+// WHY: keep importing them here; the implementation moved to config-dir.ts only to break the
 // WHY: diagnostics → hash-store → hash-identity → diagnostics import cycle.
-export { STORE_CONFIG_DIR_ENV_VAR, configDir, configDirOverride } from "./config-dir.js";
+export { STORE_CONFIG_DIR_ENV_VAR, configDirOverride, stateRoot } from "./config-dir.js";
 
 export function hashStorePath(): string {
-  // SAFETY: join of trusted configDir with fixed "hash-store.sqlite" — constant suffix, no traversal.
-  return join(configDir(), "hash-store.sqlite");
+  // SAFETY: join of trusted stateRoot with fixed "hash-store.sqlite" — constant suffix, no traversal.
+  return join(stateRoot(), "hash-store.sqlite");
 }
 
 export function legacyHashStorePath(): string {
-  // SAFETY: join of trusted configDir with fixed "hash-store.json" — constant suffix, no traversal.
-  return join(configDir(), "hash-store.json");
+  // SAFETY: join of trusted stateRoot with fixed "hash-store.json" — constant suffix, no traversal.
+  return join(stateRoot(), "hash-store.json");
 }
 
 export function hashStoreDir(): string {
   return dirname(hashStorePath());
+}
+/**
+ * Create the state root, or refuse. WHY a DomainError rather than the raw mkdir failure: a store
+ * that cannot be written has no fallback directory — a silent second state root is exactly the
+ * fork this relocation removes — so the refusal is stated in the extension's own vocabulary and
+ * names the directory a reader has to fix (permissions, a read-only mount, a file in the way).
+ */
+async function ensureStateRoot(): Promise<void> {
+  const root = stateRoot();
+  try {
+    await mkdir(root, { recursive: true });
+  } catch {
+    throw new DomainError("E_ACCESS", { path: root, kind: "denied", access: "write" });
+  }
 }
 
 export function isCorruptionError(error: unknown): boolean {
@@ -1165,7 +1182,10 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
   shutdownHashStore();
 
   await initHasher();
-  await mkdir(hashStoreDir(), { recursive: true });
+  // WHY: the retired artifacts are adopted BEFORE the store exists, so the pre-SQLite JSON store is
+  // WHY: read from one place — the state root this open is about to use.
+  migrateLegacyState((message) => reportInfo("state-migration", message));
+  await ensureStateRoot();
 
   let existed = existsSync(storePath);
   let opened: OpenedDb;

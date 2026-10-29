@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
-
+import { sandboxEnv } from "./lib/sandbox-env.mjs";
 const root = new URL("../", import.meta.url).pathname;
 // WHY: the bundle must live inside the repo so its bare imports resolve from the repo's
 // WHY: node_modules (`.tmp/` is gitignored), never from a sibling package's copy.
@@ -40,7 +40,7 @@ try {
   execFileSync(process.execPath, [bundle], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, PI_BETTER_EDIT_CONFIG_DIR: storeDir },
+    env: { ...process.env, ...sandboxEnv(storeDir) },
   });
 } finally {
   await rm(bundle, { force: true });

@@ -410,7 +410,7 @@ describe("hash-store — served schema versioning", () => {
 
   it("migrates a legacy served table without wiping snapshots or undo", async () => {
     await withTempHome(async (home) => {
-      await mkdir(configHome(home), { recursive: true });
+      await mkdir(stateHome(home), { recursive: true });
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
@@ -447,7 +447,7 @@ describe("hash-store — served schema versioning", () => {
 
   it("rebuilds a pre-session-keyed served table into the session-partitioned schema", async () => {
     await withTempHome(async (home) => {
-      await mkdir(configHome(home), { recursive: true });
+      await mkdir(stateHome(home), { recursive: true });
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
@@ -1214,10 +1214,10 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   }
 }
 
-function configHome(home: string): string {
-  return join(home, ".config", "pi-better-edit");
+function stateHome(home: string): string {
+  return join(home, ".local", "state", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {
-  return join(configHome(home), "hash-store.sqlite");
+  return join(stateHome(home), "hash-store.sqlite");
 }

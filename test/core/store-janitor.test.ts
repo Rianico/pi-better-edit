@@ -66,7 +66,8 @@ const SETTINGS: StoreJanitorSettings = {
 /** The instant the throttle is judged at — injected, so no assertion here reads a real clock. */
 const NOW = 1_700_000_000_000;
 
-/** A store dir of this test's own, published under the env var `configDir()` reads verbatim. */
+/** The extension root this test owns, published under the env var `stateRoot()` reads; the store
+ * lives in its `state/` subdirectory. */
 async function withStoreDir(prefix: string, run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
@@ -385,7 +386,7 @@ describe("the janitor's GC", () => {
         settings: { ...SETTINGS, mode: "off" },
       });
       expect(outcome).toMatchObject({ ran: false, reason: "off" });
-      expect(existsSync(join(dir, "hash-store.sqlite"))).toBe(false);
+      expect(existsSync(join(dir, "state", "hash-store.sqlite"))).toBe(false);
     });
   });
 });
@@ -515,7 +516,9 @@ describe("the periodic deep check", () => {
       });
       expect(outcome.deepCheckFailed).toBe(true);
       expect(outcome.rebuilt).toBe(true);
-      const quarantined = (await readdir(dir)).filter((name) => name.includes(".corrupt-"));
+      const quarantined = (await readdir(join(dir, "state"))).filter((name) =>
+        name.includes(".corrupt-"),
+      );
       expect(quarantined.length).toBeGreaterThan(0);
 
       // The recovery is the open path's: the rebuilt store is open, empty and writable.

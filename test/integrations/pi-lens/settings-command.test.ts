@@ -17,7 +17,7 @@ import { LENS_BRIDGE_ENV_VAR } from "../../../src/integrations/pi-lens/config.js
 import { SettingsOverlay } from "../../../src/integrations/pi-lens/settings-overlay.js";
 import { CONFIG_REL, CONFIG_FILE_NAME } from "../../../src/json-config.js";
 import { STORE_JANITOR_ENV_VAR } from "../../../src/store-kernel/settings.js";
-import { configDir } from "../../../src/config-dir.js";
+import { settingsRoot } from "../../../src/config-dir.js";
 
 interface CommandOptions {
   description?: string;
@@ -31,7 +31,7 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
+const globalConfigPath = (): string => join(settingsRoot(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;

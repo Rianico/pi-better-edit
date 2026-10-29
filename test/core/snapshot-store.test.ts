@@ -38,12 +38,12 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   }
 }
 
-function configHome(home: string): string {
-  return join(home, ".config", "pi-better-edit");
+function stateHome(home: string): string {
+  return join(home, ".local", "state", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {
-  return join(configHome(home), "hash-store.sqlite");
+  return join(stateHome(home), "hash-store.sqlite");
 }
 
 function openRaw(home: string): DatabaseSync {

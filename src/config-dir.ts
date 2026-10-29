@@ -1,6 +1,11 @@
 /**
- * Where this extension keeps everything it persists: the store, its WAL, the janitor's
- * bookkeeping, and now the diagnostics log.
+ * The two directories this extension owns, and the only module that names any of their paths.
+ *
+ * WHY two roots rather than one: settings belong to the pi agent tree (an operator reads them
+ * beside the other extensions they configure), while the store, the legacy JSON and the
+ * diagnostics log are STATE — machine-written, disposable, and never edited by hand. The XDG
+ * state directory is where a machine-written artifact belongs, and keeping settings out of it is
+ * what stops a `rm -rf` of the state root from deleting the user's configuration.
  *
  * WHY this is its own module rather than a corner of `hash-store.ts`: the diagnostics sink has to
  * answer "where is my directory?" on its very first line, and `hash-store.ts` is one of its
@@ -8,52 +13,172 @@
  * hash-identity → diagnostics) whose partial initialisation reached the schema as `undefined`
  * columns. The directory rule has no dependency on the store, so it lives where nothing forces a
  * cycle: below both of them.
+ *
+ * WHY every RETIRED path is spelled here too: `test/arch/config-ladder-single-owner.test.ts` pins
+ * exactly one module naming the config-file locations. A second copy of a retired literal is how
+ * an adoption chain silently reads a path nobody meant it to.
  */
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
+/** SAFETY: HOME wins over homedir() because pi runs the extension with the user's shell env; an
+ * empty HOME counts as unset. Mirrors the `homeBase` convention in `src/paths.ts`. */
 function homeBase(): string {
   const envHome = process.env.HOME;
-  return envHome && envHome.length > 0 ? envHome : homedir();
+  return envHome !== undefined && envHome.length > 0 ? envHome : homedir();
 }
 
-function configBase(): string {
-  if (process.platform !== "win32") {
-    const xdg = process.env.XDG_CONFIG_HOME;
-    if (xdg && xdg.length > 0) return xdg;
-  }
-  // SAFETY: join of trusted homedir (or HOME env validated by OS) with fixed ".config" segment — not user-controlled traversal, base is homedir and suffix is constant.
-  return join(homeBase(), ".config");
+/** `~` or a path under it, expanded against `homeBase`; anything else is returned unchanged. */
+function expandHome(value: string): string {
+  const home = homeBase();
+  if (value === "~") return home;
+  if (value.startsWith("~/")) return join(home, value.slice(2));
+  return value;
 }
-
-/** The environment variable that names the app config directory, and so the store's own directory. */
-export const STORE_CONFIG_DIR_ENV_VAR = "PI_BETTER_EDIT_CONFIG_DIR";
 
 /**
- * The operator's store-directory override, read VERBATIM, or `undefined` when unset. An empty value
- * counts as unset. WHY it is exported rather than read where it is used: `configDir` and the
- * `/pi-better-edit` status display both have to answer "is the store directory overridden, and to
- * what", and two readings of one variable is how they come to disagree about "unset".
+ * The environment variable that names the extension's own root, and so — through
+ * `<root>/state/` — the only thing that can move the store.
+ */
+export const STORE_CONFIG_DIR_ENV_VAR = "PI_BETTER_EDIT_CONFIG_DIR";
+
+/** pi's own agent directory, where the extensions live. */
+const CODING_AGENT_DIR_ENV_VAR = "PI_CODING_AGENT_DIR";
+
+/** The XDG base for machine-written state. */
+const XDG_STATE_HOME_ENV_VAR = "XDG_STATE_HOME";
+
+/** The XDG base the RETIRED config directory used to resolve against. Read for adoption only. */
+const XDG_CONFIG_HOME_ENV_VAR = "XDG_CONFIG_HOME";
+
+/** The directory name the extension owned before #190, under either config base. */
+const RETIRED_CONFIG_DIR_NAME = "pi-better-edit";
+
+/**
+ * The operator's override, read VERBATIM, or `undefined` when unset. An empty value counts as
+ * unset. WHY it is exported rather than read where it is used: `settingsRoot`, `stateRoot` and the
+ * `/pi-better-edit` status display all have to answer "is the root overridden, and to what", and
+ * two readings of one variable is how they come to disagree about "unset".
  */
 export function configDirOverride(): string | undefined {
   const override = process.env[STORE_CONFIG_DIR_ENV_VAR];
   return override !== undefined && override.length > 0 ? override : undefined;
 }
 
-export function configDir(): string {
-  // WHY: precedence for the app config dir is PI_BETTER_EDIT_CONFIG_DIR > XDG_CONFIG_HOME > $HOME/.config
-  // WHY: — off Windows only. configBase() reads XDG_CONFIG_HOME behind a `process.platform !== "win32"`
-  // WHY: guard, so on Windows this env var is the only way to relocate the store.
-  // SAFETY: PI_BETTER_EDIT_CONFIG_DIR is trusted operator config, not attacker-controlled tool input, and
-  // SAFETY: it is returned VERBATIM: configDir() appends nothing, sanitises nothing and creates nothing.
-  // SAFETY: It IS a filesystem path, though — resolved against process.cwd() when relative, created on
-  // SAFETY: first open by openStore() (mkdir(recursive: true)), and any EEXIST/EACCES/EINVAL from that
-  // SAFETY: mkdir or the SQLite open surfaces raw out of the open path without naming the variable. The
-  // SAFETY: contract is deliberately verbatim — trimming, validating or wrapping here is out of scope by
-  // SAFETY: ticket mandate, so do not "fix" that; document it instead. An empty string counts as UNSET,
-  // SAFETY: mirroring the XDG reading in configBase() above: that whole rule lives in configDirOverride().
+/**
+ * pi's agent directory: `PI_CODING_AGENT_DIR` after `~` expansion when that yields an ABSOLUTE
+ * path, otherwise `$HOME/.pi/agent`.
+ *
+ * WHY the absolute requirement: a relative value would resolve against whatever cwd the host
+ * process happens to have, so the same settings would live under a different root per session —
+ * the silent fork this relocation exists to remove. A value that cannot be trusted is ignored
+ * rather than guessed at.
+ */
+function agentHome(): string {
+  const raw = process.env[CODING_AGENT_DIR_ENV_VAR];
+  if (raw !== undefined && raw.length > 0) {
+    const expanded = expandHome(raw);
+    if (isAbsolute(expanded)) return expanded;
+  }
+  return join(homeBase(), ".pi", "agent");
+}
+
+/** `$XDG_STATE_HOME` when it is non-empty AND absolute; otherwise `$HOME/.local/state`. The
+ * relative-value rule matches `agentHome`'s: a relative base is another cwd-shaped fork. */
+function stateHome(): string {
+  const raw = process.env[XDG_STATE_HOME_ENV_VAR];
+  if (raw !== undefined && raw.length > 0 && isAbsolute(raw)) return raw;
+  return join(homeBase(), ".local", "state");
+}
+
+/**
+ * Where the user-level settings file lives. The override names this directory VERBATIM (no
+ * suffix is appended beyond `settings.json` itself), so `$PI_BETTER_EDIT_CONFIG_DIR/settings.json`
+ * is the file an operator who set the variable will find.
+ */
+export function settingsRoot(): string {
   const override = configDirOverride();
   if (override !== undefined) return override;
-  // SAFETY: join of trusted configBase (homedir/.config) with fixed "pi-better-edit" — constant suffix, no traversal.
-  return join(configBase(), "pi-better-edit");
+  return join(agentHome(), "extensions", "pi-better-edit");
+}
+
+/**
+ * Where everything the extension writes at runtime lives: the store, the pre-SQLite JSON store and
+ * the diagnostics log. The override owns it through `<override>/state`, so one variable still
+ * moves the store and nothing else can.
+ */
+export function stateRoot(): string {
+  const override = configDirOverride();
+  if (override !== undefined) return join(override, "state");
+  return join(stateHome(), "pi-better-edit");
+}
+
+/** The settings file name inside `settingsRoot()`. */
+export const SETTINGS_FILE_NAME = "settings.json";
+
+/** The PROJECT settings location, relative to the project root. */
+export const PROJECT_SETTINGS_REL = ".pi/agents/pi-better-edit/settings.json";
+
+/**
+ * The retired per-user config directories, strongest first: each one held the settings file AND
+ * every state artifact before #190, which is exactly the coupling this relocation breaks. Read once
+ * for adoption, never written again.
+ *
+ * WHY the override comes first: a user who set `PI_BETTER_EDIT_CONFIG_DIR` before the relocation
+ * kept `pi-better-edit.json`, `hash-store.json` and the logs directly in that directory, and the
+ * override is still the strongest statement about where that user meant their files to live.
+ *
+ * WHY the XDG base is read HERE and only here: the pre-#190 ladder honoured `$XDG_CONFIG_HOME`, so a
+ * user who relocated the old directory through it has their settings and state under that base.
+ * Adoption is the one job that has to look where the old ladder looked — every NEW path is derived
+ * from the agent dir and the state home, so changing this variable never moves a file written by
+ * this version. A relative value is ignored, as it was.
+ *
+ * WHY deduped: an unset `$XDG_CONFIG_HOME` resolves to `<home>/.config`, so two rungs collapse into
+ * one and a single artifact must not be visited, moved or reported twice.
+ */
+export function retiredConfigRoots(): readonly string[] {
+  const override = configDirOverride();
+  return dedupe([
+    ...(override === undefined ? [] : [override]),
+    join(xdgConfigBase(), RETIRED_CONFIG_DIR_NAME),
+    join(homeBase(), ".config", RETIRED_CONFIG_DIR_NAME),
+  ]);
+}
+
+/** `$XDG_CONFIG_HOME` when it is non-empty AND absolute; otherwise `$HOME/.config`. */
+function xdgConfigBase(): string {
+  const raw = process.env[XDG_CONFIG_HOME_ENV_VAR];
+  if (raw !== undefined && raw.length > 0 && isAbsolute(raw)) return raw;
+  return join(homeBase(), ".config");
+}
+
+/** First occurrence wins, order preserved. */
+function dedupe(paths: readonly string[]): readonly string[] {
+  return [...new Set(paths)];
+}
+
+/** The retired FLAT settings location, relative to either a project root or the home directory. */
+const RETIRED_FLAT_SETTINGS_REL = ".pi/agents/pi-better-edit.json";
+
+/** The settings file name the retired directories held before #190. */
+const RETIRED_SETTINGS_FILE_NAME = "pi-better-edit.json";
+
+/**
+ * The retired global settings files, strongest first: the override's own directory (when set),
+ * the retired directory under the XDG config base, the same directory under `$HOME/.config`, then
+ * the even older flat `$HOME/.pi/agents/` file. WHY one function rather than three rungs at the call
+ * site: the adoption chain is a contract, and a caller that reordered it would adopt a different
+ * file than its neighbour.
+ */
+export function retiredGlobalSettingsPaths(): readonly string[] {
+  return dedupe([
+    ...retiredConfigRoots().map((root) => join(root, RETIRED_SETTINGS_FILE_NAME)),
+    join(homeBase(), RETIRED_FLAT_SETTINGS_REL),
+  ]);
+}
+
+/** The retired PROJECT settings file: the flat file beside the new directory. */
+export function retiredProjectSettingsPath(cwd: string): string {
+  return join(cwd, RETIRED_FLAT_SETTINGS_REL);
 }
