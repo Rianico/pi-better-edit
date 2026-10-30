@@ -20,6 +20,23 @@
       <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0"/>
     </linearGradient>
 
+    <!-- North Star Gradient & Glow -->
+    <linearGradient id="grad-north-star" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2DD4BF"/>
+      <stop offset="45%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+
+    <filter id="north-star-glow" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur1"/>
+      <feGaussianBlur stdDeviation="2" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
     <!-- Subtle Dot Grid for Technical Texture -->
     <pattern id="ui-dot-grid" x="0" y="0" width="22" height="22" patternUnits="userSpaceOnUse">
       <circle cx="2" cy="2" r="0.9" fill="#38BDF8" opacity="0.12"/>
@@ -107,10 +124,22 @@
       </g>
     </g>
 
-    <!-- Level 3 Hierarchy: The North Star Philosophy Quote Box -->
+    <!-- Level 3 Hierarchy: The North Star Philosophy Quote Box with Radiant Glow -->
     <g transform="translate(0, 88)">
-      <rect x="0" y="0" width="554" height="38" rx="8" fill="#0A182E" stroke="#38BDF8" stroke-width="1.2" stroke-opacity="0.6"/>
-      <text class="mono" x="16" y="24" font-size="13" font-weight="700" fill="#38BDF8">
+      <!-- Outer Radiant Glow Border -->
+      <rect x="0" y="0" width="554" height="38" rx="8" fill="none" stroke="url(#grad-north-star)" stroke-width="2.5" opacity="0.6" filter="url(#north-star-glow)"/>
+
+      <!-- Foreground Sharp Container -->
+      <rect x="0" y="0" width="554" height="38" rx="8" fill="#0A182E" stroke="url(#grad-north-star)" stroke-width="1.2"/>
+
+      <!-- Glowing 4-Point North Star Sparkle Icon -->
+      <g transform="translate(18, 19)" filter="url(#north-star-glow)">
+        <path d="M 0 -7 Q 0 0 7 0 Q 0 0 0 7 Q 0 0 -7 0 Q 0 0 0 -7 Z" fill="#38BDF8"/>
+        <circle cx="0" cy="0" r="1.5" fill="#FFFFFF"/>
+      </g>
+
+      <!-- North Star Axiom Text (Sharp Vector Text) -->
+      <text class="mono" x="34" y="24" font-size="12.5" font-weight="700" fill="#F0F9FF">
         "Context space is the scarce resource; host compute is free."
       </text>
     </g>
