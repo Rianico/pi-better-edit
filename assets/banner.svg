@@ -43,51 +43,44 @@
   <path d="M 942 324 L 942 342 L 924 342" fill="none" stroke="#818CF8" stroke-width="1.5" opacity="0.6"/>
 
   <!-- ========================================================================= -->
-  <!-- LEFT ZONE (38.2% Golden Section): ATTENTION RADAR & HERO π GLYPH          -->
+  <!-- LEFT ZONE (38.2% Golden Section): CENTRALLY BALANCED ATTENTION RADAR      -->
   <!-- ========================================================================= -->
-  <g transform="translate(16, 26)">
+  <g transform="translate(16, 12)">
     <!-- Radar Sweep Cone (Laser Attention Scope) -->
-    <path d="M 170 136 L 244 74 A 92 92 0 0 0 102 68 Z" fill="url(#grad-radar-cone)"/>
+    <path d="M 170 148 L 246 84 A 96 96 0 0 0 98 76 Z" fill="url(#grad-radar-cone)"/>
 
-    <!-- Concentric Attention Orbits (Golden-Ratio Radii: 50 -> 72 -> 92) -->
-    <circle cx="170" cy="136" r="92" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 6" opacity="0.32"/>
-    <circle cx="170" cy="136" r="72" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="6 4" opacity="0.48"/>
+    <!-- Concentric Attention Orbits (Golden-Ratio Radii: 52 -> 76 -> 96) -->
+    <circle cx="170" cy="148" r="96" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 6" opacity="0.32"/>
+    <circle cx="170" cy="148" r="74" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="6 4" opacity="0.48"/>
 
     <!-- Crosshair Cardinal Guides -->
-    <line x1="170" y1="38" x2="170" y2="52" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="170" y1="220" x2="170" y2="234" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="72" y1="136" x2="86" y2="136" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="254" y1="136" x2="268" y2="136" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="170" y1="46" x2="170" y2="60" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="170" y1="236" x2="170" y2="250" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="68" y1="148" x2="82" y2="148" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="258" y1="148" x2="272" y2="148" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
 
     <!-- Central Focal Vault -->
-    <circle cx="170" cy="136" r="50" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2"/>
+    <circle cx="170" cy="148" r="52" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2"/>
 
     <!-- Radiant Mathematical π Glyph (Vector-sharp, zero blur artifact) -->
-    <text class="sans" x="170" y="160" font-size="72" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)">π</text>
+    <text class="sans" x="170" y="173" font-size="74" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)">π</text>
 
     <!-- 4-Character Hash Satellites (Locking Active Coordinates) -->
     <!-- North Anchor -->
-    <rect class="mono" x="147" y="33" width="46" height="22" rx="5" fill="#091428" stroke="#38BDF8" stroke-width="1.2"/>
-    <text class="mono" x="170" y="48" font-size="10.5" font-weight="800" text-anchor="middle" fill="#38BDF8">szJx</text>
+    <rect class="mono" x="147" y="41" width="46" height="22" rx="5" fill="#091428" stroke="#38BDF8" stroke-width="1.2"/>
+    <text class="mono" x="170" y="56" font-size="10.5" font-weight="800" text-anchor="middle" fill="#38BDF8">szJx</text>
 
     <!-- East Anchor -->
-    <rect class="mono" x="228" y="125" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
-    <text class="mono" x="251" y="140" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">kQmx</text>
+    <rect class="mono" x="232" y="137" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
+    <text class="mono" x="255" y="152" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">kQmx</text>
 
     <!-- South Anchor -->
-    <rect class="mono" x="147" y="217" width="46" height="22" rx="5" fill="#12102E" stroke="#818CF8" stroke-width="1.2"/>
-    <text class="mono" x="170" y="232" font-size="10.5" font-weight="800" text-anchor="middle" fill="#A5B4FC">a1bX</text>
+    <rect class="mono" x="147" y="233" width="46" height="22" rx="5" fill="#12102E" stroke="#818CF8" stroke-width="1.2"/>
+    <text class="mono" x="170" y="248" font-size="10.5" font-weight="800" text-anchor="middle" fill="#A5B4FC">a1bX</text>
 
     <!-- West Anchor -->
-    <rect class="mono" x="66" y="125" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
-    <text class="mono" x="89" y="140" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">c3dX</text>
-
-    <!-- Badge: Free your model's Attention (Centered Horizontally & Vertically) -->
-    <g transform="translate(42, 252)">
-      <rect width="256" height="32" rx="16" fill="#032D38" fill-opacity="0.8" stroke="#0D9488" stroke-width="1.2"/>
-      <circle cx="20" cy="16" r="4" fill="#2DD4BF"/>
-      <text class="mono" x="135" y="20.5" font-size="11" font-weight="700" text-anchor="middle" fill="#5EEAD4" letter-spacing="0.3">Free your model's Attention</text>
-    </g>
+    <rect class="mono" x="62" y="137" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
+    <text class="mono" x="85" y="152" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">c3dX</text>
   </g>
 
   <!-- ========================================================================= -->
@@ -99,13 +92,23 @@
       (FILE, CONTENT)-ADDRESSED LINE-IDENTITY MVCC
     </text>
 
-    <!-- Level 2 Hierarchy: Brand Identity Hero -->
-    <text class="sans" x="0" y="62" font-size="44" font-weight="900" fill="#FFFFFF" letter-spacing="-1">
-      pi-better-edit
-    </text>
+    <!-- Level 2 Hierarchy: Brand Identity Hero & Relocated Attention Pill Badge -->
+    <g transform="translate(0, 30)">
+      <!-- Main Title -->
+      <text class="sans" x="0" y="32" font-size="42" font-weight="900" fill="#FFFFFF" letter-spacing="-1">
+        pi-better-edit
+      </text>
 
-    <!-- Level 3 Hierarchy: The North Star Philosophy Quote Box (Loosened Spacing) -->
-    <g transform="translate(0, 84)">
+      <!-- Relocated Attention Pill Badge -->
+      <g transform="translate(294, 5)">
+        <rect width="254" height="32" rx="16" fill="#032D38" fill-opacity="0.85" stroke="#0D9488" stroke-width="1.2"/>
+        <circle cx="18" cy="16" r="4" fill="#2DD4BF"/>
+        <text class="mono" x="132" y="20.5" font-size="10.5" font-weight="700" text-anchor="middle" fill="#5EEAD4" letter-spacing="0.3">Free your model's Attention</text>
+      </g>
+    </g>
+
+    <!-- Level 3 Hierarchy: The North Star Philosophy Quote Box -->
+    <g transform="translate(0, 88)">
       <rect x="0" y="0" width="554" height="38" rx="8" fill="#0A182E" stroke="#38BDF8" stroke-width="1.2" stroke-opacity="0.6"/>
       <text class="mono" x="16" y="24" font-size="13" font-weight="700" fill="#38BDF8">
         "Context space is the scarce resource; host compute is free."
@@ -113,7 +116,7 @@
     </g>
 
     <!-- ======================================================================= -->
-    <!-- 3-PILLAR CARDS (Centered Horizontally & Vertically, Loosened Spacing)    -->
+    <!-- 3-PILLAR CARDS (Centered Horizontally & Vertically, Airy Spacing)       -->
     <!-- ======================================================================= -->
     <g transform="translate(0, 150)">
       <!-- Pillar 1: 4-Char Base62 Anchors -->
@@ -145,20 +148,17 @@
   <g transform="translate(36, 302)">
     <rect width="888" height="38" rx="8" fill="#090E1A" stroke="#1E293B" stroke-width="1.2"/>
     
-    <g class="mono" font-size="11.5" font-weight="600">
-      <!-- Item 1: Storage (Centered in Section 1) -->
-      <circle cx="85" cy="19" r="4" fill="#2DD4BF"/>
-      <text x="98" y="23.5" fill="#F1F5F9">MVCC SQLite WAL</text>
-      <text x="296" y="23.5" fill="#475569" text-anchor="middle">|</text>
+    <g class="mono" font-size="12" font-weight="600">
+      <!-- Item 1: Storage (Centered in Left Half) -->
+      <circle cx="152" cy="19" r="4" fill="#2DD4BF"/>
+      <text x="166" y="23.5" fill="#F1F5F9">MVCC SQLite WAL</text>
 
-      <!-- Item 2: Multi-Session (Centered in Section 2) -->
-      <circle cx="365" cy="19" r="4" fill="#38BDF8"/>
-      <text x="378" y="23.5" fill="#F1F5F9">Multi-Session Leases</text>
-      <text x="592" y="23.5" fill="#475569" text-anchor="middle">|</text>
+      <!-- Center Divider -->
+      <text x="444" y="23.5" fill="#475569" text-anchor="middle">|</text>
 
-      <!-- Item 3: Fail-Closed (Centered in Section 3) -->
-      <circle cx="612" cy="19" r="4" fill="#34D399"/>
-      <text x="625" y="23.5" fill="#F1F5F9">Fail-Closed Reject &amp; Serve (1-Turn Recovery)</text>
+      <!-- Item 2: Multi-Session (Centered in Right Half) -->
+      <circle cx="586" cy="19" r="4" fill="#38BDF8"/>
+      <text x="600" y="23.5" fill="#F1F5F9">Multi-Session Leases</text>
     </g>
   </g>
 </svg>
