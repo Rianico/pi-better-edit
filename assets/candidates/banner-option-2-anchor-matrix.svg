@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080711"/>
+      <stop offset="50%" stop-color="#0D0C1D"/>
+      <stop offset="100%" stop-color="#05050A"/>
+    </linearGradient>
+
+    <!-- Glowing Accents -->
+    <linearGradient id="neon-teal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2DD4BF"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <linearGradient id="neon-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+
+    <linearGradient id="neon-amber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+
+    <filter id="neon-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur1"/>
+      <feGaussianBlur stdDeviation="3" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <pattern id="dot-grid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#4338CA" opacity="0.3"/>
+    </pattern>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&amp;family=Inter:wght@400;600;700;800&amp;display=swap');
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+      .font-sans { font-family: 'Inter', -apple-system, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Canvas Base -->
+  <rect width="840" height="320" rx="16" fill="url(#bg2)" stroke="#27273F" stroke-width="1.5"/>
+  <rect width="840" height="320" rx="16" fill="url(#dot-grid)"/>
+
+  <!-- Left: Glowing Multi-Layered π Anchor Vault -->
+  <g transform="translate(45, 35)">
+    <!-- Circuit Lines & Anchor Nodes -->
+    <path d="M 90 20 L 90 60 L 140 100 L 140 160" fill="none" stroke="#6366F1" stroke-width="1.5" stroke-dasharray="3 5" opacity="0.4"/>
+    <path d="M 90 200 L 90 140 L 40 100 L 40 40" fill="none" stroke="#2DD4BF" stroke-width="1.5" stroke-dasharray="3 5" opacity="0.4"/>
+
+    <!-- Geometric Hexagon Shield -->
+    <polygon points="90,15 155,52 155,127 90,165 25,127 25,52" fill="#100E26" stroke="url(#neon-purple)" stroke-width="2" filter="url(#neon-glow)" fill-opacity="0.8"/>
+    
+    <!-- Central π Emblem -->
+    <text class="font-sans" x="90" y="112" font-size="70" font-weight="900" text-anchor="middle" fill="url(#neon-teal)" filter="url(#neon-glow)">π</text>
+
+    <!-- Anchors Pinning the Perimeter -->
+    <g class="font-mono" font-size="9" font-weight="700">
+      <rect x="72" y="3" width="36" height="18" rx="4" fill="#1E1B4B" stroke="#818CF8" stroke-width="1"/>
+      <text x="90" y="15" fill="#A5B4FC" text-anchor="middle">szJx</text>
+
+      <rect x="135" y="80" width="36" height="18" rx="4" fill="#042F2E" stroke="#2DD4BF" stroke-width="1"/>
+      <text x="153" y="92" fill="#5EEAD4" text-anchor="middle">kQmx</text>
+
+      <rect x="72" y="155" width="36" height="18" rx="4" fill="#1E1B4B" stroke="#818CF8" stroke-width="1"/>
+      <text x="90" y="167" fill="#A5B4FC" text-anchor="middle">a1bX</text>
+
+      <rect x="7" y="80" width="36" height="18" rx="4" fill="#042F2E" stroke="#2DD4BF" stroke-width="1"/>
+      <text x="25" y="92" fill="#5EEAD4" text-anchor="middle">c3dX</text>
+    </g>
+
+    <!-- Sub-badge -->
+    <rect x="25" y="196" width="130" height="24" rx="6" fill="#1E1B4B" stroke="#6366F1" stroke-width="1"/>
+    <text class="font-mono" x="90" y="212" font-size="10" font-weight="700" text-anchor="middle" fill="#C7D2FE">LINEAGE IMMUTABLE</text>
+  </g>
+
+  <!-- Center-Right Hero Header -->
+  <g transform="translate(245, 45)">
+    <g>
+      <text class="font-mono" x="0" y="18" font-size="11.5" font-weight="700" fill="#2DD4BF" letter-spacing="2">CONTENT-ADDRESSED LINE-IDENTITY MVCC</text>
+      <text class="font-sans" x="0" y="60" font-size="38" font-weight="900" fill="#FFFFFF" letter-spacing="-0.8">
+        pi-better-edit
+      </text>
+    </g>
+
+    <!-- Core Pitch Description -->
+    <text class="font-sans" x="0" y="92" font-size="13" font-weight="400" fill="#CBD5E1">
+      Replaces volatile line numbers and 50-line string echoes with immutable 4-character hashes.
+    </text>
+    <text class="font-mono" x="0" y="112" font-size="12" font-weight="600" fill="#F472B6">
+      Protects the agent's scarce context space &amp; eliminates attention degradation.
+    </text>
+
+    <!-- Live Metric Chips -->
+    <g transform="translate(0, 130)">
+      <!-- Metric 1: 4-Char -->
+      <rect x="0" y="0" width="168" height="42" rx="8" fill="#0E1326" stroke="#2DD4BF" stroke-width="1" stroke-opacity="0.6"/>
+      <text class="font-mono" x="14" y="20" font-size="14" font-weight="800" fill="#2DD4BF">4-Char Base62</text>
+      <text class="font-sans" x="14" y="34" font-size="9.5" fill="#94A3B8">14,766,336 unique anchors</text>
+
+      <!-- Metric 2: Context Token Savings -->
+      <rect x="180" y="0" width="180" height="42" rx="8" fill="#0E1326" stroke="#818CF8" stroke-width="1" stroke-opacity="0.6"/>
+      <text class="font-mono" x="194" y="20" font-size="14" font-weight="800" fill="#818CF8">O(R) Cost Model</text>
+      <text class="font-sans" x="194" y="34" font-size="9.5" fill="#94A3B8">-58% tokens (arXiv:2607.12713)</text>
+
+      <!-- Metric 3: Zero-Token Rebase -->
+      <rect x="372" y="0" width="176" height="42" rx="8" fill="#0E1326" stroke="#F472B6" stroke-width="1" stroke-opacity="0.6"/>
+      <text class="font-mono" x="386" y="20" font-size="14" font-weight="800" fill="#F472B6">0-Token Rebase</text>
+      <text class="font-sans" x="386" y="34" font-size="9.5" fill="#94A3B8">Patience LIS shift invariance</text>
+    </g>
+  </g>
+
+  <!-- Bottom Interactive Status Bar -->
+  <g transform="translate(45, 250)">
+    <rect width="750" height="44" rx="8" fill="#0B091A" stroke="#1E1B4B" stroke-width="1.2"/>
+    
+    <g class="font-mono" font-size="11" font-weight="600">
+      <circle cx="24" cy="22" r="4" fill="#2DD4BF" filter="url(#neon-glow)"/>
+      <text x="36" y="26" fill="#F1F5F9">MVCC CAS WAL</text>
+      <text x="140" y="26" fill="#4B5563">│</text>
+      
+      <circle cx="160" cy="22" r="4" fill="#818CF8"/>
+      <text x="172" y="26" fill="#F1F5F9">Multi-Session Isolated</text>
+      <text x="340" y="26" fill="#4B5563">│</text>
+      
+      <circle cx="360" cy="22" r="4" fill="#34D399"/>
+      <text x="372" y="26" fill="#F1F5F9">Fail-Closed Reject &amp; Serve (1-Turn Recovery)</text>
+      <text x="668" y="26" fill="#4B5563">│</text>
+      
+      <text x="686" y="26" fill="#38BDF8">pi-lens Native</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090D16"/>
+      <stop offset="50%" stop-color="#0E1626"/>
+      <stop offset="100%" stop-color="#070A10"/>
+    </linearGradient>
+
+    <!-- Glowing Accents -->
+    <linearGradient id="grad-cyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+
+    <linearGradient id="grad-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <linearGradient id="grad-pi" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#C084FC"/>
+    </linearGradient>
+
+    <filter id="glow-soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="glow-intense" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur1"/>
+      <feGaussianBlur stdDeviation="4" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600;700&amp;display=swap');
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+      .font-sans { font-family: 'Inter', -apple-system, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Base Canvas -->
+  <rect width="840" height="320" rx="16" fill="url(#bg1)" stroke="#1E293B" stroke-width="1.5"/>
+
+  <!-- Subtle Matrix Grid -->
+  <g opacity="0.07" stroke="#38BDF8" stroke-width="0.8">
+    <line x1="40" y1="0" x2="40" y2="320"/>
+    <line x1="140" y1="0" x2="140" y2="320"/>
+    <line x1="240" y1="0" x2="240" y2="320"/>
+    <line x1="340" y1="0" x2="340" y2="320"/>
+    <line x1="440" y1="0" x2="440" y2="320"/>
+    <line x1="540" y1="0" x2="540" y2="320"/>
+    <line x1="640" y1="0" x2="640" y2="320"/>
+    <line x1="740" y1="0" x2="740" y2="320"/>
+    <line x1="0" y1="40" x2="840" y2="40"/>
+    <line x1="0" y1="100" x2="840" y2="100"/>
+    <line x1="0" y1="160" x2="840" y2="160"/>
+    <line x1="0" y1="220" x2="840" y2="220"/>
+    <line x1="0" y1="280" x2="840" y2="280"/>
+  </g>
+
+  <!-- Left: The Iconic Greek π & Context Horizon -->
+  <g transform="translate(36, 32)">
+    <!-- Ambient Context Rings (Concentric attention orbits) -->
+    <circle cx="95" cy="95" r="82" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 6" opacity="0.25"/>
+    <circle cx="95" cy="95" r="62" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="8 4" opacity="0.4"/>
+    <circle cx="95" cy="95" r="42" fill="#0F172A" stroke="url(#grad-pi)" stroke-width="1.8" opacity="0.9" filter="url(#glow-soft)"/>
+    
+    <!-- Mathematical π symbol -->
+    <text class="font-sans" x="95" y="116" font-size="62" font-weight="800" text-anchor="middle" fill="url(#grad-pi)" filter="url(#glow-soft)">π</text>
+
+    <!-- Context Badge Under π -->
+    <rect x="25" y="196" width="140" height="26" rx="13" fill="#0369A1" fill-opacity="0.25" stroke="#0284C7" stroke-width="1"/>
+    <text class="font-mono" x="95" y="213" font-size="10.5" font-weight="600" text-anchor="middle" fill="#38BDF8">SCARCE CONTEXT</text>
+  </g>
+
+  <!-- Center Hero: Title & North Star -->
+  <g transform="translate(230, 42)">
+    <!-- Title -->
+    <text class="font-sans" x="0" y="36" font-size="34" font-weight="800" fill="#F8FAFC" letter-spacing="-0.5">
+      pi-better-edit
+    </text>
+    <rect x="250" y="12" width="76" height="22" rx="6" fill="#0284C7" fill-opacity="0.2" stroke="#38BDF8" stroke-width="1"/>
+    <text class="font-mono" x="288" y="27" font-size="11" font-weight="700" fill="#38BDF8" text-anchor="middle">v2 MVCC</text>
+
+    <!-- The North Star Axiom -->
+    <text class="font-mono" x="0" y="68" font-size="12.5" font-weight="600" fill="#38BDF8" letter-spacing="0.2">
+      "Context space is the scarce resource; host compute is free."
+    </text>
+    <text class="font-sans" x="0" y="92" font-size="12" font-weight="400" fill="#94A3B8">
+      Content-addressed 4-char line identity · Zero-token auto-rebase · Fail-closed reject-and-serve
+    </text>
+  </g>
+
+  <!-- Right Visual: The 4-Char Anchor Code Card (Live Demonstration) -->
+  <g transform="translate(565, 34)">
+    <rect width="240" height="152" rx="10" fill="#0A0F1D" stroke="#1E293B" stroke-width="1.2"/>
+    
+    <!-- Code Window Titlebar -->
+    <path d="M 0 10 Q 0 0 10 0 L 230 0 Q 240 0 240 10 L 240 26 L 0 26 Z" fill="#0F172A"/>
+    <circle cx="14" cy="13" r="3.5" fill="#EF4444" opacity="0.8"/>
+    <circle cx="26" cy="13" r="3.5" fill="#F59E0B" opacity="0.8"/>
+    <circle cx="38" cy="13" r="3.5" fill="#10B981" opacity="0.8"/>
+    <text class="font-mono" x="120" y="17" font-size="9" fill="#64748B" text-anchor="middle">token-minimal edit</text>
+
+    <!-- Live Leased Rows -->
+    <g class="font-mono" font-size="10.5" transform="translate(12, 44)">
+      <!-- Anchor 1 -->
+      <rect x="0" y="-10" width="38" height="18" rx="4" fill="#0284C7" fill-opacity="0.2" stroke="#0284C7" stroke-width="0.8"/>
+      <text x="19" y="3" fill="#38BDF8" font-weight="700" text-anchor="middle">szJx</text>
+      <text x="42" y="3" fill="#475569">│</text>
+      <text x="52" y="3" fill="#94A3B8">export function run() {</text>
+
+      <!-- Anchor 2 (Contested Target -> Replaced with O(R)) -->
+      <g transform="translate(0, 26)">
+        <rect x="0" y="-10" width="38" height="18" rx="4" fill="#10B981" fill-opacity="0.25" stroke="#10B981" stroke-width="0.8"/>
+        <text x="19" y="3" fill="#34D399" font-weight="700" text-anchor="middle">kQmx</text>
+        <text x="42" y="3" fill="#475569">│</text>
+        <text x="52" y="3" fill="#E2E8F0" font-weight="600">  const maxRetries = 5;</text>
+      </g>
+
+      <!-- Anchor 3 -->
+      <g transform="translate(0, 52)">
+        <rect x="0" y="-10" width="38" height="18" rx="4" fill="#0284C7" fill-opacity="0.2" stroke="#0284C7" stroke-width="0.8"/>
+        <text x="19" y="3" fill="#38BDF8" font-weight="700" text-anchor="middle">a1bX</text>
+        <text x="42" y="3" fill="#475569">│</text>
+        <text x="52" y="3" fill="#94A3B8">  return execute();</text>
+      </g>
+
+      <!-- Anchor 4 -->
+      <g transform="translate(0, 78)">
+        <rect x="0" y="-10" width="38" height="18" rx="4" fill="#0284C7" fill-opacity="0.2" stroke="#0284C7" stroke-width="0.8"/>
+        <text x="19" y="3" fill="#38BDF8" font-weight="700" text-anchor="middle">c3dX</text>
+        <text x="42" y="3" fill="#475569">│</text>
+        <text x="52" y="3" fill="#94A3B8">}</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom Feature Strip: Three Pillar Cards -->
+  <g transform="translate(36, 206)">
+    <!-- Pillar 1: 4-Char Base62 Anchors -->
+    <rect x="0" y="0" width="244" height="88" rx="10" fill="#0D1424" stroke="#1E293B" stroke-width="1"/>
+    <rect x="14" y="14" width="32" height="32" rx="8" fill="#0284C7" fill-opacity="0.15" stroke="#0284C7" stroke-width="1"/>
+    <text class="font-mono" x="30" y="35" font-size="14" font-weight="800" fill="#38BDF8" text-anchor="middle">#4</text>
+    <text class="font-sans" x="56" y="28" font-size="13" font-weight="700" fill="#F1F5F9">4-Char Base62 Anchors</text>
+    <text class="font-mono" x="56" y="44" font-size="10.5" fill="#38BDF8">14.7M space · coprime stride</text>
+    <text class="font-sans" x="14" y="72" font-size="10.5" fill="#94A3B8">Eliminates TokDrift &amp; coordinate rot (arXiv:2510.14972)</text>
+
+    <!-- Pillar 2: O(R) Payload Principle -->
+    <rect x="262" y="0" width="244" height="88" rx="10" fill="#0D1424" stroke="#1E293B" stroke-width="1"/>
+    <rect x="276" y="14" width="32" height="32" rx="8" fill="#10B981" fill-opacity="0.15" stroke="#10B981" stroke-width="1"/>
+    <text class="font-mono" x="292" y="35" font-size="13" font-weight="800" fill="#34D399" text-anchor="middle">O(R)</text>
+    <text class="font-sans" x="318" y="28" font-size="13" font-weight="700" fill="#F1F5F9">Context Space Economy</text>
+    <text class="font-mono" x="318" y="44" font-size="10.5" fill="#34D399">-22% to -58% generated tokens</text>
+    <text class="font-sans" x="276" y="72" font-size="10.5" fill="#94A3B8">Replaces 50-line boilerplate echoes (arXiv:2607.12713)</text>
+
+    <!-- Pillar 3: Zero-Token Auto-Rebase -->
+    <rect x="524" y="0" width="244" height="88" rx="10" fill="#0D1424" stroke="#1E293B" stroke-width="1"/>
+    <rect x="538" y="14" width="32" height="32" rx="8" fill="#818CF8" fill-opacity="0.15" stroke="#818CF8" stroke-width="1"/>
+    <text class="font-mono" x="554" y="34" font-size="13" font-weight="800" fill="#A5B4FC" text-anchor="middle">0T</text>
+    <text class="font-sans" x="580" y="28" font-size="13" font-weight="700" fill="#F1F5F9">Zero-Token Auto-Rebase</text>
+    <text class="font-mono" x="580" y="44" font-size="10.5" fill="#A5B4FC">Patience LIS O(m log m)</text>
+    <text class="font-sans" x="538" y="72" font-size="10.5" fill="#94A3B8">External edits &amp; formatters rebase without retries</text>
+  </g>
+</svg>
