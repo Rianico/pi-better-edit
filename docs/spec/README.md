@@ -10,8 +10,8 @@ This directory houses the formal engineering specifications for `pi-better-edit`
 > Section §9 of [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) constitutes the sole normative text for Revision 25. The standalone documents `stale-identity-reject-and-serve.md` and `mvcc-session-failure-handoff.md` are retained as non-normative historical analysis and triage records.
 
 - **[`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md)**
-  **Status:** Authoritative (Revision 24 with §9 proposed Revision 25 appendix)
-  **Implementing ADRs:** [ADR-0016](../adr/0016-content-addressed-line-identity-supersedes-healing.md), [ADR-0017](../adr/0017-lru-vacuum-supersedes-epoch-concurrency.md), [ADR-0023](../adr/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)
+  **Status:** Authoritative (Revision 25)
+  **Implementing ADRs:** [ADR-0016](../adr/0016-content-addressed-line-identity-supersedes-healing.md), [ADR-0017](../adr/0017-lru-vacuum-supersedes-epoch-concurrency.md), [ADR-0018](../adr/0018-region-scoped-rejection-serves.md), [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md), [ADR-0023](../adr/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)
   **Scope:** The definitive specification for (File, Content)-Addressed Line-Identity MVCC, CAS snapshots, monotonic `line_id` allocation, $O(m \log m)$ Patience LIS pin backbones, and working buffer delta rebasing.
 
 ---

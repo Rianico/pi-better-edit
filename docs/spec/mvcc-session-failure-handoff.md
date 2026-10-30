@@ -1,6 +1,9 @@
 # Handoff: MVCC session failure triage — 7 edit failures, 11 findings
 
-Status: handed off — one defect fix spec'd ([`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md)), the rest are documentation, wording and one prompt fix.
+> [!NOTE] Historical Triage Record
+> This document is a non-normative historical triage record from 2026-09-15. The authoritative, normative specification for Revision 25 is codified in [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §9 and implemented in [ADR-0018](../adr/0018-region-scoped-rejection-serves.md) and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md).
+
+Status: historical triage record — one defect fix spec'd ([`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md)), the rest are documentation, wording and one prompt fix.
 Sessions: the 2026-09-15 triage session in `~/stowfiles/claude-skills/harness/everything-claude-code` (full log path in Appendix D).
 Revision under test: installed `git:github.com/Rianico/pi-better-edit@main` at `bd3a8f2` (*"adopt line-identity MVCC with leases"*). Its `src/hashline/*`, `src/mutation-engine/pipeline.ts` and `src/served-session/session.ts` are byte-identical to the checkout this handoff was written in (`bb049dc`). `main` has since moved to `ba7c8d2` (*"gate reproduced served rows behind a literal declaration"*), which the checkout was fast-forwarded to for re-verification; **the installed extension is still `bd3a8f2`**.
 Patch target: [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) (§9 appendix added).

@@ -1,9 +1,9 @@
-# Spec: Line Identity across File Versions via (File, Content)-Addressed Line-Identity MVCC (Revision 24)
+# Spec: Line Identity across File Versions via (File, Content)-Addressed Line-Identity MVCC (Revision 25)
 
-> [!info] Revision 25 patch proposed — the retired-identity reject-and-serve payload can silently miswrite the line that took the target's old number. Normative deltas D1–D5 are in [§9](#9-appendix--revision-25-patch-stale-identity-rejection); full analysis in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
+> [!info] Revision 25 ratified and normative: incorporates the stale-identity reject-and-serve boundary rule and target-lost rejection invariants (§9). For background and defect reproduction analyses, see [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
 
 Status: ready-for-agent
-Revision: 24 — Production-Grade Line-Identity CAS MVCC with Pre-Allocation Snapshot Cache Verification, Universal Counter-Routed Commits, Explicit S_latest Predecessor Pairing & Watertight ID Invariants, reconciled with the delivered implementation (embedding-level optimal-pairing uniqueness, batch-overlap and item-error attribution, and the delivered module layout). Revision 24 clarifies the delivered seams without changing behavior: leased-anchor resolution lives in `lease-resolve.ts`, the preceding-delta closed form is normative semantics materialized by the working buffer, and pinned snapshots are never evicted (soft overflow is reported, never resolved by eviction).
+Revision: 25 — Production-Grade Line-Identity CAS MVCC with Pre-Allocation Snapshot Cache Verification, Universal Counter-Routed Commits, Explicit S_latest Predecessor Pairing & Watertight ID Invariants, reconciled with the delivered implementation. Revision 25 incorporates the stale-identity boundary rule (ADR-0018, ADR-0020), replacing historical coordinate echoes with unverified-range fresh reads or target-lost zero-row rejections.
 Core Architectural Mandate: **Model context headroom is the single most precious resource. Tool runtime compute, diffing, and storage are effectively free.** The tool absorbs all complexity required to silently auto-rebase valid edits across external file shifts and internal batch edits (0 tokens burned, 0 retries), reserving fail-closed intercepts strictly for true semantic conflicts (interior span tearing, contested non-monotone reorders, duplicate ambiguity, and retired anchors).
 
 Supersedes: ADR-0008 (heuristic canon healing / `tryHealOrphanedSpan`), ADR-0013 (epoch `strictPos`), Revision 20, and all prior spec drafts. This document is the sole authoritative specification.
@@ -785,9 +785,9 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 
 ---
 
-## 9. Appendix — Revision 25 patch (stale-identity rejection)
+## 9. Specification Delta — Revision 25 Normative Specification (Stale-Identity Rejection)
 
-Status: **proposed** — derived from the 2026-09-15 session triage ([`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md)). Where this appendix contradicts the body, this appendix is normative. Fix spec and verification: [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md).
+Status: **Adopted & Normative** — implements [ADR-0018](../adr/0018-region-scoped-rejection-serves.md) and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md) (derived from the 2026-09-15 session triage). Where this section contradicts earlier sections, this section is normative. Supporting historical records: [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
 
 ### 9.1 Defect
 

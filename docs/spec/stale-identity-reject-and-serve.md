@@ -1,6 +1,9 @@
 # Spec: Stale-identity rejection never serves the retired coordinate (MVCC Revision 25 patch)
 
-Status: proposed — patches [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §3.1.1, §5.3 and the ADR-0016 consequence it inherits.
+> [!NOTE] Historical Analysis Record
+> This document is a non-normative historical analysis and test verification record for the Revision 25 patch. The authoritative, normative specification for Revision 25 is codified in [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §9 and implemented in [ADR-0018](../adr/0018-region-scoped-rejection-serves.md) and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md).
+
+Status: historical analysis record — patched [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §3.1.1, §5.3, and ratified in §9.
 Evidence: the 2026-09-15 triage session against the installed revision `bd3a8f2`; the defect was re-confirmed on `ba7c8d2` (current `main`) — see Revision check (full log path in the companion handoff).
 Companion: [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md) (triage of all 7 session failures + 11 findings).
 
