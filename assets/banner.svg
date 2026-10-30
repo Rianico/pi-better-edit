@@ -1,153 +1,151 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 350" width="960" height="350">
   <defs>
     <!-- Background Gradient (Deep Obsidian to Midnight Slate) -->
     <linearGradient id="bg-canvas" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#060911"/>
-      <stop offset="50%" stop-color="#0B1220"/>
-      <stop offset="100%" stop-color="#05070D"/>
+      <stop offset="48%" stop-color="#0B1322"/>
+      <stop offset="100%" stop-color="#04060B"/>
     </linearGradient>
 
-    <!-- Brand Gradients -->
+    <!-- Radiant Greek π Gradient -->
     <linearGradient id="grad-pi-radiant" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#2DD4BF"/>
-      <stop offset="45%" stop-color="#38BDF8"/>
+      <stop offset="42%" stop-color="#38BDF8"/>
       <stop offset="100%" stop-color="#818CF8"/>
     </linearGradient>
 
+    <!-- Radar Sweep Cone Gradient -->
     <linearGradient id="grad-radar-cone" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.22"/>
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.24"/>
       <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0"/>
     </linearGradient>
 
     <!-- Subtle Dot Grid for Technical Texture -->
-    <pattern id="ui-dot-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+    <pattern id="ui-dot-grid" x="0" y="0" width="22" height="22" patternUnits="userSpaceOnUse">
       <circle cx="2" cy="2" r="0.9" fill="#38BDF8" opacity="0.12"/>
     </pattern>
 
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&amp;family=Inter:wght@500;600;700;800&amp;display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&amp;family=Inter:wght@400;500;600;700;800;900&amp;display=swap');
       .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
       .sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     </style>
   </defs>
 
-  <!-- Base Card Container (WCAG High Contrast Frame) -->
-  <rect width="840" height="320" rx="16" fill="url(#bg-canvas)" stroke="#1E293B" stroke-width="1.5"/>
-  <rect width="840" height="320" rx="16" fill="url(#ui-dot-grid)"/>
+  <!-- Base Card Container -->
+  <rect width="960" height="350" rx="18" fill="url(#bg-canvas)" stroke="#1E293B" stroke-width="1.5"/>
+  <rect width="960" height="350" rx="18" fill="url(#ui-dot-grid)"/>
 
-  <!-- Subtle Corner Guides (UpSlide UX Polish) -->
-  <path d="M 16 32 L 16 16 L 32 16" fill="none" stroke="#2DD4BF" stroke-width="1.5" opacity="0.6"/>
-  <path d="M 824 32 L 824 16 L 808 16" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
-  <path d="M 16 288 L 16 304 L 32 304" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
-  <path d="M 824 288 L 824 304 L 808 304" fill="none" stroke="#818CF8" stroke-width="1.5" opacity="0.6"/>
+  <!-- Golden Ratio Corner Calipers -->
+  <path d="M 18 36 L 18 18 L 36 18" fill="none" stroke="#2DD4BF" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 942 36 L 942 18 L 924 18" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 18 314 L 18 332 L 36 332" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 942 314 L 942 332 L 924 332" fill="none" stroke="#818CF8" stroke-width="1.5" opacity="0.6"/>
 
   <!-- ========================================================================= -->
-  <!-- LEFT ZONE: RADIANT CONCENTRIC ATTENTION-BUDGET RADAR & GRADIENT π GLYPH  -->
+  <!-- LEFT ZONE (38.2% Golden Section): ATTENTION RADAR & HERO π GLYPH          -->
   <!-- ========================================================================= -->
-  <g transform="translate(36, 32)">
-    <!-- Radar Sweep Cone (Visualizing Attention Allocation in Context Space) -->
-    <path d="M 95 95 L 165 40 A 84 84 0 0 0 35 35 Z" fill="url(#grad-radar-cone)"/>
+  <g transform="translate(36, 28)">
+    <!-- Radar Sweep Cone (Laser Attention Scope) -->
+    <path d="M 140 108 L 214 46 A 92 92 0 0 0 72 40 Z" fill="url(#grad-radar-cone)"/>
 
-    <!-- Concentric Attention Orbits (Decreasing Entropy / Laser Focus) -->
-    <!-- Outer Orbit (Context Window Boundary) -->
-    <circle cx="95" cy="95" r="84" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="3 5" opacity="0.35"/>
-    
-    <!-- Middle Orbit (Active Leased Scope) -->
-    <circle cx="95" cy="95" r="64" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="6 3" opacity="0.5"/>
-    
-    <!-- Crosshair Cardinal Marks -->
-    <line x1="95" y1="5" x2="95" y2="17" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="95" y1="173" x2="95" y2="185" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="5" y1="95" x2="17" y2="95" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
-    <line x1="173" y1="95" x2="185" y2="95" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <!-- Concentric Attention Orbits (Golden-Ratio Radii: 50 -> 72 -> 92) -->
+    <circle cx="140" cy="108" r="92" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4 6" opacity="0.32"/>
+    <circle cx="140" cy="108" r="72" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="6 4" opacity="0.48"/>
 
-    <!-- Inner Core Vault (The Focal Horizon) -->
-    <circle cx="95" cy="95" r="44" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2"/>
+    <!-- Crosshair Cardinal Guides -->
+    <line x1="140" y1="10" x2="140" y2="24" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="140" y1="192" x2="140" y2="206" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="42" y1="108" x2="56" y2="108" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="224" y1="108" x2="238" y2="108" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+
+    <!-- Central Focal Vault -->
+    <circle cx="140" cy="108" r="50" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2"/>
 
     <!-- Radiant Mathematical π Glyph (Vector-sharp, zero blur artifact) -->
-    <text class="sans" x="95" y="117" font-size="64" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)">π</text>
+    <text class="sans" x="140" y="132" font-size="70" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)">π</text>
 
-    <!-- 4-Character Hash Satellites (Locking Active Coordinates on the Radar) -->
+    <!-- 4-Character Hash Satellites (Locking Active Coordinates) -->
     <!-- North Anchor -->
-    <rect class="mono" x="73" y="1" width="44" height="20" rx="4" fill="#091428" stroke="#38BDF8" stroke-width="1.2"/>
-    <text class="mono" x="95" y="15" font-size="10" font-weight="800" text-anchor="middle" fill="#38BDF8">szJx</text>
+    <rect class="mono" x="117" y="5" width="46" height="22" rx="5" fill="#091428" stroke="#38BDF8" stroke-width="1.2"/>
+    <text class="mono" x="140" y="20" font-size="10.5" font-weight="800" text-anchor="middle" fill="#38BDF8">szJx</text>
 
     <!-- East Anchor -->
-    <rect class="mono" x="146" y="85" width="44" height="20" rx="4" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
-    <text class="mono" x="168" y="99" font-size="10" font-weight="800" text-anchor="middle" fill="#2DD4BF">kQmx</text>
+    <rect class="mono" x="198" y="97" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
+    <text class="mono" x="221" y="112" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">kQmx</text>
 
     <!-- South Anchor -->
-    <rect class="mono" x="73" y="169" width="44" height="20" rx="4" fill="#12102E" stroke="#818CF8" stroke-width="1.2"/>
-    <text class="mono" x="95" y="183" font-size="10" font-weight="800" text-anchor="middle" fill="#A5B4FC">a1bX</text>
+    <rect class="mono" x="117" y="189" width="46" height="22" rx="5" fill="#12102E" stroke="#818CF8" stroke-width="1.2"/>
+    <text class="mono" x="140" y="204" font-size="10.5" font-weight="800" text-anchor="middle" fill="#A5B4FC">a1bX</text>
 
     <!-- West Anchor -->
-    <rect class="mono" x="0" y="85" width="44" height="20" rx="4" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
-    <text class="mono" x="22" y="99" font-size="10" font-weight="800" text-anchor="middle" fill="#2DD4BF">c3dX</text>
+    <rect class="mono" x="36" y="97" width="46" height="22" rx="5" fill="#042220" stroke="#2DD4BF" stroke-width="1.2"/>
+    <text class="mono" x="59" y="112" font-size="10.5" font-weight="800" text-anchor="middle" fill="#2DD4BF">c3dX</text>
 
-    <!-- Attention Label Badge -->
-    <g transform="translate(14, 202)">
-      <rect width="162" height="28" rx="14" fill="#032D38" fill-opacity="0.75" stroke="#0D9488" stroke-width="1.2"/>
-      <circle cx="16" cy="14" r="4" fill="#2DD4BF"/>
-      <text class="mono" x="90" y="18" font-size="10" font-weight="700" text-anchor="middle" fill="#5EEAD4" letter-spacing="0.6">ATTENTION HORIZON</text>
+    <!-- Badge: Free your model's Attention -->
+    <g transform="translate(24, 224)">
+      <rect width="232" height="30" rx="15" fill="#032D38" fill-opacity="0.8" stroke="#0D9488" stroke-width="1.2"/>
+      <circle cx="18" cy="15" r="4" fill="#2DD4BF"/>
+      <text class="mono" x="122" y="19" font-size="10.5" font-weight="700" text-anchor="middle" fill="#5EEAD4" letter-spacing="0.3">Free your model's Attention</text>
     </g>
   </g>
 
   <!-- ========================================================================= -->
-  <!-- CENTER/RIGHT ZONE: VISUAL HIERARCHY & CORE VALUE PROPOSITIONS             -->
+  <!-- RIGHT ZONE (61.8% Golden Section): HIERARCHY, NORTH STAR & 3 PILLARS      -->
   <!-- ========================================================================= -->
-  <g transform="translate(242, 32)">
+  <g transform="translate(366, 32)">
     <!-- Level 1 Hierarchy: Category Kicker -->
-    <text class="mono" x="0" y="14" font-size="11" font-weight="800" fill="#2DD4BF" letter-spacing="1.5">
+    <text class="mono" x="0" y="16" font-size="11.5" font-weight="800" fill="#2DD4BF" letter-spacing="1.8">
       (FILE, CONTENT)-ADDRESSED LINE-IDENTITY MVCC
     </text>
 
     <!-- Level 2 Hierarchy: Brand Identity Hero -->
-    <text class="sans" x="0" y="52" font-size="38" font-weight="900" fill="#FFFFFF" letter-spacing="-0.8">
+    <text class="sans" x="0" y="58" font-size="42" font-weight="900" fill="#FFFFFF" letter-spacing="-1">
       pi-better-edit
     </text>
 
-    <!-- Level 3 Hierarchy: The North Star Philosophy -->
-    <g transform="translate(0, 68)">
-      <rect x="0" y="0" width="554" height="32" rx="6" fill="#0A182E" stroke="#38BDF8" stroke-width="1" stroke-opacity="0.6"/>
-      <text class="mono" x="14" y="20" font-size="12" font-weight="700" fill="#38BDF8">
+    <!-- Level 3 Hierarchy: The North Star Philosophy Quote Box -->
+    <g transform="translate(0, 76)">
+      <rect x="0" y="0" width="554" height="34" rx="7" fill="#0A182E" stroke="#38BDF8" stroke-width="1.2" stroke-opacity="0.6"/>
+      <text class="mono" x="16" y="22" font-size="12.5" font-weight="700" fill="#38BDF8">
         "Context space is the scarce resource; host compute is free."
       </text>
     </g>
 
     <!-- Supporting Value Line -->
-    <text class="sans" x="0" y="118" font-size="12.5" font-weight="500" fill="#CBD5E1">
+    <text class="sans" x="0" y="132" font-size="13" font-weight="400" fill="#CBD5E1">
       Replaces volatile line coordinates and 50-line string echoes with immutable 4-character hashes.
     </text>
 
     <!-- ======================================================================= -->
-    <!-- 3-PILLAR HIGH-CONTRAST CARDS (Razor-Sharp Vector, No Blur Filters)      -->
+    <!-- 3-PILLAR HIGH-CONTRAST CARDS (Golden Spacing, Infinite Sharpness)       -->
     <!-- ======================================================================= -->
-    <g transform="translate(0, 134)">
+    <g transform="translate(0, 150)">
       <!-- Pillar 1: 4-Char Base62 Anchors -->
       <g>
-        <rect width="176" height="58" rx="8" fill="#081A24" stroke="#2DD4BF" stroke-width="1.2"/>
-        <rect x="12" y="10" width="24" height="18" rx="4" fill="#042F2E" stroke="#2DD4BF" stroke-width="0.8"/>
-        <text class="mono" x="24" y="23" font-size="10.5" font-weight="800" fill="#2DD4BF" text-anchor="middle">#4</text>
-        <text class="sans" x="42" y="23" font-size="13" font-weight="800" fill="#2DD4BF">4-Char Base62</text>
-        <text class="sans" x="12" y="44" font-size="10.5" font-weight="600" fill="#E2E8F0">14.7M unique anchors</text>
+        <rect width="174" height="60" rx="8" fill="#081A24" stroke="#2DD4BF" stroke-width="1.2"/>
+        <rect x="12" y="11" width="26" height="20" rx="4" fill="#042F2E" stroke="#2DD4BF" stroke-width="0.8"/>
+        <text class="mono" x="25" y="25" font-size="11" font-weight="800" fill="#2DD4BF" text-anchor="middle">#4</text>
+        <text class="sans" x="44" y="25" font-size="13" font-weight="800" fill="#2DD4BF">4-Char Base62</text>
+        <text class="sans" x="12" y="46" font-size="11" font-weight="600" fill="#E2E8F0">14.7M unique anchors</text>
       </g>
 
       <!-- Pillar 2: Context Model -->
-      <g transform="translate(188, 0)">
-        <rect width="176" height="58" rx="8" fill="#0E142C" stroke="#818CF8" stroke-width="1.2"/>
-        <rect x="12" y="10" width="30" height="18" rx="4" fill="#131B38" stroke="#818CF8" stroke-width="0.8"/>
-        <text class="mono" x="27" y="23" font-size="9.5" font-weight="800" fill="#818CF8" text-anchor="middle">O(R)</text>
-        <text class="sans" x="48" y="23" font-size="13" font-weight="800" fill="#A5B4FC">Context Model</text>
-        <text class="sans" x="12" y="44" font-size="10.5" font-weight="600" fill="#E2E8F0">-58% tokens (arXiv)</text>
+      <g transform="translate(190, 0)">
+        <rect width="174" height="60" rx="8" fill="#0E142C" stroke="#818CF8" stroke-width="1.2"/>
+        <rect x="12" y="11" width="32" height="20" rx="4" fill="#131B38" stroke="#818CF8" stroke-width="0.8"/>
+        <text class="mono" x="28" y="25" font-size="10" font-weight="800" fill="#818CF8" text-anchor="middle">O(R)</text>
+        <text class="sans" x="50" y="25" font-size="13" font-weight="800" fill="#A5B4FC">Context Model</text>
+        <text class="sans" x="12" y="46" font-size="11" font-weight="600" fill="#E2E8F0">-58% tokens (arXiv)</text>
       </g>
 
       <!-- Pillar 3: Zero-Token Rebase -->
-      <g transform="translate(376, 0)">
-        <rect width="178" height="58" rx="8" fill="#1A0E22" stroke="#F472B6" stroke-width="1.2"/>
-        <rect x="12" y="10" width="24" height="18" rx="4" fill="#2A1428" stroke="#F472B6" stroke-width="0.8"/>
-        <text class="mono" x="24" y="23" font-size="10.5" font-weight="800" fill="#F472B6" text-anchor="middle">0T</text>
-        <text class="sans" x="42" y="23" font-size="13" font-weight="800" fill="#F472B6">0-Token Rebase</text>
-        <text class="sans" x="12" y="44" font-size="10.5" font-weight="600" fill="#E2E8F0">Patience LIS shift-free</text>
+      <g transform="translate(380, 0)">
+        <rect width="174" height="60" rx="8" fill="#1A0E22" stroke="#F472B6" stroke-width="1.2"/>
+        <rect x="12" y="11" width="26" height="20" rx="4" fill="#2A1428" stroke="#F472B6" stroke-width="0.8"/>
+        <text class="mono" x="25" y="25" font-size="11" font-weight="800" fill="#F472B6" text-anchor="middle">0T</text>
+        <text class="sans" x="44" y="25" font-size="13" font-weight="800" fill="#F472B6">0-Token Rebase</text>
+        <text class="sans" x="12" y="46" font-size="11" font-weight="600" fill="#E2E8F0">Patience LIS shift-free</text>
       </g>
     </g>
   </g>
@@ -155,23 +153,23 @@
   <!-- ========================================================================= -->
   <!-- BOTTOM STATUS & TELEMETRY STRIP (Accessibility, Contrast & Clear Markers) -->
   <!-- ========================================================================= -->
-  <g transform="translate(36, 268)">
-    <rect width="768" height="34" rx="8" fill="#090E1A" stroke="#1E293B" stroke-width="1.2"/>
+  <g transform="translate(36, 296)">
+    <rect width="888" height="34" rx="8" fill="#090E1A" stroke="#1E293B" stroke-width="1.2"/>
     
     <g class="mono" font-size="11" font-weight="600">
       <!-- Item 1: Storage -->
-      <circle cx="48" cy="17" r="4" fill="#2DD4BF"/>
-      <text x="62" y="21" fill="#F1F5F9">MVCC SQLite WAL</text>
-      <text x="216" y="21" fill="#475569" text-anchor="middle">|</text>
+      <circle cx="56" cy="17" r="4" fill="#2DD4BF"/>
+      <text x="70" y="21" fill="#F1F5F9">MVCC SQLite WAL</text>
+      <text x="256" y="21" fill="#475569" text-anchor="middle">|</text>
 
       <!-- Item 2: Multi-Session -->
-      <circle cx="254" cy="17" r="4" fill="#38BDF8"/>
-      <text x="268" y="21" fill="#F1F5F9">Multi-Session Leases</text>
-      <text x="456" y="21" fill="#475569" text-anchor="middle">|</text>
+      <circle cx="316" cy="17" r="4" fill="#38BDF8"/>
+      <text x="330" y="21" fill="#F1F5F9">Multi-Session Leases</text>
+      <text x="548" y="21" fill="#475569" text-anchor="middle">|</text>
 
       <!-- Item 3: Fail-Closed -->
-      <circle cx="494" cy="17" r="4" fill="#34D399"/>
-      <text x="508" y="21" fill="#F1F5F9">Fail-Closed Reject &amp; Serve (1-Turn Recovery)</text>
+      <circle cx="608" cy="17" r="4" fill="#34D399"/>
+      <text x="622" y="21" fill="#F1F5F9">Fail-Closed Reject &amp; Serve (1-Turn Recovery)</text>
     </g>
   </g>
 </svg>
