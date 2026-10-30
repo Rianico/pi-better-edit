@@ -37,6 +37,17 @@
       </feMerge>
     </filter>
 
+    <!-- Radiant π Neon Glow Filter -->
+    <filter id="pi-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur1"/>
+      <feGaussianBlur stdDeviation="3" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
     <!-- Subtle Dot Grid for Technical Texture -->
     <pattern id="ui-dot-grid" x="0" y="0" width="22" height="22" patternUnits="userSpaceOnUse">
       <circle cx="2" cy="2" r="0.9" fill="#38BDF8" opacity="0.12"/>
@@ -76,10 +87,12 @@
     <line x1="68" y1="148" x2="82" y2="148" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
     <line x1="258" y1="148" x2="272" y2="148" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
 
-    <!-- Central Focal Vault -->
+    <!-- Central Focal Vault with Ambient Neon Halo -->
+    <circle cx="170" cy="148" r="52" fill="none" stroke="url(#grad-pi-radiant)" stroke-width="3" opacity="0.65" filter="url(#pi-glow)"/>
     <circle cx="170" cy="148" r="52" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2"/>
 
-    <!-- Radiant Mathematical π Glyph (Vector-sharp, zero blur artifact) -->
+    <!-- Radiant Mathematical π Glyph with Neon Aura & Crisp Overlay -->
+    <text class="sans" x="170" y="173" font-size="74" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)" opacity="0.85" filter="url(#pi-glow)">π</text>
     <text class="sans" x="170" y="173" font-size="74" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)">π</text>
 
     <!-- 4-Character Hash Satellites (Locking Active Coordinates) -->
