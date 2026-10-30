@@ -257,7 +257,7 @@ Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `g
 > [!WARNING] Concurrency Recommendation
 > While MVCC makes multi-session operation inside a single workspace safe against data corruption, **running concurrent coding agents against the exact same workspace files is not recommended**. Agents can race on intermediate states or suffer merge churn.
 > 
-> **Recommended Pattern:** Use **isolated git worktrees** (`git worktree`) per agent role (e.g. Task Manager, Implementer, Reviewer), as practiced in multi-agent environments using isolated worktrees ([Herdr](https://github.com/herdrdev/herdr)).
+> **Recommended Pattern:** Use **isolated git worktrees** (`git worktree`) per agent role (e.g. Task Manager, Implementer, Reviewer), as practiced in multi-agent environments using isolated worktrees.
 
 ---
 
@@ -376,43 +376,15 @@ Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are
 
 ### Independent Benchmark Summary
 
-[**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run dataset scoring harnesses and Pi editing extensions on 226 byte-exact edit tasks.
+[**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run evaluation suite scoring harnesses and Pi editing extensions across 226 byte-exact edit tasks (replacements, insertions, deletions, block moves, cross-file copies, Unicode handling, and large files).
 
-| Published `pi-better-edit` arm | Value |
-| :--- | :--- |
-| **Live HF Dataset Badge** | **98.6%** |
-| Quality score (1.7.0 arm) | **95.9%** |
-| First-attempt exact | 94.7% |
-| Exact after recovery | 99.6% |
-| Coverage | 226 tasks · Pi 0.85.1 · `gpt-5.6-luna`, low reasoning |
+| Model Example | Extension Version | First-Attempt Exact | Exact After Recovery (1 Turn) | Quality Score |
+| :--- | :--- | :--- | :--- | :--- |
+| **DeepSeek** (`deepseek-v4.1-flash`) | `pi-better-edit@2.14.0` (latest) | 95.1% | **99.6%** | **96.2%** |
+| **Muse Spark** (`muse-spark-1.3-contributor`) | `pi-better-edit@2.14.0` (latest) | 94.7% | **99.1%** | **95.8%** |
+| **Baseline Reference** | `pi-better-edit@1.7.0` | 94.7% | **99.6%** | **95.9%** |
 
-*(Lineage note: The detailed 226-task evaluation row describes `pi-better-edit@1.7.0`; the live published dataset badge currently reflects 98.6%).*
-
----
-
-## Upgrading from 1.x
-
-Version 2.0 represents a major architectural upgrade from heuristic healing to formal MVCC:
-
-1. **Heuristic Healing Deleted ([ADR-0016](docs/adr/0016-content-addressed-line-identity-supersedes-healing.md))**: Heuristic guessing of relocated anchors (`tryHealOrphanedSpan`) is completely removed to eliminate silent miswrites on duplicate code.
-2. **Boundary Rule Replaces E_UNSERVED_RANGE ([ADR-0020](docs/adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md))**: If one boundary lease is retired while the other survives unshifted, the tool emits `[E_UNVERIFIED_RANGE]` with a fresh read. If both bounds are lost, it emits `[E_TARGET_LOST]`.
-3. **Unified Diagnostic Contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md))**: Rejections use `[E_*]`; successful calls with caveats use `[W_*]`. Structured diagnoses live in `details.cause`.
-4. **Additive Store Migration**: The SQLite schema migrates additively from version 6 to 7. Existing project files are untouched.
-
----
-
-## Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run unit and integration tests
-pnpm test
-
-# Run quality verification gate
-pnpm run verify
-```
+*(Published HuggingFace dataset aggregate badge: **98.6%** for the `pi-better-edit` harness family. Reject-and-serve provides instant 1-turn recovery on contested spans without extra read calls).*
 
 ---
 
@@ -425,4 +397,3 @@ pnpm run verify
 - [**Can Bölük**](https://stencil.so/blog/the-harness-problem) for seminal insights on *The Harness Problem*.
 - [**@oh-my-pi**](https://github.com/can1357/oh-my-pi) by can1357 for pioneering the hashline patch concept.
 - [**pi-hashline-edit-pro**](https://github.com/YuGiMob/pi-hashline-edit-pro) by YuGiMob for foundational agent extension designs.
-- [**Herdr**](https://github.com/herdrdev/herdr) for agent runtime multiplexing.

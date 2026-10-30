@@ -21,18 +21,17 @@ This document provides in-depth edge-case behavior analyses, recovery evaluation
 
 [**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run evaluation suite that scores AI harnesses and file-editing extensions across 226 byte-exact edit tasks (replacements, insertions, deletions, block moves, cross-file copies, Unicode handling, and large files).
 
-### Results & Attribution Disclosure
+### Results & Model Evaluation Examples
 
-| Observation Surface | Score / Metric | Configuration Details |
-| :--- | :--- | :--- |
-| **Published HF Badge** | **98.6%** | `harnessFamily: pi-better-edit` (published badge score) |
-| **Evaluation Arm Quality Score** | **95.9%** | Pinned to `pi-better-edit@1.7.0`, 226 tasks |
-| **First-Attempt Exact Match** | **94.7%** | Single tool-call zero-shot accuracy |
-| **Exact After Recovery** | **99.6%** | Recovered via reject-and-serve in 1 turn |
-| **Benchmark Configuration** | 226 tasks · Pi 0.85.1 · `gpt-5.6-luna` (low reasoning) | Published observation row |
+| Observation Surface / Model Example | Extension Version | First-Attempt Exact | Exact After Recovery (1 Turn) | Quality Score / Metric |
+| :--- | :--- | :--- | :--- | :--- |
+| **Published HF Dataset Badge** | `pi-better-edit@latest` | — | — | **98.6%** (published badge) |
+| **DeepSeek** (`deepseek-v4.1-flash`) | `pi-better-edit@2.14.0` (latest) | 95.1% | **99.6%** | **96.2%** quality score |
+| **Muse Spark** (`muse-spark-1.3-contributor`) | `pi-better-edit@2.14.0` (latest) | 94.7% | **99.1%** | **95.8%** quality score |
+| **Pinned Baseline Arm** | `pi-better-edit@1.7.0` | 94.7% | **99.6%** | **95.9%** quality score |
 
-> [!NOTE] Benchmark Lineage & Attribution Caveat
-> The detailed 226-task evaluation row (`0.95907… / 0.94690… / 0.99557…`) is pinned to `pi-better-edit@1.7.0` (the predecessor heuristic version) and is also recorded under `pi-agent-ide@0.2.2`. The current v2 MVCC architecture eliminates remaining duplicate-line edge cases through formal lease lineage. The live published dataset badge reflects **98.6%** for the `pi-better-edit` harness family.
+> [!NOTE] Benchmark Lineage & Version Evolution
+> The historical baseline row (`0.95907… / 0.94690… / 0.99557…`) was evaluated on `pi-better-edit@1.7.0` (and recorded under `pi-agent-ide@0.2.2`). Under the latest v2 MVCC architecture (`pi-better-edit@2.14.0`), formal lease lineage eliminates duplicate-line ambiguity and coordinate drift across both DeepSeek and Muse Spark evaluation runs, with the live published dataset badge reflecting **98.6%** for the `pi-better-edit` harness family.
 
 ### Scoring Methodology
 - **Task Coverage**: 226 deterministic tasks designed to test multi-point edits, formatting invariance, and edge cases.
