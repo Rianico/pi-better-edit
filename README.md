@@ -374,18 +374,6 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are documented in **[Benchmarks & Comparison Reference](docs/reference/benchmarks.md)**.
 
-### Independent Benchmark Summary
-
-[**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run evaluation suite scoring harnesses and Pi editing extensions across 226 byte-exact edit tasks (replacements, insertions, deletions, block moves, cross-file copies, Unicode handling, and large files).
-
-| Model Example | Extension Version | First-Attempt Exact | Exact After Recovery (1 Turn) | Quality Score |
-| :--- | :--- | :--- | :--- | :--- |
-| **DeepSeek** (`deepseek-v4.1-flash`) | `pi-better-edit@2.14.0` (latest) | 95.1% | **99.6%** | **96.2%** |
-| **Muse Spark** (`muse-spark-1.3-contributor`) | `pi-better-edit@2.14.0` (latest) | 94.7% | **99.1%** | **95.8%** |
-| **Baseline Reference** | `pi-better-edit@1.7.0` | 94.7% | **99.6%** | **95.9%** |
-
-*(Published HuggingFace dataset aggregate badge: **98.6%** for the `pi-better-edit` harness family. Reject-and-serve provides instant 1-turn recovery on contested spans without extra read calls).*
-
 ---
 
 ## License
