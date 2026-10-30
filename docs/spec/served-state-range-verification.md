@@ -79,5 +79,5 @@ The tool records, per file and per line, the hash it last delivered to the model
 
 - This spec implements, for this fork, a refined version of upstream issue **YuGiMob/pi-hashline-edit-pro#22** (closed upstream). The fork deliberately diverges from upstream: verification is the tool's responsibility, never the model's.
 - Design authority: `docs/adr/0001-served-state-range-verification.md` (status: **accepted**) and the `CONTEXT.md` glossary. Use its vocabulary throughout: *serve, served state, span, served span, served-range staleness, never-served, reject-and-serve, drift, drift notice, model–tool boundary, anchor philosophy*.
-- `docs/absorption-plan.md` is retained for the deferred patterns (batch preflight, noop-loop guard).
+- `docs/articles/absorption-plan.md` is retained for the deferred patterns (batch preflight, noop-loop guard).
 - The implementation lands on the `replace_rejection` branch (currently empty).
