@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0E14"/>
+      <stop offset="50%" stop-color="#111622"/>
+      <stop offset="100%" stop-color="#090C10"/>
+    </linearGradient>
+
+    <!-- Terminal Window Glow -->
+    <filter id="term-shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+
+    <linearGradient id="brand-teal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#14B8A6"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&amp;family=Inter:wght@400;600;700;800&amp;display=swap');
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+      .font-sans { font-family: 'Inter', -apple-system, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Canvas Base -->
+  <rect width="840" height="320" rx="16" fill="url(#bg4)" stroke="#1F2937" stroke-width="1.5"/>
+
+  <!-- Left: Header & Branding Column -->
+  <g transform="translate(42, 36)">
+    <!-- Pi Icon Badge -->
+    <rect width="48" height="48" rx="12" fill="#0E1726" stroke="#06B6D4" stroke-width="1.5"/>
+    <text class="font-sans" x="24" y="36" font-size="30" font-weight="800" text-anchor="middle" fill="#22D3EE">π</text>
+
+    <!-- Main Title -->
+    <text class="font-sans" x="62" y="34" font-size="32" font-weight="800" fill="#F9FAFB" letter-spacing="-0.5">
+      pi-better-edit
+    </text>
+
+    <!-- Subtitle / Positioning Statement -->
+    <text class="font-mono" x="0" y="74" font-size="12" font-weight="600" fill="#22D3EE">
+      4-Char Hash-Anchored Precision · Zero Token Waste
+    </text>
+    <text class="font-sans" x="0" y="98" font-size="12" font-weight="400" fill="#9CA3AF">
+      Built for autonomous agents where model context is precious and host compute is free.
+    </text>
+
+    <!-- Feature Pillars (Left Stack) -->
+    <g transform="translate(0, 126)">
+      <!-- Item 1 -->
+      <g>
+        <rect width="250" height="34" rx="8" fill="#111827" stroke="#1F2937" stroke-width="1"/>
+        <circle cx="16" cy="17" r="4" fill="#22D3EE"/>
+        <text class="font-mono" x="28" y="21" font-size="11" font-weight="600" fill="#E5E7EB">4-Char Base62 Anchors</text>
+        <text class="font-mono" x="180" y="21" font-size="10" font-weight="700" fill="#06B6D4">14.7M space</text>
+      </g>
+      <!-- Item 2 -->
+      <g transform="translate(0, 42)">
+        <rect width="250" height="34" rx="8" fill="#111827" stroke="#1F2937" stroke-width="1"/>
+        <circle cx="16" cy="17" r="4" fill="#10B981"/>
+        <text class="font-mono" x="28" y="21" font-size="11" font-weight="600" fill="#E5E7EB">Context Token Savings</text>
+        <text class="font-mono" x="184" y="21" font-size="10" font-weight="700" fill="#10B981">-22% to -58%</text>
+      </g>
+      <!-- Item 3 -->
+      <g transform="translate(0, 84)">
+        <rect width="250" height="34" rx="8" fill="#111827" stroke="#1F2937" stroke-width="1"/>
+        <circle cx="16" cy="17" r="4" fill="#818CF8"/>
+        <text class="font-mono" x="28" y="21" font-size="11" font-weight="600" fill="#E5E7EB">Zero-Token Rebase</text>
+        <text class="font-mono" x="195" y="21" font-size="10" font-weight="700" fill="#818CF8">O(m log m)</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Right: Sleek Interactive macOS Terminal Window -->
+  <g transform="translate(340, 24)" filter="url(#term-shadow)">
+    <!-- Terminal Body -->
+    <rect width="465" height="272" rx="10" fill="#0D1117" stroke="#30363D" stroke-width="1.2"/>
+    
+    <!-- Titlebar -->
+    <path d="M 0 10 Q 0 0 10 0 L 455 0 Q 465 0 465 10 L 465 32 L 0 32 Z" fill="#161B22"/>
+    <circle cx="18" cy="16" r="4.5" fill="#FF5F56"/>
+    <circle cx="34" cy="16" r="4.5" fill="#FFBD2E"/>
+    <circle cx="50" cy="16" r="4.5" fill="#27C93F"/>
+    <text class="font-mono" x="232" y="20" font-size="10.5" fill="#8B949E" text-anchor="middle">pi · agent workspace (MVCC v2)</text>
+
+    <!-- Terminal Content Area -->
+    <g class="font-mono" font-size="11" transform="translate(18, 54)">
+      <!-- Interactive prompt line -->
+      <text x="0" y="0" fill="#7EE787" font-weight="700">pi</text>
+      <text x="16" y="0" fill="#8B949E">$</text>
+      <text x="30" y="0" fill="#C9D1D9">read src/config.ts</text>
+
+      <!-- Page Header -->
+      <text x="0" y="22" fill="#58A6FF" font-size="9.5" font-weight="600">[src/config.ts (4 lines total)]</text>
+
+      <!-- Line 1 -->
+      <g transform="translate(0, 44)">
+        <rect x="0" y="-12" width="44" height="20" rx="4" fill="#0D2744" stroke="#1F6FEB" stroke-width="0.8"/>
+        <text x="22" y="2" fill="#58A6FF" font-weight="700" text-anchor="middle">szJx</text>
+        <text x="48" y="2" fill="#484F58">│</text>
+        <text x="60" y="2" fill="#8B949E">export const config = {</text>
+      </g>
+
+      <!-- Line 2 (Atomic Mutation Highlight) -->
+      <g transform="translate(0, 70)">
+        <rect x="0" y="-12" width="44" height="20" rx="4" fill="#063528" stroke="#238636" stroke-width="0.8"/>
+        <text x="22" y="2" fill="#7EE787" font-weight="700" text-anchor="middle">kQmx</text>
+        <text x="48" y="2" fill="#484F58">│</text>
+        <text x="60" y="2" fill="#7EE787" font-weight="600">  maxRetries: 5,</text>
+        <text x="230" y="2" fill="#3FB950" font-size="9.5">&lt;-- edit({ anchor_from: "kQmx", text: ... })</text>
+      </g>
+
+      <!-- Line 3 -->
+      <g transform="translate(0, 96)">
+        <rect x="0" y="-12" width="44" height="20" rx="4" fill="#0D2744" stroke="#1F6FEB" stroke-width="0.8"/>
+        <text x="22" y="2" fill="#58A6FF" font-weight="700" text-anchor="middle">a1bX</text>
+        <text x="48" y="2" fill="#484F58">│</text>
+        <text x="60" y="2" fill="#8B949E">  timeoutMs: 3000,</text>
+      </g>
+
+      <!-- Line 4 -->
+      <g transform="translate(0, 122)">
+        <rect x="0" y="-12" width="44" height="20" rx="4" fill="#0D2744" stroke="#1F6FEB" stroke-width="0.8"/>
+        <text x="22" y="2" fill="#58A6FF" font-weight="700" text-anchor="middle">c3dX</text>
+        <text x="48" y="2" fill="#484F58">│</text>
+        <text x="60" y="2" fill="#8B949E">};</text>
+      </g>
+
+      <!-- Terminal Result Bar -->
+      <g transform="translate(0, 154)">
+        <rect x="0" y="-8" width="430" height="28" rx="6" fill="#161B22" stroke="#30363D" stroke-width="1"/>
+        <text x="12" y="10" fill="#7EE787" font-weight="700">✓</text>
+        <text x="28" y="10" fill="#C9D1D9" font-size="10.5">Applied atomically</text>
+        <text x="156" y="10" fill="#484F58">·</text>
+        <text x="168" y="10" fill="#8B949E" font-size="10.5">Tokens burned: <tspan fill="#7EE787" font-weight="600">8 tokens</tspan> (vs 48 for str_replace)</text>
+      </g>
+    </g>
+  </g>
+</svg>

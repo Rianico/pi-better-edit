@@ -1,105 +1,214 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
   <defs>
-    <linearGradient id="bg6" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0D0D18"/>
-      <stop offset="100%" stop-color="#181830"/>
+    <!-- Background Gradient (Deep Obsidian to Midnight Slate) -->
+    <linearGradient id="bg-canvas" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070A12"/>
+      <stop offset="45%" stop-color="#0C1322"/>
+      <stop offset="100%" stop-color="#05070C"/>
     </linearGradient>
-    <filter id="glow6">
+
+    <!-- Brand Gradients -->
+    <linearGradient id="grad-pi-radiant" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2DD4BF"/>
+      <stop offset="50%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+
+    <linearGradient id="grad-accent-teal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2DD4BF"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <linearGradient id="grad-accent-indigo" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+
+    <linearGradient id="grad-radar-cone" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Filters for Balanced Neon Glow without Blur Distortion -->
+    <filter id="soft-glow" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
     </filter>
+
+    <filter id="crisp-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Subtle Dot Grid for Technical Texture -->
+    <pattern id="ui-dot-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.9" fill="#38BDF8" opacity="0.12"/>
+    </pattern>
+
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&amp;display=swap');
-      text { font-family: 'IBM Plex Mono', monospace; }
-      .pill-teal-6 {
-        animation: floatTeal6 4.2s ease-in-out infinite;
-        fill: transparent;
-        stroke: #2DD4BF;
-        stroke-width: 1.5;
-      }
-      .pill-pink-6 {
-        animation: floatPink6 4.0s ease-in-out infinite;
-        fill: transparent;
-        stroke: #F472B6;
-        stroke-width: 1.5;
-      }
-      @keyframes floatTeal6 {
-        0%, 100% { transform: translate(0px, 0px); }
-        20% { transform: translate(9px, -20px); }
-        40% { transform: translate(-11px, 10px); }
-        60% { transform: translate(13px, -14px); }
-        80% { transform: translate(-5px, 17px); }
-      }
-      @keyframes floatPink6 {
-        0%, 100% { transform: translate(0px, 0px); }
-        20% { transform: translate(-13px, 17px); }
-        40% { transform: translate(11px, -20px); }
-        60% { transform: translate(-7px, 14px); }
-        80% { transform: translate(9px, -10px); }
-      }
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600;700;800&amp;display=swap');
+      .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+      .sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     </style>
   </defs>
 
-  <rect width="800" height="300" rx="20" fill="url(#bg6)" stroke="#2A2A4A" stroke-width="2"/>
+  <!-- Base Card Container (WCAG High Contrast Frame) -->
+  <rect width="840" height="320" rx="16" fill="url(#bg-canvas)" stroke="#1E293B" stroke-width="1.5"/>
+  <rect width="840" height="320" rx="16" fill="url(#ui-dot-grid)"/>
 
-  <!-- Particles v6 - scattered wide -->
-  <g opacity="0.12" fill="#6366F1">
-    <circle cx="35" cy="48" r="2.2"><animate attributeName="cy" values="48;42;54;48" dur="5.3s" repeatCount="indefinite"/></circle>
-    <circle cx="130" cy="258" r="1.6"><animate attributeName="cx" values="130;138;122;130" dur="6.7s" repeatCount="indefinite"/></circle>
-    <circle cx="235" cy="22" r="2.5"><animate attributeName="cy" values="22;16;28;22" dur="7.4s" repeatCount="indefinite"/></circle>
-    <circle cx="370" cy="276" r="1.7"><animate attributeName="cx" values="370;362;378;370" dur="5.6s" repeatCount="indefinite"/></circle>
-    <circle cx="470" cy="18" r="2"><animate attributeName="cy" values="18;12;24;18" dur="6.5s" repeatCount="indefinite"/></circle>
-    <circle cx="615" cy="278" r="2.4"><animate attributeName="cx" values="615;623;607;615" dur="7.2s" repeatCount="indefinite"/></circle>
-    <circle cx="690" cy="35" r="1.9"><animate attributeName="cy" values="35;29;41;35" dur="5.5s" repeatCount="indefinite"/></circle>
-    <circle cx="785" cy="242" r="2.3"><animate attributeName="cx" values="785;777;793;785" dur="6.9s" repeatCount="indefinite"/></circle>
-    <circle cx="80" cy="178" r="1.4"><animate attributeName="cy" values="178;172;184;178" dur="8.4s" repeatCount="indefinite"/></circle>
-    <circle cx="725" cy="148" r="2.1"><animate attributeName="cy" values="148;142;154;148" dur="7.6s" repeatCount="indefinite"/></circle>
-    <circle cx="295" cy="132" r="1.8"><animate attributeName="cx" values="295;287;303;295" dur="6.2s" repeatCount="indefinite"/></circle>
-    <circle cx="535" cy="144" r="2"><animate attributeName="cx" values="535;543;527;535" dur="8.0s" repeatCount="indefinite"/></circle>
-    <circle cx="185" cy="98" r="1.5"><animate attributeName="cy" values="98;92;104;98" dur="7.8s" repeatCount="indefinite"/></circle>
-    <circle cx="640" cy="96" r="1.7"><animate attributeName="cy" values="96;90;102;96" dur="6.1s" repeatCount="indefinite"/></circle>
+  <!-- Subtle Corner Guides (UpSlide UX Polish) -->
+  <path d="M 16 32 L 16 16 L 32 16" fill="none" stroke="#2DD4BF" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 824 32 L 824 16 L 808 16" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 16 288 L 16 304 L 32 304" fill="none" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 824 288 L 824 304 L 808 304" fill="none" stroke="#818CF8" stroke-width="1.5" opacity="0.6"/>
+
+  <!-- ========================================================================= -->
+  <!-- LEFT ZONE: RADIANT CONCENTRIC ATTENTION-BUDGET RADAR & GRADIENT π GLYPH  -->
+  <!-- ========================================================================= -->
+  <g transform="translate(36, 32)">
+    <!-- Radar Sweep Cone (Visualizing Attention Allocation in Context Space) -->
+    <path d="M 95 95 L 165 40 A 84 84 0 0 0 35 35 Z" fill="url(#grad-radar-cone)"/>
+
+    <!-- Concentric Attention Orbits (Decreasing Entropy / Laser Focus) -->
+    <!-- Outer Orbit (Context Window Boundary) -->
+    <circle cx="95" cy="95" r="84" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="3 5" opacity="0.3"/>
+    
+    <!-- Middle Orbit (Active Leased Scope) -->
+    <circle cx="95" cy="95" r="64" fill="none" stroke="#818CF8" stroke-width="1.2" stroke-dasharray="6 3" opacity="0.45"/>
+    
+    <!-- Crosshair Cardinal Marks -->
+    <line x1="95" y1="5" x2="95" y2="17" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="95" y1="173" x2="95" y2="185" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="5" y1="95" x2="17" y2="95" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+    <line x1="173" y1="95" x2="185" y2="95" stroke="#2DD4BF" stroke-width="1.5" opacity="0.8"/>
+
+    <!-- Inner Core Vault (The Focal Horizon) -->
+    <circle cx="95" cy="95" r="44" fill="#0C1527" stroke="url(#grad-pi-radiant)" stroke-width="2" filter="url(#soft-glow)"/>
+
+    <!-- Radiant Mathematical π Glyph -->
+    <text class="sans" x="95" y="117" font-size="64" font-weight="900" text-anchor="middle" fill="url(#grad-pi-radiant)" filter="url(#soft-glow)">π</text>
+
+    <!-- 4-Character Hash Satellites (Locking Active Coordinates on the Radar) -->
+    <!-- North Anchor -->
+    <rect class="mono" x="75" y="2" width="40" height="18" rx="4" fill="#091428" stroke="#38BDF8" stroke-width="1"/>
+    <text class="mono" x="95" y="15" font-size="9.5" font-weight="700" text-anchor="middle" fill="#38BDF8">szJx</text>
+
+    <!-- East Anchor -->
+    <rect class="mono" x="148" y="86" width="40" height="18" rx="4" fill="#042220" stroke="#2DD4BF" stroke-width="1"/>
+    <text class="mono" x="168" y="99" font-size="9.5" font-weight="700" text-anchor="middle" fill="#2DD4BF">kQmx</text>
+
+    <!-- South Anchor -->
+    <rect class="mono" x="75" y="170" width="40" height="18" rx="4" fill="#12102E" stroke="#818CF8" stroke-width="1"/>
+    <text class="mono" x="95" y="183" font-size="9.5" font-weight="700" text-anchor="middle" fill="#A5B4FC">a1bX</text>
+
+    <!-- West Anchor -->
+    <rect class="mono" x="2" y="86" width="40" height="18" rx="4" fill="#042220" stroke="#2DD4BF" stroke-width="1"/>
+    <text class="mono" x="22" y="99" font-size="9.5" font-weight="700" text-anchor="middle" fill="#2DD4BF">c3dX</text>
+
+    <!-- Attention Label Badge -->
+    <g transform="translate(18, 202)">
+      <rect width="154" height="26" rx="13" fill="#032D38" fill-opacity="0.6" stroke="#0D9488" stroke-width="1"/>
+      <circle cx="16" cy="13" r="3.5" fill="#2DD4BF"/>
+      <text class="mono" x="85" y="17" font-size="9.5" font-weight="700" text-anchor="middle" fill="#5EEAD4" letter-spacing="0.5">ATTENTION HORIZON</text>
+    </g>
   </g>
 
-  <!-- Brackets -->
-  <g fill="none" stroke="#6366F1" stroke-width="3" opacity="0.3">
-    <path d="M25 50 L10 50 L10 250 L25 250"/>
-    <path d="M775 50 L790 50 L790 250 L775 250"/>
+  <!-- ========================================================================= -->
+  <!-- CENTER/RIGHT ZONE: VISUAL HIERARCHY & CORE VALUE PROPOSITIONS             -->
+  <!-- ========================================================================= -->
+  <g transform="translate(242, 32)">
+    <!-- Level 1 Hierarchy: Category Kicker & Version Badge -->
+    <g>
+      <text class="mono" x="0" y="14" font-size="11" font-weight="700" fill="#2DD4BF" letter-spacing="1.5">
+        (FILE, CONTENT)-ADDRESSED LINE-IDENTITY MVCC
+      </text>
+      <rect x="350" y="0" width="86" height="20" rx="4" fill="#1E293B" stroke="#475569" stroke-width="0.8"/>
+      <text class="mono" x="393" y="14" font-size="10" font-weight="600" fill="#94A3B8" text-anchor="middle">v2.14 · Pi</text>
+    </g>
+
+    <!-- Level 2 Hierarchy: Brand Identity Hero -->
+    <text class="sans" x="0" y="52" font-size="37" font-weight="800" fill="#F8FAFC" letter-spacing="-0.8">
+      pi-better-edit
+    </text>
+
+    <!-- Level 3 Hierarchy: The North Star Philosophy -->
+    <g transform="translate(0, 68)">
+      <rect x="0" y="0" width="554" height="30" rx="6" fill="#0C1A2E" stroke="#1E3A8A" stroke-width="0.8" opacity="0.9"/>
+      <text class="mono" x="14" y="19" font-size="11.5" font-weight="600" fill="#38BDF8">
+        "Context space is the scarce resource; host compute is free."
+      </text>
+    </g>
+
+    <!-- Supporting Value Line -->
+    <text class="sans" x="0" y="116" font-size="12" font-weight="400" fill="#94A3B8">
+      Replaces volatile line coordinates and 50-line string echoes with immutable 4-character hashes.
+    </text>
+
+    <!-- ======================================================================= -->
+    <!-- 3-PILLAR STRUCTURED CARDS (UpSlide UX Consistency & Spacing Rhythm)    -->
+    <!-- ======================================================================= -->
+    <g transform="translate(0, 134)" filter="url(#crisp-shadow)">
+      <!-- Pillar 1: 4-Char Base62 Anchors -->
+      <g>
+        <rect width="176" height="74" rx="8" fill="#0C1322" stroke="#1E293B" stroke-width="1"/>
+        <rect x="10" y="10" width="24" height="24" rx="6" fill="#082F3B" stroke="#0D9488" stroke-width="0.8"/>
+        <text class="mono" x="22" y="26" font-size="11" font-weight="800" fill="#2DD4BF" text-anchor="middle">#4</text>
+        
+        <text class="sans" x="42" y="22" font-size="11.5" font-weight="700" fill="#F1F5F9">4-Char Anchors</text>
+        <text class="mono" x="42" y="34" font-size="9" font-weight="600" fill="#2DD4BF">14.7M unique space</text>
+        <text class="sans" x="10" y="58" font-size="9.5" fill="#94A3B8">Eliminates TokDrift &amp; rot</text>
+      </g>
+
+      <!-- Pillar 2: O(R) Payload Model -->
+      <g transform="translate(188, 0)">
+        <rect width="176" height="74" rx="8" fill="#0C1322" stroke="#1E293B" stroke-width="1"/>
+        <rect x="10" y="10" width="24" height="24" rx="6" fill="#052E26" stroke="#059669" stroke-width="0.8"/>
+        <text class="mono" x="22" y="26" font-size="10" font-weight="800" fill="#34D399" text-anchor="middle">O(R)</text>
+        
+        <text class="sans" x="42" y="22" font-size="11.5" font-weight="700" fill="#F1F5F9">Context Economy</text>
+        <text class="mono" x="42" y="34" font-size="9" font-weight="600" fill="#34D399">-22% to -58% tokens</text>
+        <text class="sans" x="10" y="58" font-size="9.5" fill="#94A3B8">Zero boilerplate echoes</text>
+      </g>
+
+      <!-- Pillar 3: Zero-Token Auto-Rebase -->
+      <g transform="translate(376, 0)">
+        <rect width="178" height="74" rx="8" fill="#0C1322" stroke="#1E293B" stroke-width="1"/>
+        <rect x="10" y="10" width="24" height="24" rx="6" fill="#1E1B4B" stroke="#4F46E5" stroke-width="0.8"/>
+        <text class="mono" x="22" y="26" font-size="10.5" font-weight="800" fill="#818CF8" text-anchor="middle">0T</text>
+        
+        <text class="sans" x="42" y="22" font-size="11.5" font-weight="700" fill="#F1F5F9">0-Token Rebase</text>
+        <text class="mono" x="42" y="34" font-size="9" font-weight="600" fill="#818CF8">Patience LIS shift-free</text>
+        <text class="sans" x="10" y="58" font-size="9.5" fill="#94A3B8">External edits rebase</text>
+      </g>
+    </g>
   </g>
 
-  <!-- Hero -->
-  <rect x="265" y="16" width="270" height="50" rx="8" fill="#22D3EE" fill-opacity="0.15" stroke="#22D3EE" stroke-width="1.5" filter="url(#glow6)"/>
-  <text x="400" y="48" text-anchor="middle" fill="#22D3EE" font-size="19" font-weight="700" filter="url(#glow6)">π better edit</text>
+  <!-- ========================================================================= -->
+  <!-- BOTTOM STATUS & TELEMETRY STRIP (Accessibility, Contrast & Clear Markers) -->
+  <!-- ========================================================================= -->
+  <g transform="translate(36, 268)">
+    <rect width="768" height="34" rx="8" fill="#090E1A" stroke="#1E293B" stroke-width="1"/>
+    
+    <g class="mono" font-size="10.5" font-weight="600">
+      <!-- Item 1: Storage -->
+      <circle cx="20" cy="17" r="3.5" fill="#2DD4BF"/>
+      <text x="32" y="21" fill="#E2E8F0">MVCC SQLite WAL</text>
+      <text x="144" y="21" fill="#334155">|</text>
 
-  <!-- Cards -->
-  <g font-size="11" font-weight="600">
-    <rect x="50" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#22D3EE" stroke-width="1"/>
-    <text x="165" y="100" text-anchor="middle" fill="#67E8F9" font-size="13">stable addressing</text>
-    <text x="165" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">content-hash IDs never drift</text>
+      <!-- Item 2: Multi-Session -->
+      <circle cx="164" cy="17" r="3.5" fill="#38BDF8"/>
+      <text x="176" y="21" fill="#E2E8F0">Multi-Session Leases</text>
+      <text x="324" y="21" fill="#334155">|</text>
 
-    <rect x="285" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#F472B6" stroke-width="1"/>
-    <text x="400" y="100" text-anchor="middle" fill="#FB7185" font-size="13">atomic apply</text>
-    <text x="400" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">all-or-nothing mutations</text>
+      <!-- Item 3: Fail-Closed -->
+      <circle cx="344" cy="17" r="3.5" fill="#34D399"/>
+      <text x="356" y="21" fill="#E2E8F0">Fail-Closed Reject &amp; Serve (1-Turn Recovery)</text>
+      <text x="664" y="21" fill="#334155">|</text>
 
-    <rect x="520" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#22D3EE" stroke-width="1"/>
-    <text x="635" y="100" text-anchor="middle" fill="#67E8F9" font-size="13">verifiable chain</text>
-    <text x="635" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">cryptographic edit log</text>
-  </g>
-
-  <!-- Bars -->
-  <g font-size="11">
-    <rect x="70" y="150" width="660" height="42" rx="6" fill="#111127" stroke="#2A2A4A" stroke-width="1"/>
-    <text x="400" y="176" text-anchor="middle" fill="#94A3B8" font-weight="600">content-addressed precision · every byte identified by hash</text>
-
-    <rect x="70" y="200" width="660" height="42" rx="6" fill="#111127" stroke="#2A2A4A" stroke-width="1"/>
-    <text x="400" y="226" text-anchor="middle" fill="#94A3B8" font-weight="600">agent-safe protocol · structured contracts prevent corruption</text>
-  </g>
-
-  <!-- Pills -->
-  <g>
-    <rect class="pill-teal-6" x="82" y="255" width="112" height="28" rx="14"/>
-    <text x="138" y="273" text-anchor="middle" fill="#2DD4BF" font-size="10" font-weight="600" style="animation: floatTeal6 4.2s ease-in-out infinite;">no re-read</text>
-
-    <rect class="pill-pink-6" x="594" y="255" width="122" height="28" rx="14"/>
-    <text x="655" y="273" text-anchor="middle" fill="#F472B6" font-size="10" font-weight="600" style="animation: floatPink6 4.0s ease-in-out infinite;">format-tolerance</text>
+      <!-- Item 4: Tool Bridge -->
+      <text x="682" y="21" fill="#818CF8">pi-lens Native</text>
+    </g>
   </g>
 </svg>

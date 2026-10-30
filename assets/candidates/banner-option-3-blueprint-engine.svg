@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320">
+  <defs>
+    <!-- Blueprint Deep Gradient -->
+    <linearGradient id="bg3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06101E"/>
+      <stop offset="60%" stop-color="#0B1B33"/>
+      <stop offset="100%" stop-color="#040A14"/>
+    </linearGradient>
+
+    <!-- Technical Cyan / Laser Blue -->
+    <linearGradient id="laser-cyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#0EA5E9"/>
+    </linearGradient>
+
+    <!-- Blueprint Grid -->
+    <pattern id="blueprint-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1E3A5F" stroke-width="0.7" opacity="0.4"/>
+    </pattern>
+    <pattern id="blueprint-major" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="url(#blueprint-grid)"/>
+      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#2563EB" stroke-width="1.2" opacity="0.5"/>
+    </pattern>
+
+    <filter id="blueprint-glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Inter:wght@400;600;700;800&amp;display=swap');
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+      .font-sans { font-family: 'Inter', sans-serif; }
+      .tech-dim { font-size: 8.5px; fill: #60A5FA; letter-spacing: 0.8px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="840" height="320" rx="16" fill="url(#bg3)" stroke="#1D4ED8" stroke-width="1.5"/>
+  <rect width="840" height="320" rx="16" fill="url(#blueprint-major)"/>
+
+  <!-- Blueprint Corner Framing Calipers -->
+  <path d="M 20 40 L 20 20 L 40 20" fill="none" stroke="#38BDF8" stroke-width="2"/>
+  <path d="M 820 40 L 820 20 L 800 20" fill="none" stroke="#38BDF8" stroke-width="2"/>
+  <path d="M 20 280 L 20 300 L 40 300" fill="none" stroke="#38BDF8" stroke-width="2"/>
+  <path d="M 820 280 L 820 300 L 800 300" fill="none" stroke="#38BDF8" stroke-width="2"/>
+
+  <!-- Technical Stamp Top Right -->
+  <g transform="translate(640, 24)">
+    <rect width="175" height="42" rx="4" fill="#0C2340" stroke="#2563EB" stroke-width="1" stroke-dasharray="2 2"/>
+    <text class="font-mono tech-dim" x="12" y="16">SYSTEM SPEC : MVCC-v2</text>
+    <text class="font-mono tech-dim" x="12" y="30">LINEAGE     : CAS MONOTONIC</text>
+  </g>
+
+  <!-- Left: The Architectural π Monogram -->
+  <g transform="translate(42, 35)">
+    <rect width="140" height="140" rx="12" fill="#0A1E38" stroke="#38BDF8" stroke-width="1.5" stroke-dasharray="4 2"/>
+    <circle cx="70" cy="70" r="54" fill="none" stroke="#2563EB" stroke-width="1" stroke-dasharray="3 3"/>
+    
+    <!-- Central Technical π -->
+    <text class="font-sans" x="70" y="94" font-size="68" font-weight="800" text-anchor="middle" fill="#38BDF8" filter="url(#blueprint-glow)">π</text>
+    
+    <!-- Dimension Marker -->
+    <text class="font-mono tech-dim" x="70" y="132" text-anchor="middle">HASH_LEN = 4</text>
+  </g>
+
+  <!-- Center Top: Engineering Title -->
+  <g transform="translate(205, 42)">
+    <text class="font-mono" x="0" y="16" font-size="11" font-weight="700" fill="#38BDF8" letter-spacing="1.5">ARCHITECTURE SCHEMATIC // REVISION 25</text>
+    <text class="font-sans" x="0" y="52" font-size="36" font-weight="800" fill="#F8FAFC" letter-spacing="-0.5">
+      pi-better-edit
+    </text>
+    <text class="font-mono" x="0" y="74" font-size="12" font-weight="600" fill="#60A5FA">
+      The Two-Chamber Model: Scarce Context ⇄ Free Host Compute
+    </text>
+  </g>
+
+  <!-- Split Chambers Schematic -->
+  <g transform="translate(205, 130)">
+    <!-- Chamber A: Model Context Window -->
+    <g>
+      <rect width="280" height="150" rx="8" fill="#0A1A30" stroke="#0284C7" stroke-width="1.2"/>
+      <path d="M 0 8 Q 0 0 8 0 L 272 0 Q 280 0 280 8 L 280 26 L 0 26 Z" fill="#0E2748"/>
+      <text class="font-mono" x="12" y="18" font-size="10.5" font-weight="700" fill="#38BDF8">CHAMBER A : SCARCE CONTEXT</text>
+
+      <g class="font-mono" font-size="10" transform="translate(14, 46)">
+        <text x="0" y="0" fill="#94A3B8">• Payload Model : <tspan fill="#34D399" font-weight="700">O(R) Emission</tspan></text>
+        <text x="0" y="22" fill="#94A3B8">• Token Cost    : <tspan fill="#34D399" font-weight="700">0 Tokens for Rebase</tspan></text>
+        <text x="0" y="44" fill="#94A3B8">• Anchor Width  : <tspan fill="#38BDF8" font-weight="700">4 Base62 Chars</tspan></text>
+        <text x="0" y="66" fill="#94A3B8">• Attention     : <tspan fill="#FBBF24" font-weight="700">Protected (No Bloat)</tspan></text>
+        <text x="0" y="88" fill="#64748B">Saved: 22%–58% Generated Tokens</text>
+      </g>
+    </g>
+
+    <!-- Transfer Vector (Laser Flow Arrow) -->
+    <g transform="translate(290, 75)">
+      <line x1="0" y1="0" x2="26" y2="0" stroke="#38BDF8" stroke-width="2" marker-end="url(#arrow)"/>
+      <circle cx="13" cy="0" r="10" fill="#0F172A" stroke="#38BDF8" stroke-width="1.5"/>
+      <text class="font-mono" x="13" y="4" font-size="8.5" font-weight="700" fill="#38BDF8" text-anchor="middle">szJx</text>
+    </g>
+
+    <!-- Chamber B: Host Runtime Engine -->
+    <g transform="translate(325, 0)">
+      <rect width="285" height="150" rx="8" fill="#0A1A30" stroke="#3B82F6" stroke-width="1.2"/>
+      <path d="M 0 8 Q 0 0 8 0 L 277 0 Q 285 0 285 8 L 285 26 L 0 26 Z" fill="#0E2748"/>
+      <text class="font-mono" x="12" y="18" font-size="10.5" font-weight="700" fill="#60A5FA">CHAMBER B : FREE HOST COMPUTE</text>
+
+      <g class="font-mono" font-size="10" transform="translate(14, 46)">
+        <text x="0" y="0" fill="#94A3B8">• Hash Space  : <tspan fill="#60A5FA" font-weight="700">14,766,336 unique</tspan></text>
+        <text x="0" y="22" fill="#94A3B8">• Rebase Alg  : <tspan fill="#60A5FA" font-weight="700">Patience LIS O(m log m)</tspan></text>
+        <text x="0" y="44" fill="#94A3B8">• Storage     : <tspan fill="#60A5FA" font-weight="700">SQLite CAS + WAL</tspan></text>
+        <text x="0" y="66" fill="#94A3B8">• Recovery    : <tspan fill="#34D399" font-weight="700">1-Turn Reject &amp; Serve</tspan></text>
+        <text x="0" y="88" fill="#64748B">Stride 3,907 Coprime Probing</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Left Bottom Legend -->
+  <g transform="translate(42, 190)">
+    <rect width="140" height="90" rx="8" fill="#061528" stroke="#1E3A5F" stroke-width="1"/>
+    <text class="font-mono tech-dim" x="12" y="20">VALIDATION</text>
+    <text class="font-mono" x="12" y="40" font-size="11" font-weight="700" fill="#34D399">✓ 27 CI Tests</text>
+    <text class="font-mono" x="12" y="58" font-size="10" fill="#94A3B8">Tool battery</text>
+    <text class="font-mono" x="12" y="74" font-size="10" fill="#38BDF8">pi-lens bridge</text>
+  </g>
+</svg>
