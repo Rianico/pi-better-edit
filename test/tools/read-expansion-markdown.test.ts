@@ -87,6 +87,34 @@ describe("read expansion: Markdown heading sections", () => {
     });
   });
 
+  it("does not treat # lines inside a ~~~ fence as section boundaries", async () => {
+    const source = `## Code\n\n~~~sh\n# not a heading\n### also not a heading\necho hi\n~~~\n\n## Next\n`;
+    await withTempFile("tilde-fence.md", source, async ({ cwd, path }) => {
+      const result = await runRead(reader(), cwd, {
+        file: path,
+        windows: [{ offset: 4, limit: 1 }],
+      });
+
+      expect(lines(result)[0]).toBe("## Code");
+      expect(lines(result).at(-2)).toBe("~~~");
+      expect(notes(result)).toEqual(['[widened 4-4 -> 1-8, section "Code"]']);
+    });
+  });
+
+  it("keeps a ~~~ fence open when a ``` line appears inside it", async () => {
+    const source = `## Code\n\n~~~\n\`\`\`sh\n# not a heading\n~~~\n\n## Next\n`;
+    await withTempFile("tilde-mismatch.md", source, async ({ cwd, path }) => {
+      const result = await runRead(reader(), cwd, {
+        file: path,
+        windows: [{ offset: 5, limit: 1 }],
+      });
+
+      expect(lines(result)[0]).toBe("## Code");
+      expect(lines(result).at(-2)).toBe("~~~");
+      expect(notes(result)).toEqual(['[widened 5-5 -> 1-7, section "Code"]']);
+    });
+  });
+
   it("refuses a file with a Setext heading and serves the requested window", async () => {
     const source = `Title\n=====\n\n## Section\n\nText.\n`;
     await withTempFile("setext.md", source, async ({ cwd, path }) => {
@@ -140,6 +168,15 @@ describe("read expansion: Markdown heading sections", () => {
   it("fails closed for an unclosed fence, a pre-heading probe and a no-heading file", async () => {
     const tool = reader();
     await withTempFile("unclosed.md", `## Open\n\n\`\`\`\n# body\n\`\n`, async ({ cwd, path }) => {
+      const result = await runRead(tool, cwd, {
+        file: path,
+        windows: [{ offset: 4, limit: 1 }],
+      });
+      expect(lines(result)).toEqual(["# body"]);
+      expect(notes(result)).toEqual([]);
+    });
+
+    await withTempFile("unclosed-tilde.md", `## Open\n\n~~~\n# body\n`, async ({ cwd, path }) => {
       const result = await runRead(tool, cwd, {
         file: path,
         windows: [{ offset: 4, limit: 1 }],
