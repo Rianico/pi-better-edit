@@ -1,7 +1,12 @@
+import { readFileSync, rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { createReadSpanProvider } from "../../src/read-expansion/read-provider";
 import { isDataPath, isPlainTextPath } from "../../src/read-expansion/paragraph-provider";
+import {
+  readExpansionLogPath,
+  resetReadExpansionLogStateForTests,
+} from "../../src/read-expansion/audit";
 import {
   anchorRows,
   getText,
@@ -52,7 +57,23 @@ function notes(result: ReadResult): string[] {
 function numbered(count: number): string {
   return Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n");
 }
+function clearAuditLog(): void {
+  const path = readExpansionLogPath();
+  rmSync(path, { force: true });
+  rmSync(`${path}.1`, { force: true });
+  resetReadExpansionLogStateForTests();
+}
 
+function auditRecords(): Array<Record<string, unknown>> {
+  try {
+    return readFileSync(readExpansionLogPath(), "utf-8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  } catch {
+    return [];
+  }
+}
 describe("read expansion: plain-text paragraphs", () => {
   it("returns the paragraph containing a probe with a paragraph note", async () => {
     const source = `alpha one\nalpha two\n\nbeta one\nbeta two\n`;
@@ -138,6 +159,18 @@ describe("read expansion: plain-text paragraphs", () => {
     });
   });
 
+  it("leaves an empty file exact with no note", async () => {
+    await withTempFile("empty.txt", "", async ({ cwd, path }) => {
+      const result = await runRead(reader(), cwd, {
+        file: path,
+        windows: [{ offset: 1, limit: 1 }],
+      });
+
+      expect(lines(result)).toEqual([""]);
+      expect(notes(result)).toEqual([]);
+    });
+  });
+
   it("leaves whitespace-only files at the requested window", async () => {
     await withTempFile("blank.txt", `\n   \n`, async ({ cwd, path }) => {
       const result = await runRead(reader(), cwd, {
@@ -147,6 +180,28 @@ describe("read expansion: plain-text paragraphs", () => {
 
       expect(lines(result)).toEqual([""]);
       expect(notes(result)).toEqual([]);
+    });
+  });
+
+  it("records a paragraph over-cap refusal with its extent and label", async () => {
+    clearAuditLog();
+    await withTempFile("audit-text.txt", `${numbered(41)}\n\nbeta`, async ({ cwd, path }) => {
+      await runRead(reader(), cwd, {
+        file: path,
+        windows: [{ offset: 20, limit: 1 }],
+      });
+    });
+
+    expect(auditRecords().find((record) => record["reason"] === "over_cap")).toMatchObject({
+      mode: "served",
+      outcome: "refused",
+      reason: "over_cap",
+      requested: [{ startLine: 20, endLine: 20 }],
+      section: { startLine: 1, endLine: 41 },
+      kind: "paragraph",
+      name: "lines 1-41",
+      source: "text",
+      label: "paragraph lines 1-41",
     });
   });
 
