@@ -1,25 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { lineSpanForOffsets } from "../../src/read-expansion/line-arithmetic";
-import { SPAN_CAP, TRIGGER_MAX, type SpanProvider } from "../../src/read-expansion/span-expansion";
+import {
+  SPAN_CAP_CODE,
+  SPAN_CAP_MD_TEXT,
+  TRIGGER_MAX,
+  type SpanProvider,
+  type SpanWindow,
+} from "../../src/read-expansion/span-expansion";
 import {
   anchorRows,
+  extractHash,
   getText,
   makeFakePiRegistry,
   testSessionManager,
   withTempFile,
 } from "../support/fixtures";
 
+type Range = { startLine: number; endLine: number };
 type ReadResult = {
   content: Array<{ text?: string }>;
   details?: {
-    expansion?: {
+    widened?: Array<{
+      asked: Range;
+      served: Range;
       kind: string;
       name: string;
       source: string;
-      requested: { offset: number; limit: number };
-      served: { startLine: number; endLine: number };
-    };
+    }>;
   };
 };
 
@@ -52,8 +60,8 @@ function servedLines(text: string): string[] {
   return anchorRows(text).map((row) => row.slice(row.indexOf("│") + 1));
 }
 
-function noteLine(text: string): string | undefined {
-  return text.split("\n").find((line) => line.includes("Read widened"));
+function widenedNotes(text: string): string[] {
+  return text.split("\n").filter((line) => line.includes("[widened "));
 }
 
 function numbered(count: number): string {
@@ -61,8 +69,24 @@ function numbered(count: number): string {
 }
 
 const fiveThroughTwenty: SpanProvider = {
-  enclosingSpan: () => ({ start: 5, end: 20, kind: "function", name: "parseThing", source: "ast" }),
+  enclosingSpan: () => ({
+    start: 5,
+    end: 20,
+    kind: "function",
+    name: "parseThing",
+    source: "ast",
+  }),
 };
+
+function fixedSpan(
+  start: number,
+  end: number,
+  kind: string,
+  name: string,
+  source: "ast" | "md" | "text",
+): SpanProvider {
+  return { enclosingSpan: () => ({ start, end, kind, name, source }) };
+}
 
 describe("read expansion: the fake-provider seam", () => {
   it("serves the exact same bytes when the provider declines", async () => {
@@ -75,11 +99,11 @@ describe("read expansion: the fake-provider seam", () => {
       expect(servedLines(getText(declined))).toEqual(
         Array.from({ length: 5 }, (_, index) => `line ${10 + index}`),
       );
-      expect(declined.details?.expansion).toBeUndefined();
+      expect(declined.details?.widened).toBeUndefined();
     });
   });
 
-  it("widens to the enclosing span and names kind, name and served range once", async () => {
+  it("widens to the enclosing span with the exact REV2 note and details record", async () => {
     await withTempFile("widen.txt", numbered(30), async ({ cwd, path }) => {
       const result = await runRead(readerWith(fiveThroughTwenty), cwd, {
         file: path,
@@ -90,27 +114,22 @@ describe("read expansion: the fake-provider seam", () => {
       expect(servedLines(text)).toEqual(
         Array.from({ length: 16 }, (_, index) => `line ${5 + index}`),
       );
-      const note = noteLine(text);
-      expect(note).toContain("function");
-      expect(note).toContain("parseThing");
-      expect(note).toContain("lines 5-20");
-      expect(text.split("\n").filter((line) => line.includes("Read widened"))).toHaveLength(1);
-      expect(result.details?.expansion).toEqual({
-        kind: "function",
-        name: "parseThing",
-        source: "ast",
-        requested: { offset: 10, limit: 5 },
-        served: { startLine: 5, endLine: 20 },
-      });
+      expect(widenedNotes(text)).toEqual(["[widened 5-20 (asked 10-14) function parseThing]"]);
+      expect(result.details?.widened).toEqual([
+        {
+          asked: { startLine: 10, endLine: 14 },
+          served: { startLine: 5, endLine: 20 },
+          kind: "function",
+          name: "parseThing",
+          source: "ast",
+        },
+      ]);
     });
   });
 
   it("keeps every requested line when the span starts before and ends after the request", async () => {
-    const enclosing: SpanProvider = {
-      enclosingSpan: () => ({ start: 3, end: 25, kind: "method", name: "run", source: "ast" }),
-    };
     await withTempFile("superset.txt", numbered(30), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(enclosing), cwd, {
+      const result = await runRead(readerWith(fixedSpan(3, 25, "method", "run", "ast")), cwd, {
         file: path,
         windows: [{ offset: 10, limit: 5 }],
       });
@@ -124,11 +143,8 @@ describe("read expansion: the fake-provider seam", () => {
   });
 
   it("refuses a span that does not contain every requested line", async () => {
-    const offTarget: SpanProvider = {
-      enclosingSpan: () => ({ start: 20, end: 30, kind: "function", name: "other", source: "ast" }),
-    };
     await withTempFile("not-superset.txt", numbered(30), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(offTarget), cwd, {
+      const result = await runRead(readerWith(fixedSpan(20, 30, "function", "other", "ast")), cwd, {
         file: path,
         windows: [{ offset: 10, limit: 5 }],
       });
@@ -140,87 +156,38 @@ describe("read expansion: the fake-provider seam", () => {
         "line 13",
         "line 14",
       ]);
-      expect(noteLine(getText(result))).toBeUndefined();
-      expect(result.details?.expansion).toBeUndefined();
+      expect(widenedNotes(getText(result))).toEqual([]);
+      expect(result.details?.widened).toBeUndefined();
     });
   });
 
   it("refuses a span past end of file and falls back to the requested window", async () => {
-    const pastEof: SpanProvider = {
-      enclosingSpan: () => ({ start: 1, end: 99, kind: "function", name: "ghost", source: "ast" }),
-    };
     await withTempFile("past-eof.txt", numbered(30), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(pastEof), cwd, {
+      const result = await runRead(readerWith(fixedSpan(1, 99, "function", "ghost", "ast")), cwd, {
         file: path,
         windows: [{ offset: 10, limit: 5 }],
       });
 
       expect(servedLines(getText(result))).toHaveLength(5);
-      expect(noteLine(getText(result))).toBeUndefined();
+      expect(widenedNotes(getText(result))).toEqual([]);
     });
   });
-  it("refuses a span larger than the cap, serving the requested window with no note", async () => {
-    const tooLarge: SpanProvider = {
-      enclosingSpan: () => ({
-        start: 1,
-        end: SPAN_CAP + 1,
-        kind: "function",
-        name: "flood",
-        source: "ast",
-      }),
-    };
-    await withTempFile("cap.txt", numbered(SPAN_CAP + 20), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(tooLarge), cwd, {
+
+  it("widens a request exactly at the 24-line trigger", async () => {
+    await withTempFile("trigger-edge.txt", numbered(60), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fixedSpan(5, 35, "function", "edge", "ast")), cwd, {
         file: path,
-        windows: [{ offset: 100, limit: 5 }],
+        windows: [{ offset: 10, limit: TRIGGER_MAX }],
       });
 
-      expect(servedLines(getText(result))).toEqual([
-        "line 100",
-        "line 101",
-        "line 102",
-        "line 103",
-        "line 104",
-      ]);
-      expect(noteLine(getText(result))).toBeUndefined();
-      expect(result.details?.expansion).toBeUndefined();
+      expect(servedLines(getText(result))[0]).toBe("line 5");
+      expect(widenedNotes(getText(result))).toEqual(["[widened 5-35 (asked 10-33) function edge]"]);
     });
   });
 
-  it("serves a span exactly at the cap and never beyond it", async () => {
-    const atCap: SpanProvider = {
-      enclosingSpan: () => ({
-        start: 1,
-        end: SPAN_CAP,
-        kind: "function",
-        name: "large",
-        source: "ast",
-      }),
-    };
-    await withTempFile("at-cap.txt", numbered(SPAN_CAP + 20), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(atCap), cwd, {
-        file: path,
-        windows: [{ offset: 100, limit: 5 }],
-      });
-      const lines = servedLines(getText(result));
-
-      expect(lines).toHaveLength(SPAN_CAP);
-      expect(lines[0]).toBe("line 1");
-      expect(lines[lines.length - 1]).toBe(`line ${SPAN_CAP}`);
-      expect(noteLine(getText(result))).toContain(`served lines 1-${SPAN_CAP}`);
-      expect(result.details?.expansion?.served).toEqual({
-        startLine: 1,
-        endLine: SPAN_CAP,
-      });
-    });
-  });
-
-  it("does not widen a requested window above the trigger threshold", async () => {
-    const wide: SpanProvider = {
-      enclosingSpan: () => ({ start: 1, end: 100, kind: "function", name: "big", source: "ast" }),
-    };
-    await withTempFile("trigger.txt", numbered(100), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(wide), cwd, {
+  it("does not widen a 25-line request above the trigger", async () => {
+    await withTempFile("trigger-above.txt", numbered(60), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fixedSpan(1, 40, "function", "big", "ast")), cwd, {
         file: path,
         windows: [{ offset: 10, limit: TRIGGER_MAX + 1 }],
       });
@@ -228,23 +195,59 @@ describe("read expansion: the fake-provider seam", () => {
       expect(servedLines(getText(result))).toEqual(
         Array.from({ length: TRIGGER_MAX + 1 }, (_, index) => `line ${10 + index}`),
       );
-      expect(noteLine(getText(result))).toBeUndefined();
-      expect(result.details?.expansion).toBeUndefined();
+      expect(widenedNotes(getText(result))).toEqual([]);
+      expect(result.details?.widened).toBeUndefined();
     });
   });
 
-  it("widens a request exactly at the trigger threshold", async () => {
-    const atTrigger: SpanProvider = {
-      enclosingSpan: () => ({ start: 5, end: 49, kind: "function", name: "edge", source: "ast" }),
-    };
-    await withTempFile("trigger-edge.txt", numbered(100), async ({ cwd, path }) => {
-      const result = await runRead(readerWith(atTrigger), cwd, {
-        file: path,
-        windows: [{ offset: 10, limit: TRIGGER_MAX }],
-      });
+  it("serves a code span exactly at the 80-line cap and refuses 81", async () => {
+    await withTempFile("code-cap.txt", numbered(SPAN_CAP_CODE + 40), async ({ cwd, path }) => {
+      const atCap = await runRead(
+        readerWith(fixedSpan(1, SPAN_CAP_CODE, "function", "large", "ast")),
+        cwd,
+        { file: path, windows: [{ offset: 50, limit: 5 }] },
+      );
+      expect(servedLines(getText(atCap))).toHaveLength(SPAN_CAP_CODE);
+      expect(widenedNotes(getText(atCap))).toHaveLength(1);
 
-      expect(servedLines(getText(result))[0]).toBe("line 5");
-      expect(noteLine(getText(result))).toContain('function "edge"');
+      const overCap = await runRead(
+        readerWith(fixedSpan(1, SPAN_CAP_CODE + 1, "function", "flood", "ast")),
+        cwd,
+        { file: path, windows: [{ offset: 50, limit: 5 }] },
+      );
+      expect(servedLines(getText(overCap))).toEqual(
+        Array.from({ length: 5 }, (_, index) => `line ${50 + index}`),
+      );
+      expect(widenedNotes(getText(overCap))).toEqual([]);
+      expect(overCap.details?.widened).toBeUndefined();
+    });
+  });
+
+  it.each([
+    ["md", SPAN_CAP_MD_TEXT],
+    ["text", SPAN_CAP_MD_TEXT],
+  ] as const)("caps %s spans at 40 lines and refuses 41", async (source, cap) => {
+    await withTempFile(`prose-cap-${source}.txt`, numbered(cap + 30), async ({ cwd, path }) => {
+      const atCap = await runRead(readerWith(fixedSpan(1, cap, "paragraph", "note", source)), cwd, {
+        file: path,
+        windows: [{ offset: 20, limit: 5 }],
+      });
+      expect(servedLines(getText(atCap))).toHaveLength(cap);
+      expect(widenedNotes(getText(atCap))).toHaveLength(1);
+
+      const overCap = await runRead(
+        readerWith(fixedSpan(1, cap + 1, "paragraph", "long", source)),
+        cwd,
+        { file: path, windows: [{ offset: 20, limit: 5 }] },
+      );
+      expect(servedLines(getText(overCap))).toEqual([
+        "line 20",
+        "line 21",
+        "line 22",
+        "line 23",
+        "line 24",
+      ]);
+      expect(widenedNotes(getText(overCap))).toEqual([]);
     });
   });
 
@@ -267,7 +270,7 @@ describe("read expansion: the fake-provider seam", () => {
         "line 13",
         "line 14",
       ]);
-      expect(noteLine(getText(result))).toBeUndefined();
+      expect(widenedNotes(getText(result))).toEqual([]);
     });
   });
 
@@ -283,7 +286,122 @@ describe("read expansion: the fake-provider seam", () => {
       expect(text).toContain("line 10");
       expect(text).not.toContain("line 5");
       expect(text).not.toContain("line 20");
-      expect(noteLine(text)).toBeUndefined();
+      expect(widenedNotes(text)).toEqual([]);
+    });
+  });
+
+  it("does not widen a whole-file read with no windows", async () => {
+    await withTempFile("whole-file.txt", numbered(30), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fiveThroughTwenty), cwd, { file: path });
+
+      expect(servedLines(getText(result))).toHaveLength(30);
+      expect(widenedNotes(getText(result))).toEqual([]);
+      expect(result.details?.widened).toBeUndefined();
+    });
+  });
+
+  it("widens an around_anchor window after admission resolves it", async () => {
+    await withTempFile("anchor-shape.txt", numbered(30), async ({ cwd, path }) => {
+      const first = await runRead(readerWith(), cwd, {
+        file: path,
+        windows: [{ offset: 10, limit: 1 }],
+      });
+      const row = anchorRows(getText(first)).find((line) => line.includes("│line 10"));
+      expect(row).toBeDefined();
+      const anchor = extractHash(row!);
+
+      const result = await runRead(readerWith(fiveThroughTwenty), cwd, {
+        file: path,
+        windows: [{ around_anchor: anchor, radius: 2 }],
+      });
+
+      expect(servedLines(getText(result))).toHaveLength(16);
+      expect(widenedNotes(getText(result))).toEqual([
+        "[widened 5-20 (asked 8-12) function parseThing]",
+      ]);
+      expect(result.details?.widened?.[0]?.asked).toEqual({ startLine: 8, endLine: 12 });
+    });
+  });
+
+  it("unions two probes that answer with the same span into one block and one merged note", async () => {
+    await withTempFile("union-one-span.txt", numbered(30), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fiveThroughTwenty), cwd, {
+        file: path,
+        windows: [
+          { offset: 6, limit: 3 },
+          { offset: 14, limit: 3 },
+        ],
+      });
+      const lines = servedLines(getText(result));
+
+      expect(lines).toHaveLength(16);
+      expect(new Set(lines).size).toBe(16);
+      expect(widenedNotes(getText(result))).toEqual([
+        "[widened 5-20 (asked 6-8, 14-16) function parseThing]",
+      ]);
+      expect(result.details?.widened).toEqual([
+        {
+          asked: { startLine: 6, endLine: 8 },
+          served: { startLine: 5, endLine: 20 },
+          kind: "function",
+          name: "parseThing",
+          source: "ast",
+        },
+        {
+          asked: { startLine: 14, endLine: 16 },
+          served: { startLine: 5, endLine: 20 },
+          kind: "function",
+          name: "parseThing",
+          source: "ast",
+        },
+      ]);
+    });
+  });
+
+  it("collapses more than three asked windows to the count-and-ranges note", async () => {
+    await withTempFile("union-four.txt", numbered(30), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fiveThroughTwenty), cwd, {
+        file: path,
+        windows: [
+          { offset: 6, limit: 2 },
+          { offset: 9, limit: 2 },
+          { offset: 12, limit: 2 },
+          { offset: 15, limit: 2 },
+        ],
+      });
+
+      expect(servedLines(getText(result))).toHaveLength(16);
+      expect(widenedNotes(getText(result))).toEqual(["[widened 4 windows: 5-20]"]);
+      expect(result.details?.widened).toHaveLength(4);
+    });
+  });
+
+  it("serves disjoint widened blocks once each and notes both", async () => {
+    const byProbe: SpanProvider = {
+      enclosingSpan: (_file: string, window: SpanWindow) => {
+        if (!("offset" in window)) return null;
+        return window.offset <= 10
+          ? { start: 1, end: 10, kind: "function", name: "first", source: "ast" }
+          : { start: 15, end: 25, kind: "function", name: "second", source: "ast" };
+      },
+    };
+    await withTempFile("disjoint.txt", numbered(30), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(byProbe), cwd, {
+        file: path,
+        windows: [
+          { offset: 5, limit: 2 },
+          { offset: 20, limit: 2 },
+        ],
+      });
+      const lines = servedLines(getText(result));
+
+      expect(lines).toHaveLength(21);
+      expect(lines[0]).toBe("line 1");
+      expect(lines[10]).toBe("line 15");
+      expect(widenedNotes(getText(result))).toEqual([
+        "[widened 1-10 (asked 5-6) function first]",
+        "[widened 15-25 (asked 20-21) function second]",
+      ]);
     });
   });
 });

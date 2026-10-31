@@ -45,12 +45,15 @@ import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import {
-  expansionNote,
+  applyExpansions,
+  expansionNotes,
   isExpandableWindow,
   widenWindow,
+  type ExpandedRead,
   type Expansion,
-  type ExpansionRecord,
   type SpanProvider,
+  type WidenedBlock,
+  type WidenedDetail,
 } from "./read-expansion/span-expansion.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
@@ -170,8 +173,10 @@ interface PreparedTarget {
   truncation?: TruncationResult;
   nextOffset?: number;
   snapshotId?: string | undefined;
-  /** The structural boundary this read widened to, absent for an exact read. */
-  expansion?: ExpansionRecord;
+  /** The merged runs this read widened to, absent for an exact read. */
+  widenedBlocks?: WidenedBlock[];
+  /** One requested-versus-served record per widened window, carried in `details.widened`. */
+  widenedDetails?: WidenedDetail[];
 }
 
 /** The `E_UNSUPPORTED_FILE` a non-text file owes, shaped exactly like the single-file read's. */
@@ -235,43 +240,23 @@ function fileHeader(entry: PreparedTarget): string {
   });
 }
 
-/** One prepared file's section: its header, any widening note, inline warnings, then its rows. */
+/** One prepared file's section: its header, widening notes, inline warnings, then its rows. */
 function preparedSection(entry: PreparedTarget): string {
   const header = fileHeader(entry);
-  // WHY: the note is content, not chrome: it tells the model that the rows are a structural block,
-  // WHY: not merely the window it asked for. No expansion means no note and no byte change.
-  const lead =
-    entry.expansion === undefined
-      ? header
-      : `${header}\n${expansionNote(entry.expansion, entry.prepared.shownRange?.endLine)}`;
+  // WHY: notes are content, not chrome: they tell the model which structural blocks the rows are.
+  // WHY: No expansion means no note and no byte change.
+  const notes = expansionNotes(entry.widenedBlocks ?? [], entry.prepared.shownRange);
+  const lead = [header, ...notes].join("\n");
   if (entry.plan.omittedAll) return `${lead}\n${entry.plan.warnings.join("\n")}`;
   if (entry.plan.warnings.length === 0) return `${lead}\n${entry.prepared.preview}`;
   return `${lead}\n${entry.plan.warnings.join("\n")}\n\n${entry.prepared.preview}`;
 }
 
-/** The machine-readable requested-versus-served record a widened read owes. */
-function expansionDetails(entry: PreparedTarget):
-  | {
-      kind: string;
-      name: string;
-      source: string;
-      requested: { offset: number; limit: number };
-      served: { startLine: number; endLine: number };
-    }
-  | undefined {
-  const record = entry.expansion;
-  if (record === undefined) return undefined;
-  const shown = entry.prepared.shownRange;
-  return {
-    kind: record.kind,
-    name: record.name,
-    source: record.source,
-    requested: record.requested,
-    served: {
-      startLine: shown?.startLine ?? record.span.startLine,
-      endLine: shown?.endLine ?? record.span.endLine,
-    },
-  };
+/** The machine-readable requested-versus-served records a widened read owes. */
+function expansionDetails(entry: PreparedTarget): WidenedDetail[] | undefined {
+  return entry.widenedDetails === undefined || entry.widenedDetails.length === 0
+    ? undefined
+    : entry.widenedDetails;
 }
 
 /** One file's section: its rows when it prepared, its refusal when it did not. */
@@ -469,20 +454,17 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           }
           const plan = planWindows(target, resolver);
           // WHY: expansion is served-only: verbatim is the "do not edit" view, so a widening note there
-          // WHY: would describe state that mode deliberately does not carry. Multi-window reads stay
-          // WHY: exact too — one note per section and an ambiguous requested/served record is worse than
-          // WHY: today's read, and the seam's contract is one requested window (spec #201).
-          const expansionCandidate =
-            spanProvider !== undefined && mode === "served" && plan.windows?.length === 1
-              ? plan.windows[0]
-              : undefined;
-          let expansion: Expansion | undefined;
+          // WHY: would describe state that mode deliberately does not carry. Every served window is a
+          // WHY: candidate on its own; their answers union into runs so one row is never served twice.
+          let expandedRead: ExpandedRead | undefined;
           if (
             spanProvider !== undefined &&
-            expansionCandidate !== undefined &&
-            // WHY: the trigger check runs before the file load, so a large or whole-file request pays
+            mode === "served" &&
+            plan.windows !== undefined &&
+            plan.windows.length > 0 &&
+            // WHY: the trigger check runs before the file load, so a plan with no candidate pays
             // WHY: nothing for a feature it cannot use.
-            isExpandableWindow(expansionCandidate)
+            plan.windows.some((window) => isExpandableWindow(window))
           ) {
             preloaded ??= await loadFileKindAndText(toCwd(target.file, cwd), {
               ...cap,
@@ -498,23 +480,33 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 resolvedText.normalized,
                 walkLines(resolvedText.normalized).total,
               );
-              expansion = await widenWindow({
-                file: toCwd(target.file, cwd),
-                totalLines,
-                window: expansionCandidate,
-                provider: spanProvider,
-              });
+              const decisions: Array<Expansion | undefined> = [];
+              for (const window of plan.windows) {
+                decisions.push(
+                  isExpandableWindow(window)
+                    ? await widenWindow({
+                        file: toCwd(target.file, cwd),
+                        totalLines,
+                        window,
+                        provider: spanProvider,
+                      })
+                    : undefined,
+                );
+              }
+              expandedRead = applyExpansions(plan.windows, decisions);
             }
           }
           const effectivePlan =
-            expansion === undefined ? plan : { ...plan, windows: [expansion.window] };
+            expandedRead === undefined ? plan : { ...plan, windows: expandedRead.windows };
           // WHY: single-window reads render as one §4.4 page (a header, no sub-banner, no
           // WHY: continuation token): the flattening unified the old page chrome onto the header-only
           // WHY: shape, a visible change for `files`-shaped singles that rendered the bounded-ask
           // WHY: sub-banner at base. Multi-window reads keep their per-section headers.
           const singlePage =
-            expansion !== undefined
-              ? expansion.window
+            expandedRead !== undefined
+              ? expandedRead.windows.length === 1
+                ? expandedRead.windows[0]
+                : undefined
               : target.windows?.length === 1 && target.windows[0]?.kind === "offset"
                 ? { offset: target.windows[0].offset, limit: target.windows[0].limit }
                 : undefined;
@@ -552,7 +544,12 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               file: target.file,
               mode,
               plan: effectivePlan,
-              ...(expansion === undefined ? {} : { expansion: expansion.record }),
+              ...(expandedRead === undefined
+                ? {}
+                : {
+                    widenedBlocks: expandedRead.blocks,
+                    widenedDetails: expandedRead.details,
+                  }),
               prepared,
               ...(effectivePlan.omittedAll
                 ? {}
@@ -729,7 +726,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             content: entry.prepared.normalized,
           });
         }
-        const singleExpansion = single === undefined ? undefined : expansionDetails(single);
+        const singleWidened = single === undefined ? undefined : expansionDetails(single);
         return {
           content,
           details: single
@@ -737,7 +734,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
                 ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
                 ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
-                ...(singleExpansion !== undefined ? { expansion: singleExpansion } : {}),
+                ...(singleWidened !== undefined ? { widened: singleWidened } : {}),
                 metrics,
               }
             : {
