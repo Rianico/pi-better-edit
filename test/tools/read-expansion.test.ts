@@ -288,7 +288,7 @@ describe("read expansion: the fake-provider seam", () => {
         { file: path, windows: [{ offset: 20, limit: 5 }] },
       );
       expect(servedLines(getText(atCap))).toHaveLength(SPAN_CAP_TEXT);
-      expect(widenedNotes(getText(atCap))).toEqual(['[widened 20-24 -> 1-40, paragraph "note"]']);
+      expect(widenedNotes(getText(atCap))).toEqual(["[widened 20-24 -> 1-40, paragraph]"]);
 
       const overCap = await runRead(
         readerWith(fixedSpan(1, SPAN_CAP_TEXT + 1, "paragraph", "long", "text")),

@@ -8,6 +8,8 @@
  * guessing a paragraph boundary. A leading YAML `---` frontmatter block is skipped so its
  * closing delimiter is not mistaken for a Setext underline.
  */
+import { splitVisibleLines } from "./text-lines.js";
+
 interface MarkdownSection {
   /** 1-indexed heading line. */
   readonly start: number;
@@ -32,16 +34,6 @@ const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
-
-/** Split into the reader's visible lines: a terminal newline is not an extra line. */
-function splitMarkdownLines(text: string): string[] {
-  // WHY: the read path strips the BOM before line counting; this scan must see the same line space.
-  const normalized = text.startsWith("\uFEFF") ? text.slice(1) : text;
-  const lf = normalized.replace(/\r\n?/g, "\n");
-  if (lf === "") return [];
-  const withoutSentinel = lf.endsWith("\n") ? lf.slice(0, -1) : lf;
-  return withoutSentinel.split("\n");
-}
 
 function atxHeading(line: string): { level: number; title: string } | null {
   const match = ATX.exec(line);
@@ -87,7 +79,7 @@ export function findMarkdownSection(
   requestedStart: number,
   requestedEnd: number,
 ): MarkdownSection | null {
-  const lines = splitMarkdownLines(text);
+  const lines = splitVisibleLines(text);
   if (requestedStart < 1 || requestedEnd < requestedStart || requestedEnd > lines.length)
     return null;
 

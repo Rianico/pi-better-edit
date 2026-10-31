@@ -396,7 +396,9 @@ export function applyExpansions(
 }
 
 function quoteLabel(source: SpanSource, kind: string, name: string): string {
-  return source === "md" || source === "text" ? `${kind} "${name}"` : `${kind} ${name}`;
+  if (source === "md") return `${kind} "${name}"`;
+  if (source === "text") return kind;
+  return `${kind} ${name}`;
 }
 
 /**
