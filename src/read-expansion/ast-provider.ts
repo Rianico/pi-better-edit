@@ -21,11 +21,13 @@ import type { OffsetWindow, SpanProvider, SpanWindow } from "./span-expansion.js
 import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
 import { PYTHON_DECORATION } from "./python-decoration.js";
+import { GO_DECORATION } from "./go-decoration.js";
 
 const DECORATIONS: Readonly<Record<string, ScopeDecorator>> = {
   typescript: createScopeDecorator(TYPESCRIPT_DECORATION),
   tsx: createScopeDecorator(TYPESCRIPT_DECORATION),
   python: createScopeDecorator(PYTHON_DECORATION),
+  go: createScopeDecorator(GO_DECORATION),
 };
 
 export interface AstSpanProviderOptions extends GrammarCacheOptions {

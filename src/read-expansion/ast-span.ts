@@ -56,6 +56,7 @@ const SCOPE_TYPES = new Set([
   "generator_function_declaration",
   "arrow_function",
   "method_definition",
+  "method_declaration",
   "method_signature",
   "class_declaration",
   "abstract_class_declaration",
