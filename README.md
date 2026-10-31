@@ -374,6 +374,8 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are documented in **[Benchmarks & Comparison Reference](docs/reference/benchmarks.md)**.
 
+Read-expansion acceptance measurement is documented in **[Read Expansion Replay](docs/agents/read-expansion-replay.md)**: `pnpm run replay:read-expansion -- --baseline <dir> --candidate <dir> --json` reports per-language same-file re-read share and served-line waste, then applies the 20% / 200-read gate.
+
 ---
 
 ## License
