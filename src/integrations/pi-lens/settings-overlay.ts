@@ -82,12 +82,6 @@ function bashViewLine2(cwd: string): string {
     : line;
 }
 
-/**
- * The multi-file caps, REPORTED ONLY (ADR-0049 M6): the overlay's `SettingsList` is enum-only
- * (ADR-0038), so numeric editing belongs to `/pi-better-edit bash-view multi-file …`. This line still
- * names each cap's rung, because a display that showed the effective numbers without their source
- * would hide which file to edit.
- */
 function readExpansionLine2(cwd: string): string {
   const effective = resolveReadExpansionModeWithSource(cwd);
   const config = readReadExpansionConfig(cwd);
@@ -99,6 +93,12 @@ function readExpansionLine2(cwd: string): string {
     : line;
 }
 
+/**
+ * The multi-file caps, REPORTED ONLY (ADR-0049 M6): the overlay's `SettingsList` is enum-only
+ * (ADR-0038), so numeric editing belongs to `/pi-better-edit bash-view multi-file …`. This line still
+ * names each cap's rung, because a display that showed the effective numbers without their source
+ * would hide which file to edit.
+ */
 function multiFileLine(cwd: string): string {
   const caps = resolveBashMultiFileSettingsWithSources(cwd);
   return (
