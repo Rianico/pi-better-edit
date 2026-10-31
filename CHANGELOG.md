@@ -14,7 +14,7 @@
 
 ### Documentation
 
-* **adr:** compact architecture decision records into a canonical 7-record suite (ADR-0001 through ADR-0007), archive historical records ADR-0001–0050 to `docs/.archive_adrs/`, and align glossary, agents, and readme documentation with active architecture.
+* **adr:** compact architecture decision records into a canonical 7-record suite (ADR-0001 through ADR-0007), archive historical records ADR-0001–0050 to `docs/.archive_adrs/`, and align glossary, agents, and readme documentation with active architecture. (#196)
 * **adr:** land ADR-0050 recording the split of settings (pi agent dir) from state (XDG state dir), the verbatim override that now owns `<override>/state` and is still the only mover of the store, the fresh-store policy with the abandoned-store log, the artifact move/delete table, the settings adoption precedence with `.bak` retirement, the `[E_ACCESS]` fail-fast and the MINOR classification; point ADR-0037's store-directory paragraph at it rather than rewriting the record, and update the README, the schema prose and the MVCC spec's path mention. Docs only; the behaviour ships in the `config` entry above. (#190) (#191)
 
 ## [2.14.0] - 2026-10-28
