@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-31
+
 ### Features
 
 * **config:** relocate user-level settings and all persistent state out of `~/.config/pi-better-edit`: global settings move to `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json`, the project file to `<cwd>/.pi/agents/pi-better-edit/settings.json`, and the store, the pre-SQLite `hash-store.json` and `diagnostics.log`/`.1` to `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/`. `XDG_CONFIG_HOME` leaves resolution, a relative `XDG_STATE_HOME` counts as unset, and an unusable state root fails store-dependent calls closed with `[E_ACCESS]` instead of forking a fallback. (ADR-0050) (#190) (#191)
