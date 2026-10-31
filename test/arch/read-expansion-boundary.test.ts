@@ -11,7 +11,7 @@ const GRAMMAR_FILES = new Set([
   "grammar-cache.ts",
   "grammar-manifest.ts",
   "grammar-runtime.ts",
-  "typescript-provider.ts",
+  "ast-provider.ts",
 ]);
 
 /** Process and transport imports no read-expansion file may carry. */

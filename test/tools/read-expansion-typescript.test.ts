@@ -10,7 +10,7 @@ import {
   createScopeDecorator,
   type DecorationSpec,
 } from "../../src/read-expansion/scope-decoration";
-import { createTypeScriptSpanProvider } from "../../src/read-expansion/typescript-provider";
+import { createAstSpanProvider } from "../../src/read-expansion/ast-provider";
 import type { SyntaxNodeLike } from "../../src/read-expansion/ast-span";
 import {
   anchorRows,
@@ -44,7 +44,7 @@ function fixtureFetch(): typeof fetch {
 function reader(cacheRoot: string) {
   const { pi, getTool } = makeFakePiRegistry();
   regRead(pi, {
-    spanProvider: createTypeScriptSpanProvider({ cacheRoot, fetchImpl: fixtureFetch() }),
+    spanProvider: createAstSpanProvider({ cacheRoot, fetchImpl: fixtureFetch() }),
   });
   return getTool("read") as {
     execute(

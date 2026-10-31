@@ -27,6 +27,8 @@ export interface DecorationSpec {
   readonly decorationTypes: ReadonlySet<string>;
   /** Field that carries a declared name; defaults to `name`. */
   readonly nameField?: string;
+  /** Optional language-specific note kind, e.g. Python's class-body functions are methods. */
+  readonly kindOf?: (node: SyntaxNodeLike) => string | undefined;
 }
 
 /** A scope after wrapper ascent and leading-decoration attachment. */
@@ -39,6 +41,8 @@ interface DecoratedScope {
   readonly endLine: number;
   /** Declared or assigned name; absent when the node is anonymous. */
   readonly name?: string;
+  /** Language-specific note kind overriding the generic scope mapping. */
+  readonly kind?: string;
 }
 
 export type ScopeDecorator = (node: SyntaxNodeLike) => DecoratedScope;
@@ -97,7 +101,14 @@ function decorateScope(node: SyntaxNodeLike, spec: DecorationSpec): DecoratedSco
   }
 
   const name = declaredName(nameNode, spec);
-  return { node: span, startLine, endLine: range.endLine, ...(name === undefined ? {} : { name }) };
+  const kind = spec.kindOf?.(node);
+  return {
+    node: span,
+    startLine,
+    endLine: range.endLine,
+    ...(name === undefined ? {} : { name }),
+    ...(kind === undefined ? {} : { kind }),
+  };
 }
 
 /**

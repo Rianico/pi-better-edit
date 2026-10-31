@@ -1,5 +1,5 @@
 /**
- * The first AST boundary provider: TypeScript/TSX through a lazily fetched tree-sitter grammar.
+ * The AST boundary provider: every supported grammar through the shared lazy supply and decoration seams.
  *
  * The provider owns the boundary policy and the per-language handle cache; the grammar cache owns
  * fetch/verify and the runtime owns `web-tree-sitter`. Any failure on any layer returns null, which
@@ -18,10 +18,17 @@ import { discardCachedGrammar, ensureGrammar, type GrammarCacheOptions } from ".
 import { grammarLanguageForFile } from "./grammar-manifest.js";
 import { loadWebTreeSitterGrammar } from "./grammar-runtime.js";
 import type { OffsetWindow, SpanProvider, SpanWindow } from "./span-expansion.js";
-import { createScopeDecorator } from "./scope-decoration.js";
+import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
+import { PYTHON_DECORATION } from "./python-decoration.js";
 
-export interface TypeScriptSpanProviderOptions extends GrammarCacheOptions {
+const DECORATIONS: Readonly<Record<string, ScopeDecorator>> = {
+  typescript: createScopeDecorator(TYPESCRIPT_DECORATION),
+  tsx: createScopeDecorator(TYPESCRIPT_DECORATION),
+  python: createScopeDecorator(PYTHON_DECORATION),
+};
+
+export interface AstSpanProviderOptions extends GrammarCacheOptions {
   /** Override the wasm loader (tests inject a parser-free tree). */
   loadGrammar?: GrammarLanguageLoader;
   /** Override file reading (tests can supply source directly). */
@@ -45,11 +52,8 @@ async function defaultReadText(path: string): Promise<string | undefined> {
  * so two reads in one session parse with one loaded grammar; a new provider still reuses the
  * verified file without a network call.
  */
-export function createTypeScriptSpanProvider(
-  options: TypeScriptSpanProviderOptions = {},
-): SpanProvider {
+export function createAstSpanProvider(options: AstSpanProviderOptions = {}): SpanProvider {
   const handles = new Map<string, Promise<GrammarHandle | undefined>>();
-  const decorate = createScopeDecorator(TYPESCRIPT_DECORATION);
   const loadGrammar = options.loadGrammar ?? loadWebTreeSitterGrammar;
   const readText = options.readTextFile ?? defaultReadText;
 
@@ -100,6 +104,8 @@ export function createTypeScriptSpanProvider(
       if (language === undefined) return null;
       const source = await readText(file);
       if (source === undefined) return null;
+      const decorate = DECORATIONS[language];
+      if (decorate === undefined) return null;
       const handle = await handleFor(language);
       if (handle === undefined) return null;
       const tree = handle.parse(source);
@@ -115,7 +121,7 @@ export function createTypeScriptSpanProvider(
         return {
           start: decorated.startLine,
           end: decorated.endLine,
-          kind: scopeKind(node),
+          kind: decorated.kind ?? scopeKind(node),
           name: decorated.name ?? scopeName(node),
           source: "ast",
         };

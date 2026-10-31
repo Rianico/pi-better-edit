@@ -11,7 +11,7 @@ import {
   type GrammarLanguageLoader,
   type SyntaxNodeLike,
 } from "../../src/read-expansion/ast-span";
-import { createTypeScriptSpanProvider } from "../../src/read-expansion/typescript-provider";
+import { createAstSpanProvider } from "../../src/read-expansion/ast-provider";
 import { loadWebTreeSitterGrammar } from "../../src/read-expansion/grammar-runtime";
 import type {
   GrammarManifest,
@@ -104,9 +104,9 @@ function fetchFailing(calls: { count: number }): typeof fetch {
   }) as typeof fetch;
 }
 
-function readToolWith(options: Parameters<typeof createTypeScriptSpanProvider>[0]) {
+function readToolWith(options: Parameters<typeof createAstSpanProvider>[0]) {
   const { pi, getTool } = makeFakePiRegistry();
-  regRead(pi, { spanProvider: createTypeScriptSpanProvider(options) });
+  regRead(pi, { spanProvider: createAstSpanProvider(options) });
   return getTool("read") as {
     execute(
       callId: string,

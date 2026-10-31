@@ -63,6 +63,8 @@ const SCOPE_TYPES = new Set([
   "interface_declaration",
   "type_alias_declaration",
   "enum_declaration",
+  "function_definition",
+  "class_definition",
   "module",
   "internal_module",
 ]);
@@ -90,7 +92,8 @@ export function findEnclosingScope(
   const visit = (node: SyntaxNodeLike): void => {
     const range = scopeLineRange(node);
     if (range.startLine > requestedStart || range.endLine < requestedEnd) return;
-    if (SCOPE_TYPES.has(node.type)) {
+    // WHY: the root is the whole file; widening to it would turn a top-level probe into the file.
+    if (node !== root && SCOPE_TYPES.has(node.type)) {
       const length = range.endLine - range.startLine + 1;
       if (length < bestLength) {
         best = node;

@@ -35,6 +35,12 @@ export const GRAMMAR_MANIFEST: GrammarManifest = {
     url: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.23.2/tree-sitter-tsx.wasm",
     sha256: "79e5da75ea62855a0cd67177685f0164eac87d5f630b3cbe1e0a099751ad30f8",
   },
+  python: {
+    language: "python",
+    version: "0.25.0",
+    url: "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.25.0/tree-sitter-python.wasm",
+    sha256: "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47",
+  },
 };
 
 const LANGUAGE_BY_EXTENSION = new Map([
@@ -42,6 +48,7 @@ const LANGUAGE_BY_EXTENSION = new Map([
   [".mts", "typescript"],
   [".cts", "typescript"],
   [".tsx", "tsx"],
+  [".py", "python"],
 ]);
 
 /** The manifest entry for a source path, or undefined when no grammar is supported yet. */
