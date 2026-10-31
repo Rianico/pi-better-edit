@@ -239,7 +239,7 @@ export function foldWindows(windows: readonly OffsetWindow[]): FoldedWindow[] {
   });
 }
 
-function normalizeAsked(ranges: readonly LineRange[], totalLines: number): LineRange[] {
+function normalizeRequested(ranges: readonly LineRange[], totalLines: number): LineRange[] {
   const seen = new Set<string>();
   const normalized: LineRange[] = [];
   for (const range of ranges) {
@@ -307,7 +307,7 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
   // WHY: a wrong answer, and a wrong answer must behave exactly like no answer.
   if (start > window.offset || end < requestedEnd) return refused("not_superset", boundary);
 
-  const requested = normalizeAsked(
+  const requested = normalizeRequested(
     input.requested ?? [{ startLine: window.offset, endLine: requestedEnd }],
     totalLines,
   );
@@ -407,10 +407,10 @@ function quoteLabel(source: SpanSource, kind: string, name: string): string {
  */
 export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: LineRange): string[] {
   if (blocks.length === 0) return [];
-  const totalAsked = blocks.reduce((count, block) => count + block.requested.length, 0);
-  if (totalAsked > 3) {
+  const totalRequested = blocks.reduce((count, block) => count + block.requested.length, 0);
+  if (totalRequested > 3) {
     const ranges = blocks.map((block) => fmtRange(block.served)).join(", ");
-    return [`[widened ${totalAsked} windows: ${ranges}]`];
+    return [`[widened ${totalRequested} windows: ${ranges}]`];
   }
   return blocks.map((block) => {
     const servedEnd =
