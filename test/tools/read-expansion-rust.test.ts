@@ -8,6 +8,9 @@ import { describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { createAstSpanProvider } from "../../src/read-expansion/ast-provider";
 import { GRAMMAR_MANIFEST } from "../../src/read-expansion/grammar-manifest";
+import { createScopeDecorator } from "../../src/read-expansion/scope-decoration";
+import { RUST_DECORATION } from "../../src/read-expansion/rust-decoration";
+import type { SyntaxNodeLike } from "../../src/read-expansion/ast-span";
 import {
   anchorRows,
   getText,
@@ -199,22 +202,75 @@ describe("read expansion: Rust boundaries", () => {
   });
 
   it("ignores inner, ordinary and empty block comments", async () => {
-    const source = `//! inner docs\nuse std::fmt;\n\n// note\n//// ordinary\nfn a() -> i32 { 1 }\n\n/**/\nfn b() -> i32 { 2 }\n`;
+    const source = `//! inner docs\nuse std::fmt;\n\n// note\n//// ordinary\nfn a() -> i32 { 1 }\n\n/**/\nfn b() -> i32 { 2 }\n\n//! not outer docs\nfn c() -> i32 { 3 }\n`;
     await withRealGrammar(async (cacheRoot) => {
       await withTempFile("comments.rs", source, async ({ cwd, path }) => {
         const tool = reader(cacheRoot);
-        for (const offset of [6, 9]) {
+        for (const offset of [6, 9, 12]) {
           const result = await runRead(tool, cwd, {
             file: path,
             windows: [{ offset, limit: 1 }],
           });
           expect(lines(result)).toEqual([source.split("\n")[offset - 1]]);
           expect(notes(result)).toEqual([
-            `[widened ${offset}-${offset} -> ${offset}-${offset}, function ${offset === 6 ? "a" : "b"}]`,
+            `[widened ${offset}-${offset} -> ${offset}-${offset}, function ${offset === 6 ? "a" : offset === 9 ? "b" : "c"}]`,
           ]);
         }
       });
     });
+  });
+
+  it("does not attach docs or attributes separated by a blank line", async () => {
+    const source = `/// Doc.\n\nfn doc_spaced() -> i32 { 1 }\n\n#[inline]\n\nfn attr_spaced() -> i32 { 2 }\n`;
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("spaced.rs", source, async ({ cwd, path }) => {
+        const tool = reader(cacheRoot);
+        for (const offset of [3, 7]) {
+          const result = await runRead(tool, cwd, {
+            file: path,
+            windows: [{ offset, limit: 1 }],
+          });
+          expect(lines(result)).toEqual([source.split("\n")[offset - 1]]);
+          expect(notes(result)).toEqual([
+            `[widened ${offset}-${offset} -> ${offset}-${offset}, function ${offset === 3 ? "doc_spaced" : "attr_spaced"}]`,
+          ]);
+        }
+      });
+    });
+  });
+
+  it("attaches an explicit #[derive] attribute through the shared walk", () => {
+    const name: SyntaxNodeLike = {
+      type: "identifier",
+      startPosition: { row: 1, column: 3 },
+      endPosition: { row: 1, column: 16 },
+      hasError: false,
+      namedChildren: [],
+      text: "derive_target",
+    };
+    const attribute: SyntaxNodeLike = {
+      type: "attribute_item",
+      startPosition: { row: 0, column: 0 },
+      endPosition: { row: 0, column: 16 },
+      hasError: false,
+      namedChildren: [],
+      text: "#[derive(Debug)]",
+    };
+    const fn: SyntaxNodeLike = {
+      type: "function_item",
+      startPosition: { row: 1, column: 0 },
+      endPosition: { row: 2, column: 1 },
+      hasError: false,
+      namedChildren: [name],
+      childForFieldName: (field) => (field === "name" ? name : null),
+      previousNamedSibling: attribute,
+      parent: null,
+    };
+
+    const decorated = createScopeDecorator(RUST_DECORATION)(fn);
+
+    expect(decorated.startLine).toBe(1);
+    expect(decorated.name).toBe("derive_target");
   });
 
   it("returns the exact window on a syntax error, with no note", async () => {

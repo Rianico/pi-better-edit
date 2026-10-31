@@ -12,7 +12,7 @@ function isOwnerMethod(node: SyntaxNodeLike): boolean {
 
 function isDocComment(node: SyntaxNodeLike): boolean {
   const text = node.text?.trimStart() ?? "";
-  // WHY: `////` and `/*!` are ordinary/inner comments, not outer doc comments for the item below.
+  // WHY: `////` and `//!` are ordinary/inner comments, not outer doc comments for the item below.
   if (text.startsWith("///") && !text.startsWith("////")) return true;
   // WHY: `/**/` and `/***/` are ordinary block comments; a doc block has content after `/**`.
   return text.startsWith("/**") && text.length > 3 && text[3] !== "*" && text[3] !== "/";
