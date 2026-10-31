@@ -9,7 +9,11 @@ export interface BashSpanProviderOptions {
   readTextFile?: (path: string) => Promise<string | undefined>;
 }
 
-/** Mirrors the replay corpus's shell family: `.sh`, `.bash`, `.zsh`. */
+/**
+ * The replay corpus map (`scripts/lib/read-expansion-replay.mjs`) and this provider are the two
+ * canonical shell-family lists. That map is an MJS script outside the src TypeScript graph and no
+ * src shell classifier exists, so the three values are intentionally duplicated, not imported.
+ */
 const SHELL_EXTENSIONS = [".sh", ".bash", ".zsh"];
 
 let unbash: Promise<typeof import("unbash")> | undefined;

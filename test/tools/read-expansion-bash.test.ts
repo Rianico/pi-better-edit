@@ -1,8 +1,13 @@
+import { readFileSync, rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { createReadSpanProvider } from "../../src/read-expansion/read-provider";
 import { isShellPath } from "../../src/read-expansion/bash-provider";
 import { GRAMMAR_MANIFEST } from "../../src/read-expansion/grammar-manifest";
+import {
+  readExpansionLogPath,
+  resetReadExpansionLogStateForTests,
+} from "../../src/read-expansion/audit";
 import {
   anchorRows,
   getText,
@@ -48,6 +53,24 @@ function notes(result: ReadResult): string[] {
   return getText(result)
     .split("\n")
     .filter((line) => line.includes("[widened "));
+}
+
+function clearAuditLog(): void {
+  const path = readExpansionLogPath();
+  rmSync(path, { force: true });
+  rmSync(`${path}.1`, { force: true });
+  resetReadExpansionLogStateForTests();
+}
+
+function auditRecords(): Array<Record<string, unknown>> {
+  try {
+    return readFileSync(readExpansionLogPath(), "utf-8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  } catch {
+    return [];
+  }
 }
 
 describe("read expansion: bash functions", () => {
@@ -128,9 +151,23 @@ describe("read expansion: bash functions", () => {
     });
   });
 
+  it("fails closed on zsh-only syntax in a .zsh file", async () => {
+    const source = `foo() {\n  echo hi\n} always {\n  echo cleanup\n}\n`;
+    await withTempFile("zsh.zsh", source, async ({ cwd, path }) => {
+      const result = await runRead(reader(), cwd, {
+        file: path,
+        windows: [{ offset: 2, limit: 1 }],
+      });
+
+      expect(lines(result)).toEqual(["  echo hi"]);
+      expect(notes(result)).toEqual([]);
+    });
+  });
+
   it("refuses a function above the 80-line code cap", async () => {
     const body = Array.from({ length: 82 }, (_, index) => `  echo ${index + 1}`).join("\n");
     const source = `big() {\n${body}\n}\n`;
+    clearAuditLog();
     await withTempFile("big.sh", source, async ({ cwd, path }) => {
       const result = await runRead(reader(), cwd, {
         file: path,
@@ -139,6 +176,18 @@ describe("read expansion: bash functions", () => {
 
       expect(lines(result)).toEqual(["  echo 39"]);
       expect(notes(result)).toEqual([]);
+    });
+
+    expect(auditRecords().find((record) => record["reason"] === "over_cap")).toMatchObject({
+      mode: "served",
+      outcome: "refused",
+      reason: "over_cap",
+      requested: [{ startLine: 40, endLine: 40 }],
+      section: { startLine: 1, endLine: 84 },
+      kind: "function",
+      name: "big",
+      source: "ast",
+      label: "function big",
     });
   });
 
