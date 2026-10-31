@@ -4,7 +4,7 @@
 
 ### Features
 
-* **store:** report the janitor's maintenance pass to the operator: one info line for removed rows and reclaimed space, an info note when a busy store defers the compaction, and a warning — files untouched, plus the diagnostics log path — when compaction fails or the store is damaged and rebuilt. The notice prints on `session_start`, is log-only on `session_shutdown`, and every janitor console write now routes through that one per-event surface. (#197) (#198) (#199) (#200)
+* **store-janitor:** report the janitor's maintenance pass to the operator: one info line for removed rows and reclaimed space, an info note when a busy store defers the compaction, and a warning — files untouched, plus the diagnostics log path — when compaction fails or the store is damaged and rebuilt. The notice prints on `session_start`, is log-only on `session_shutdown`, and every janitor console write now routes through that one per-event surface. (#197) (#198) (#199) (#200)
 
 ## [2.15.0] - 2026-10-31
 
