@@ -24,7 +24,17 @@ const FORBIDDEN_PROCESS_IMPORTS = [
 ];
 
 /** Calls that would mean the pure seam reaches outside its in-process contract. */
-const SEAM_FORBIDDEN_CALLS = ["fetch(", "spawn(", "spawnSync(", "execFile(", "request("];
+const SEAM_FORBIDDEN_CALLS = [
+  "fetch(",
+  "spawn(",
+  "spawnSync(",
+  "execFile(",
+  "request(",
+  "install(",
+  "propose(",
+  "startServer(",
+  "languageServer(",
+];
 
 function sources(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -92,5 +102,8 @@ describe("read expansion boundary", () => {
     for (const file of sources(EXPANSION_DIR)) {
       expect(readFileSync(file, "utf-8"), file).not.toContain("SERVED_MAX_LINES");
     }
+  });
+  it("wires the default provider without an enrichment resolver", () => {
+    expect(readFileSync("index.ts", "utf-8")).toContain("createReadSpanProvider()");
   });
 });
