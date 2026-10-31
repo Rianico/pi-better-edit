@@ -16,6 +16,7 @@ import {
   loadFileKindAndText,
   prepareFile,
   type LFile,
+  type NormText,
   type PrepareResult,
 } from "./file-content/index.js";
 import {
@@ -42,6 +43,15 @@ import {
 } from "./snapshot-store";
 import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic } from "./diagnostics.js";
+import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
+import {
+  expansionNote,
+  isExpandableWindow,
+  widenWindow,
+  type Expansion,
+  type ExpansionRecord,
+  type SpanProvider,
+} from "./read-expansion/span-expansion.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -160,6 +170,8 @@ interface PreparedTarget {
   truncation?: TruncationResult;
   nextOffset?: number;
   snapshotId?: string | undefined;
+  /** The structural boundary this read widened to, absent for an exact read. */
+  expansion?: ExpansionRecord;
 }
 
 /** The `E_UNSUPPORTED_FILE` a non-text file owes, shaped exactly like the single-file read's. */
@@ -223,12 +235,43 @@ function fileHeader(entry: PreparedTarget): string {
   });
 }
 
-/** One prepared file's section: its header, then any inline anchor warnings, then its rows. */
+/** One prepared file's section: its header, any widening note, inline warnings, then its rows. */
 function preparedSection(entry: PreparedTarget): string {
   const header = fileHeader(entry);
-  if (entry.plan.omittedAll) return `${header}\n${entry.plan.warnings.join("\n")}`;
-  if (entry.plan.warnings.length === 0) return `${header}\n${entry.prepared.preview}`;
-  return `${header}\n${entry.plan.warnings.join("\n")}\n\n${entry.prepared.preview}`;
+  // WHY: the note is content, not chrome: it tells the model that the rows are a structural block,
+  // WHY: not merely the window it asked for. No expansion means no note and no byte change.
+  const lead =
+    entry.expansion === undefined
+      ? header
+      : `${header}\n${expansionNote(entry.expansion, entry.prepared.shownRange?.endLine)}`;
+  if (entry.plan.omittedAll) return `${lead}\n${entry.plan.warnings.join("\n")}`;
+  if (entry.plan.warnings.length === 0) return `${lead}\n${entry.prepared.preview}`;
+  return `${lead}\n${entry.plan.warnings.join("\n")}\n\n${entry.prepared.preview}`;
+}
+
+/** The machine-readable requested-versus-served record a widened read owes. */
+function expansionDetails(entry: PreparedTarget):
+  | {
+      kind: string;
+      name: string;
+      source: string;
+      requested: { offset: number; limit: number };
+      served: { startLine: number; endLine: number };
+    }
+  | undefined {
+  const record = entry.expansion;
+  if (record === undefined) return undefined;
+  const shown = entry.prepared.shownRange;
+  return {
+    kind: record.kind,
+    name: record.name,
+    source: record.source,
+    requested: record.requested,
+    served: {
+      startLine: shown?.startLine ?? record.span.startLine,
+      endLine: shown?.endLine ?? record.span.endLine,
+    },
+  };
 }
 
 /** One file's section: its rows when it prepared, its refusal when it did not. */
@@ -290,7 +333,10 @@ async function fullHashesFor(
   );
 }
 
-export function regRead(pi: ExtensionAPI): void {
+// WHY: the provider is optional so the shipped entry point (`regRead(pi)`) performs no expansion
+// WHY: until a parser ticket injects one; a null answer is likewise today's exact read.
+export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvider }): void {
+  const spanProvider = options?.spanProvider;
   // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
   // WHY: `file_path ?? path` plus `offset`/`limit`. Our payload field is `file` (ADR-0041 D1), so
   // WHY: project it for rendering only — the call line shows the filename, and `args` is never
@@ -392,39 +438,86 @@ export function regRead(pi: ExtensionAPI): void {
           // WHY: an anchor window must resolve BEFORE the file is prepared (its offset is not known
           // WHY: yet), so the file is read once here and handed to the seam below — never twice.
           const wantsAnchor = target.windows?.some((window) => window.kind === "anchor") === true;
-          const preloaded: LFile | undefined = wantsAnchor
+          let preloaded: LFile | undefined = wantsAnchor
             ? await loadFileKindAndText(toCwd(target.file, cwd), {
                 ...cap,
                 displayPath: target.file,
               })
             : undefined;
+          // WHY: decode once and share it — an anchor window resolves against these bytes and an
+          // WHY: expansion measures its span against the same visible line count.
+          let resolvedText: NormText | undefined;
+          if (preloaded !== undefined && preloaded.kind === "text") {
+            resolvedText = await decodeNormText(target.file, cwd, {
+              ...(signal !== undefined ? { signal } : {}),
+              ...cap,
+              preloadedFile: preloaded,
+            });
+          }
           let resolver: AnchorResolver | undefined;
           // WHY: resolution is lineage-scoped, not mode-scoped (spec §4.3): the store now opens for an
           // WHY: anchor window of a verbatim target too, so this guard is the safety net for a window
           // WHY: whose file could not be loaded as text — that window falls through to the same §4.3
           // WHY: "not found" warning instead of dereferencing a store that is not there.
-          if (store !== undefined && preloaded !== undefined && preloaded.kind === "text") {
-            const norm = await decodeNormText(target.file, cwd, {
-              ...(signal !== undefined ? { signal } : {}),
-              ...cap,
-              preloadedFile: preloaded,
-            });
+          if (store !== undefined && resolvedText !== undefined) {
             resolver = {
-              sessionKey: sessionFromContext(sessionCtx, norm.absolutePath).sessionKey,
-              absolutePath: norm.absolutePath,
-              normalized: norm.normalized,
+              sessionKey: sessionFromContext(sessionCtx, resolvedText.absolutePath).sessionKey,
+              absolutePath: resolvedText.absolutePath,
+              normalized: resolvedText.normalized,
               store,
             };
           }
           const plan = planWindows(target, resolver);
+          // WHY: expansion is served-only: verbatim is the "do not edit" view, so a widening note there
+          // WHY: would describe state that mode deliberately does not carry. Multi-window reads stay
+          // WHY: exact too — one note per section and an ambiguous requested/served record is worse than
+          // WHY: today's read, and the seam's contract is one requested window (spec #201).
+          const expansionCandidate =
+            spanProvider !== undefined && mode === "served" && plan.windows?.length === 1
+              ? plan.windows[0]
+              : undefined;
+          let expansion: Expansion | undefined;
+          if (
+            spanProvider !== undefined &&
+            expansionCandidate !== undefined &&
+            // WHY: the trigger check runs before the file load, so a large or whole-file request pays
+            // WHY: nothing for a feature it cannot use.
+            isExpandableWindow(expansionCandidate)
+          ) {
+            preloaded ??= await loadFileKindAndText(toCwd(target.file, cwd), {
+              ...cap,
+              displayPath: target.file,
+            });
+            if (preloaded.kind === "text") {
+              resolvedText ??= await decodeNormText(target.file, cwd, {
+                ...(signal !== undefined ? { signal } : {}),
+                ...cap,
+                preloadedFile: preloaded,
+              });
+              const totalLines = visibleLineTotal(
+                resolvedText.normalized,
+                walkLines(resolvedText.normalized).total,
+              );
+              expansion = await widenWindow({
+                file: toCwd(target.file, cwd),
+                totalLines,
+                window: expansionCandidate,
+                provider: spanProvider,
+              });
+            }
+          }
+          const effectivePlan =
+            expansion === undefined ? plan : { ...plan, windows: [expansion.window] };
           // WHY: single-window reads render as one §4.4 page (a header, no sub-banner, no
           // WHY: continuation token): the flattening unified the old page chrome onto the header-only
           // WHY: shape, a visible change for `files`-shaped singles that rendered the bounded-ask
           // WHY: sub-banner at base. Multi-window reads keep their per-section headers.
           const singlePage =
-            target.windows?.length === 1 && target.windows[0]?.kind === "offset"
-              ? { offset: target.windows[0].offset, limit: target.windows[0].limit }
-              : undefined;
+            expansion !== undefined
+              ? expansion.window
+              : target.windows?.length === 1 && target.windows[0]?.kind === "offset"
+                ? { offset: target.windows[0].offset, limit: target.windows[0].limit }
+                : undefined;
           // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
           // WHY: `noPersist` defers the authoritative materialization until the served windows are
           // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
@@ -433,8 +526,8 @@ export function regRead(pi: ExtensionAPI): void {
             ...(signal !== undefined ? { signal } : {}),
             ...(singlePage !== undefined
               ? { offset: singlePage.offset, limit: singlePage.limit }
-              : plan.windows !== undefined
-                ? { windows: plan.windows }
+              : effectivePlan.windows !== undefined
+                ? { windows: effectivePlan.windows }
                 : {}),
             // WHY: the served cap stays the served budget (independent of the anchor space): the paged
             // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
@@ -458,9 +551,10 @@ export function regRead(pi: ExtensionAPI): void {
             entry: {
               file: target.file,
               mode,
-              plan,
+              plan: effectivePlan,
+              ...(expansion === undefined ? {} : { expansion: expansion.record }),
               prepared,
-              ...(plan.omittedAll
+              ...(effectivePlan.omittedAll
                 ? {}
                 : {
                     ...(prepared.truncation !== undefined
@@ -635,7 +729,7 @@ export function regRead(pi: ExtensionAPI): void {
             content: entry.prepared.normalized,
           });
         }
-
+        const singleExpansion = single === undefined ? undefined : expansionDetails(single);
         return {
           content,
           details: single
@@ -643,6 +737,7 @@ export function regRead(pi: ExtensionAPI): void {
                 ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
                 ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
                 ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
+                ...(singleExpansion !== undefined ? { expansion: singleExpansion } : {}),
                 metrics,
               }
             : {

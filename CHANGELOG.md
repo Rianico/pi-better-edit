@@ -5,6 +5,11 @@
 ### Features
 
 * **store-janitor:** report the janitor's maintenance pass to the operator: one info line for removed rows and reclaimed space, an info note when a busy store defers the compaction, and a warning — files untouched, plus the diagnostics log path — when compaction fails or the store is damaged and rebuilt. The notice prints on `session_start`, is log-only on `session_shutdown`, and every janitor console write now routes through that one per-event surface. (#197) (#198) (#199) (#200)
+* **read:** add the expansion seam behind `read`: a boundary provider answers with a 1-indexed enclosing span (or null), and the tool serves that span only when it is a superset of the requested window, within a 40-line trigger and a 200-line cap — otherwise the read is byte-identical to today. A widened read carries one note naming the boundary kind, name and served range, and its details record carries requested versus served. No provider is wired yet, so this build performs no real widening. (#202)
+
+### Bug Fixes
+
+* **prompts:** remove the read description and guideline claims that a small read is widened to an enclosing AST symbol or Markdown heading before the tool runs, and that `limit` above 100 keeps the requested window: the payload has no `limit` field for that trigger and no third-party widening can reach it. An architecture test forbids the retired claim words. (#202)
 
 ## [2.15.0] - 2026-10-31
 

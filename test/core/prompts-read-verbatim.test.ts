@@ -11,9 +11,9 @@ describe("read prompts serve mode: verbatim", () => {
     expect(description).toContain("is not capped");
   });
 
-  it("loads six read guidelines including the verbatim and image bullets", () => {
+  it("loads five read guidelines including the verbatim and image bullets", () => {
     const guidelines = loadGuide("../prompts/read-guidelines.md");
-    expect(guidelines).toHaveLength(6);
+    expect(guidelines).toHaveLength(5);
     expect(guidelines.some((guideline) => guideline.includes("never served"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes('mode: "verbatim"'))).toBe(true);
     // WHY: image support recovered (PR #52) — the restored contract names the image-attachment return.
