@@ -2,7 +2,7 @@
  * SAFETY: MutationEngine types — typed boundary for the deep mutation seam.
  *
  * Vocabulary: range, span, served span, drift, drift notice, payload contract
- * — see CONTEXT.md.
+ * — see GLOSSARY.md.
  */
 
 import type { LineEnding } from "../edit-diff.js";
@@ -136,7 +136,7 @@ export interface MutationFailure {
    * SAFETY: wording. Present only for `code: "E_BAD_PAYLOAD"`.
    */
   payloadMessage?: string;
-  /** SAFETY: User-facing diagnosis, never a model remedy — a CONTEXT.md glossary term. */
+  /** SAFETY: User-facing diagnosis, never a model remedy — a GLOSSARY.md glossary term. */
   cause?: RangeCause;
   details?: { code: DomainErrorCode; cause: RangeCause };
 }

@@ -55,7 +55,7 @@ import { reportDiagnostic } from "../diagnostics.js";
  * Batch drift note warning is emitted. Per-interval deltaBefore
  * maps served positions to current positions.
  *
- * Vocabulary (CONTEXT.md): range, span, served span, drift, drift
+ * Vocabulary (GLOSSARY.md): range, span, served span, drift, drift
  * notice, reject-and-serve, payload contract — preserved.
  */
 

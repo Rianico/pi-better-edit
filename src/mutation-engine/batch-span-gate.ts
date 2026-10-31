@@ -4,7 +4,7 @@
  * mutation pipeline. Pure pre-mutation gate: the only store touches it
  * performs are reads, plus the reject-and-serve recording the pipeline owns
  * (`recordRejectionServe`, passed in through the context — it stays with the
- * store seam). Vocabulary (CONTEXT.md): span, served span, reject-and-serve,
+ * store seam). Vocabulary (GLOSSARY.md): span, served span, reject-and-serve,
  * line identity — preserved.
  */
 

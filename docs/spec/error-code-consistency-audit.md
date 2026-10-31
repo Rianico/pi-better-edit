@@ -8,7 +8,7 @@ This audit covers commit `7990a91`. It checks model-emitted error codes against 
 | :--- | :--- | :--- |
 | F1 — glossary routes a no-lease anchor to `[E_UNSERVED_RANGE]` | **confirmed, scope corrected** | `src/hashline/lease-resolve.ts:150-155`: `if (!fromLease \|\| !toLease) throwStaleAnchor(...)` → `[E_STALE_ANCHOR]`; the module comment at `:22-24` and `:133-134` says the same. `[E_UNSERVED_RANGE]` is for a line **inside** the span (`src/hashline/served-verification.ts:265`, `:276`) and, on the content path, for a boundary anchor with no served position (`:678`, `:683`). The glossary sentence is wrong for the lease path only, so the fix scopes it — it does not swap the code |
 | F2a — `[E_UNSERVED_RANGE]` carries opposite read advice | **confirmed**, severity HIGH → **MED** | `src/hashline/served-verification.ts:690-693` really does say a full read is needed, while the other variants append `retryHint()`. A model acting on the failure message is correct; the *docs* promise the no-read remedy universally |
-| F2b — README promises `details.unservedKind` | **confirmed, HIGH** | `rg -n unservedKind` over the tree returns only `README.md:197`, `docs/adr/0014-user-model-audience.md:21` and `:33` — no producer in `src/` |
+| F2b — README promises `details.unservedKind` | **confirmed, HIGH** | `rg -n unservedKind` over the tree returns only `README.md:197`, `docs/.archive_adrs/0014-user-model-audience.md:21` and `:33` — no producer in `src/` |
 | F3a — `[E_NOOP_LOOP]` rejects lack `[MODEL]` | **confirmed, LOW** | `src/noop-guard.ts:82-83` (bare); the notice variants at `:89-90` correctly stay `[USER]`-dimmed |
 | F3b — "the batch" on a single-item call | **confirmed, LOW** | `src/mutation-engine/pipeline.ts:821` passes `batch: true` unconditionally inside the item loop, and that same loop serves single-item calls (`if (items.length === 1) throw error` in its `onRejected`), so the single-item wording at `src/noop-guard.ts:83` is production-unreachable |
 | Flag 2 — `E_UNDO_STALE` lacks `[MODEL]` | **refutation withdrawn** — re-checked against ADR-0014:19 (the prefix is an audience marker, not a retry demand) and against `src/edit-tool.ts:53` (a non-blocking `[MODEL]` warning already exists); now tracked in #147 |
@@ -70,7 +70,7 @@ Artifact says nothing directly. Code emits several variants. Example: `src/utils
 
 Code path is layered. Import `src/hashline/resolve.ts:1` plus call `:287` was verified. Item-level vs root-level differ. `src/mutation-engine/pipeline.ts:635-640` calls `resEdit` with 3 keys only. `src/payload-contract.ts:136-160` `itemFrom` gate rejects earlier. The `utils` throw is unreachable via the tool path.
 
-Disagreement is prose polish. Missing `[MODEL]` is display-layer only. ADR states this at `docs/adr/0014-user-model-audience.md:19`. Required action stays inferable. Adjacent layer carries the remedy.
+Disagreement is prose polish. Missing `[MODEL]` is display-layer only. ADR states this at `docs/.archive_adrs/0014-user-model-audience.md:19`. Required action stays inferable. Adjacent layer carries the remedy.
 
 Minimal fix: copy the richer remedy into the barer sibling. Or scope the README row by level. Severity: LOW.
 
@@ -86,7 +86,7 @@ Minimal fix: narrow the README sentence to covered paths. Reword `:343` to prese
 
 ### 3. `E_UNSUPPORTED_FILE` — read path lacks audience and retry
 
-Artifact mandate is at `docs/adr/0014-user-model-audience.md:19`. It pins `error content headers are emitted as [MODEL] [E_*]`. Code splits by surface. Read path is bare: `src/read.ts:87` `` `[E_UNSUPPORTED_FILE] Path is a directory: ${rawPath}.` ``. Also `:91` `` `[E_UNSUPPORTED_FILE] Path is a binary file: ${rawPath} (${prepared.description}). Hashline edit only supports text files.` ``. Also `:95` image variant. Edit path is rich: `src/validation.ts:43` `` `[MODEL] [E_UNSUPPORTED_FILE] Path is a directory: ${path}. Pass the text file inside it (a file, never a directory) in "file" and retry.` ``. Also `:48,:53` binary/image variants.
+Artifact mandate is at `docs/.archive_adrs/0014-user-model-audience.md:19`. It pins `error content headers are emitted as [MODEL] [E_*]`. Code splits by surface. Read path is bare: `src/read.ts:87` `` `[E_UNSUPPORTED_FILE] Path is a directory: ${rawPath}.` ``. Also `:91` `` `[E_UNSUPPORTED_FILE] Path is a binary file: ${rawPath} (${prepared.description}). Hashline edit only supports text files.` ``. Also `:95` image variant. Edit path is rich: `src/validation.ts:43` `` `[MODEL] [E_UNSUPPORTED_FILE] Path is a directory: ${path}. Pass the text file inside it (a file, never a directory) in "file" and retry.` ``. Also `:48,:53` binary/image variants.
 
 No comment documents a read-vs-edit split. Identical triggers yield different audience plus remedy.
 
@@ -112,7 +112,7 @@ Minimal fix: document both variants in README and CONTEXT. Name when a full read
 
 ### F2b. `README` promises phantom `details.unservedKind`
 
-Artifact says: `README.md:197` — `"details.unservedKind\` is \`interior\` or \`boundary\`."`. Code emits nothing: `grep -rn unservedKind src/` → 0 hits. Origin is unimplemented ADR text at `docs/adr/0014-user-model-audience.md:21` — `` `"E_RANGE_UNSERVED"+\`E_RANGE_UNVERIFIED\`→\`E_UNSERVED_RANGE\` (with \`details.unservedKind=\"boundary\"\|\"interior\"\`)"` ``.
+Artifact says: `README.md:197` — `"details.unservedKind\` is \`interior\` or \`boundary\`."`. Code emits nothing: `grep -rn unservedKind src/` → 0 hits. Origin is unimplemented ADR text at `docs/.archive_adrs/0014-user-model-audience.md:21` — `` `"E_RANGE_UNSERVED"+\`E_RANGE_UNVERIFIED\`→\`E_UNSERVED_RANGE\` (with \`details.unservedKind=\"boundary\"\|\"interior\"\`)"` ``.
 
 Docs promise a machine field. No producer emits it. Programmatic consumers branching on it fail.
 
@@ -120,7 +120,7 @@ Minimal fix: delete the field promise from README. Do not implement the field he
 
 ### F3a. `E_NOOP_LOOP` rejects lack `[MODEL]` prefix
 
-Artifact mandate is at `docs/adr/0014-user-model-audience.md:19` — `"error \`content\` headers are emitted as \`[MODEL] [E_*] …\` normal."`. Code omits prefix: `src/noop-guard.ts:82` — `` `"[E_NOOP_LOOP] ${input.ref}: identical edit … resend will reject the batch. Current range:\n${rendered}"` ``. Same bare prefix at `:83,:89,:90`. No downstream fixup: `src/mutation-engine/pipeline.ts:828` — `"if (decision.action === \"reject\") throw new Error(decision.message);"`.
+Artifact mandate is at `docs/.archive_adrs/0014-user-model-audience.md:19` — `"error \`content\` headers are emitted as \`[MODEL] [E_*] …\` normal."`. Code omits prefix: `src/noop-guard.ts:82` — `` `"[E_NOOP_LOOP] ${input.ref}: identical edit … resend will reject the batch. Current range:\n${rendered}"` ``. Same bare prefix at `:83,:89,:90`. No downstream fixup: `src/mutation-engine/pipeline.ts:828` — `"if (decision.action === \"reject\") throw new Error(decision.message);"`.
 
 Code still carries code plus range. It carries explicit resend warning. Retry steps stay intact.
 
@@ -140,7 +140,7 @@ Minimal fix: correct the caller flag or message noun. Severity: LOW.
 
 Artifact row says: `README.md:191` `` `\| \`[E_ACCESS]\` \| The path is not readable or writable. \|` ``. Code has finer triggers: `src/validation.ts:28` `` `[MODEL] [E_ACCESS] Too many symbolic links while resolving: ${path}. Retry with the real file location.` ``. Also `src/validation.ts:32` `` `[MODEL] [E_ACCESS] Cannot access file: ${path}. Verify the "file" value exists and is reachable, then retry.` ``. Per-variant remedies live at `src/validation.ts:23,28,32`.
 
-Model follows the message. Prompt contract is at `prompts/edit-guidelines.md:6` `` `a \`[MODEL]\` line in \`content\` is your retry instruction — follow it from the message alone` ``. Recovery belongs in error text per `docs/adr/0015-named-object-edit-payload.md:28`.
+Model follows the message. Prompt contract is at `prompts/edit-guidelines.md:6` `` `a \`[MODEL]\` line in \`content\` is your retry instruction — follow it from the message alone` ``. Recovery belongs in error text per `docs/.archive_adrs/0015-named-object-edit-payload.md:28`.
 
 Row is coarse, not false. Unresolvable path reads as not readable. No opposite remedy is stated.
 
@@ -162,7 +162,7 @@ Minimal fix: add `[MODEL]` to the producer line. Optionally expand README Meanin
 
 ### F3c. Prefix all four plus dead single variants
 
-Claim asked to prefix notices. Evidence: `src/mutation-engine/pipeline.ts:829` — `"if (decision.action === \"warn\") warnings.push(decision.notice);"`. Rendering is at `src/edit-render.ts:102-104` — `"theme.fg(\"dim\", warnings.join(\"\\n\"))"`. ADR classifies these as `[USER]`-dimmed. See `docs/adr/0014-user-model-audience.md:19` — `"wraps \`warnings\`/\`driftNotice\` with \`theme.fg(dim, \"[USER] …\")\""`. Single variants are reachable. Re-export is at `src/edit-presentation.ts:79`. Test seam is at `test/core/edit-presentation.test.ts:6` — `"import { runNoopPolicy }"`.
+Claim asked to prefix notices. Evidence: `src/mutation-engine/pipeline.ts:829` — `"if (decision.action === \"warn\") warnings.push(decision.notice);"`. Rendering is at `src/edit-render.ts:102-104` — `"theme.fg(\"dim\", warnings.join(\"\\n\"))"`. ADR classifies these as `[USER]`-dimmed. See `docs/.archive_adrs/0014-user-model-audience.md:19` — `"wraps \`warnings\`/\`driftNotice\` with \`theme.fg(dim, \"[USER] …\")\""`. Single variants are reachable. Re-export is at `src/edit-presentation.ts:79`. Test seam is at `test/core/edit-presentation.test.ts:6` — `"import { runNoopPolicy }"`.
 
 Refutation reason: notices must not carry `[MODEL]`. Proposed fix would violate audience split. Only rejects at `:82,:83` are in scope.
 
@@ -174,7 +174,7 @@ Refutation reason: delivered rows are serves by definition. File is unchanged so
 
 ### Flag 2. `E_UNDO_STALE` missing `[MODEL]` prefix — refutation withdrawn
 
-Fact is true, and the original refutation is **withdrawn**. `[MODEL]` is an audience marker, not a retry demand: `docs/adr/0014-user-model-audience.md:19` — *"Audience is display-layer only… error `content` headers are emitted as `[MODEL] [E_*] …` normal"*; the supporting clause *"`[MODEL]` normal vs `[USER]` dimmed collapsed, prefix survives monochrome logs"* is the grill-round summary at `:13`. The retry reading comes only from `prompts/edit-guidelines.md` / `EDIT_GUIDELINES` (`src/payload-contract.ts:95`), and that sentence is scoped to a `[MODEL]` line **in `content`**. Prefix absence is confirmed at `src/edit-undo.ts:151` (`` `text: \`[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.\`,` ``) and `:164` — both are `content` returns with `isError: true`, while ADR-0014:19 states that error `content` headers are emitted as `[MODEL] [E_*]`. The ADR's file list (`0014:40`) never listed `src/edit-undo.ts`, so the edit sweep missed this tool. A non-blocking `[MODEL]` line is existing practice, not an invention: `src/edit-tool.ts:53` emits `[MODEL] [E_BAD_PAYLOAD] Autocorrected: …` as a warning, and `src/edit-response.ts:139-141` appends warnings to model content. Verdict: **re-opened as LOW** — tracked in #147.
+Fact is true, and the original refutation is **withdrawn**. `[MODEL]` is an audience marker, not a retry demand: `docs/.archive_adrs/0014-user-model-audience.md:19` — *"Audience is display-layer only… error `content` headers are emitted as `[MODEL] [E_*] …` normal"*; the supporting clause *"`[MODEL]` normal vs `[USER]` dimmed collapsed, prefix survives monochrome logs"* is the grill-round summary at `:13`. The retry reading comes only from `prompts/edit-guidelines.md` / `EDIT_GUIDELINES` (`src/payload-contract.ts:95`), and that sentence is scoped to a `[MODEL]` line **in `content`**. Prefix absence is confirmed at `src/edit-undo.ts:151` (`` `text: \`[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.\`,` ``) and `:164` — both are `content` returns with `isError: true`, while ADR-0014:19 states that error `content` headers are emitted as `[MODEL] [E_*]`. The ADR's file list (`0014:40`) never listed `src/edit-undo.ts`, so the edit sweep missed this tool. A non-blocking `[MODEL]` line is existing practice, not an invention: `src/edit-tool.ts:53` emits `[MODEL] [E_BAD_PAYLOAD] Autocorrected: …` as a warning, and `src/edit-response.ts:139-141` appends warnings to model content. Verdict: **re-opened as LOW** — tracked in #147.
 
 Refutation reason (**withdrawn**, kept for the record): prefixing would falsely promise retry. Precedent includes `src/read.ts:87` and `src/noop-guard.ts:82-83,89-90` and `src/utils.ts:59`. The retryability premise does not hold — `[MODEL]` is an audience marker (ADR-0014:19) — so the flag stands as LOW.
 
@@ -198,7 +198,7 @@ Fix: fold into F1's glossary scoping. Severity: not a finding.
 
 Spec proposes D1 plus D6 plus new code. See `docs/spec/content-addressed-line-identity-mvcc.md:781` plus `:786` plus `:794` `` `\| … \| \`lease-resolve.ts\` … \| \`[MODEL] [E_TARGET_LOST]\` \|` ``. Also `docs/spec/stale-identity-reject-and-serve.md:49,54,80-81,89-90,93`. Code has no producer. Type is at `src/hashline/served-verification.ts:30` `` `export type ServedCode = "E_STALE_RANGE" \| "E_UNSERVED_RANGE";` ``. Search is empty across `src/ README.md CONTEXT.md prompts/`.
 
-Status text conflicts. Appendix claims normative-where-contradicting. Header says `Status: **proposed**`. Companion says `Status: proposed` at `docs/spec/stale-identity-reject-and-serve.md:3`. ADR says unstarted at `docs/adr/0018-region-scoped-rejection-serves.md:8-12` — `proposed … stays \`proposed\` until the behavior changes … The implementation is deliberately not started yet`.
+Status text conflicts. Appendix claims normative-where-contradicting. Header says `Status: **proposed**`. Companion says `Status: proposed` at `docs/spec/stale-identity-reject-and-serve.md:3`. ADR says unstarted at `docs/.archive_adrs/0018-region-scoped-rejection-serves.md:8-12` — `proposed … stays \`proposed\` until the behavior changes … The implementation is deliberately not started yet`.
 
 Human must choose implement vs downgrade. No docs-only fix suffices. Code-emitted retry prose risks overwrite. Severity: HIGH.
 

@@ -14,6 +14,7 @@
 
 ### Documentation
 
+* **adr:** compact architecture decision records into a canonical 7-record suite (ADR-0001 through ADR-0007), archive historical records ADR-0001–0050 to `docs/.archive_adrs/`, and align glossary, agents, and readme documentation with active architecture.
 * **adr:** land ADR-0050 recording the split of settings (pi agent dir) from state (XDG state dir), the verbatim override that now owns `<override>/state` and is still the only mover of the store, the fresh-store policy with the abandoned-store log, the artifact move/delete table, the settings adoption precedence with `.bak` retirement, the `[E_ACCESS]` fail-fast and the MINOR classification; point ADR-0037's store-directory paragraph at it rather than rewriting the record, and update the README, the schema prose and the MVCC spec's path mention. Docs only; the behaviour ships in the `config` entry above. (#190) (#191)
 
 ## [2.14.0] - 2026-10-28
@@ -127,7 +128,7 @@
 * **errors:** re-home tool-facing invariant guards onto a new remedy-free `E_INTERNAL_INVARIANT` code — path, snapshot-generation, unknown-fields, anchor-derivation and engine-only seams stop rendering the model-facing payload remedy; the payload keeps its optional subject and the same boundary helper stamps both codes, so model-wire `E_BAD_PAYLOAD` refusals stay byte-identical. (#93)
 
 ### Documentation
-* **store:** record the janitor's maintenance model (#90) as [ADR-0037](docs/adr/0037-store-janitor-lifecycle-maintenance-model.md), covering the lifecycle triggers (`session_start`, `session_shutdown`), throttle settings, batched deletes, and quarantine recovery architecture. (#103)
+* **store:** record the janitor's maintenance model (#90) as [ADR-0037](docs/.archive_adrs/0037-store-janitor-lifecycle-maintenance-model.md), covering the lifecycle triggers (`session_start`, `session_shutdown`), throttle settings, batched deletes, and quarantine recovery architecture. (#103)
 
 ## [2.11.0] - 2026-10-10
 

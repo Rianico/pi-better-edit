@@ -1,7 +1,7 @@
 # Merged Edit Payload Specification
 
 **Status:** accepted
-**Decision:** [ADR-0007](../adr/0007-merged-edit-payload-hoisted-path.md) (supersedes [ADR-0006](../adr/0006-compact-json-edit-payload.md))
+**Decision:** [ADR-0007](../.archive_adrs/0007-merged-edit-payload-hoisted-path.md) (supersedes [ADR-0006](../.archive_adrs/0006-compact-json-edit-payload.md))
 
 ## Goal
 

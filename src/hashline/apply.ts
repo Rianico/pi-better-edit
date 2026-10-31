@@ -91,7 +91,7 @@ export interface ApplyVerificationContext {
 }
 
 /**
- * WHY: the served hash echo gate is evidence-only (CONTEXT.md served hash echo,
+ * WHY: the served hash echo gate is evidence-only (GLOSSARY.md served hash echo,
  * WHY: ADR-0009 revision, `[E_SUSPICIOUS_TEXT]`): one position-agnostic,
  * WHY: content-matched scan over the lines that will be written via the unified
  * WHY: `findServedHashEcho` — never a shape check, so a served prefix with

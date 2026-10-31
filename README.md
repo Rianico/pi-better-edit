@@ -68,7 +68,7 @@ Repeating massive blocks of existing code dilutes attention weights across the p
 ### 3. Tokenizer Drift Immunity
 Subword tokenizers (BPE, WordPiece, Unigram) drift across model versions and architectures. As demonstrated by [TokDrift (Li, Deng, Nie 2025, arXiv:2510.14972)](https://arxiv.org/abs/2510.14972), semantically identical code snippets tokenize differently depending on superficial factors like whitespace, line coordinates, and formatting, causing significant behavioral shifts across LLMs.
 - Traditional coordinate lines (`12:34|`, `@@ -1,5 +1,5 @@`) fragment into volatile multi-token sequences that trigger off-by-one errors.
-- `pi-better-edit` addresses this by projecting line digests into **4-character base62 strings** (`[A-Za-z0-9]`) separated by `│` (U+2502) ([ADR-0030](docs/adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). These anchors tokenize as a small fixed count (~3 tokens in ≥99% of measured samples) where width-3 anchors fragment unpredictably, ensuring stable copy-target references across model families.
+- `pi-better-edit` addresses this by projecting line digests into **4-character base62 strings** (`[A-Za-z0-9]`) separated by `│` (U+2502) ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). These anchors tokenize as a small fixed count (~3 tokens in ≥99% of measured samples) where width-3 anchors fragment unpredictably, ensuring stable copy-target references across model families.
 
 ---
 
@@ -142,9 +142,9 @@ The response returns a unified diff with newly allocated anchors for modified li
 
 ## Configuration & Settings
 
-Settings are partitioned into two distinct roots ([ADR-0050](docs/adr/0050-two-roots-settings-in-the-pi-agent-dir-state-in-xdg-state.md)):
+Settings are partitioned into two distinct roots ([ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md)):
 1. **Settings Root** (human configuration): `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` (global) or `.pi/agents/pi-better-edit/settings.json` (project-local).
-2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0050](docs/adr/0050-two-roots-settings-in-the-pi-agent-dir-state-in-xdg-state.md); stores `hash-store.sqlite`, legacy `hash-store.json`, and `diagnostics.log`).
+2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, and `diagnostics.log`).
 
 Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
 
@@ -232,13 +232,13 @@ undo_last_edit({ path: "src/index.ts" })
 ### Interoperability with `pi-lens`
 `pi-better-edit` deeply integrates with [`pi-lens`](https://github.com/apmantza/pi-lens) language intelligence:
 - **Symbol / Section Widening**: Partial reads (`limit <= 100`) are automatically widened to enclosing function symbols or markdown sections (budget: 300 lines, 200ms). Anchors describe the lines actually served.
-- **Formatter & Autofix Immunity**: Whitespace rewrites by formatters during deferred passes are absorbed by the 28-code-point whitespace class ([ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)). Note that zero-width characters (U+200B ZWSP) are deliberately excluded; formatters rewriting ZWSP to a space rotate the anchor and fail closed safely.
+- **Formatter & Autofix Immunity**: Whitespace rewrites by formatters during deferred passes are absorbed by the 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Note that zero-width characters (U+200B ZWSP) are deliberately excluded; formatters rewriting ZWSP to a space rotate the anchor and fail closed safely.
 - **v2 I/O Bridge Compatibility**: Every served line and mutation (reads, bash views, diffs, reject-and-serve rows, `write` tool calls) is reported to the `pi-lens:io-bridge`, satisfying the read-before-edit guard with zero redundant `read` calls.
 
 ### Bash View Interception
-Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `grep`, `rg`, `rg --files`) are intercepted: raw stdout is swapped for the same lines as `HASH│content` rows under a `[Bash view: <file> (<N> lines total | lines A-B of <N> total)]` header, and the rows carry working leases, so the next `edit` needs no re-read ([ADR-0033](docs/adr/0033-bash-view-interception.md)).
-- **Display transforms & context**: Also served are display tails (`cat -A`, `cat -vet`, `od -c`, `xxd`, `hexdump -C`), context windows (`grep -A/-B/-C`, `rg -C`), and verified compound chains with an inert count tail ([ADR-0048](docs/adr/0048-bash-serve-admission-display-context-compound.md)).
-- **Standalone multi-file views**: Multi-file views (`cat FILE…`, `sed -n RANGE FILE…`) are served, capped at 10 files and 2,000 rows ([ADR-0049](docs/adr/0049-multi-file-bash-views.md)).
+Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `grep`, `rg`, `rg --files`) are intercepted: raw stdout is swapped for the same lines as `HASH│content` rows under a `[Bash view: <file> (<N> lines total | lines A-B of <N> total)]` header, and the rows carry working leases, so the next `edit` needs no re-read ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
+- **Display transforms & context**: Also served are display tails (`cat -A`, `cat -vet`, `od -c`, `xxd`, `hexdump -C`), context windows (`grep -A/-B/-C`, `rg -C`), and verified compound chains with an inert count tail ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
+- **Standalone multi-file views**: Multi-file views (`cat FILE…`, `sed -n RANGE FILE…`) are served, capped at 10 files and 2,000 rows ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 - **Passed through byte-identical**: Pipelines with transforms, unverified compounds, errors, truncation, and any command writing to stderr pass through unmodified.
 
 ---
@@ -302,7 +302,7 @@ Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `g
 ```
 
 ### 1. Anchor Generation Pipeline
-1. **Frozen Whitespace Canonicalization**: Strips a frozen 28-code-point class ([ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing. Formatter passes (`prettier`, `black`, `gofmt`) leave anchors intact.
+1. **Frozen Whitespace Canonicalization**: Strips a frozen 28-code-point class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)) before hashing. Formatter passes (`prettier`, `black`, `gofmt`) leave anchors intact.
 2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 seeded with the file's canonical path and projected into 4-character base62 strings (`A-Za-z0-9`), yielding $62^4 - 10^4 = 14,766,336$ allocatable anchors per file (all-digit spellings reserved to prevent confusion with line numbers).
 3. **Coprime Collision Probing**: Duplicate lines probe with a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a guaranteed unique anchor.
 
@@ -313,7 +313,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 ## Error and Warning Contract
 
-`pi-better-edit` enforces a strict diagnostic contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)). Rejections report machine-actionable `details.cause` values (`retirement`, `never-served`, `served-range staleness`). Detailed cause classifications and refusal-scoped options are documented in **[Error and Warning Contract Reference](docs/reference/error-and-warning-contract.md)**.
+`pi-better-edit` enforces a strict diagnostic contract ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). Rejections report machine-actionable `details.cause` values (`retirement`, `never-served`, `served-range staleness`). Detailed cause classifications and refusal-scoped options are documented in **[Error and Warning Contract Reference](docs/reference/error-and-warning-contract.md)**.
 
 ### Domain Rejections (`[E_*]`)
 
@@ -324,8 +324,8 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file snapshot. | — (the served rows are the state) |
 | `[E_UNKNOWN_ANCHOR]` | The path has not served the anchor in this session. | — |
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not the targeted one. | — |
-| `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | — (the fresh read is the state) |
-| `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0020](docs/adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)). | — (the fresh read is the state) |
+| `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
+| `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without stable anchor bounds. | — |
 | `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor prefix. | Omit anchor prefixes or set `mode: "literal"`. |
 | `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge overlapping spans or split calls. |
@@ -338,7 +338,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_UNDO_STALE]` | Cannot undo: file was modified or deleted externally after the last edit. | — |
 | `[E_UNDO_UNAVAILABLE]` | Cannot persist undo snapshot to CAS store. Disk left unchanged. | Retry edit or use write. |
 | `[E_UNDO_REVERT_FAILED]`| Correlated cross-file cut transaction was interrupted mid-revert. | — |
-| `[E_LARGE_FILE]` | Exceeds admission budget (200,000 lines `SERVED_MAX_LINES`) or anchor address space. | Fact-only (per [ADR-0047](docs/adr/0047-remediation-options-are-refusal-scoped-and-neutral.md)). |
+| `[E_LARGE_FILE]` | Exceeds admission budget (200,000 lines `SERVED_MAX_LINES`) or anchor address space. | Fact-only (per [ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). |
 | `[E_INTERNAL_INVARIANT]`| Internal MVCC or CAS store invariant failed. | — |
 | `[E_UNKNOWN]` | Unexpected filesystem or runtime exception. | — |
 

@@ -27,7 +27,7 @@ export interface WriteHookIO {
  * SAFETY: Inspect one validated-looking built-in write request against session-scoped
  * served state. Returns a pre-dispatch denial reason only with evidence: the
  * candidate begins with a served anchor at any position AND reproduces the
- * served content for that anchor (CONTEXT.md served hash echo). No canon data
+ * served content for that anchor (GLOSSARY.md served hash echo). No canon data
  * means no evidence, so the check stays silent — never a shape refusal.
  */
 export async function servedHashEchoDenial(

@@ -38,7 +38,7 @@ import {
 export interface ErrorEnvelope {
   /** Machine code — registry members only; see the honesty rule above. */
   code?: DomainErrorCode;
-  /** User-facing diagnosis (CONTEXT.md); carried as `details.cause` on the wire. */
+  /** User-facing diagnosis (GLOSSARY.md); carried as `details.cause` on the wire. */
   cause?: RangeCause;
   /** reject-and-serve rows the model retries from; absence means no rows. */
   servedRows?: ServedRow[];

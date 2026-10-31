@@ -1,13 +1,13 @@
 # Spec: Stale-identity rejection never serves the retired coordinate (MVCC Revision 25 patch)
 
 > [!NOTE] Historical Analysis Record
-> This document is a non-normative historical analysis and test verification record for the Revision 25 patch. The authoritative, normative specification for Revision 25 is codified in [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §9 and implemented in [ADR-0018](../adr/0018-region-scoped-rejection-serves.md) and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md).
+> This document is a non-normative historical analysis and test verification record for the Revision 25 patch. The authoritative, normative specification for Revision 25 is codified in [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §9 and implemented in [ADR-0018](../.archive_adrs/0018-region-scoped-rejection-serves.md) and [ADR-0020](../.archive_adrs/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md).
 
 Status: historical analysis record — patched [`content-addressed-line-identity-mvcc.md`](content-addressed-line-identity-mvcc.md) §3.1.1, §5.3, and ratified in §9.
 Evidence: the 2026-09-15 triage session against the installed revision `bd3a8f2`; the defect was re-confirmed on `ba7c8d2` (current `main`) — see Revision check (full log path in the companion handoff).
 Companion: [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md) (triage of all 7 session failures + 11 findings).
 
-> [!note] Anchor literals below are recorded **width-3** examples from that triage session; anchors widened to **4 characters** in [ADR-0030](../adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the transcript; no example asserts the live width.
+> [!note] Anchor literals below are recorded **width-3** examples from that triage session; anchors widened to **4 characters** in [ADR-0030](../.archive_adrs/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the transcript; no example asserts the live width.
 
 ## Problem Statement
 
@@ -47,7 +47,7 @@ The live-session instance of the same branch is recorded in the session log: an 
 
 ## Solution
 
-Six normative deltas, two scope rules: **a rejection window may only be emitted for the region the submitted anchors identify** (a live lease identity — never a content match, never a dead lease's historical coordinate), and **when that region cannot be identified the rejection carries no rows at all**. A window for a retired identity is neither a target nor context: it is content that cannot ground the model's decision. D6 gives that case its own code so the remedy is machine-readable. Recorded as [ADR-0018](../../docs/adr/0018-region-scoped-rejection-serves.md).
+Six normative deltas, two scope rules: **a rejection window may only be emitted for the region the submitted anchors identify** (a live lease identity — never a content match, never a dead lease's historical coordinate), and **when that region cannot be identified the rejection carries no rows at all**. A window for a retired identity is neither a target nor context: it is content that cannot ground the model's decision. D6 gives that case its own code so the remedy is machine-readable. Recorded as [ADR-0018](../../docs/.archive_adrs/0018-region-scoped-rejection-serves.md).
 
 | # | Delta | Seam |
 | :- | :--- | :--- |
@@ -179,7 +179,7 @@ Observed on `bd3a8f2` (the defect): the hint-window edit was accepted, the tool 
 
 ## Appendix D — Follow-ups
 
-1. **ADR-0016 amendment.** Written as [`../../docs/adr/0018-region-scoped-rejection-serves.md`](../../docs/adr/0018-region-scoped-rejection-serves.md) (status `proposed`): it deletes ADR-0016's Consequences parenthetical (*"or by `reject-and-serve`'s served rows"*), leaves ADR-0016's Decision intact, and records the region rule plus the derivable-rows oracle. Link and accept it with the patch.
+1. **ADR-0016 amendment.** Written as [`../../docs/.archive_adrs/0018-region-scoped-rejection-serves.md`](../../docs/.archive_adrs/0018-region-scoped-rejection-serves.md) (status `proposed`): it deletes ADR-0016's Consequences parenthetical (*"or by `reject-and-serve`'s served rows"*), leaves ADR-0016's Decision intact, and records the region rule plus the derivable-rows oracle. Link and accept it with the patch.
 2. **`CONTEXT.md` needs one glossary entry** (domain-modeling signal): **target-lost rejection** — a rejection whose region cannot be identified, so it carries no rows and recovery is a re-read. Scope the existing `reject-and-serve` entry's *"the retry needs no read"* to region-matched serves. The previously proposed **context serve** term is dropped: with D1 there is no such operation.
 3. ~~Consider serving nothing at all~~ — **resolved**: that is now the decision for the unidentifiable case (D1), while the identifiable case keeps serving (D1's live-and-unshifted condition, which keeps `served-range-verification.test.ts:250` green).
 4. **Watch Probe `J`.** `verifyRebasedSpan`'s window is the served/rebased span; if an external insert inside the span can also move the window, the same non-identification argument applies. Not observed in this session — add a probe before claiming it safe.

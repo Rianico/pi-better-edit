@@ -29,7 +29,7 @@ const rule = {
     type: "suggestion",
     docs: {
       description: "enforce curated comment allowlist (ADR-0014)",
-      url: "https://github.com/Rianico/pi-better-edit/blob/main/docs/adr/0001-served-state-range-verification.md",
+      url: "https://github.com/Rianico/pi-better-edit/blob/main/docs/.archive_adrs/0001-served-state-range-verification.md",
     },
     messages: {
       disallowed: MESSAGE,

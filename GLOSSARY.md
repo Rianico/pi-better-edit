@@ -9,7 +9,7 @@ To deliver a line's `HASH│content` row into the model's context through tool o
 _Avoid_: display, show, echo
 
 **served state**:
-The tool's per-file, per-line record of the hash last delivered to the model for each line — a mirror of the model's knowledge of the file, maintained by the tool and cleared at session start.
+The session's active record of leases in `served_leases`, binding presentation anchors to immutable `line_id`s for the snapshot served to the model: `(session_id, file_path, anchor) -> (line_id, served_snapshot_hash, retired_at)` ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)).
 _Avoid_: expectation, last read, snapshot
 
 **model–tool boundary**:
@@ -17,10 +17,10 @@ The separation of responsibilities: the tool owns verification of what the model
 _Avoid_: —
 
 **anchor philosophy**:
-The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: the frozen v3 whitespace class stripped — 28 code points, ADR-0029 — amending ADR-0005's ASCII-only class), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005, class amended by ADR-0029).
+The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: the frozen v3 whitespace class stripped — 28 code points, [ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md) — amending the legacy ASCII-only class), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)).
 
 **whitespace class**:
-The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` (ADR-0029). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
+The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
 _Avoid_: whitespace set, trim set (use canon)
 
 **anchor staleness**:
@@ -54,14 +54,14 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`len`), a served interior row whose lease is retired or whose `line_id` moved off its coordinate, a boundary row the mirror never served, or a mirror row a serve truncated away while its lease still lives (issue #151). Reported as `[E_STALE_RANGE]` — retired: `[E_UNSERVED_RANGE]`, see ADR-0020. An **unread interior** line between two leased boundaries is not staleness and does not fail closed (ADR-0024): it carries no identity to verify, and the boundaries plus the window-length gate already pin the span. Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind (ADR-0022).
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`len`), a served interior row whose lease is retired or whose `line_id` moved off its coordinate, a boundary row the mirror never served, or a mirror row a serve truncated away while its lease still lives (issue #151). Reported as `[E_STALE_RANGE]` — retired: `[E_UNSERVED_RANGE]`, see [ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md). An **unread interior** line between two leased boundaries is not staleness and does not fail closed ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)): it carries no identity to verify, and the boundaries plus the window-length gate already pin the span. Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)).
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never a served option (facts are the default; options are the curated exception). It fails closed only where there is no identity left to verify: a **boundary** row of a leased span (one of the two anchors the model named) reports `[E_STALE_RANGE]`; an unplaceable boundary (one bound stale, survivor live and unshifted) reports `[E_UNVERIFIED_RANGE]`; an anchor with no lease at all reports `[E_UNKNOWN_ANCHOR]` (no lease in any file) or `[E_FOREIGN_ANCHOR]` (leased for another file) — both rowless with no options. An **unread interior** row between two leased boundaries is accepted instead, because it carries no identity to verify (ADR-0024). `[E_STALE_ANCHOR]` names a served anchor whose identity is dead (rows served, retry with them).
+A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never a served option (facts are the default; options are the curated exception). It fails closed only where there is no identity left to verify: a **boundary** row of a leased span (one of the two anchors the model named) reports `[E_STALE_RANGE]`; an unplaceable boundary (one bound stale, survivor live and unshifted) reports `[E_UNVERIFIED_RANGE]`; an anchor with no lease at all reports `[E_UNKNOWN_ANCHOR]` (no lease in any file) or `[E_FOREIGN_ANCHOR]` (leased for another file) — both rowless with no options. An **unread interior** row between two leased boundaries is accepted instead, because it carries no identity to verify ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). `[E_STALE_ANCHOR]` names a served anchor whose identity is dead (rows served, retry with them).
 
 **unverified range**:
-The named window served when one bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted. Reported as `[E_UNVERIFIED_RANGE]`: the rows of the named window are served as a fresh read under the exact heading `Current range (fresh read):`, with no retry hint and no mandate — the model decides from those rows, and the rows are leased through the normal serve seam. One bound stale covers a retired lease with a live unshifted survivor only — a boundary anchor with no served position reports `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`. Retired: `[E_UNSERVED_RANGE]` (see ADR-0020; interior hole → `[E_STALE_RANGE]`, boundary producer → this code); the library-seam blocked-hash boundary check that also reported `[E_STALE_ANCHOR]` is retired (#10).
+The named window served when one bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted. Reported as `[E_UNVERIFIED_RANGE]`: the rows of the named window are served as a fresh read under the exact heading `Current range (fresh read):`, with no retry hint and no mandate — the model decides from those rows, and the rows are leased through the normal serve seam. One bound stale covers a retired lease with a live unshifted survivor only — a boundary anchor with no served position reports `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`. Retired: `[E_UNSERVED_RANGE]` (see [ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md); interior hole → `[E_STALE_RANGE]`, boundary producer → this code); the library-seam blocked-hash boundary check that also reported `[E_STALE_ANCHOR]` is retired (#10).
 _Avoid_: unverified region (the model-facing word is `range`, never `region`)
 
 **reject-and-serve**:
@@ -86,21 +86,17 @@ A model-visible signal the tool must include in `content` for correctness (e.g. 
 **user-facing signal**:
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice). Not in model content.
 
-**orphaned serve**:
-An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_UNVERIFIED_RANGE]` (live unshifted survivor) or `[E_TARGET_LOST]` (otherwise), rather than being healed onto a twin.
-_Avoid_: stale serve (ambiguous with boundary staleness)
-
-**orphaning re-serve**:
-The serve event that creates an orphan: re-serving the same hash at a new position without nulling its previous served position — typically a partial re-read (or a serve/diff that covers the new but not the old slot) after an external relocation that kept the hash. A full re-read heals by overwriting every position; an orphaning re-serve leaves the stale slot behind. Superseded by ADR-0016: every serve path atomically upserts the anchor's `served_leases` row, so a re-serve replaces the lease instead of leaving a stale slot behind.
-_Avoid_: duplicate serve (conflates duplicated content with relocated-line-keeps-hash)
-
-**relocated line keeps its hash**:
-The file condition where a line's content survives an external write and, because no probe collision occurs at its new spot, the same hash is reproduced by a fresh hashing pass. Distinct from "duplicated content" (same text at two positions in one file gets two different hashes via probing). Superseded by ADR-0016: a relocated line keeps its immutable `line_id`, and coordinate realignment is owned solely by `pairSnapshots` + `line_lineage`; hash reproduction no longer decides identity.
-_Avoid_: duplicate content (implies same hash, which perfect hashing prevents)
-
 **line identity**:
-A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 4-char `anchor`, which is a presentation token the model copies out of a served row.
-_Avoid_: anchor identity, hash identity, epoch
+A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)). Distinct from the 4-char `anchor`, which is a presentation token the model copies out of a served row. Supersedes heuristic healing and legacy position-dependent concurrency (`strictPos` and `pos-free` modes).
+_Avoid_: anchor identity, hash identity, epoch, strict pos, pos-free, orphaned serve, orphaning re-serve
+
+**dynamic rebase**:
+The transparent realignment of an edit's target anchors to current file coordinates when external modifications have shifted preceding lines, resolved by looking up leased `line_id`s in `line_lineage` ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)).
+_Avoid_: fuzzy rebase, coordinate shift
+
+**patience pairing** (`pairSnapshots`):
+The four-phase diff alignment algorithm (pins → minimal-Δ LIS backbone → zip → unique-embedding LCS leaf) mapping line lineage between successive file snapshots ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)).
+_Avoid_: heuristic pairing, diff guessing
 
 **lease** (served lease):
 The `served_leases` row that binds a served anchor to the immutable `line_id` it denotes for the snapshot actually served: `(session_id, file_path, anchor) -> line_id, served_snapshot_hash, retired_at`. `serve` is the only operation that may create one, and it upserts atomically — re-serving an anchor replaces the row (fresh `line_id`, `retired_at = NULL`) instead of failing closed or leaving a stale slot. An edit resolves its lease strictly read-only.
@@ -115,7 +111,7 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's anchor-space ceiling (`MAX_HASH_LINES` in `src/hashline/hash-identity.ts`), so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's admission ceiling (`SERVED_MAX_LINES = 200_000` in `src/constants.ts:23`), so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
 _Avoid_: unmanaged read
 
 **mode-as-intent**:
@@ -162,44 +158,31 @@ _Avoid_: force, override, bypass
 Refusal that `text` (for `edit`) copied a `served hash echo` — `[E_SUSPICIOUS_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. Evidence-only: it fires only when `text` reproduces a row actually served for this session, path, and line, never for the shape of a line — a `HASH│`-shaped line whose anchor was never served is written verbatim. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Omit the copied anchors from `text` and retry with the same anchors, or reassert under a `literal declaration`, the sole escape. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous), E_SERVED_ECHO (retired name; the refusal is E_SUSPICIOUS_TEXT, see ADR-0019)
 
-**boundary duplication** (historical — removed):
-Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = text`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
-_Avoid_: dedup, autofix, trimming
-
 **pure edit**:
-The invariant that an edit is exactly the resolved range replaced by the exact `text` payload with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
-_Avoid_: smart edit, autocorrection
+The invariant that an edit is exactly the resolved range replaced by the exact `text` payload with no boundary-dedup rewrite. Verified by `resolveEdit`/`valEdit → resToSpan → assemble` with no intermediate splice; served-state verification belongs to lease resolution (`resolveLeasedEdit`, `src/hashline/lease-resolve.ts`), not to a content seam.
+_Avoid_: smart edit, autocorrection, boundary duplication, dedup, autofix, trimming
 
 **blocked hashes**:
-formerly tombstone
-The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts:815-830`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(blockedHashes)` so a freed anchor never re-binds for the session (`src/hashline/hash-identity.ts:186-194`, `:319-331`, plumbed via `src/hashline/hash-identity.ts` (the store seam)). ADR-0017 retains it only as the hash-allocation guard, never as a second identity authority — and its former verification job was a signal, not a lease state, so the `retirement` (`retired_at`) term above always owned lease-terminal state. That second job is retired (#10): the mirror-vs-mirror signal in `src/served-session/serve-render.ts` (`throwStaleForBlockedHash`, the interior `details.cause: "blocked-hash"` emission) had no live caller — every session edit resolves its span through the lease seam, where a retired lease reports `details.cause: "retirement"` (issue #151). ADR-0020 decision 2 prescribed the fresh-read heading for the boundary check; as-built `0bc2b65` served `[E_STALE_ANCHOR]` rows instead (see ADR-0021 decision 3); the check itself is now gone. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success.
-_Avoid_: blocked, reserved (lease retirement is the `retired_at` term above; this entry's `served.retired` is a legacy v6 storage shell)
+The per-session set of 4-character hashes freed by mutations since the last full `read`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(blockedHashes)` so a freed anchor never re-binds for the session prior to a full re-read ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)).
+_Avoid_: blocked, reserved, tombstone
 
 **canon digest**:
-`String(xxh32(canon(line)))` — the opaque canon identity `line_lineage.canon_hash` and `served_leases.canon_hash` store and compare, produced by the single `canonDigest` definition in `src/hashline/hash-identity.ts`. Canon evidence is always a digest: the hash-allocation lineage writer, the served-row evidence scans (`findServedHashEcho`, `findServedPrefixMismatches`), the drift rotated-survivor check all compare digests derived on demand from the lease that carries them, so the text a digest came from is never persisted (issue #151).
+`String(xxh32(canon(line)))` — the opaque canon identity `line_lineage.canon_hash` and `served_leases.canon_hash` store and compare, produced by the single `canonDigest` definition in `src/hashline/hash-identity.ts` ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Canon evidence is always a digest: the hash-allocation lineage writer, the served-row evidence scans (`findServedHashEcho`, `findServedPrefixMismatches`), and the drift rotated-survivor check all compare digests derived on demand from the lease that carries them, so raw canon line text is never persisted.
 
 **epoch**:
-The per-session, per-path read snapshot `{snapshotId: ino|mtime|size|checksum via fileSnap, servedHashes, servedCanons}` stored in `served.snapshotId`/`canons`/`hashes`. `read full` stores epoch; `partial` merges without clearing. `edit` compares `curId=fileSnap(path)` vs `epoch.snapshotId` to decide `resist` (pos-free, `==`) vs `strict` (pos-restricted, `!=`). Exterior drift (`insert @0` before `served 1..5`) stays `resist` when `changed ∩ [L,R]==∅`. Superseded by ADR-0017: the edit pipeline never populates an epoch, so it gates nothing — the concurrency signal is a leased `line_id` resolved through `line_lineage(C)`.
-_Avoid_: version, snapshot (global last-writer-wins `snapshots` table is file-level, not per-session)
+The demoted per-(session, path) `served.snapshot_id` stamp, still persisted in the served mirror and exposed as `loadEpochId`, but superseded by CAS `file_snapshots` and `line_lineage` ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)). The edit pipeline never populates an epoch, and it is never consulted for verification or coordinates; concurrency and coordinate realignment are owned by leased `line_id` resolution.
+_Avoid_: version, snapshot (global last-writer-wins `file_snapshots` table is file-level, not per-session)
 
 **stat identity** (`stat_key`):
-The `stat(2)` version stamp a served read observes and stamps on the snapshot row it materializes: `ino:size:mtimeMs:ctimeMs`, stored in `file_snapshots.stat_key`. A later read whose stamp matches adopts that snapshot without re-deriving every line; it resolves only its page's lineage and verifies each line's `canon_hash` before serving its anchor, falling back to the content-hash path on any mismatch ([ADR-0043](docs/adr/0043-unchanged-file-adopts-on-stat-identity.md)). `ctime` is the version witness because userspace can restore `mtime` but cannot set `ctime`. Distinct from the `epoch`, which is the per-session read snapshot; a stat key is store state, not session state.
+The `stat(2)` version stamp a served read observes and stamps on the snapshot row it materializes: `ino:size:mtimeMs:ctimeMs`, stored in `file_snapshots.stat_key`. A later read whose stamp matches adopts that snapshot without re-deriving every line; it resolves only its page's lineage and verifies each line's `canon_hash` before serving its anchor, falling back to the content-hash path on any mismatch ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)). `ctime` is the version witness because userspace can restore `mtime` but cannot set `ctime`. Distinct from the `epoch`, which is the per-session read snapshot; a stat key is store state, not session state.
 _Avoid_: mtime check, file fingerprint (the content checksum is the fingerprint; the stat key names the version, not the bytes)
 
-**position-free** (pos-free):
-The single-thread verification mode where the retired library verifier (`verifyOrThrow`, removed with the mirror seam, #10) required only `served[cFrom+k]==fileHashes[startLine-1+k] && blockedHashes∉ && canon==`, not `from==startLine-1`. Preserves `anchor philosophy` — exterior inserts do not abort unrelated ranges. Historically the default when the epoch comparison matched; ADR-0017 retired that gate in favour of lease resolution through `line_lineage`.
-_Avoid_: strict pos (concurrency fallback only; that gate is retired by ADR-0017)
-
-**strict** (pos-restricted concurrency):
-The fallback verification mode when `epoch!=curId` (concurrent write detected) — adds `from==startLine-1 && to==endLine-1` to the pos-free checks. Makes `shift==rebind` loud for the `S@2->7` isolated blocked-hash case (the retired mirror signal, #10). Cost is one `reject-and-serve` retry with `E.servedRows`. Automatic, no config flag. Retired by ADR-0017: `strictPos` no longer gates anything, because position equality cannot see a deleted identity (`1 === 1`) while an exterior shift moves every coordinate without touching identity; a leased `line_id` resolved through `line_lineage(C)` replaces it.
-_Avoid_: always-strict
-
 **canon** (canon_at_serve):
-The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 4-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup (ADR-0022). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
+The whitespace-stripped form `line.replace(CANON_RE, "")` where `CANON_RE` is the frozen 28-code-point whitespace class (see `whitespace class` and [ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 4-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the served read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`: the paged walk still retains one anchor per hashed line even for an unshown window — `walkLines` visits every line, `walkPage` assigns one anchor per visit — at ~6.1 MB of walked anchors plus the ~7.0 MB spelling-memo entry overhead over the same strings (`HASH_CACHE_MAX_ENTRIES`) plus the fixed ~1.76 MB allocator bitset, so 200,000 lines cost ~14.9 MB marginal worst case over the loaded text against the ~15 MB target (probe: `node --expose-gc scripts/measure-served-budget.mjs`); reporting the count when it is known; a `mode: "verbatim"` read is not capped), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0030](docs/adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the served read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`: the paged walk still retains one anchor per hashed line even for an unshown window — `walkLines` visits every line, `walkPage` assigns one anchor per visit — at ~6.1 MB of walked anchors plus the ~7.0 MB spelling-memo entry overhead over the same strings (`HASH_CACHE_MAX_ENTRIES`) plus the fixed ~1.76 MB allocator bitset, so 200,000 lines cost ~14.9 MB marginal worst case over the loaded text against the ~15 MB target (probe: `node --expose-gc scripts/measure-served-budget.mjs`); reporting the count when it is known; a `mode: "verbatim"` read is not capped), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:
@@ -215,11 +198,11 @@ An `anchor_from`/`anchor_to` pair whose resolved lines run opposite the slot ord
 _Avoid_: E_REVERSED_ANCHORS (retired refusal; the healed notice is W_REVERSED_ANCHORS)
 
 **noop**:
-A call whose resolved range already contains the replacement text: nothing changed, so it is not a failure. The first no-op proceeds, the second identical no-op narrates `[USER] [W_NOOP]`, and only the third identical resend refuses as `[E_NOOP_LOOP]` (`NOOP_LOOP_THRESHOLD = 3`, `src/noop-guard.ts:59-99`).
+A call whose resolved range already contains the replacement text: nothing changed, so it is not a failure. The first no-op proceeds, the second identical no-op narrates `[USER] [W_NOOP]`, and only the third identical resend refuses as `[E_NOOP_LOOP]` (`NOOP_LOOP_THRESHOLD = 3`, `src/noop-guard.ts:103-148`).
 _Avoid_: E_NOOP (no such code; the warn arm is W_NOOP, the refuse arm is E_NOOP_LOOP)
 
 **remediation options**:
-Refusals state facts. A served `Options:` list is the exception: two or more neutral, non-destructive moves that keep the model's choice, rendered only by the refusal that proved the cause and only for `MODEL` audience. Never a single directive, never prompt prose, never a success path. Curated: `E_SUSPICIOUS_TEXT`, `E_BATCH_ABORT`, `E_UNDO_UNAVAILABLE` (ADR-0047).
+Refusals state facts. A served `Options:` list is the exception: two or more neutral, non-destructive moves that keep the model's choice, rendered only by the refusal that proved the cause and only for `MODEL` audience. Never a single directive, never prompt prose, never a success path. Curated: `E_SUSPICIOUS_TEXT`, `E_BATCH_ABORT`, `E_UNDO_UNAVAILABLE` ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)).
 _Avoid_: remedy, suggestion, hint (one directive biases the next call)
 
 **source of truth**:
@@ -231,11 +214,11 @@ The single shared rendered diff — preview, applied, and human display render t
 _Avoid_: view (unqualified — name the audience), second diff (there is only one rendering), middle-gap marker (think spans, not gaps)
 
 **pure view**:
-A bash chain whose whole stdout is provably exactly one file's viewed lines: one `view` span (single-file `cat`/`head`/`tail`/`sed -n` numeric print, or a sanctioned `cat |` line-filter pipeline) with every other `&&` segment `silent` (ADR-0033). Only a pure view is eligible for view replacement.
+A bash chain whose whole stdout is provably exactly one file's viewed lines: one `view` span (single-file `cat`/`head`/`tail`/`sed -n`/`nl` numeric print, or a sanctioned `cat |` line-filter pipeline) with every other `&&` segment (or every preceding `;` statement) `silent` ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)). Only a pure view is eligible for view replacement.
 _Avoid_: safe command (safety is per-span-kind, never whole-command)
 
 **slice view**:
-A pure view naming a strict sub-range of the file (`head`/`tail` counts, `sed -n` print addresses, pipeline compositions). Served slice-accurately: exactly the computed intervals are previewed and leased, never the whole file (ADR-0033 D3).
+A pure view naming a strict sub-range of the file (`head`/`tail` counts, `sed -n` print addresses, pipeline compositions). Served slice-accurately: exactly the computed intervals are previewed and leased, never the whole file ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: partial read (a read concept; this is a bash classification)
 
 **pass-through (bash view)**:
@@ -243,7 +226,7 @@ A bash result the hook returns byte-unmodified: not a pure view, or a view with 
 _Avoid_: skip (says nothing about what the model receives)
 
 **silent segment**:
-An `&&`-chain segment provably emitting no stdout on success and not touching the viewed file. v1 set: `cd <literal-path>` (never `-`), `true`, `:` — closed by corpus census (ADR-0033), extensible only by audit.
+A segment in an `&&` chain (or preceding an unconditional `;` statement) provably emitting no stdout on success and not touching the viewed file. v1 set: `cd <literal-path>` (never `-`), `true`, `:` — closed by corpus census ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)), extensible only by audit.
 _Avoid_: harmless command (harmlessness is unproven; silence is proven)
 
 **span kind**:
@@ -251,15 +234,15 @@ The per-segment classification `silent` | `view` | `unsafe`. Unknown is `unsafe`
 _Avoid_: risk level (this is a proof obligation, not a score)
 
 **view replacement**:
-The full-content swap of a pure view's tool result for the anchored slice preview under the frozen header `--- Bash view (hashline anchors) ---`: zero duplication (unlike the write path's append), leases bound to the canonical disk re-read, never to bash stdout (ADR-0033 D4).
+The full-content swap of a pure view's tool result for the anchored slice preview under the page header `[Bash view: <file> (<N> lines total | lines A-B of <N> total)]`: zero duplication (unlike the write path's append), leases bound to the canonical disk re-read, never to bash stdout ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: auto-read (the write-path append; this is a swap, not an addition)
 
 **interval algebra**:
-The exact line-set composition for pipeline slices: surviving source lines as ordered disjoint 1-indexed intervals over `[1..L]`, each filter stage (`head`/`tail` counts, `sed -n` addresses) mapping intervals to intervals by pure arithmetic — no content consulted, nothing estimated (ADR-0033 D2).
+The exact line-set composition for pipeline slices: surviving source lines as ordered disjoint 1-indexed intervals over `[1..L]`, each filter stage (`head`/`tail` counts, `sed -n` addresses) mapping intervals to intervals by pure arithmetic — no content consulted, nothing estimated ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: range math (intervals are sets; ranges are model-facing spans)
 
 **transparent wrapper**:
-A command prefix (`rtk`) that forwards a view command's bytes unchanged. Accepted in source positions only and unwrapped to the inner view shape — but never trusted: the stdout-verification gate (D9) re-checks every replacement against the observed bytes, so transparency is proven per call, not assumed per tool (ADR-0033 D8).
+A command prefix (`rtk`) that forwards a view command's bytes unchanged. Accepted in source positions only and unwrapped to the inner view shape — but never trusted: the stdout-verification gate (D9) re-checks every replacement against the observed bytes, so transparency is proven per call, not assumed per tool ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: silent segment (silence is proven no-output; transparency is proven byte-identity)
 
 **atomic view block**:
@@ -279,7 +262,7 @@ A `cd` statement resolving to the active `effCwd`, treated as an inert silent no
 _Avoid_: duplicate cd, unnecessary cd
 
 **canonical payload**:
-The single argument shape a tool accepts from the model — for `read`, `{ file, windows?, mode? }` (ADR-0041). Caps, window resolution and row serving see only this shape.
+The single argument shape a tool accepts from the model — for `read`, `{ file, windows?, mode? }` ([ADR-0003](docs/adr/0003-tool-payload-contracts-read-and-edit.md)). Caps, window resolution and row serving see only this shape.
 _Avoid_: primary shape, new format
 
 **render projection**:
@@ -289,3 +272,15 @@ _Avoid_: display mapping, path fixup, view model
 **legacy shape**:
 An argument shape a tool no longer accepts but which survives in already-recorded transcripts. Rendering tolerates it; the schema rejects it.
 _Avoid_: deprecated shape, backward compatibility, old format
+
+**two roots**:
+The physical separation between human-editable extension configuration (`settingsRoot`/`settings.json` under `~/.pi/agent/extensions/pi-better-edit/`) and internal MVCC SQLite state (`stateRoot`/`hash-store.sqlite` under `$XDG_STATE_HOME/pi-better-edit/`) ([ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md)).
+_Avoid_: single-root config, shared config directory
+
+**store janitor**:
+The event-driven background SQLite maintenance runner invoked on `session_start` and `session_shutdown`, applying hard 7-day lease TTL deletion and conditional autocommit `VACUUM` ([ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md)).
+_Avoid_: store worker, background daemon
+
+**stdout byte gate**:
+The fail-closed verification barrier in Bash view interception ensuring raw captured command stdout byte-matches the re-read disk slice before replacing tool output with anchored rows ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
+_Avoid_: parser trust, unverified preview
