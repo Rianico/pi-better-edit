@@ -22,6 +22,10 @@ export interface SyntaxNodeLike {
   readonly namedChildren: readonly SyntaxNodeLike[];
   readonly text?: string;
   childForFieldName?(field: string): SyntaxNodeLike | null;
+  /** The node's parent; the default runtime supplies this, tests may omit it. */
+  readonly parent?: SyntaxNodeLike | null;
+  /** The nearest preceding named sibling, used to attach leading documentation. */
+  readonly previousNamedSibling?: SyntaxNodeLike | null;
 }
 
 /** A parsed tree plus the optional handle that frees parser resources. */
@@ -116,6 +120,7 @@ export function scopeName(node: SyntaxNodeLike): string {
 
 /** A compact note kind for a scope node (`function_declaration` -> `function`). */
 export function scopeKind(node: SyntaxNodeLike): string {
+  if (node.type === "arrow_function") return "arrow";
   if (node.type.startsWith("function") || node.type.startsWith("generator_function")) {
     return "function";
   }

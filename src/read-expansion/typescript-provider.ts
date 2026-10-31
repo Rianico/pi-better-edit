@@ -18,6 +18,8 @@ import { discardCachedGrammar, ensureGrammar, type GrammarCacheOptions } from ".
 import { grammarLanguageForFile } from "./grammar-manifest.js";
 import { loadWebTreeSitterGrammar } from "./grammar-runtime.js";
 import type { OffsetWindow, SpanProvider, SpanWindow } from "./span-expansion.js";
+import { createScopeDecorator } from "./scope-decoration.js";
+import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
 
 export interface TypeScriptSpanProviderOptions extends GrammarCacheOptions {
   /** Override the wasm loader (tests inject a parser-free tree). */
@@ -47,6 +49,7 @@ export function createTypeScriptSpanProvider(
   options: TypeScriptSpanProviderOptions = {},
 ): SpanProvider {
   const handles = new Map<string, Promise<GrammarHandle | undefined>>();
+  const decorate = createScopeDecorator(TYPESCRIPT_DECORATION);
   const loadGrammar = options.loadGrammar ?? loadWebTreeSitterGrammar;
   const readText = options.readTextFile ?? defaultReadText;
 
@@ -108,11 +111,12 @@ export function createTypeScriptSpanProvider(
         if (node === null) return null;
         const range = scopeLineRange(node);
         if (range.startLine > window.offset || range.endLine < requestedEnd) return null;
+        const decorated = decorate(node);
         return {
-          start: range.startLine,
-          end: range.endLine,
+          start: decorated.startLine,
+          end: decorated.endLine,
           kind: scopeKind(node),
-          name: scopeName(node),
+          name: decorated.name ?? scopeName(node),
           source: "ast",
         };
       } catch {

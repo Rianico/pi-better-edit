@@ -1,0 +1,25 @@
+/** TypeScript/TSX vocabulary for the shared scope-decoration walk. */
+import type { DecorationSpec } from "./scope-decoration.js";
+
+const JSDOC_PREFIX = "/**";
+
+/**
+ * `export_statement` carries the keyword outside the declaration node; `variable_declarator` and
+ * its lexical wrapper carry an arrow name; `decorator` is a sibling of a class method.
+ */
+export const TYPESCRIPT_DECORATION: DecorationSpec = {
+  docCommentTypes: new Set(["comment"]),
+  // WHY: plain `//` and `/*` comments are not documentation; only `/** ... */` attaches.
+  isDocComment: (node) => node.text?.trimStart().startsWith(JSDOC_PREFIX) ?? false,
+  wrapperTypes: new Set(["export_statement", "ambient_declaration"]),
+  assignmentNodeTypes: new Set(["variable_declarator", "public_field_definition"]),
+  assignmentWrapperTypes: new Set(["lexical_declaration", "variable_declaration"]),
+  transparentTypes: new Set([
+    "parenthesized_expression",
+    "as_expression",
+    "satisfies_expression",
+    "non_null_expression",
+  ]),
+  decorationTypes: new Set(["decorator"]),
+  nameField: "name",
+};
