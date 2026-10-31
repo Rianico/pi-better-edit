@@ -1,15 +1,16 @@
 /**
  * Read expansion — the one seam between `read` and any boundary parser.
  *
- * `read` asks a provider for the structural block that encloses each small requested window. The
- * provider answers with 1-indexed line bounds or null, and this module owns every invariant that
- * makes the answer safe to serve:
+ * `read` folds the requested windows, asks a provider for the structural block enclosing each
+ * folded span, and this module owns every invariant that makes the answer safe to serve:
  *
  * - the widened window is a superset of the requested window;
- * - it never exceeds the cap for its source (code vs Markdown/plain text);
- * - only a requested window at or below `TRIGGER_MAX` is a candidate;
+ * - it never exceeds the cap for its source (80 code, 80 Markdown, 40 plain text);
+ * - Markdown is the one clamp: an over-cap section serves a cap-sized window containing the ask and
+ *   names the full section extent; code and plain text are refused instead;
+ * - only a folded requested span at or below `TRIGGER_MAX` is a candidate;
  * - overlapping or adjacent answers become one ascending run, so every row is served once;
- * - any doubt (bad bounds, non-text provider answer, a throwing provider) yields null.
+ * - any doubt (bad bounds, non-text provider answer, a throwing provider) yields a refusal.
  *
  * WHY a seam: parsers are optional and arrive per language, while the read path must stay free of
  * grammar, wasm, network and language-server concerns. With no provider injected (`regRead(pi)`),
@@ -20,7 +21,7 @@ import { mergeServedSpans } from "../served-spans.js";
 /** Where a boundary came from. `lsp` is optional enrichment; it never widens on its own. */
 type SpanSource = "ast" | "md" | "text" | "lsp";
 
-/** A structural block, in the reader's 1-indexed inclusive line terms. */
+/** A structural block the provider answered, in 1-indexed inclusive line terms. */
 interface EnclosingSpan {
   start: number;
   end: number;
@@ -58,17 +59,19 @@ export interface SpanProvider {
 }
 
 /**
- * Only a requested window at or below this size triggers expansion. A 24-line probe is still a
- * fragment; a larger ask is already a deliberate range, so widening it would add cost without
- * answering a second-turn question.
+ * Only a folded requested span at or below this size triggers expansion. Folding happens first, so
+ * sixteen adjacent 24-line windows are one 384-line span and refuse the trigger.
  */
 export const TRIGGER_MAX = 24;
 
-/** Code scopes may widen further than prose: a function or method is the block a reader asked for. */
+/** Code scopes may widen to a function or method; this ceiling is refused, never clamped. */
 export const SPAN_CAP_CODE = 80;
 
-/** A Markdown section or plain-text paragraph stays proportionate at a smaller ceiling. */
-export const SPAN_CAP_MD_TEXT = 40;
+/** Markdown sections clamp to the first cap-sized window that still contains the ask. */
+export const SPAN_CAP_MARKDOWN = 80;
+
+/** Plain-text paragraphs refuse above their smaller ceiling. */
+export const SPAN_CAP_TEXT = 40;
 
 /** One 1-indexed inclusive line range. */
 export interface LineRange {
@@ -76,43 +79,68 @@ export interface LineRange {
   endLine: number;
 }
 
-/** One widening: the served block plus what the reader actually asked for. */
+/** Why an expansion attempt did not widen. */
+type RefusalReason =
+  | "above_trigger"
+  | "past_eof"
+  | "not_text"
+  | "provider_declined"
+  | "provider_error"
+  | "invalid_answer"
+  | "not_superset"
+  | "over_cap";
+
+/** The provider identity a refused attempt may still name (over-cap and non-superset answers). */
+interface RefusedBoundary {
+  span?: LineRange;
+  kind?: string;
+  name?: string;
+  source?: SpanSource;
+}
+
+/** One widening: the served window plus the full structural extent and every asked range. */
 export interface Expansion {
-  /** The window the read will walk: the provider's span, never beyond its source cap. */
+  /** The window the read will walk; for a Markdown clamp this is the cap-sized slice. */
   window: OffsetWindow;
-  /** The boundary identity and the requested range it answered. */
+  /** The boundary identity, the full extent, and the requested ranges it answered. */
   record: {
     kind: string;
     name: string;
     source: SpanSource;
-    asked: LineRange;
+    asked: LineRange[];
+    /** The provider's full block; for Markdown this is the section extent, which may exceed served. */
     span: LineRange;
+    /** True only for the Markdown over-cap clamp. */
+    clamped?: true;
   };
 }
 
-/** One merged served run and every asked window it answered. */
+/** One expansion decision: applied, or refused for an auditable reason. */
+export type ExpansionDecision =
+  | { outcome: "applied"; expansion: Expansion }
+  | ({ outcome: "refused"; reason: RefusalReason } & RefusedBoundary);
+
+/** One merged served run and every asked range it answered. */
 export interface WidenedBlock {
   served: LineRange;
   asked: LineRange[];
   kind: string;
   name: string;
   source: SpanSource;
+  /** The full Markdown section extent, when the block came from Markdown. */
+  section?: LineRange;
 }
 
-/** The per-window requested-versus-served record carried in `details.widened`. */
-export interface WidenedDetail {
-  asked: LineRange;
-  served: LineRange;
-  kind: string;
-  name: string;
-  source: SpanSource;
-}
-
-/** The served windows after union, plus the block and per-window records the note/details owe. */
+/** The served windows after union, plus the block records the note owes. */
 export interface ExpandedRead {
   windows: OffsetWindow[];
   blocks: WidenedBlock[];
-  details: WidenedDetail[];
+}
+
+/** One folded request: the merged span, and the original asks that folded into it. */
+export interface FoldedWindow {
+  window: OffsetWindow;
+  asked: LineRange[];
 }
 
 /** A widened window already validated against the file's visible line count. */
@@ -121,7 +149,10 @@ export interface ExpansionInput {
   file: string;
   /** Total visible lines the read will address. */
   totalLines: number;
+  /** The folded window the provider is asked about. */
   window: OffsetWindow;
+  /** The original requested ranges that folded into this window. */
+  asked?: readonly LineRange[];
   provider: SpanProvider;
 }
 
@@ -147,14 +178,24 @@ function oneLine(value: string): string {
 }
 
 function spanCapFor(source: SpanSource): number {
-  return source === "md" || source === "text" ? SPAN_CAP_MD_TEXT : SPAN_CAP_CODE;
+  if (source === "text") return SPAN_CAP_TEXT;
+  if (source === "md") return SPAN_CAP_MARKDOWN;
+  return SPAN_CAP_CODE;
+}
+
+function fmtRange(range: LineRange): string {
+  return `${range.startLine}-${range.endLine}`;
+}
+
+function rangeKey(range: LineRange): string {
+  return `${range.startLine}:${range.endLine}`;
 }
 
 /**
  * Whether a requested window is even a candidate. The read uses this before loading the file, so a
  * large or whole-file request pays nothing for a feature it cannot use.
  */
-export function isExpandableWindow(window: SpanWindow): boolean {
+function isExpandableWindow(window: SpanWindow): boolean {
   if (isOffsetWindow(window)) {
     return (
       isPositiveInteger(window.offset) &&
@@ -171,122 +212,179 @@ export function isExpandableWindow(window: SpanWindow): boolean {
 }
 
 /**
- * Ask the provider for the block enclosing `window` and return the widened window, or undefined
- * when the answer cannot be served.
+ * Fold overlapping or adjacent requested windows before the trigger test.
+ *
+ * WHY before: the trigger bounds the whole ask, not each probe. Sixteen adjacent 24-line windows
+ * are one 384-line request and must not expand, or a multi-window call could multiply the cost by
+ * the window count.
+ */
+export function foldWindows(windows: readonly OffsetWindow[]): FoldedWindow[] {
+  const runs = mergeServedSpans(
+    windows.map((window) => ({ startLine: window.offset, lineCount: window.limit })),
+  );
+  return runs.map((run) => {
+    const start = run.startLine;
+    const end = run.startLine + run.lineCount - 1;
+    const asked = windows
+      .filter((window) => window.offset >= start && window.offset + window.limit - 1 <= end)
+      .map((window) => ({
+        startLine: window.offset,
+        endLine: window.offset + window.limit - 1,
+      }))
+      .sort((left, right) => left.startLine - right.startLine);
+    return {
+      window: { offset: start, limit: run.lineCount },
+      asked,
+    };
+  });
+}
+
+function normalizeAsked(ranges: readonly LineRange[], totalLines: number): LineRange[] {
+  const seen = new Set<string>();
+  const normalized: LineRange[] = [];
+  for (const range of ranges) {
+    if (!isPositiveInteger(range.startLine) || !isPositiveInteger(range.endLine)) continue;
+    const endLine = Math.min(range.endLine, totalLines);
+    if (range.startLine > endLine) continue;
+    const value = { startLine: range.startLine, endLine };
+    const key = rangeKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized.sort((left, right) => left.startLine - right.startLine);
+}
+
+function refused(reason: RefusalReason, boundary?: RefusedBoundary): ExpansionDecision {
+  return {
+    outcome: "refused",
+    reason,
+    ...(boundary?.span === undefined ? {} : { span: boundary.span }),
+    ...(boundary?.kind === undefined ? {} : { kind: boundary.kind }),
+    ...(boundary?.name === undefined ? {} : { name: boundary.name }),
+    ...(boundary?.source === undefined ? {} : { source: boundary.source }),
+  };
+}
+
+/**
+ * Ask the provider for the block enclosing `window` and return the applied or refused decision.
  *
  * WHY every check is here rather than in the provider: one seam carries the invariants, so a new
  * language cannot forget one, and a wrong provider answer degrades to today's exact read.
  */
-export async function widenWindow(input: ExpansionInput): Promise<Expansion | undefined> {
+export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecision> {
   const { file, totalLines, window, provider } = input;
-  if (!isExpandableWindow(window)) return undefined;
-  if (!Number.isInteger(totalLines) || totalLines < 1) return undefined;
-  if (window.offset > totalLines) return undefined;
+  if (!isExpandableWindow(window)) return refused("above_trigger");
+  if (!Number.isInteger(totalLines) || totalLines < 1 || window.offset > totalLines) {
+    return refused("past_eof");
+  }
 
   let answer: EnclosingSpan | null;
   try {
     answer = await provider.enclosingSpan(file, { offset: window.offset, limit: window.limit });
   } catch {
     // SAFETY: a parser/provider failure is "no boundary", never a failed read (spec user story 10).
-    return undefined;
+    return refused("provider_error");
   }
-  if (answer === null || typeof answer !== "object") return undefined;
+  if (answer === null || typeof answer !== "object") return refused("provider_declined");
   const { start, end, kind, name, source } = answer as Partial<EnclosingSpan>;
-  if (!isPositiveInteger(start) || !isPositiveInteger(end) || end < start) return undefined;
-  if (!isNonEmptyText(kind) || !isNonEmptyText(name) || !isSpanSource(source)) return undefined;
-  if (end > totalLines) return undefined;
+  if (!isPositiveInteger(start) || !isPositiveInteger(end) || end < start) {
+    return refused("invalid_answer");
+  }
+  if (!isNonEmptyText(kind) || !isNonEmptyText(name) || !isSpanSource(source)) {
+    return refused("invalid_answer");
+  }
+  const boundary = {
+    span: { startLine: start, endLine: end },
+    kind: oneLine(kind),
+    name: oneLine(name),
+    source,
+  };
+  if (end > totalLines) return refused("invalid_answer", boundary);
 
   const askedEnd = Math.min(window.offset + window.limit - 1, totalLines);
   // WHY: the superset invariant — any span that does not cover every addressable requested line is
   // WHY: a wrong answer, and a wrong answer must behave exactly like no answer.
-  if (start > window.offset || end < askedEnd) return undefined;
-  // WHY: refuse, never clamp (spec: a block above the cap falls back to the requested window).
-  if (end - start + 1 > spanCapFor(source)) return undefined;
+  if (start > window.offset || end < askedEnd) return refused("not_superset", boundary);
+
+  const asked = normalizeAsked(
+    input.asked ?? [{ startLine: window.offset, endLine: askedEnd }],
+    totalLines,
+  );
+  const cap = spanCapFor(source);
+  const fullLength = end - start + 1;
+  if (fullLength > cap) {
+    // WHY: Markdown is the one clamp in the feature (D15): a section above the cap serves a
+    // WHY: cap-sized window that still contains the ask, and the note names the full extent.
+    if (source !== "md") return refused("over_cap", boundary);
+    let servedStart = start;
+    if (askedEnd > servedStart + cap - 1) servedStart = askedEnd - cap + 1;
+    servedStart = Math.max(start, servedStart);
+    const servedEnd = Math.min(servedStart + cap - 1, end);
+    return {
+      outcome: "applied",
+      expansion: {
+        window: { offset: servedStart, limit: servedEnd - servedStart + 1 },
+        record: { ...boundary, asked, clamped: true },
+      },
+    };
+  }
 
   return {
-    window: { offset: start, limit: end - start + 1 },
-    record: {
-      kind: oneLine(kind),
-      name: oneLine(name),
-      source,
-      asked: { startLine: window.offset, endLine: askedEnd },
-      span: { startLine: start, endLine: end },
+    outcome: "applied",
+    expansion: {
+      window: { offset: start, limit: fullLength },
+      record: { ...boundary, asked },
     },
   };
 }
 
-function rangeKey(range: LineRange): string {
-  return `${range.startLine}:${range.endLine}`;
-}
-
 /**
- * Union the served windows and attach every asked window to the run that serves it.
+ * Union the served windows and attach every asked range to the run that serves it.
  *
- * Returns undefined when no window widened, so the caller keeps today's exact plan and output.
+ * `windows` is one served candidate per original request: the widened window when that request's
+ * folded group applied, or the requested window when it did not. Returns undefined when no group
+ * widened, so the caller keeps today's exact plan and output.
  */
 export function applyExpansions(
   windows: readonly OffsetWindow[],
-  decisions: readonly (Expansion | undefined)[],
+  expansions: readonly Expansion[],
 ): ExpandedRead | undefined {
-  const widened = decisions.filter((decision): decision is Expansion => decision !== undefined);
-  if (widened.length === 0) return undefined;
-  if (windows.length !== decisions.length) {
-    throw new Error("read expansion decisions do not match the planned windows");
-  }
-
-  const served = windows.map((window, index) => {
-    const decision = decisions[index];
-    return decision === undefined
-      ? { startLine: window.offset, lineCount: window.limit }
-      : { startLine: decision.window.offset, lineCount: decision.window.limit };
-  });
-  const merged = mergeServedSpans(served).map((span) => ({
+  if (expansions.length === 0) return undefined;
+  const merged = mergeServedSpans(
+    windows.map((window) => ({ startLine: window.offset, lineCount: window.limit })),
+  ).map((span) => ({
     startLine: span.startLine,
     endLine: span.startLine + span.lineCount - 1,
   }));
-  const runFor = (window: OffsetWindow): LineRange => {
-    const found = merged.find(
-      (run) => window.offset >= run.startLine && window.offset + window.limit - 1 <= run.endLine,
-    );
-    if (found === undefined) {
-      throw new Error("a widened window has no merged run");
-    }
-    return found;
-  };
 
   const blocks: WidenedBlock[] = [];
   for (const run of merged) {
-    const inside = widened
-      .filter((decision) => {
-        const start = decision.window.offset;
-        const end = start + decision.window.limit - 1;
+    const inside = expansions
+      .filter((expansion) => {
+        const start = expansion.window.offset;
+        const end = start + expansion.window.limit - 1;
         return start >= run.startLine && end <= run.endLine;
       })
-      .sort((left, right) => left.record.asked.startLine - right.record.asked.startLine);
-    if (inside.length === 0) continue;
+      .sort((left, right) => left.window.offset - right.window.offset);
     const first = inside[0];
     if (first === undefined) continue;
     const asked = [
       ...new Map(
-        inside.map((decision) => [rangeKey(decision.record.asked), decision.record.asked]),
+        inside.flatMap((expansion) =>
+          expansion.record.asked.map((range) => [rangeKey(range), range] as const),
+        ),
       ).values(),
-    ];
+    ].sort((left, right) => left.startLine - right.startLine);
     blocks.push({
       served: run,
       asked,
       kind: first.record.kind,
       name: first.record.name,
       source: first.record.source,
+      ...(first.record.source === "md" ? { section: first.record.span } : {}),
     });
   }
-
-  const details: WidenedDetail[] = widened.map((decision) => ({
-    asked: decision.record.asked,
-    served: runFor(decision.window),
-    kind: decision.record.kind,
-    name: decision.record.name,
-    source: decision.record.source,
-  }));
 
   return {
     windows: merged.map((run) => ({
@@ -294,19 +392,18 @@ export function applyExpansions(
       limit: run.endLine - run.startLine + 1,
     })),
     blocks,
-    details,
   };
 }
 
-function fmtRange(range: LineRange): string {
-  return `${range.startLine}-${range.endLine}`;
+function quoteLabel(source: SpanSource, kind: string, name: string): string {
+  return source === "md" || source === "text" ? `${kind} "${name}"` : `${kind} ${name}`;
 }
 
 /**
- * The model-facing note chrome.
+ * The model-facing note chrome: `[widened <asked> -> <served>, <label>]`.
  *
- * Up to three asked windows name every block and every asked range; more than three collapse to one
- * line naming the count and the served ranges, so a wide multi-probe read cannot flood the page.
+ * Up to three asked ranges name every block; more than three collapse to one line naming the count
+ * and the served ranges. A Markdown clamp appends the full section extent when it differs.
  */
 export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: LineRange): string[] {
   if (blocks.length === 0) return [];
@@ -319,6 +416,13 @@ export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: Lin
     const servedEnd =
       blocks.length === 1 && shownRange !== undefined ? shownRange.endLine : block.served.endLine;
     const asked = block.asked.map(fmtRange).join(", ");
-    return `[widened ${block.served.startLine}-${servedEnd} (asked ${asked}) ${block.kind} ${block.name}]`;
+    const label = quoteLabel(block.source, block.kind, block.name);
+    const extent =
+      block.section !== undefined &&
+      (block.section.startLine !== block.served.startLine ||
+        block.section.endLine !== block.served.endLine)
+        ? ` (section ${fmtRange(block.section)})`
+        : "";
+    return `[widened ${asked} -> ${block.served.startLine}-${servedEnd}, ${label}${extent}]`;
   });
 }

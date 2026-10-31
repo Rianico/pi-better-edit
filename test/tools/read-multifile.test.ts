@@ -151,22 +151,22 @@ describe("read tool — single file", () => {
     });
   });
 
-  it("rejects the `path` alias (never a field)", async () => {
+  it("accepts the recorded `path`/`offset`/`limit` payload as one window", async () => {
     await withTempFile("aliased.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: `path` was never a read field — bare and paged uses refuse at the schema.
-      await expect(
-        readTool.execute("r1", { path: "aliased.ts" }, undefined, undefined, ctx),
-      ).rejects.toThrow(/Schema validation failed/);
-      await expect(
-        readTool.execute(
-          "r2",
-          { path: "aliased.ts", offset: 2, limit: 2 },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/Schema validation failed/);
+      // WHY: D17 folds a recorded flat payload onto the canonical single-window shape before
+      // WHY: schema validation, so it reads exactly like `{ file, windows: [{ offset, limit }] }`.
+      const whole = await readTool.execute("r1", { path: "aliased.ts" }, undefined, undefined, ctx);
+      expect(rowsOf(getText(whole))).toHaveLength(12);
+
+      const paged = await readTool.execute(
+        "r2",
+        { path: "aliased.ts", offset: 2, limit: 2 },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(rowsOf(getText(paged))).toEqual(["line 2", "line 3"]);
     });
   });
 

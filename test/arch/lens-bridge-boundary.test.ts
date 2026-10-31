@@ -54,7 +54,7 @@ describe("lens bridge boundary", () => {
     }
   });
 
-  it("documents REV2 widening chrome, trigger and caps in this tool's own terms", () => {
+  it("documents R4 widening chrome, trigger and caps in this tool's own terms", () => {
     const retiredClaims = [
       "ast symbol",
       "markdown heading",
@@ -68,6 +68,9 @@ describe("lens bridge boundary", () => {
       expect(text, file).toContain("24");
       expect(text, file).toContain("80");
       expect(text, file).toContain("40");
+      expect(text, file).toContain("->");
+      expect(text, file).toContain("(section <extent>)");
+      expect(text, file).toContain("verbatim");
       expect(text, file).toContain("[widened N windows:");
       for (const claim of retiredClaims) {
         expect(text.toLowerCase(), `${file} still claims "${claim}"`).not.toContain(claim);
