@@ -10,9 +10,9 @@
  * expansion attempt — applied or refused — appends a record, so the file stays proportional to the
  * feature's use instead of every tool call.
  *
- * WHY the first record of a session carries `rung`: until the config ladder lands (#213) the only
- * rung is `default`, and recording it once per session makes the effective policy visible without
- * repeating it on every line. Later records omit it.
+ * WHY the first record of a session carries `rung`: recording the resolved ladder source once per
+ * session makes the effective policy visible without repeating it on every line. Later records omit
+ * it. The rung is required, so a new caller cannot silently stamp the wrong value.
  *
  * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
  * that already served its rows into a failed call.
@@ -20,15 +20,13 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "../config-dir.js";
+import type { ConfigRung } from "../json-config.js";
 
 /** Fixed file name inside `stateRoot()`; exported so tests and status readers agree on it. */
 export const READ_EXPANSION_LOG_NAME = "read-expansion.log";
 
 /** One rotated generation, matching the diagnostics sink's ceiling. */
 export const READ_EXPANSION_LOG_MAX_BYTES = 1024 * 1024;
-
-/** The only rung until #213 adds the environment/project/global ladder. */
-const DEFAULT_EXPANSION_RUNG = "default";
 
 interface ReadExpansionWindow {
   readonly startLine: number;
@@ -69,13 +67,12 @@ let rungRecordedSessions = new Set<string>();
 /**
  * Append one attempt. Never throws: a lost audit record must not fail the read.
  *
- * `sessionKey` scopes the first-record rung marker; `rung` is where #213 will pass the resolved
- * ladder value, and stays `default` until that ticket lands.
+ * `sessionKey` scopes the first-record rung marker; `rung` is the resolved ladder source.
  */
 export function recordReadExpansion(
   entry: ReadExpansionLogEntry,
   sessionKey: string,
-  rung: string = DEFAULT_EXPANSION_RUNG,
+  rung: ConfigRung,
 ): void {
   try {
     const includeRung = !rungRecordedSessions.has(sessionKey);

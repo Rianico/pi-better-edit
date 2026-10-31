@@ -20,6 +20,13 @@ import {
   saveBashViewConfig,
   type BashViewMode,
 } from "../../bash-view-config.js";
+import {
+  READ_EXPANSION_ENV_VAR,
+  readReadExpansionConfig,
+  resolveReadExpansionModeWithSource,
+  saveReadExpansionConfig,
+  type ReadExpansionMode,
+} from "../../read-expansion-config.js";
 import { resolveBashMultiFileSettingsWithSources } from "../../bash-multifile-config.js";
 import type { ConfigScope } from "../../json-config.js";
 import {
@@ -81,6 +88,17 @@ function bashViewLine2(cwd: string): string {
  * names each cap's rung, because a display that showed the effective numbers without their source
  * would hide which file to edit.
  */
+function readExpansionLine2(cwd: string): string {
+  const effective = resolveReadExpansionModeWithSource(cwd);
+  const config = readReadExpansionConfig(cwd);
+  const line =
+    `Effective: ${effective.value} (source: ${effective.source}) ` +
+    `\u2022 Global: ${config.global ?? "unset"} \u2022 Env: ${envDisplay(process.env[READ_EXPANSION_ENV_VAR])}`;
+  return effective.source === "env"
+    ? `\u26a0\ufe0f Overridden by ${READ_EXPANSION_ENV_VAR} \u2022 ${line}`
+    : line;
+}
+
 function multiFileLine(cwd: string): string {
   const caps = resolveBashMultiFileSettingsWithSources(cwd);
   return (
@@ -142,6 +160,13 @@ export class SettingsOverlay extends Container {
         values: ["on", "off"],
       },
       {
+        id: "read-expansion",
+        label: "Read expansion",
+        description: `Read window expansion switch\n${readExpansionLine2(this.cwd)}`,
+        currentValue: resolveReadExpansionModeWithSource(this.cwd).value,
+        values: ["on", "off"],
+      },
+      {
         id: "store",
         label: "Store janitor",
         description: `Store janitor sweep switch\n${storeLine2(this.cwd)}`,
@@ -197,6 +222,12 @@ export class SettingsOverlay extends Container {
       this.refreshRow("bash-view");
       return;
     }
+    if (id === "read-expansion" && (newValue === "on" || newValue === "off")) {
+      const mode: ReadExpansionMode = newValue;
+      saveReadExpansionConfig(mode, this.scope, this.cwd);
+      this.refreshRow("read-expansion");
+      return;
+    }
     if (id === "store" && (newValue === "on" || newValue === "off")) {
       saveStoreJanitorConfig({ mode: newValue }, this.scope, this.cwd);
       this.refreshRow("store");
@@ -214,6 +245,10 @@ export class SettingsOverlay extends Container {
       const effective = resolveBashViewModeWithSource(this.cwd);
       this.list.updateValue(id, effective.value);
       item.description = `Bash view interception switch\n${bashViewLine2(this.cwd)}\n${multiFileLine(this.cwd)}`;
+    } else if (id === "read-expansion") {
+      const effective = resolveReadExpansionModeWithSource(this.cwd);
+      this.list.updateValue(id, effective.value);
+      item.description = `Read window expansion switch\n${readExpansionLine2(this.cwd)}`;
     } else if (id === "store") {
       const effective = resolveStoreJanitorSettingsWithSources(this.cwd);
       this.list.updateValue(id, effective.mode.value);
@@ -231,6 +266,7 @@ export class SettingsOverlay extends Container {
     }
     this.refreshRow("lens");
     this.refreshRow("bash-view");
+    this.refreshRow("read-expansion");
     this.refreshRow("store");
   }
 }

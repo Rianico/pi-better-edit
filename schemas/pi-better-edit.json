@@ -23,6 +23,13 @@
       },
       "additionalProperties": true
     },
+    "read": {
+      "type": "object",
+      "properties": {
+        "expansion": { "type": "string", "enum": ["on", "off"], "default": "on" }
+      },
+      "additionalProperties": true
+    },
     "bash": {
       "type": "object",
       "properties": {

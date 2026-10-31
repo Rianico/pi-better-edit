@@ -43,7 +43,7 @@ import {
   upsertSnapshotsFor,
 } from "./snapshot-store";
 import { lineHashes } from "./hashline/hash-identity.js";
-import { reportDiagnostic } from "./diagnostics.js";
+import { reportDiagnostic, reportWarning } from "./diagnostics.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import {
   applyExpansions,
@@ -59,6 +59,7 @@ import {
   type WidenedBlock,
 } from "./read-expansion/span-expansion.js";
 import { recordReadExpansion, type ReadExpansionLogEntry } from "./read-expansion/audit.js";
+import { resolveReadExpansionModeWithSource } from "./read-expansion-config.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -502,7 +503,18 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: or dispatches on render mode. The 80/80/40 caps bound expansion; SERVED_MAX_LINES
           // WHY: sizes the served admission, never the widening decision.
           let expandedRead: ExpandedRead | undefined;
-          if (spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0) {
+          const readExpansion =
+            spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0
+              ? resolveReadExpansionModeWithSource(cwd, (reason) =>
+                  reportWarning("read-expansion", reason),
+                )
+              : undefined;
+          if (
+            spanProvider !== undefined &&
+            readExpansion?.value === "on" &&
+            plan.windows !== undefined &&
+            plan.windows.length > 0
+          ) {
             const folded = foldWindows(plan.windows);
             const needsText = folded.some((group) => group.window.limit <= TRIGGER_MAX);
             let totalLines = 0;
@@ -544,6 +556,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               recordReadExpansion(
                 auditEntryFor(decision, group, target.file, mode),
                 auditSessionKey,
+                readExpansion.source,
               );
             }
             const servedWindows = plan.windows.map((window) => {
