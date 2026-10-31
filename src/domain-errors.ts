@@ -101,7 +101,7 @@ export interface ServedRow {
 
 // WHY: user-facing diagnosis carried as `details.cause` on range-family
 // WHY: rejections. Never a model remedy: the code alone selects the retry.
-// WHY: Values are CONTEXT.md glossary terms.
+// WHY: Values are GLOSSARY.md glossary terms.
 export type RangeCause =
   | "retirement"
   | "never-served"

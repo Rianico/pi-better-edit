@@ -25,9 +25,8 @@
  * (`ServedVerification`, `verifyServedRange`) served only the library-level seam — a caller with a
  * served mirror and no lease source — and had no live caller, so it is retired (#10).
  *
- * CONTEXT.md terms preserved: serve, served state, served span, served-range
- * staleness, never-served, reject-and-serve, drift, orphaned serve, orphaning
- * re-serve, relocated line keeps its hash.
+ * GLOSSARY.md terms preserved: serve, served state, served span, served-range
+ * staleness, never-served, reject-and-serve, drift.
  */
 import { HASH_LEN, HASH_RE } from "../hashline/alphabet.js";
 import { HASH_SEP } from "../hashline/hash-identity.js";
@@ -404,7 +403,7 @@ export interface ResolvedRange {
  * WHY: evidence it judges is a served row, so the module that renders served rows also owns the
  * WHY: gates that read them. Callers keep passing every input explicitly (no session handle).
  *
- * CONTEXT.md served hash echo, ADR-0009 revision 2026-09-15: a candidate line
+ * GLOSSARY.md served hash echo: a candidate line
  * triggers only with evidence — it begins (after one optional leading `+`,
  * `-`, or space diff marker) with an anchor served for this session and path
  * at any position, AND the remainder reproduces the served content for that

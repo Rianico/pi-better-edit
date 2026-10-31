@@ -22,7 +22,7 @@ This specification unifies search and read into a cohesive, deterministic, line-
 
 ## 2. P3.1 ADR-0033 Documentation Amendment
 
-Before merging, `docs/adr/0033-bash-view-interception.md` will be amended to eliminate documentation drift:
+Before merging, `docs/.archive_adrs/0033-bash-view-interception.md` will be amended to eliminate documentation drift:
 - **Status Header**: Record amendment notice referencing commit `7b78278`.
 - **Decision 1 (D1)**: Record semicolon-separated silent prefix chains (`isSemicolonStatementChain` with literal `;` separation and pre-view literal `cd <dir>;` re-basing).
 - **Decision 9 (D9)**: Replace CRLF/BOM fail-closed wording with symmetric normalization (`toLF(stripBOM(stdoutText))` compared against `joinedSlice`).

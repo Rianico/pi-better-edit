@@ -154,44 +154,9 @@ const HISTORICAL_BASELINE_POLICY = {
     "delete an entry when its file no longer quotes every declared retired code; retire the baseline when no entries remain",
 };
 
-const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [
-  {
-    file: "docs/adr/0009-bounded-hash-echo-guard.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-  {
-    file: "docs/adr/0010-user-facing-drift-signals.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-  {
-    file: "docs/adr/0014-user-model-audience.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-  {
-    file: "docs/adr/0015-named-object-edit-payload.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-  {
-    file: "docs/adr/0018-region-scoped-rejection-serves.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-  {
-    file: "docs/adr/0019-malformed-code-rename.md",
-    retiredCodes: ["E_SERVED_ECHO"],
-    retiredBy: "docs/adr/0019-malformed-code-rename.md",
-    replacedBy: ["E_SUSPICIOUS_TEXT"],
-  },
-];
+// Retired per HISTORICAL_BASELINE_POLICY.removalCondition when 0001-0050 were archived:
+// no active files in docs/adr/ quote the retired codes.
+const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [];
 
 function baselineByFile(): Map<string, HistoricalBaselineEntry> {
   return new Map(HISTORICAL_BASELINE.map((entry) => [entry.file, entry]));

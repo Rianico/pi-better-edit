@@ -1,7 +1,7 @@
 /**
  * SAFETY: ServedSession types — typed boundary for the deep session seam.
  *
- * Vocabulary: served state, session, drift, drift notice, anchor — see CONTEXT.md.
+ * Vocabulary: served state, session, drift, drift notice, anchor — see GLOSSARY.md.
  * Keeps fact authority (what this session saw) inside the module.
  */
 

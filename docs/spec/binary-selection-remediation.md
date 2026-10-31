@@ -1,7 +1,7 @@
 # Proposal: Binary Selection Remediation & Merits Comparison (A vs C vs B)
 
 **Ticket**: `ad-null-optional`  
-**Status**: ADOPTED — Option C, owner-approved 2026-10-10; see [ADR-0036](../adr/0036-optional-wire-fields-declared-nullable.md).  
+**Status**: ADOPTED — Option C, owner-approved 2026-10-10; see [ADR-0036](../.archive_adrs/0036-optional-wire-fields-declared-nullable.md).  
 **Target Files (if approved)**: `src/payload-contract.ts`, `prompts/edit.md`, `prompts/edit-guidelines.md`, `test/tools/edit.wire-contract.test.ts`  
 **Related Specs**: `docs/agents/refining-tool-prompts.md`, `AGENTS.md`
 
@@ -55,7 +55,7 @@ What #67 and #75 *reported* is mechanical, not causal: #67 shows a model emittin
 To maximize structural clarity, remediation messages should explicitly present a **binary field choice** (`text` field vs `text_ref` field):
 
 ### 2.1 Both Fields Present (`hasText && hasRef`)
-In [`src/payload-contract.ts:328-333`](file:///Users/zhengxk/development/ai/pi-better-edit/src/payload-contract.ts#L328-L333):
+In [`src/payload-contract.ts:328-333`](../../src/payload-contract.ts#L328-L333):
 
 ```ts
 // Proposed formulation:
@@ -65,7 +65,7 @@ In [`src/payload-contract.ts:328-333`](file:///Users/zhengxk/development/ai/pi-b
 ```
 
 ### 2.2 Neither Field Present (`!hasText && !hasRef`)
-In [`src/payload-contract.ts:342-345`](file:///Users/zhengxk/development/ai/pi-better-edit/src/payload-contract.ts#L342-L345):
+In [`src/payload-contract.ts:342-345`](../../src/payload-contract.ts#L342-L345):
 
 ```ts
 // Proposed formulation:
@@ -78,7 +78,7 @@ In [`src/payload-contract.ts:342-345`](file:///Users/zhengxk/development/ai/pi-b
 
 ## 3. Prompt Surfaces & Exact Character Budget
 
-Per [`docs/agents/refining-tool-prompts.md`](file:///Users/zhengxk/development/ai/pi-better-edit/docs/agents/refining-tool-prompts.md), prompt modifications must be measured directly in the runtime environment rather than estimated.
+Per [`docs/agents/refining-tool-prompts.md`](../agents/refining-tool-prompts.md), prompt modifications must be measured directly in the runtime environment rather than estimated.
 
 ### 3.1 Measured Runtime Length for `EDIT_DESCRIPTION`
 The description is capped at **800 characters** by `test/core/gemma-tool-calling.test.ts:39`.
@@ -94,7 +94,7 @@ Measured runtime string lengths (evaluated with `HASH_LEN = 4`):
   - **Headroom**: **34 characters margin** below the 800-character ceiling.
 
 ### 3.2 Guidelines Polish (`EDIT_GUIDELINES`)
-In [`src/payload-contract.ts:186`](file:///Users/zhengxk/development/ai/pi-better-edit/src/payload-contract.ts#L186):
+In [`src/payload-contract.ts:186`](../../src/payload-contract.ts#L186):
 ```ts
 `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; choose exactly one payload field per item: the "text" field OR the "text_ref" field, plus optional \`at\`; providing both fields or omitting both fields is refused (a null in an optional field — \`text\`, \`text_ref\`, \`at\`, the top-level \`mode\`, \`text_ref.file\` — reads as absent; a null in a required one — \`file\`, \`edits\`, any anchor, or \`text_ref.mode\` — is refused).`,
 ```

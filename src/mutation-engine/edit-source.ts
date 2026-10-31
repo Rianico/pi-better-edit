@@ -2,7 +2,7 @@
  * SAFETY: Edit-source owner — the load/lease boundary of the mutation
  * pipeline: reading the file into the normalized edit view, building the
  * read-only lease identity source, and the session-key admission check.
- * Vocabulary (CONTEXT.md): serve, served state, lease, span — preserved.
+ * Vocabulary (GLOSSARY.md): serve, served state, lease, span — preserved.
  */
 
 import { readNormFile } from "../file-reader.js";

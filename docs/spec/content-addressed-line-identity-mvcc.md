@@ -10,7 +10,7 @@ Supersedes: ADR-0008 (heuristic canon healing / `tryHealOrphanedSpan`), ADR-0013
 
 Fixes: Upstream P0 (§2), Downstream #61 (silent miswrite on duplicate canons), Downstream #62 (anchor reshuffle). Anchor space exhaustion (`E_LARGE_FILE`) is decoupled and tracked in its own dedicated issue (§8).
 
-> [!note] Anchor literals below are recorded **width-3** examples: §2 was reproduced on `pi-better-edit` 1.7.0 @ `9c2538d`, and the normative fixtures are unchanged from that revision. Anchors widened to **4 characters** in [ADR-0030](../adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the measurements; no example asserts the live width.
+> [!note] Anchor literals below are recorded **width-3** examples: §2 was reproduced on `pi-better-edit` 1.7.0 @ `9c2538d`, and the normative fixtures are unchanged from that revision. Anchors widened to **4 characters** in [ADR-0030](../.archive_adrs/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the measurements; no example asserts the live width.
 
 ---
 
@@ -787,7 +787,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 
 ## 9. Specification Delta — Revision 25 Normative Specification (Stale-Identity Rejection)
 
-Status: **Adopted & Normative** — implements [ADR-0018](../adr/0018-region-scoped-rejection-serves.md) and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md) (derived from the 2026-09-15 session triage). Where this section contradicts earlier sections, this section is normative. Supporting historical records: [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
+Status: **Adopted & Normative** — implements [ADR-0018](../.archive_adrs/0018-region-scoped-rejection-serves.md) and [ADR-0020](../.archive_adrs/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md) (derived from the 2026-09-15 session triage). Where this section contradicts earlier sections, this section is normative. Supporting historical records: [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
 
 ### 9.1 Defect
 
@@ -824,7 +824,7 @@ Rows for `E_STALE_ANCHOR` (content-placeable), never-served interiors (now `E_ST
 
 ### 9.5 Decision record required
 
-ADR-0016's *Consequences* states that a retired anchor "is recoverable only by a re-read (or by `reject-and-serve`'s served rows)". The parenthetical must be **deleted** (not narrowed): target-lost recovery is always a re-read. This is written as [`../../docs/adr/0018-region-scoped-rejection-serves.md`](../../docs/adr/0018-region-scoped-rejection-serves.md) (status `proposed`), which leaves ADR-0016's Decision intact — no non-leasing serve is introduced — and records the region rule plus the derivable-rows oracle. `CONTEXT.md` gains the term **target-lost rejection**; the previously floated **context serve** term is dropped, since D1 renders no rows at all.
+ADR-0016's *Consequences* states that a retired anchor "is recoverable only by a re-read (or by `reject-and-serve`'s served rows)". The parenthetical must be **deleted** (not narrowed): target-lost recovery is always a re-read. This is written as [`../../docs/.archive_adrs/0018-region-scoped-rejection-serves.md`](../../docs/.archive_adrs/0018-region-scoped-rejection-serves.md) (status `proposed`), which leaves ADR-0016's Decision intact — no non-leasing serve is introduced — and records the region rule plus the derivable-rows oracle. `CONTEXT.md` gains the term **target-lost rejection**; the previously floated **context serve** term is dropped, since D1 renders no rows at all.
 
 ### 9.6 Acceptance
 

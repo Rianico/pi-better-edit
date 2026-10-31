@@ -1,7 +1,7 @@
 # Compact JSON Edit Payload Specification
 
-**Status:** superseded by [ADR-0007](../adr/0007-merged-edit-payload-hoisted-path.md)
-**Decision:** [ADR-0006](../adr/0006-compact-json-edit-payload.md) — see [merged-edit-payload.md](merged-edit-payload.md) for the current contract.
+**Status:** superseded by [ADR-0007](../.archive_adrs/0007-merged-edit-payload-hoisted-path.md)
+**Decision:** [ADR-0006](../.archive_adrs/0006-compact-json-edit-payload.md) — see [merged-edit-payload.md](merged-edit-payload.md) for the current contract.
 
 ## Goal
 

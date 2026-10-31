@@ -3,7 +3,7 @@
  *
  * Keeps fact authority (what this session saw) inside the module. Callers get a
  * handle bound to (sessionKey, path); all storage details (sessionKey threading,
- * withStore batching, patchServed orphan healing, truncation, reported-set, TTL)
+ * withStore batching, patchServed orphan healing (mirror-slot repair, unrelated to the retired heal-the-twin behavior), truncation, reported-set, TTL)
  * stay private — not part of the handle's interface. Adapter seam: HashStore
  * is injected (SQLite in prod, MemoryStore in tests) — local-substitutable.
  */
