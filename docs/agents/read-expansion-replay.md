@@ -36,13 +36,16 @@ Each corpus is parsed from pi's session records: assistant `toolCall` entries ar
 - **Same-file re-read share** — among served reads of a language's files, the share followed by
   another successful read of the same canonical path within the next three tool calls. The window is
   the three tool calls immediately after the source read; other tools count toward it.
+  The numerator counts any successful later `read` of the same path, so a served read followed by a verbatim read still counts as a re-read; only denominator reads are served-mode.
 - **Waste** — served lines parsed from the anchored `HASH│content` rows of each read result. A
   served line is touched when a later edit's anchor range (including `text_ref`) or a later
   `around_anchor` read resolves to it in the same file. `waste share = (served lines − touched
   lines) / served lines`. A line served by two reads counts in both records; a later touch marks
   each record it covers.
+  Audit-log writes (`read-expansion.log`) never count as touches: the touch scan walks only `toolCall` events.
 - Languages come from file extensions (`.ts`/`.tsx` → `typescript`, `.py` → `python`, `.md` →
   `markdown`, and so on). Unknown extensions are reported as `unknown` but never gated.
+  A retired multi-file read shape attributes to its first file (`files[0]`); while `read` keeps its `files?.[0]` tolerance, this has no corpus impact.
 
 ## Gate
 
@@ -51,7 +54,7 @@ Binding D24 overlay:
 - At least **200** candidate served-mode reads for the language.
 - At least a **20% relative fall** in same-file re-read share:
   `(baseline − candidate) / baseline >= 0.20`.
-- Served-line waste must **not rise**: `candidate waste share <= baseline waste share`.
+- Served-line waste must **not rise**: `candidate waste share <= baseline waste share` (the report compares `wasteDelta <= 1e-12`).
 
 Below 200 candidate reads the verdict is `insufficient-sample` and the waste metric alone decides:
 `decision: "accept-on-waste"` when waste does not rise, `"reject-on-waste"` otherwise. A language is
