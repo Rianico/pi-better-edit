@@ -59,7 +59,12 @@ import { isBusyError, markRun, due, withBusyRetry } from "./store-kernel/index.j
 import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-kernel/settings.js";
 import type { ConfigOnWarn } from "./json-config.js";
 import { VACUUM_RETIRED_PIN_MS } from "./snapshot-store";
-import { reportDiagnostic } from "./diagnostics.js";
+import { diagnosticsLogPath, reportDiagnostic, reportInfo, reportWarning } from "./diagnostics.js";
+import {
+  JANITOR_WARNING_PREFIX,
+  formatJanitorWarning,
+  type JanitorWarning,
+} from "./store-janitor-warning.js";
 
 /**
  * The `meta` key recording when the janitor last ran — the janitor's OWN row, exactly as the stamp
@@ -322,13 +327,21 @@ function pragmaNumber(db: DatabaseSync, sql: string): number {
  * it: if a rival writer holds the store the pass returns `busy` and the next maintenance pass
  * retries. The VACUUM itself is not interruptible once started (SQLite owns it); the janitor never
  * runs on the tool path, so a tool call never triggers this rewrite, and the store's existing busy
- * budget covers a concurrent writer for the duration. Any failure is reported through the outcome
- * and the log and never thrown out of a lifecycle hook.
+ * budget covers a concurrent writer for the duration. Any failure is reported through the OUTCOME
+ * and never thrown out of a lifecycle hook.
+ *
+ * WHY this function writes NOTHING itself — neither console nor log: a console call here cannot see
+ * the per-event surface map, so it would print on `session_shutdown` too, where the console is
+ * already torn down (#199). The warning pipeline renders this outcome on the surface its event owns,
+ * and the record it writes carries the reason and the error text.
  */
 function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome {
   // WHY: VACUUM cannot run inside a transaction. The janitor runs in autocommit, so this is a
   // WHY: defensive deferral for a caller that hands in a transaction, not an expected path.
-  if ((db as unknown as { isTransaction?: boolean }).isTransaction === true) {
+  // SAFETY: node:sqlite exposes `isTransaction` at runtime although DatabaseSync's public type omits it;
+  // SAFETY: a missing flag reads as autocommit, which is the janitor's own normal state.
+  const inTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
+  if (inTransaction) {
     return { ran: false, reason: "in-transaction", freeBytesBefore: 0, reclaimedBytes: 0 };
   }
   const pageSize = pragmaNumber(db, "PRAGMA page_size");
@@ -352,12 +365,8 @@ function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome
     db.exec("VACUUM");
   } catch (error) {
     if (isBusyError(error)) {
-      console.info(
-        `[store-janitor] compaction deferred: store busy (${freeBytesBefore} bytes reclaimable)`,
-      );
       return { ran: false, reason: "busy", freeBytesBefore, reclaimedBytes: 0 };
     }
-    console.error("[store-janitor] store compaction failed:", error);
     return {
       ran: false,
       reason: "failed",
@@ -370,16 +379,13 @@ function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome
       db.exec(`PRAGMA busy_timeout = ${previousTimeout}`);
     } catch (error) {
       // SAFETY: best-effort restore — the compaction outcome is authoritative, and the next open
-      // SAFETY: re-applies the store's own busy timeout.
-      console.error("[store-janitor] failed to restore busy timeout:", error);
+      // SAFETY: re-applies the store's own busy timeout. Log-only, never the console: this catch is
+      // SAFETY: reachable from the shutdown surface, where the console is already torn down (#199).
+      reportDiagnostic("store-janitor", "[store-janitor] failed to restore busy timeout:", error);
     }
   }
   const pagesAfter = pragmaNumber(db, "PRAGMA page_count");
   const reclaimedBytes = Math.max(0, (pagesBefore - pagesAfter) * pageSize);
-  console.info(
-    `[store-janitor] compacted store: reclaimed ${reclaimedBytes} bytes ` +
-      `(${pagesBefore} -> ${pagesAfter} pages of ${pageSize})`,
-  );
   return { ran: true, freeBytesBefore, reclaimedBytes };
 }
 
@@ -423,8 +429,79 @@ export interface JanitorHookDeps {
 }
 
 /**
- * Wire the janitor to `JANITOR_EVENTS`. Both handlers are the same best-effort pass: a failure is
- * reported to stderr and swallowed, because the session's own work must not fail with maintenance.
+ * WHERE one event's warning may appear. `session_start` runs while the session is live, so the
+ * operator sees the console; `session_shutdown` runs as the runtime tears that console down, so only
+ * the log survives. Modelled as a value because "which surface" is the whole rule, and a boolean
+ * would leave a reader to infer it from the event name.
+ */
+type JanitorWarningSurface = "console" | "log";
+
+/** The surface each wired event publishes on. Keyed by the tuple, so a new event cannot be silent. */
+const WARNING_SURFACE_BY_EVENT: Record<(typeof JANITOR_EVENTS)[number], JanitorWarningSurface> = {
+  session_start: "console",
+  session_shutdown: "log",
+};
+
+/**
+ * Render one run's warning and publish it on `surface`. The TRIGGER is not re-derived here: the
+ * formatter owns "did anything observable happen" (#197), so `null` is the only decision left — and
+ * it means write nothing, on either surface.
+ *
+ * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and a
+ * module that read the state root itself could not be tested without one. Resolving it at the call
+ * site also means the damaged-store shape points at the file this process is actually writing.
+ *
+ * WHY the level picks the sink helper (`reportInfo` / `reportWarning`) rather than `reportDiagnostic`:
+ * that one writes level `error`, and a routine cleanup filed as an error would make the log's
+ * severity column lie about the run it describes.
+ */
+function publishJanitorWarning(outcome: JanitorOutcome, surface: JanitorWarningSurface): void {
+  const warning = formatJanitorWarning(outcome, { logPath: diagnosticsLogPath() });
+  if (warning === null) return;
+  if (surface === "console") printJanitorWarning(warning);
+  const report = warning.level === "info" ? reportInfo : reportWarning;
+  // WHY: one record joined by newlines — the damaged-store lines stay separate so a reader can quote
+  // WHY: one alone, and a JSONL record escapes the breaks while keeping every line intact.
+  report("store-janitor", recordBody(outcome, warning));
+}
+
+/**
+ * The record body: the rendered lines, plus — for a FAILED compaction only — the exception's own
+ * message. WHY the extra line: the rendered shape points at this log for details, so the log must
+ * carry them; WHY only here and not on the console: the console line stays short because the
+ * exception text is diagnostic evidence, not operator prose.
+ */
+function recordBody(outcome: JanitorOutcome, warning: JanitorWarning): string {
+  const error = outcome.compacted.reason === "failed" ? outcome.compacted.error : undefined;
+  return [
+    ...warning.lines,
+    ...(error === undefined ? [] : [`${JANITOR_WARNING_PREFIX} Error: ${error}`]),
+  ].join("\n");
+}
+
+/**
+ * The console half, which only `session_start` has. `warn` goes to `console.error` because that is
+ * this repo's console habit for an operator-visible problem (`console.warn` appears nowhere in
+ * `src/`); the severity that matters is the diagnostic record's, not which fd the line lands on.
+ *
+ * Never throws: the session's own work must not fail because a surface refused a warning, and a
+ * console the host has already detached is exactly the shutdown case this module must survive.
+ */
+function printJanitorWarning(warning: JanitorWarning): void {
+  try {
+    for (const line of warning.lines) {
+      if (warning.level === "info") console.info(line);
+      else console.error(line);
+    }
+  } catch {
+    // SAFETY: best-effort notice — the diagnostics record written next is the surface that survives.
+  }
+}
+
+/**
+ * Wire the janitor to `JANITOR_EVENTS`. Both handlers run the same best-effort pass and differ only in
+ * where they publish its warning: a failure is reported to the log and swallowed, because the
+ * session's own work must not fail with maintenance.
  *
  * WHY `session_shutdown` is wired even though the runtime is being torn down: on `quit` the exit path
  * still runs `shutdownDb` (the WAL checkpoint's single owner), and the pass itself is synchronous
@@ -439,13 +516,14 @@ export function registerJanitorHooks(
     runJanitor: () => janitorPass(),
     ...overrides,
   };
-  const onEvent = async (): Promise<void> => {
+  const handlerFor = (surface: JanitorWarningSurface) => async (): Promise<void> => {
     try {
-      await deps.runJanitor();
+      publishJanitorWarning(await deps.runJanitor(), surface);
     } catch (error) {
       // SAFETY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
       // SAFETY: (every step is idempotent and its own work is its own throttle record), so the
-      // SAFETY: session continues and the next lifecycle event retries.
+      // SAFETY: session continues and the next lifecycle event retries. The publish step itself
+      // SAFETY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };
@@ -456,6 +534,6 @@ export function registerJanitorHooks(
     .on;
   for (const event of JANITOR_EVENTS) {
     // SAFETY: narrowed to the handler signature the widened `on` above declares.
-    register.call(pi, event, onEvent);
+    register.call(pi, event, handlerFor(WARNING_SURFACE_BY_EVENT[event]));
   }
 }
