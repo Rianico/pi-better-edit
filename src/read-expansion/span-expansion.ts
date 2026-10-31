@@ -409,7 +409,17 @@ export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: Lin
   if (blocks.length === 0) return [];
   const totalRequested = blocks.reduce((count, block) => count + block.requested.length, 0);
   if (totalRequested > 3) {
-    const ranges = blocks.map((block) => fmtRange(block.served)).join(", ");
+    const ranges = blocks
+      .map((block) => {
+        const extent =
+          block.section !== undefined &&
+          (block.section.startLine !== block.served.startLine ||
+            block.section.endLine !== block.served.endLine)
+            ? ` (section ${fmtRange(block.section)})`
+            : "";
+        return `${fmtRange(block.served)}${extent}`;
+      })
+      .join(", ");
     return [`[widened ${totalRequested} windows: ${ranges}]`];
   }
   return blocks.map((block) => {
