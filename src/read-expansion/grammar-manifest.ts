@@ -47,6 +47,12 @@ export const GRAMMAR_MANIFEST: GrammarManifest = {
     url: "https://github.com/tree-sitter/tree-sitter-go/releases/download/v0.25.0/tree-sitter-go.wasm",
     sha256: "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
   },
+  rust: {
+    language: "rust",
+    version: "0.24.2",
+    url: "https://github.com/tree-sitter/tree-sitter-rust/releases/download/v0.24.2/tree-sitter-rust.wasm",
+    sha256: "24c89bd9252255e4aebbcbd7d2d308bd92c86dd95a130fdc80efa49577b8d738",
+  },
 };
 
 const LANGUAGE_BY_EXTENSION = new Map([
@@ -56,6 +62,7 @@ const LANGUAGE_BY_EXTENSION = new Map([
   [".tsx", "tsx"],
   [".py", "python"],
   [".go", "go"],
+  [".rs", "rust"],
 ]);
 
 /** The manifest entry for a source path, or undefined when no grammar is supported yet. */

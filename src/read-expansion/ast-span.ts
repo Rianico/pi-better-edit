@@ -50,6 +50,8 @@ export type GrammarLanguageLoader = (bytes: Uint8Array) => Promise<GrammarHandle
  */
 const SCOPE_TYPES = new Set([
   "function_declaration",
+  "function_item",
+  "function_signature_item",
   "function_signature",
   "function_expression",
   "generator_function",
