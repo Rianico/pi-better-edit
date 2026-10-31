@@ -45,4 +45,10 @@ describe("read expansion boundary", () => {
       }
     }
   });
+
+  it("keeps expansion independent of SERVED_MAX_LINES", () => {
+    for (const file of sources(EXPANSION_DIR)) {
+      expect(readFileSync(file, "utf-8"), file).not.toContain("SERVED_MAX_LINES");
+    }
+  });
 });

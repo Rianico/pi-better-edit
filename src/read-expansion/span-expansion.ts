@@ -1,12 +1,12 @@
 /**
  * Read expansion — the one seam between `read` and any boundary parser.
  *
- * `read` folds the requested windows, asks a provider for the structural block enclosing each
+ * `read` folds the requested windows, requests the structural block enclosing each
  * folded span, and this module owns every invariant that makes the answer safe to serve:
  *
  * - the widened window is a superset of the requested window;
  * - it never exceeds the cap for its source (80 code, 80 Markdown, 40 plain text);
- * - Markdown is the one clamp: an over-cap section serves a cap-sized window containing the ask and
+ * - Markdown is the one clamp: an over-cap section serves a cap-sized window containing the
  *   names the full section extent; code and plain text are refused instead;
  * - only a folded requested span at or below `TRIGGER_MAX` is a candidate;
  * - overlapping or adjacent answers become one ascending run, so every row is served once;
@@ -67,7 +67,7 @@ export const TRIGGER_MAX = 24;
 /** Code scopes may widen to a function or method; this ceiling is refused, never clamped. */
 export const SPAN_CAP_CODE = 80;
 
-/** Markdown sections clamp to the first cap-sized window that still contains the ask. */
+/** Markdown sections clamp to a cap-sized window that still contains the requested window. */
 export const SPAN_CAP_MARKDOWN = 80;
 
 /** Plain-text paragraphs refuse above their smaller ceiling. */
@@ -98,16 +98,16 @@ interface RefusedBoundary {
   source?: SpanSource;
 }
 
-/** One widening: the served window plus the full structural extent and every asked range. */
+/** One widening: the served window plus the full structural extent and every requested window. */
 export interface Expansion {
   /** The window the read will walk; for a Markdown clamp this is the cap-sized slice. */
   window: OffsetWindow;
-  /** The boundary identity, the full extent, and the requested ranges it answered. */
+  /** The boundary identity, the full extent, and the requested windows it answered. */
   record: {
     kind: string;
     name: string;
     source: SpanSource;
-    asked: LineRange[];
+    requested: LineRange[];
     /** The provider's full block; for Markdown this is the section extent, which may exceed served. */
     span: LineRange;
     /** True only for the Markdown over-cap clamp. */
@@ -120,10 +120,10 @@ export type ExpansionDecision =
   | { outcome: "applied"; expansion: Expansion }
   | ({ outcome: "refused"; reason: RefusalReason } & RefusedBoundary);
 
-/** One merged served run and every asked range it answered. */
+/** One merged served run and every requested window it answered. */
 export interface WidenedBlock {
   served: LineRange;
-  asked: LineRange[];
+  requested: LineRange[];
   kind: string;
   name: string;
   source: SpanSource;
@@ -137,10 +137,10 @@ export interface ExpandedRead {
   blocks: WidenedBlock[];
 }
 
-/** One folded request: the merged span, and the original asks that folded into it. */
+/** One folded request: the merged span, and the original requested windows that folded into it. */
 export interface FoldedWindow {
   window: OffsetWindow;
-  asked: LineRange[];
+  requested: LineRange[];
 }
 
 /** A widened window already validated against the file's visible line count. */
@@ -149,10 +149,10 @@ export interface ExpansionInput {
   file: string;
   /** Total visible lines the read will address. */
   totalLines: number;
-  /** The folded window the provider is asked about. */
+  /** The folded window sent to the provider. */
   window: OffsetWindow;
-  /** The original requested ranges that folded into this window. */
-  asked?: readonly LineRange[];
+  /** The original requested windows that folded into this fold. */
+  requested?: readonly LineRange[];
   provider: SpanProvider;
 }
 
@@ -214,7 +214,7 @@ function isExpandableWindow(window: SpanWindow): boolean {
 /**
  * Fold overlapping or adjacent requested windows before the trigger test.
  *
- * WHY before: the trigger bounds the whole ask, not each probe. Sixteen adjacent 24-line windows
+ * WHY before: the trigger bounds the whole request, not each probe. Sixteen adjacent 24-line windows
  * are one 384-line request and must not expand, or a multi-window call could multiply the cost by
  * the window count.
  */
@@ -225,7 +225,7 @@ export function foldWindows(windows: readonly OffsetWindow[]): FoldedWindow[] {
   return runs.map((run) => {
     const start = run.startLine;
     const end = run.startLine + run.lineCount - 1;
-    const asked = windows
+    const requested = windows
       .filter((window) => window.offset >= start && window.offset + window.limit - 1 <= end)
       .map((window) => ({
         startLine: window.offset,
@@ -234,7 +234,7 @@ export function foldWindows(windows: readonly OffsetWindow[]): FoldedWindow[] {
       .sort((left, right) => left.startLine - right.startLine);
     return {
       window: { offset: start, limit: run.lineCount },
-      asked,
+      requested,
     };
   });
 }
@@ -302,30 +302,30 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
   };
   if (end > totalLines) return refused("invalid_answer", boundary);
 
-  const askedEnd = Math.min(window.offset + window.limit - 1, totalLines);
+  const requestedEnd = Math.min(window.offset + window.limit - 1, totalLines);
   // WHY: the superset invariant — any span that does not cover every addressable requested line is
   // WHY: a wrong answer, and a wrong answer must behave exactly like no answer.
-  if (start > window.offset || end < askedEnd) return refused("not_superset", boundary);
+  if (start > window.offset || end < requestedEnd) return refused("not_superset", boundary);
 
-  const asked = normalizeAsked(
-    input.asked ?? [{ startLine: window.offset, endLine: askedEnd }],
+  const requested = normalizeAsked(
+    input.requested ?? [{ startLine: window.offset, endLine: requestedEnd }],
     totalLines,
   );
   const cap = spanCapFor(source);
   const fullLength = end - start + 1;
   if (fullLength > cap) {
     // WHY: Markdown is the one clamp in the feature (D15): a section above the cap serves a
-    // WHY: cap-sized window that still contains the ask, and the note names the full extent.
+    // WHY: cap-sized window that still contains the requested window, and the note names the full extent.
     if (source !== "md") return refused("over_cap", boundary);
     let servedStart = start;
-    if (askedEnd > servedStart + cap - 1) servedStart = askedEnd - cap + 1;
+    if (requestedEnd > servedStart + cap - 1) servedStart = requestedEnd - cap + 1;
     servedStart = Math.max(start, servedStart);
     const servedEnd = Math.min(servedStart + cap - 1, end);
     return {
       outcome: "applied",
       expansion: {
         window: { offset: servedStart, limit: servedEnd - servedStart + 1 },
-        record: { ...boundary, asked, clamped: true },
+        record: { ...boundary, requested, clamped: true },
       },
     };
   }
@@ -334,13 +334,13 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
     outcome: "applied",
     expansion: {
       window: { offset: start, limit: fullLength },
-      record: { ...boundary, asked },
+      record: { ...boundary, requested },
     },
   };
 }
 
 /**
- * Union the served windows and attach every asked range to the run that serves it.
+ * Union the served windows and attach every requested window to the run that serves it.
  *
  * `windows` is one served candidate per original request: the widened window when that request's
  * folded group applied, or the requested window when it did not. Returns undefined when no group
@@ -369,16 +369,16 @@ export function applyExpansions(
       .sort((left, right) => left.window.offset - right.window.offset);
     const first = inside[0];
     if (first === undefined) continue;
-    const asked = [
+    const requested = [
       ...new Map(
         inside.flatMap((expansion) =>
-          expansion.record.asked.map((range) => [rangeKey(range), range] as const),
+          expansion.record.requested.map((range) => [rangeKey(range), range] as const),
         ),
       ).values(),
     ].sort((left, right) => left.startLine - right.startLine);
     blocks.push({
       served: run,
-      asked,
+      requested,
       kind: first.record.kind,
       name: first.record.name,
       source: first.record.source,
@@ -400,14 +400,14 @@ function quoteLabel(source: SpanSource, kind: string, name: string): string {
 }
 
 /**
- * The model-facing note chrome: `[widened <asked> -> <served>, <label>]`.
+ * The model-facing note chrome: `[widened <requested> -> <served>, <label>]`.
  *
- * Up to three asked ranges name every block; more than three collapse to one line naming the count
+ * Up to three requested windows name every block; more than three collapse to one line naming the count
  * and the served ranges. A Markdown clamp appends the full section extent when it differs.
  */
 export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: LineRange): string[] {
   if (blocks.length === 0) return [];
-  const totalAsked = blocks.reduce((count, block) => count + block.asked.length, 0);
+  const totalAsked = blocks.reduce((count, block) => count + block.requested.length, 0);
   if (totalAsked > 3) {
     const ranges = blocks.map((block) => fmtRange(block.served)).join(", ");
     return [`[widened ${totalAsked} windows: ${ranges}]`];
@@ -415,7 +415,7 @@ export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: Lin
   return blocks.map((block) => {
     const servedEnd =
       blocks.length === 1 && shownRange !== undefined ? shownRange.endLine : block.served.endLine;
-    const asked = block.asked.map(fmtRange).join(", ");
+    const requested = block.requested.map(fmtRange).join(", ");
     const label = quoteLabel(block.source, block.kind, block.name);
     const extent =
       block.section !== undefined &&
@@ -423,6 +423,6 @@ export function expansionNotes(blocks: readonly WidenedBlock[], shownRange?: Lin
         block.section.endLine !== block.served.endLine)
         ? ` (section ${fmtRange(block.section)})`
         : "";
-    return `[widened ${asked} -> ${block.served.startLine}-${servedEnd}, ${label}${extent}]`;
+    return `[widened ${requested} -> ${block.served.startLine}-${servedEnd}, ${label}${extent}]`;
   });
 }

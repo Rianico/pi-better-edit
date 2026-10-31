@@ -1,4 +1,5 @@
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { lineSpanForOffsets } from "../../src/read-expansion/line-arithmetic";
@@ -10,7 +11,13 @@ import {
   type SpanProvider,
   type SpanWindow,
 } from "../../src/read-expansion/span-expansion";
-import { EXPANSION_AUDIT_LOG_NAME, expansionAuditLogPath } from "../../src/read-expansion/audit";
+import {
+  READ_EXPANSION_LOG_MAX_BYTES,
+  READ_EXPANSION_LOG_NAME,
+  readExpansionLogPath,
+  resetReadExpansionLogStateForTests,
+} from "../../src/read-expansion/audit";
+import { SERVED_MAX_LINES } from "../../src/constants";
 import { loadHashStore } from "../../src/hash-store";
 import {
   anchorRows,
@@ -64,12 +71,15 @@ function numbered(count: number): string {
 }
 
 function clearAuditLog(): void {
-  rmSync(expansionAuditLogPath(), { force: true });
+  const path = readExpansionLogPath();
+  rmSync(path, { force: true });
+  rmSync(`${path}.1`, { force: true });
+  resetReadExpansionLogStateForTests();
 }
 
 function auditRecords(): Array<Record<string, unknown>> {
   try {
-    return readFileSync(expansionAuditLogPath(), "utf-8")
+    return readFileSync(readExpansionLogPath(), "utf-8")
       .split("\n")
       .filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -252,7 +262,7 @@ describe("read expansion: the fake-provider seam", () => {
     );
   });
 
-  it("clamps a Markdown ask past the first cap window without losing the ask", async () => {
+  it("clamps a Markdown requested window past the first cap slice without losing it", async () => {
     await withTempFile("markdown-slide.txt", numbered(120), async ({ cwd, path }) => {
       const result = await runRead(
         readerWith(fixedSpan(1, 120, "section", "Language", "md")),
@@ -406,7 +416,7 @@ describe("read expansion: the fake-provider seam", () => {
     });
   });
 
-  it("collapses more than three asked windows to the count-and-ranges note", async () => {
+  it("collapses more than three requested windows to the count-and-ranges note", async () => {
     await withTempFile("union-four.txt", numbered(30), async ({ cwd, path }) => {
       const result = await runRead(readerWith(fiveThroughTwenty), cwd, {
         file: path,
@@ -451,6 +461,51 @@ describe("read expansion: the fake-provider seam", () => {
       ]);
     });
   });
+  it("widens two disjoint 80-line blocks in one call", async () => {
+    const byProbe: SpanProvider = {
+      enclosingSpan: (_file: string, window: SpanWindow) => {
+        if (!("offset" in window)) return null;
+        return window.offset <= 100
+          ? { start: 1, end: 80, kind: "function", name: "first", source: "ast" }
+          : { start: 101, end: 180, kind: "function", name: "second", source: "ast" };
+      },
+    };
+    await withTempFile("two-blocks.txt", numbered(200), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(byProbe), cwd, {
+        file: path,
+        windows: [
+          { offset: 20, limit: 5 },
+          { offset: 120, limit: 5 },
+        ],
+      });
+
+      expect(servedLines(getText(result))).toHaveLength(160);
+      expect(widenedNotes(getText(result))).toEqual([
+        "[widened 20-24 -> 1-80, function first]",
+        "[widened 120-124 -> 101-180, function second]",
+      ]);
+    });
+  });
+
+  it("does not gate expansion on SERVED_MAX_LINES", async () => {
+    await withTempFile(
+      "over-served-cap.txt",
+      numbered(SERVED_MAX_LINES + 1),
+      async ({ cwd, path }) => {
+        const result = await runRead(
+          readerWith(fixedSpan(1, 80, "function", "large", "ast")),
+          cwd,
+          { file: path, windows: [{ offset: 10, limit: 5 }], mode: "verbatim" },
+        );
+        const lines = getText(result).split("\n");
+
+        expect(widenedNotes(getText(result))).toEqual(["[widened 10-14 -> 1-80, function large]"]);
+        expect(lines).toContain("line 1");
+        expect(lines).toContain("line 80");
+        expect(lines).not.toContain("line 81");
+      },
+    );
+  });
 });
 
 describe("read expansion: audit log", () => {
@@ -475,11 +530,11 @@ describe("read expansion: audit log", () => {
       (record) => record["outcome"] === "refused" && record["reason"] === "over_cap",
     );
 
-    expect(expansionAuditLogPath()).toContain(EXPANSION_AUDIT_LOG_NAME);
+    expect(readExpansionLogPath()).toContain(READ_EXPANSION_LOG_NAME);
     expect(applied).toMatchObject({
       mode: "served",
       outcome: "applied",
-      asked: [{ startLine: 10, endLine: 14 }],
+      requested: [{ startLine: 10, endLine: 14 }],
       served: { startLine: 5, endLine: 20 },
       label: "function parseThing",
       kind: "function",
@@ -490,10 +545,12 @@ describe("read expansion: audit log", () => {
       mode: "served",
       outcome: "refused",
       reason: "over_cap",
-      asked: [{ startLine: 50, endLine: 54 }],
+      requested: [{ startLine: 50, endLine: 54 }],
       label: "function flood",
     });
     expect(refused?.["served"]).toBeUndefined();
+    expect(records[0]?.["rung"]).toBe("default");
+    expect(records.slice(1).every((record) => !("rung" in record))).toBe(true);
   });
 
   it("records the verbatim mode on an applied expansion", async () => {
@@ -510,6 +567,43 @@ describe("read expansion: audit log", () => {
       mode: "verbatim",
       outcome: "applied",
     });
+  });
+  it("records a Markdown clamp as applied, never refused", async () => {
+    clearAuditLog();
+    await withTempFile("audit-md.txt", numbered(120), async ({ cwd, path }) => {
+      await runRead(readerWith(fixedSpan(1, 120, "section", "Language", "md")), cwd, {
+        file: path,
+        windows: [{ offset: 20, limit: 5 }],
+      });
+    });
+
+    const records = auditRecords();
+    expect(records.find((record) => record["clamped"] === true)).toMatchObject({
+      mode: "served",
+      outcome: "applied",
+      requested: [{ startLine: 20, endLine: 24 }],
+      served: { startLine: 1, endLine: 80 },
+      section: { startLine: 1, endLine: 120 },
+      clamped: true,
+    });
+    expect(records.some((record) => record["outcome"] === "refused")).toBe(false);
+  });
+
+  it("rotates the log at its size ceiling", async () => {
+    clearAuditLog();
+    const path = readExpansionLogPath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, Buffer.alloc(READ_EXPANSION_LOG_MAX_BYTES + 1, 120));
+
+    await withTempFile("audit-rotate.txt", numbered(30), async ({ cwd, path: file }) => {
+      await runRead(readerWith(fiveThroughTwenty), cwd, {
+        file,
+        windows: [{ offset: 10, limit: 5 }],
+      });
+    });
+
+    expect(existsSync(`${path}.1`)).toBe(true);
+    expect(auditRecords().some((record) => record["outcome"] === "applied")).toBe(true);
   });
 });
 

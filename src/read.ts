@@ -7,7 +7,7 @@ import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
 import type { ServedRow } from "./served-session/serve-render.js";
 import { loadHashStore, type HashStore } from "./hash-store.js";
-import { sessionFromContext } from "./served-session/index.js";
+import { sessionFromContext, sessionKeyFor } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
@@ -58,7 +58,7 @@ import {
   type SpanProvider,
   type WidenedBlock,
 } from "./read-expansion/span-expansion.js";
-import { recordExpansionAudit, type ExpansionAuditEntry } from "./read-expansion/audit.js";
+import { recordReadExpansion, type ReadExpansionLogEntry } from "./read-expansion/audit.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -267,8 +267,8 @@ function auditEntryFor(
   group: FoldedWindow,
   file: string,
   mode: RenderMode,
-): ExpansionAuditEntry {
-  const base = { file, mode, asked: group.asked, outcome: decision.outcome } as const;
+): ReadExpansionLogEntry {
+  const base = { file, mode, requested: group.requested, outcome: decision.outcome } as const;
   if (decision.outcome === "applied") {
     const { window, record } = decision.expansion;
     return {
@@ -498,6 +498,9 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: expansion is mode-independent (D11/D19): served adds leases, verbatim adds none;
           // WHY: both serve the same widened range and note. Fold first, then trigger (D12), then
           // WHY: expand each folded span and union the answers so one row is never served twice.
+          // WHY: D23 placement — this runs after the content load and before `prepareFile` hashes
+          // WHY: or dispatches on render mode. The 80/80/40 caps bound expansion; SERVED_MAX_LINES
+          // WHY: sizes the served admission, never the widening decision.
           let expandedRead: ExpandedRead | undefined;
           if (spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0) {
             const folded = foldWindows(plan.windows);
@@ -522,6 +525,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 );
               }
             }
+            const auditSessionKey = sessionKeyFor(sessionCtx);
             const decisions: ExpansionDecision[] = [];
             for (const group of folded) {
               const decision: ExpansionDecision =
@@ -533,11 +537,14 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                         file: toCwd(target.file, cwd),
                         totalLines,
                         window: group.window,
-                        asked: group.asked,
+                        requested: group.requested,
                         provider: spanProvider,
                       });
               decisions.push(decision);
-              recordExpansionAudit(auditEntryFor(decision, group, target.file, mode));
+              recordReadExpansion(
+                auditEntryFor(decision, group, target.file, mode),
+                auditSessionKey,
+              );
             }
             const servedWindows = plan.windows.map((window) => {
               const index = folded.findIndex((group) => windowInside(group.window, window));

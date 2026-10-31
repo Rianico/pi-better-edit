@@ -3,12 +3,16 @@
  *
  * WHY its own file beside `diagnostics.log`: expansion outcomes are expected events, not failures,
  * and a queryable "what widened, and what did not, and why" belongs in its own JSONL stream. The
- * placement and rotation policy are deliberately the diagnostics one: `<stateRoot>/expansion-audit.log`
+ * placement and rotation policy are deliberately the diagnostics one: `<stateRoot>/read-expansion.log`
  * with one rotated generation, so an operator can attach the pair whole.
  *
  * WHY failure-paths-only writes: a plain read with no expansion never records anything. Only an
  * expansion attempt — applied or refused — appends a record, so the file stays proportional to the
  * feature's use instead of every tool call.
+ *
+ * WHY the first record of a session carries `rung`: until the config ladder lands (#213) the only
+ * rung is `default`, and recording it once per session makes the effective policy visible without
+ * repeating it on every line. Later records omit it.
  *
  * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
  * that already served its rows into a failed call.
@@ -18,26 +22,29 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "../config-dir.js";
 
 /** Fixed file name inside `stateRoot()`; exported so tests and status readers agree on it. */
-export const EXPANSION_AUDIT_LOG_NAME = "expansion-audit.log";
+export const READ_EXPANSION_LOG_NAME = "read-expansion.log";
 
 /** One rotated generation, matching the diagnostics sink's ceiling. */
-const EXPANSION_AUDIT_LOG_MAX_BYTES = 1024 * 1024;
+export const READ_EXPANSION_LOG_MAX_BYTES = 1024 * 1024;
 
-interface ExpansionAuditRange {
+/** The only rung until #213 adds the environment/project/global ladder. */
+const DEFAULT_EXPANSION_RUNG = "default";
+
+interface ReadExpansionWindow {
   readonly startLine: number;
   readonly endLine: number;
 }
 
 /** One expansion attempt: applied, or refused with the reason the caller must be able to audit. */
-export interface ExpansionAuditEntry {
+export interface ReadExpansionLogEntry {
   readonly file: string;
   readonly mode: "served" | "verbatim";
   readonly outcome: "applied" | "refused";
-  /** Every requested range folded into this attempt. */
-  readonly asked: readonly ExpansionAuditRange[];
-  readonly served?: ExpansionAuditRange;
+  /** Every requested window folded into this attempt. */
+  readonly requested: readonly ReadExpansionWindow[];
+  readonly served?: ReadExpansionWindow;
   /** The provider's full structural extent, when known (the Markdown section for a clamp). */
-  readonly section?: ExpansionAuditRange;
+  readonly section?: ReadExpansionWindow;
   readonly label?: string;
   readonly kind?: string;
   readonly name?: string;
@@ -46,21 +53,40 @@ export interface ExpansionAuditEntry {
   readonly reason?: string;
 }
 
-/** `<stateRoot>/expansion-audit.log` — a sibling of `diagnostics.log`. */
-export function expansionAuditLogPath(): string {
+/** `<stateRoot>/read-expansion.log` — a sibling of `diagnostics.log`. */
+export function readExpansionLogPath(): string {
   // SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
-  return join(stateRoot(), EXPANSION_AUDIT_LOG_NAME);
+  return join(stateRoot(), READ_EXPANSION_LOG_NAME);
 }
 
-/** Append one attempt. Never throws: a lost audit record must not fail the read. */
-export function recordExpansionAudit(entry: ExpansionAuditEntry): void {
+/** Test helper: forget which sessions already recorded their rung. */
+export function resetReadExpansionLogStateForTests(): void {
+  rungRecordedSessions.clear();
+}
+
+let rungRecordedSessions = new Set<string>();
+
+/**
+ * Append one attempt. Never throws: a lost audit record must not fail the read.
+ *
+ * `sessionKey` scopes the first-record rung marker; `rung` is where #213 will pass the resolved
+ * ladder value, and stays `default` until that ticket lands.
+ */
+export function recordReadExpansion(
+  entry: ReadExpansionLogEntry,
+  sessionKey: string,
+  rung: string = DEFAULT_EXPANSION_RUNG,
+): void {
   try {
+    const includeRung = !rungRecordedSessions.has(sessionKey);
+    if (includeRung) rungRecordedSessions.add(sessionKey);
     const line = `${JSON.stringify({
       ts: new Date().toISOString(),
       pid: process.pid,
+      ...(includeRung ? { rung } : {}),
       ...entry,
     })}\n`;
-    const path = expansionAuditLogPath();
+    const path = readExpansionLogPath();
     // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
     mkdirSync(dirname(path), { recursive: true });
     rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
@@ -79,6 +105,6 @@ function rotateIfOversize(path: string, incomingBytes: number): void {
     // SAFETY: an absent log is the first-run state, not a fault.
     return;
   }
-  if (current + incomingBytes <= EXPANSION_AUDIT_LOG_MAX_BYTES) return;
+  if (current + incomingBytes <= READ_EXPANSION_LOG_MAX_BYTES) return;
   renameSync(path, `${path}.1`);
 }

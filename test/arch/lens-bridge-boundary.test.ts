@@ -69,6 +69,8 @@ describe("lens bridge boundary", () => {
       expect(text, file).toContain("80");
       expect(text, file).toContain("40");
       expect(text, file).toContain("->");
+      expect(text, file).toContain("<requested>");
+      expect(text.toLowerCase(), file).not.toContain("asked");
       expect(text, file).toContain("(section <extent>)");
       expect(text, file).toContain("verbatim");
       expect(text, file).toContain("[widened N windows:");
