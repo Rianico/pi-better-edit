@@ -234,9 +234,9 @@ undo_last_edit({ path: "src/index.ts" })
 `read` automatically widens small requested windows to their enclosing structural block ([ADR-0008](docs/adr/0008-read-expansion-requested-window-and-bounds.md)):
 - **Trigger & Bounds**: A requested window of 24 lines or fewer widens to its enclosing block (function, method, class, module, Markdown section, or blank-line paragraph). Overlapping or adjacent requested windows fold into one span before this test. Caps are 80 lines of code, 80 lines of Markdown, and 40 lines of plain text.
 - **Chrome & Notes**: A widened read begins with a chrome line `[widened <requested> -> <served>, <label>]`; more than three requested windows collapse to `[widened N windows: <ranges>]`. Construct labels use LSP `SymbolKind` names plus `arrow`, `impl`, `trait`, `typeAlias`, `section`, and `paragraph`.
-- **Declines & Markdown Clamping**: Code and plain-text blocks above their caps decline silently and serve the requested window with no note. Markdown sections above the cap clamp to a cap-sized window and report `(section <extent>)`.
+- **Refusals & Markdown clamping**: Code and plain-text blocks above their caps refuse silently and serve the requested window with no note. Markdown sections above the cap clamp to a cap-sized window and report `(section <extent>)`.
 - **Mode Independence**: Expansion applies in `served` mode (anchored and leased) and in `mode: "verbatim"` (raw text without anchors).
-- **Configuration & Audit**: Toggle via `read.expansion` (`"on"` | `"off"`, default `"on"`) in settings files or `PI_BETTER_EDIT_READ_EXPANSION` environment variable. Widening attempts and refusals append to `read-expansion.log` in the extension state root.
+- **Configuration & Audit**: Toggle via `read.expansion` (`"on"` | `"off"`, default `"on"`) in settings files or `PI_BETTER_EDIT_READ_EXPANSION` environment variable. Expansions and refusals append to `read-expansion.log` in the extension state root.
 
 ### Interoperability with `pi-lens`
 `pi-better-edit` deeply integrates with [`pi-lens`](https://github.com/apmantza/pi-lens) language intelligence:
