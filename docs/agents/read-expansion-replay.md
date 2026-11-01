@@ -44,7 +44,8 @@ Each corpus is parsed from pi's session records: assistant `toolCall` entries ar
   each record it covers.
   Audit-log writes (`read-expansion.log`) never count as touches: the touch scan walks only `toolCall` events.
 - Languages come from file extensions (`.ts`/`.tsx` → `typescript`, `.py` → `python`, `.md` →
-  `markdown`, and so on). Unknown extensions are reported as `unknown` but never gated.
+  `markdown`, `.txt` → `text`, `.sh`/`.bash`/`.zsh` → `shell`, and so on). Unknown extensions are
+  reported as `unknown` but never gated.
   A retired multi-file read shape attributes to its first file (`files[0]`); while `read` keeps its `files?.[0]` tolerance, this has no corpus impact.
 
 ## Gate
