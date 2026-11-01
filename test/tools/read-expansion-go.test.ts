@@ -151,6 +151,20 @@ describe("read expansion: Go boundaries", () => {
     });
   });
 
+  it("leaves a grouped type declaration header exact", async () => {
+    const source = `package demo\n\ntype (\n\tA = int\n\tB = string\n)\n`;
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("group.go", source, async ({ cwd, path }) => {
+        const result = await runRead(reader(cacheRoot), cwd, {
+          file: path,
+          windows: [{ offset: 3, limit: 1 }],
+        });
+        expect(lines(result)).toEqual(["type ("]);
+        expect(notes(result)).toEqual([]);
+      });
+    });
+  });
+
   it("leaves package, import and top-level var probes at the requested window", async () => {
     const source = `package demo\n\nimport "fmt"\n\nvar top = 1\n\nfunc helper() {}\n`;
     await withRealGrammar(async (cacheRoot) => {

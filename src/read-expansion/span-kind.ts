@@ -57,7 +57,7 @@ type ExtensionSpanKind = (typeof EXTENSION_SPAN_KINDS)[number];
 
 /**
  * One label a widened note may carry. The first 26 members are the lowercase LSP 3.17
- * `SymbolKind` names, in protocol order; the final 5 are `EXTENSION_SPAN_KINDS`.
+ * `SymbolKind` names, in protocol order; the final 6 are `EXTENSION_SPAN_KINDS`.
  */
 export type SpanKind =
   | "file"

@@ -564,10 +564,9 @@ describe("read expansion: audit log", () => {
       expect(widenedNotes(getText(result))).toEqual(["[widened 3-3 -> 2-5, enum member Value]"]);
     });
 
-    expect(auditRecords().find((record) => record["outcome"] === "applied")).toMatchObject({
-      kind: "enumMember",
-      label: "enumMember Value",
-    });
+    const appliedAudit = auditRecords().find((record) => record["outcome"] === "applied");
+    expect(appliedAudit?.["kind"]).toBe("enumMember");
+    expect(appliedAudit?.["label"]).toBe("enumMember Value");
   });
 
   it("records the verbatim mode on an applied expansion", async () => {
