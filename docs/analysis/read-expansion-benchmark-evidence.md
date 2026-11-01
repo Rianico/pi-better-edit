@@ -1,31 +1,31 @@
 # Read expansion: benchmark evidence
 
-Status: evidence record, 2026-11-01. Not a decision record; ADR [0008](../adr/0008-read-expansion-requested-window-and-bounds.md) holds the contract.
+Status: evidence record, 2026-11-01. This is not a decision record. ADR [0008](../adr/0008-read-expansion-requested-window-and-bounds.md) holds the contract.
 
 ## Question
 
-Does read expansion (pi-better-edit 2.16.0) cost or save anything measurable at fixed model, fixed Pi runtime, and a fixed task set — and can that be separated from retry noise?
+Does read expansion cost or save anything measurable, at a fixed model, a fixed Pi runtime and a fixed task set? Can that difference be separated from retry noise?
 
-## Setup
+## Internal pair: 2.14.0 against 2.16.0
 
 Three legs of `explicit-edit-benchmark` (226 tasks, one attempt each) in one sandbox on one host.
 
 | | A | B | C |
 |---|---|---|---|
-| extension | pi-better-edit **2.14.0** | pi-better-edit **2.16.0** | **2.16.0**, `PI_BETTER_EDIT_READ_EXPANSION` set |
+| extension | pi-better-edit **2.14.0** | pi-better-edit **2.16.0** | **2.16.0**, `PI_BETTER_EDIT_READ_EXPANSION=off` |
 | Pi runtime | 1.4.0 | 1.4.0 | 1.4.0 |
 | model | `opencode-go/muse-spark-1.3-contributor` | same | same |
 | thinking | low | low | low |
 | concurrency / attempts / timeout | 10 / 1 / 120 s | same | same |
-| sandbox | `podman --privileged`, `localhost/eeb-runner:hf` (host is macOS; `bwrap` is unavailable, unprivileged containers fail 0/226 on proc-mount denial) | same | same |
+| sandbox | `podman --privileged`, `localhost/eeb-runner:hf`. The host is macOS, where `bwrap` is unavailable, and unprivileged containers fail 0/226 on proc-mount denial | same | same |
 
 Equivalence evidence: identical task-id sets, identical per-task `fixtureSha256`, identical `verifierSha256`. Only `configSha256` differs, as it must.
 
-Provenance is manifest-read in every leg (`results/explicit-edit-pi140-*/manifest.json`), not inferred from the arm file: `agentVersion 1.4.0`, `harnessVersion` per leg, `attempts 1`, `concurrency 10`, `timeoutMs 120000`.
+Provenance is manifest-read in every leg (`results/explicit-edit-pi140-*/manifest.json`), not inferred from the arm file. Each leg records `agentVersion 1.4.0`, `attempts 1`, `concurrency 10` and `timeoutMs 120000`.
 
-## Activation proof
+### Activation proof
 
-Expansion fired only where intended. Counting served chrome lines (`[widened <a>-<b> -> <c>-<d>`) across each leg's `trials/**/agent/stdout.jsonl`:
+Expansion fired only where intended. Served chrome lines (`[widened <a>-<b> -> <c>-<d>`) were counted across each leg's `trials/**/agent/stdout.jsonl`:
 
 | leg | served widening notes |
 |---|---|
@@ -33,13 +33,13 @@ Expansion fired only where intended. Counting served chrome lines (`[widened <a>
 | B (2.16.0) | **35** |
 | C (2.16.0, toggle off) | **0** |
 
-Example from B: `[widened 65-84 -> 5-84, section …` in a Markdown task. The trigger fired on 7 Markdown task files and nowhere else, which matches a 24-line trigger against small edit-centric fixtures.
+Example from B: `[widened 65-84 -> 5-84, section …` in a Markdown task. The trigger fired on 7 Markdown task files and nowhere else. That matches a 24-line trigger against small edit-centric fixtures.
 
-## Results
+### Results, raw
 
-Raw, from `normalized/rounds.jsonl` sums (one row per attempt):
+Sums come from `normalized/rounds.jsonl`, one row per attempt.
 
-| metric | A (2.14.0) | B (2.16.0) | C (2.16.0, off) |
+| metric | A (2.14.0) | B (2.16.0) | C (off) |
 |---|---|---|---|
 | passed | 226/226 | 226/226 | 226/226 |
 | first-attempt passed | 191 | 191 | 208 |
@@ -51,28 +51,65 @@ Raw, from `normalized/rounds.jsonl` sums (one row per attempt):
 | mean / median / p95 seconds | 20.265 / 12.882 / 58.070 | 18.430 / 13.137 / 47.189 | 16.758 / 12.358 / 35.647 |
 | connection-error events | 47 | 45 | 17 |
 
-## The measurement that matters: normalise the retries
+### The measurement that matters: normalise the retries
 
-Totals and per-attempt averages are dominated by retry volume, and retries here are provider transport failures, not extension behaviour. Recomputed per **first attempt** and per **passing first attempt**:
+Totals and per-attempt averages are dominated by retry volume. The retries here are provider transport failures, not extension behaviour. Recompute per **first attempt** and per **passing first attempt**:
 
 | metric | A | B | C |
 |---|---|---|---|
 | tokens per first attempt | 37,824 | **37,883 (+0.2 %)** | **37,696 (−0.3 %)** |
 | tokens per passing first attempt | 36,782 | **36,420 (−1.0 %)** | **37,163 (+1.0 %)** |
 
-All three legs cost the same within ±1 %. The apparent "2.16.0 uses 2.7 % fewer total tokens" and "expansion off is 7.7 % cheaper per attempt" are artifacts of C hitting 17 connection errors against A's 47 and B's 45: fewer errors meant 249 attempts instead of 268–273, and every attempt carries tokens into the total.
+All three legs cost the same within ±1 %. Two raw headlines mislead. "2.16.0 uses 2.7 % fewer total tokens" and "expansion off is 7.7 % cheaper per attempt" are both artifacts. Leg C hit 17 connection errors against A's 47 and B's 45. Fewer errors meant 249 attempts instead of 268–273. Every attempt carries tokens into the total.
 
-## What this supports
+### What this pair supports
 
-1. **2.14.0 → 2.16.0 is cost-neutral and score-neutral on this benchmark.** First-attempt token cost +0.2 %; passing-first-attempt −1.0 %; 226/226 in both.
+1. **2.14.0 → 2.16.0 is cost-neutral and score-neutral on this benchmark.** First-attempt token cost moved +0.2 %, and passing-first-attempt cost moved −1.0 %. Both legs scored 226/226.
 2. **Read expansion is not measurably expensive here.** The normalised cost of B equals A and C.
-3. Suggestive only, below the noise floor: B shows −5.2 % tool calls, −4.2 % model rounds, −9.1 % mean wall time against A.
+3. Three deltas sit below the noise floor and are suggestive only. B shows −5.2 % tool calls, −4.2 % model rounds and −9.1 % mean wall time against A.
 
-## What this does not support
+### What this pair does not support
 
-1. **Any claim that read expansion saves anything.** `explicit-edit` fixtures are small and edit-centric, so a probe already lands near the edit site and the trigger fires rarely (7 files of 226 tasks). The metric the feature targets — a `read` followed by a second `read` of the same file — is not what this benchmark counts.
+1. **Any claim that read expansion saves anything.** The fixtures are small and edit-centric. A probe already lands near the edit site, so the trigger fired on only 7 files of 226 tasks. The metric the feature targets is a `read` followed by a second `read` of the same file. This benchmark does not count that.
 2. **Any accuracy claim.** The baseline saturates at 226/226, so no score movement is available in either direction.
-3. **A per-category story.** Token swings exceed ±25 % in eight categories with zero pass change, which is noise, not signal.
+3. **A per-category story.** Token swings exceed ±25 % in eight categories with zero pass change. That is noise, not signal.
+
+## External pair: expansion on against off
+
+Two public edit benchmarks ran as a 2×2. Each suite is scored by its own tests, and the toggle is the only variable. Settings: Pi 1.4.0, `opencode-go/muse-spark-1.3-contributor`, thinking low, one attempt, concurrency 10, one Linux container, sandboxed agent.
+
+| metric | EDIT-Bench ON | EDIT-Bench OFF | Aider ON | Aider OFF |
+|---|---|---|---|---|
+| tasks | 72 | 72 | 118 | 118 |
+| passed | **53 (73.6 %)** | **47 (65.3 %)** | 71 (60.2 %) | 71 (60.2 %) |
+| total tokens | 9,081,022 | 7,829,811 (−13.8 %) | 5,384,416 | 5,736,827 (+6.5 %) |
+| tokens per solved task | 171,340 | 166,591 | 75,836 | 80,800 |
+| tool calls / model rounds | 670 / 665 | 642 / 625 | 637 / 613 | 662 / 646 |
+| mean seconds | 52.9 | 67.8 | 75.4 | 69.1 |
+| **widening events** | **10, in 2 of 72 trials** | **0** | **0** | **0** |
+
+Pairs are matched by task id. EDIT-Bench shows 14 flips: 10 tasks pass only with expansion, and 4 pass only without. McNemar exact two-sided **p = 0.180**. Aider shows 12 flips, 6 in each direction.
+
+### The mechanism did not fire, so the pass delta is not its effect
+
+Expansion widened a read in **2 of 72** EDIT-Bench trials and **0 of 118** Aider trials. Two widening events cannot turn ten tasks from fail to pass. That difference therefore belongs to provider variance, not to this feature.
+
+Aider is a null control by construction. Its solution files are 6–18 lines and the starting stub is the same size. A read never exceeds the 24-line trigger, so nothing can widen.
+
+The stable number is **tokens per solved task: 171,340 with expansion against 166,591 without**. That is about 3 % more cost for no measurable capability change.
+
+### Why the trigger rarely fires
+
+The trigger is 24 lines. A model that reads a whole 80-line file requests a window above the trigger, so the feature never engages. Expansion engages only when a model probes a *small slice* of a larger block. These benchmarks rarely provoke that behaviour.
+
+## Lessons: what a benchmark must do to measure this feature
+
+1. **The benchmark must leave the file on disk.** Every cheap public edit benchmark pre-loads the target file into the prompt. Aider passes `fnames` into its coder and stubs file mentions to an empty set. EDIT-Bench hands over the whole file. With the file already in context, no read tool is called. An on/off trial therefore measures noise. Both suites here were re-anchored as file-on-disk agentic tasks for this reason.
+2. **The probe must be small and the block must be large.** Expansion needs a request *below* the trigger inside a block *above* it. Fixtures of 6–20 lines satisfy neither condition. That is why Aider returned a clean null, and why the EDIT-Bench delta cannot be traced to the mechanism.
+3. **Retry volume must be normalised before totals are compared.** In the internal pair, raw totals suggested −2.7 % and −7.7 %. Per first attempt the legs agreed within ±1 %. One arm had hit 17 provider errors instead of 45.
+4. **A ceiling hides accuracy.** At 226/226 no leg can improve, so only cost and reliability are observable.
+5. **Verify the toggle from an artifact, not from intent.** In one leg an invalid value fell back to the default. That made the "off" arm a duplicate of the "on" arm. Only counting served `[widened …]` notes exposed it.
+6. **A cheap suite is a poor fit for a read-tool question**, even when it is the best available. The tasks are small, the answers are short, and the tool under test is not the tool they constrain.
 
 ## Context runs, deliberately excluded from the comparison
 
@@ -80,31 +117,36 @@ Recorded earlier on Pi **0.85.1**, same model and thinking:
 
 - `results/explicit-edit-2026-10-29T06-21-45.000Z` — 2.14.0, 226/226, 8,547,277 tokens, $0.20, 228 attempts.
 - `results/explicit-edit-2160-spark` — 2.16.0, 226/226, 10,949,770 tokens (+28.1 % raw, **+13.7 % per attempt**), 257 attempts, 35 connection errors.
-- `results/explicit-edit-2160-deepseek` — 2.16.0 on `opencode-go/deepseek-v4.1-flash`, 226/226, $9.54, 46 timeouts, 97 recoveries; conflates model and extension, and its smoke trial failed on a provider error.
+- `results/explicit-edit-2160-deepseek` — 2.16.0 on `opencode-go/deepseek-v4.1-flash`, 226/226, $9.54, 46 timeouts, 97 recoveries. It conflates model and extension, and its smoke trial failed on a provider error.
 
-These are excluded because their Pi runtime differs from the paired runs, and no manifest records the sandbox they ran in — so wall-clock and retry volume are not comparable. They remain useful as one datum: the "+28 % tokens" headline from that window was roughly half retry inflation and half a per-attempt increase that the controlled pair does not reproduce.
+These runs are excluded for two reasons. Their Pi runtime differs from the paired runs, and no manifest records the sandbox they used. Wall-clock and retry volume are therefore not comparable. They remain useful as one datum. The "+28 % tokens" headline from that window was roughly half retry inflation and half a per-attempt increase that the controlled pair does not reproduce.
 
 ## Reproduce
 
-Artifacts, all under `explicit-edit-benchmark/results/`:
+Artifacts live under `explicit-edit-benchmark/results/`:
 
 - `explicit-edit-pi140-2140/{manifest,summary}.json`, `normalized/rounds.jsonl`
 - `explicit-edit-pi140-2160/{manifest,summary}.json`, `normalized/rounds.jsonl`
 - `explicit-edit-pi140-2160off/{manifest,summary}.json`, `normalized/rounds.jsonl`
+- `eb-on`, `eb-off`, `ab-aider-on`, `ab-aider-off2` (external 2×2, `trials/*/result.json`)
 
-Normalisation recipe: read `rounds.jsonl` (one row per attempt), take the first row per `trialId`, sum `inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`, and divide by the number of first attempts. Counting raw rows gives the retry-inflated figure instead.
+Normalisation recipe: read `rounds.jsonl` (one row per attempt). Take the first row per `trialId`. Sum `inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`. Divide by the number of first attempts. Counting raw rows gives the retry-inflated figure instead.
 
-The run itself: `npm run benchmark:submit -- --harness pi-default --model <model> --thinking low --concurrency 10 --auth-file <pi auth.json>`, with the arm's extension version and Pi runtime pinned for each leg. The harness needed one environment repair on macOS: `npm install --no-save @esbuild/darwin-arm64@<esbuild version>`, because the checkout carried `@esbuild/linux-arm64` and every `tsx` entry point failed.
+The internal run: `npm run benchmark:submit -- --harness pi-default --model <model> --thinking low --concurrency 10 --auth-file <pi auth.json>`, with the arm's extension version and Pi runtime pinned for each leg. One environment repair was needed on macOS: `npm install --no-save @esbuild/darwin-arm64@<esbuild version>`. The checkout carried `@esbuild/linux-arm64` and every `tsx` entry point failed.
+
+The external runs: `node scripts/bench-container.mjs -- --suite <editbench|aider-polyglot> --concurrency 10 --results results/<leg>`, with `PI_BETTER_EDIT_READ_EXPANSION=off` for the off arms. The wrapper runs `podman --privileged`, mounts the worktree and a persistent cache volume, and passes the key through the environment.
 
 ## The still-missing measurement
 
-The feature's own metric is the same-file re-read share, which `pnpm run replay:read-expansion` computes from session corpora (threshold: 20 % relative fall on at least 200 served-mode reads per language). On this host both corpora were identical, so it reports 0 % by construction. A candidate corpus captured on a host running 2.16.0 is the missing input, and no further `explicit-edit` runs substitute for it.
+The feature's own metric is the same-file re-read share. `pnpm run replay:read-expansion` computes it from session corpora, with a threshold of 20 % relative fall on at least 200 served-mode reads per language. On this host both corpora were identical, so it reports 0 % by construction. The missing input is a candidate corpus captured on a host running 2.16.0. No further `explicit-edit` run substitutes for it.
 
 ## Threats to validity
 
-- **Provider transport errors** hit 14–18 % of trials in these legs and dominate run-to-run variance. Any delta under roughly 5 % here is unresolvable.
-- **Ceiling effect**: 226/226 in every leg, so accuracy cannot move.
-- **Task shape**: edit-centric, small fixtures — precisely the case in which expansion has least to save.
-- **One model, one thinking level.**
-- **p95 depends on the percentile method** (26.23 vs 26.81 s on the same baseline data by two methods); pin one definition before citing p95.
-- Leg A's smoke trial failed on a transient connection error while its full run passed 226/226, so leg A is recovery-assisted rather than clean. Leg C carries the only timeout, an outlier attempt that consumed 211.5 k tokens.
+- **Provider transport errors** hit 14–18 % of trials in the internal legs and dominate run-to-run variance. Any delta under roughly 5 % there is unresolvable.
+- **Ceiling effect** in the internal pair: 226/226 in every leg, so accuracy cannot move.
+- **Task shape**: edit-centric, small fixtures. This is precisely the case in which expansion has least to save.
+- **One model, one thinking level.** Every result here is one model at one effort setting.
+- **p95 depends on the percentile method** (26.23 s against 26.81 s on the same baseline data). Pin one definition before citing p95.
+- **Leg A is recovery-assisted.** Its smoke trial failed on a transient connection error while the full run passed 226/226.
+- **The external suites are subsets.** EDIT-Bench ran 72 of 108 published problems: 11 JavaScript rows are unadapted and 25 torch-scale signatures were excluded. Aider ran 118 of 225: cpp and java are unadapted, Rust was excluded, and 10 exercises were dropped for vacuous or unbuildable tests. Rust and the torch tasks are the gap, and they are named rather than hidden.
+- **Runner defects found and fixed during these runs.** The toggle once received `0` where the extension accepts only `on` or `off`. One off arm therefore ran as an on arm. A macOS `node_modules` tree was mounted into a Linux container. The Aider prepare stalled on a crates.io git index that cargo 1.65 cannot reach through the sparse protocol. Each defect was fixed before the numbers above were taken.
