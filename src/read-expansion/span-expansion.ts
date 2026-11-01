@@ -17,6 +17,7 @@
  * this module is never entered and the served output is exactly today's.
  */
 import { mergeServedSpans } from "../served-spans.js";
+import { isSpanKind, type SpanKind } from "./span-kind.js";
 
 /** Where a boundary came from. `lsp` is optional enrichment; it never widens on its own. */
 type SpanSource = "ast" | "md" | "text" | "lsp";
@@ -25,7 +26,7 @@ type SpanSource = "ast" | "md" | "text" | "lsp";
 interface EnclosingSpan {
   start: number;
   end: number;
-  kind: string;
+  kind: SpanKind;
   name: string;
   source: SpanSource;
 }
@@ -115,7 +116,7 @@ type SpanAnswer = EnclosingSpan | SpanDecline | null;
 /** The provider identity a refused attempt may still name (over-cap and non-superset answers). */
 interface RefusedBoundary {
   span?: LineRange;
-  kind?: string;
+  kind?: SpanKind;
   name?: string;
   source?: SpanSource;
   language?: string;
@@ -128,7 +129,7 @@ export interface Expansion {
   window: OffsetWindow;
   /** The boundary identity, the full extent, and the requested windows it answered. */
   record: {
-    kind: string;
+    kind: SpanKind;
     name: string;
     source: SpanSource;
     requested: LineRange[];
@@ -148,7 +149,7 @@ export type ExpansionDecision =
 export interface WidenedBlock {
   served: LineRange;
   requested: LineRange[];
-  kind: string;
+  kind: SpanKind;
   name: string;
   source: SpanSource;
   /** The full Markdown section extent, when the block came from Markdown. */
@@ -328,12 +329,12 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
   if (!isPositiveInteger(start) || !isPositiveInteger(end) || end < start) {
     return refused("invalid_answer");
   }
-  if (!isNonEmptyText(kind) || !isNonEmptyText(name) || !isSpanSource(source)) {
+  if (!isSpanKind(kind) || !isNonEmptyText(name) || !isSpanSource(source)) {
     return refused("invalid_answer");
   }
   const boundary = {
     span: { startLine: start, endLine: end },
-    kind: oneLine(kind),
+    kind,
     name: oneLine(name),
     source,
   };
@@ -434,7 +435,7 @@ export function applyExpansions(
   };
 }
 
-function quoteLabel(source: SpanSource, kind: string, name: string): string {
+function quoteLabel(source: SpanSource, kind: SpanKind, name: string): string {
   if (source === "md") return `${kind} "${name}"`;
   if (source === "text") return kind;
   return `${kind} ${name}`;

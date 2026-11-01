@@ -12,6 +12,7 @@ import {
   type SyntaxNodeLike,
 } from "../../src/read-expansion/ast-span";
 import { createAstSpanProvider } from "../../src/read-expansion/ast-provider";
+import { TYPESCRIPT_SPAN_KINDS } from "../../src/read-expansion/typescript-decoration";
 import { loadWebTreeSitterGrammar } from "../../src/read-expansion/grammar-runtime";
 import type {
   GrammarManifest,
@@ -339,7 +340,9 @@ describe("read expansion grammar supply", () => {
 
   it("picks the smallest scope and leaves header lines exact", async () => {
     const tree = fakeTree();
-    expect(findEnclosingScope(tree, 3, 4)?.type).toBe("function_declaration");
-    expect(findEnclosingScope(tree, 15, 16)).toBeNull();
+    expect(findEnclosingScope(tree, 3, 4, TYPESCRIPT_SPAN_KINDS)?.type).toBe(
+      "function_declaration",
+    );
+    expect(findEnclosingScope(tree, 15, 16, TYPESCRIPT_SPAN_KINDS)).toBeNull();
   });
 });

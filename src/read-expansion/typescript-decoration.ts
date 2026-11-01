@@ -1,13 +1,36 @@
 /** TypeScript/TSX vocabulary for the shared scope-decoration walk. */
 import type { DecorationSpec } from "./scope-decoration.js";
+import type { SpanKindTable } from "./span-kind.js";
 
 const JSDOC_PREFIX = "/**";
+
+/**
+ * TypeScript scope nodes and their note kinds. `type_alias_declaration` is deliberately absent:
+ * LSP has no honest type-alias kind, and the extension set is closed, so that probe stays exact.
+ */
+export const TYPESCRIPT_SPAN_KINDS = {
+  arrow_function: "arrow",
+  function_declaration: "function",
+  function_expression: "function",
+  function_signature: "function",
+  generator_function: "function",
+  generator_function_declaration: "function",
+  method_definition: "method",
+  method_signature: "method",
+  class_declaration: "class",
+  abstract_class_declaration: "class",
+  interface_declaration: "interface",
+  enum_declaration: "enum",
+  module: "namespace",
+  internal_module: "namespace",
+} as const satisfies SpanKindTable;
 
 /**
  * `export_statement` carries the keyword outside the declaration node; `variable_declarator` and
  * its lexical wrapper carry an arrow name; `decorator` is a sibling of a class method.
  */
 export const TYPESCRIPT_DECORATION: DecorationSpec = {
+  kinds: TYPESCRIPT_SPAN_KINDS,
   docCommentTypes: new Set(["comment"]),
   // WHY: plain `//` and `/*` comments are not documentation; only `/** ... */` attaches.
   isDocComment: (node) => node.text?.trimStart().startsWith(JSDOC_PREFIX) ?? false,

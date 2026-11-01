@@ -129,6 +129,23 @@ describe("read expansion: Rust boundaries", () => {
     });
   });
 
+  it("labels impl and trait headers with their extension kinds", async () => {
+    const source = `struct S;\n\nimpl S {\n    fn run(&self) {}\n}\n\ntrait T {\n    fn required(&self);\n}\n`;
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("items.rs", source, async ({ cwd, path }) => {
+        const tool = reader(cacheRoot);
+
+        const impl = await runRead(tool, cwd, { file: path, windows: [{ offset: 3, limit: 1 }] });
+        expect(lines(impl)).toEqual(["impl S {", "    fn run(&self) {}", "}"]);
+        expect(notes(impl)).toEqual(["[widened 3-3 -> 3-5, impl S]"]);
+
+        const trait = await runRead(tool, cwd, { file: path, windows: [{ offset: 7, limit: 1 }] });
+        expect(lines(trait)).toEqual(["trait T {", "    fn required(&self);", "}"]);
+        expect(notes(trait)).toEqual(["[widened 7-7 -> 7-9, trait T]"]);
+      });
+    });
+  });
+
   it("widens a trait signature and a provided trait method to methods", async () => {
     const source = `trait T {\n    /// Required.\n    fn required(&self) -> i32;\n\n    /// Provided.\n    fn provided(&self) -> i32 {\n        let x = 2;\n        x\n    }\n}\n`;
     await withRealGrammar(async (cacheRoot) => {

@@ -10,9 +10,7 @@ import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
   findEnclosingScope,
-  scopeKind,
   scopeLineRange,
-  scopeName,
   type GrammarHandle,
   type GrammarLanguageLoader,
 } from "./ast-span.js";
@@ -21,17 +19,32 @@ import { GRAMMAR_MANIFEST, grammarLanguageForFile } from "./grammar-manifest.js"
 import { hasWebTreeSitterRuntime, loadWebTreeSitterGrammar } from "./grammar-runtime.js";
 import type { OffsetWindow, SpanDecline, SpanProvider, SpanWindow } from "./span-expansion.js";
 import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
+import type { SpanKindTable } from "./span-kind.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
 import { PYTHON_DECORATION } from "./python-decoration.js";
 import { GO_DECORATION } from "./go-decoration.js";
 import { RUST_DECORATION } from "./rust-decoration.js";
 
-const DECORATIONS: Readonly<Record<string, ScopeDecorator>> = {
-  typescript: createScopeDecorator(TYPESCRIPT_DECORATION),
-  tsx: createScopeDecorator(TYPESCRIPT_DECORATION),
-  python: createScopeDecorator(PYTHON_DECORATION),
-  go: createScopeDecorator(GO_DECORATION),
-  rust: createScopeDecorator(RUST_DECORATION),
+interface LanguageScope {
+  readonly decorate: ScopeDecorator;
+  readonly kinds: SpanKindTable;
+}
+
+const LANGUAGES: Readonly<Record<string, LanguageScope>> = {
+  typescript: {
+    decorate: createScopeDecorator(TYPESCRIPT_DECORATION),
+    kinds: TYPESCRIPT_DECORATION.kinds,
+  },
+  tsx: {
+    decorate: createScopeDecorator(TYPESCRIPT_DECORATION),
+    kinds: TYPESCRIPT_DECORATION.kinds,
+  },
+  python: {
+    decorate: createScopeDecorator(PYTHON_DECORATION),
+    kinds: PYTHON_DECORATION.kinds,
+  },
+  go: { decorate: createScopeDecorator(GO_DECORATION), kinds: GO_DECORATION.kinds },
+  rust: { decorate: createScopeDecorator(RUST_DECORATION), kinds: RUST_DECORATION.kinds },
 };
 
 export interface AstSpanProviderOptions extends GrammarCacheOptions {
@@ -181,8 +194,8 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
       if (language === undefined) return decline("no_provider");
       const source = await readText(file);
       if (source === undefined) return decline("provider_declined", language);
-      const decorate = DECORATIONS[language];
-      if (decorate === undefined) return decline("no_provider", language);
+      const languageScope = LANGUAGES[language];
+      if (languageScope === undefined) return decline("no_provider", language);
       const outcome = await handleFor(language);
       if (outcome.kind === "decline") return outcome.decline;
       const tree = outcome.handle.parse(source);
@@ -190,18 +203,26 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
       try {
         if (tree.rootNode.hasError) return decline("provider_declined", language);
         const requestedEnd = window.offset + window.limit - 1;
-        const node = findEnclosingScope(tree.rootNode, window.offset, requestedEnd);
+        const node = findEnclosingScope(
+          tree.rootNode,
+          window.offset,
+          requestedEnd,
+          languageScope.kinds,
+        );
         if (node === null) return decline("boundary_crossing", language);
         const range = scopeLineRange(node);
         if (range.startLine > window.offset || range.endLine < requestedEnd) {
           return decline("boundary_crossing", language);
         }
-        const decorated = decorate(node);
+        const decorated = languageScope.decorate(node);
+        if (decorated.kind === undefined || decorated.name === undefined) {
+          return decline("provider_declined", language);
+        }
         return {
           start: decorated.startLine,
           end: decorated.endLine,
-          kind: decorated.kind ?? scopeKind(node),
-          name: decorated.name ?? scopeName(node),
+          kind: decorated.kind,
+          name: decorated.name,
           source: "ast",
         };
       } catch {

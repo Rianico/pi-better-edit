@@ -176,6 +176,19 @@ describe("read expansion: TypeScript and TSX boundaries", () => {
     });
   });
 
+  it("leaves a type alias probe exact because LSP has no honest kind for it", async () => {
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("alias.ts", `type A = string;\nconst x = 1;\n`, async ({ cwd, path }) => {
+        const result = await runRead(reader(cacheRoot), cwd, {
+          file: path,
+          windows: [{ offset: 1, limit: 1 }],
+        });
+        expect(lines(result)).toEqual(["type A = string;"]);
+        expect(notes(result)).toEqual([]);
+      });
+    });
+  });
+
   it("widens an arrow assigned to a name to its declaration", async () => {
     const source = `/**\n * Doubles a value.\n */\nexport const double = (value: number) => {\n  return value * 2;\n};\n\nconst other = 1;\n`;
     await withRealGrammar(async (cacheRoot) => {
@@ -266,6 +279,7 @@ describe("read expansion: TypeScript and TSX boundaries", () => {
     Object.assign(fn, { parent: wrapper });
 
     const pythonLike: DecorationSpec = {
+      kinds: { function_definition: "function" },
       docCommentTypes: new Set(["comment"]),
       isDocComment: (node) => node.text?.startsWith("#") ?? false,
       wrapperTypes: new Set(["decorated_definition"]),

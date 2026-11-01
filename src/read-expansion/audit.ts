@@ -23,6 +23,7 @@ import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "../config-dir.js";
 import type { ConfigRung } from "../json-config.js";
+import type { SpanKind } from "./span-kind.js";
 
 /** Fixed file name inside `stateRoot()`; exported so tests and status readers agree on it. */
 export const READ_EXPANSION_LOG_NAME = "read-expansion.log";
@@ -46,7 +47,7 @@ export interface ReadExpansionLogEntry {
   /** The provider's full structural extent, when known (the Markdown section for a clamp). */
   readonly section?: ReadExpansionWindow;
   readonly label?: string;
-  readonly kind?: string;
+  readonly kind?: SpanKind;
   readonly name?: string;
   readonly source?: string;
   readonly clamped?: boolean;

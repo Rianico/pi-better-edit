@@ -1,6 +1,7 @@
 /** Rust vocabulary for the shared scope-decoration walk. */
 import type { SyntaxNodeLike } from "./ast-span.js";
 import type { DecorationSpec } from "./scope-decoration.js";
+import type { SpanKind, SpanKindTable } from "./span-kind.js";
 
 /** A `function_item`/`function_signature_item` directly under an impl or trait is a method. */
 function isOwnerMethod(node: SyntaxNodeLike): boolean {
@@ -8,6 +9,21 @@ function isOwnerMethod(node: SyntaxNodeLike): boolean {
   if (list?.type !== "declaration_list") return false;
   const owner = list.parent;
   return owner?.type === "impl_item" || owner?.type === "trait_item";
+}
+
+/** Rust scope nodes and their note kinds; impl and trait are extensions, never LSP Object. */
+export const RUST_SPAN_KINDS = {
+  function_item: "function",
+  function_signature_item: "function",
+  impl_item: "impl",
+  trait_item: "trait",
+} as const satisfies SpanKindTable;
+
+/** Impl and trait nodes carry their name in `type`, while functions use `name`. */
+function rustName(node: SyntaxNodeLike): string | undefined {
+  const named = node.childForFieldName?.("name") ?? node.childForFieldName?.("type");
+  if (typeof named?.text !== "string" || named.text.trim() === "") return undefined;
+  return named.text.trim();
 }
 
 function isDocComment(node: SyntaxNodeLike): boolean {
@@ -24,6 +40,7 @@ function isDocComment(node: SyntaxNodeLike): boolean {
  * spec only relabels them as methods.
  */
 export const RUST_DECORATION: DecorationSpec = {
+  kinds: RUST_SPAN_KINDS,
   docCommentTypes: new Set(["line_comment", "block_comment"]),
   isDocComment,
   wrapperTypes: new Set(),
@@ -32,5 +49,6 @@ export const RUST_DECORATION: DecorationSpec = {
   transparentTypes: new Set(),
   decorationTypes: new Set(["attribute_item"]),
   nameField: "name",
-  kindOf: (node) => (isOwnerMethod(node) ? "method" : undefined),
+  nameOf: rustName,
+  kindOf: (node): SpanKind | undefined => (isOwnerMethod(node) ? "method" : undefined),
 };

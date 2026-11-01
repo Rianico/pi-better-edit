@@ -91,6 +91,26 @@ describe("read expansion: optional qualified names", () => {
     });
   });
 
+  it("keeps the AST kind when the resolver replaces only the name", async () => {
+    const methodProvider: SpanProvider = {
+      enclosingSpan: () => ({
+        start: 2,
+        end: 5,
+        kind: "method",
+        name: "parserName",
+        source: "ast",
+      }),
+    };
+    const provider = withQualifiedNames(methodProvider, () => "pkg::run");
+    await withTempFile("kind.txt", SOURCE, async ({ cwd, path }) => {
+      const result = await runRead(readerWith(provider), cwd, {
+        file: path,
+        windows: [{ offset: 3, limit: 1 }],
+      });
+      expect(notes(result)).toEqual(["[widened 3-3 -> 2-5, method pkg::run]"]);
+    });
+  });
+
   it("keeps the parser name when the symbol is absent or the resolver throws", async () => {
     for (const resolver of [
       () => undefined,

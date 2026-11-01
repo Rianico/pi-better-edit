@@ -17,6 +17,7 @@ import type {
   GrammarManifestEntry,
 } from "../../src/read-expansion/grammar-manifest";
 import { createReadSpanProvider } from "../../src/read-expansion/read-provider";
+import type { SpanKind } from "../../src/read-expansion/span-kind";
 import { READ_EXPANSION_ENV_VAR } from "../../src/read-expansion-config";
 import {
   REFUSAL_REASONS,
@@ -174,6 +175,30 @@ describe("read expansion refusal reasons", () => {
     });
     expect(decision).toMatchObject({ outcome: "refused", reason: "past_eof" });
   });
+  it("rejects a raw grammar node type as invalid_answer", async () => {
+    clearAuditLog();
+    const provider: SpanProvider = {
+      enclosingSpan: () => ({
+        start: 1,
+        end: 10,
+        kind: "function_declaration" as SpanKind,
+        name: "fake",
+        source: "ast",
+      }),
+    };
+    await withTempFile("raw.ts", numbered(12), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(provider), cwd, {
+        file: path,
+        windows: [{ offset: 3, limit: 2 }],
+      });
+      expect(lines(result)).toEqual(["line 3", "line 4"]);
+      expect(notes(result)).toEqual([]);
+    });
+    expect(auditRecords()).toEqual([
+      expect.objectContaining({ outcome: "refused", reason: "invalid_answer" }),
+    ]);
+  });
+
   it("records no_provider for a data file with no expansion provider", async () => {
     clearAuditLog();
     await withTempFile("events.log", numbered(10), async ({ cwd, path }) => {

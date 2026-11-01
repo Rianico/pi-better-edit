@@ -11,6 +11,7 @@ import {
   type SpanProvider,
   type SpanWindow,
 } from "../../src/read-expansion/span-expansion";
+import type { SpanKind } from "../../src/read-expansion/span-kind";
 import {
   READ_EXPANSION_LOG_MAX_BYTES,
   READ_EXPANSION_LOG_NAME,
@@ -101,7 +102,7 @@ const fiveThroughTwenty: SpanProvider = {
 function fixedSpan(
   start: number,
   end: number,
-  kind: string,
+  kind: SpanKind,
   name: string,
   source: "ast" | "md" | "text",
 ): SpanProvider {

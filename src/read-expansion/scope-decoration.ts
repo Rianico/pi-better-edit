@@ -8,9 +8,13 @@
  * grammar tickets add a table rather than copying this logic.
  */
 import { scopeLineRange, type SyntaxNodeLike } from "./ast-span.js";
+import type { SpanKind, SpanKindTable } from "./span-kind.js";
 
 /** One language's decoration vocabulary; the walk itself stays here. */
 export interface DecorationSpec {
+  /** Grammar node types that may widen, mapped to their closed note kind. */
+  readonly kinds: SpanKindTable;
+
   /** Node types that can be documentation blocks, e.g. `comment` for TypeScript. */
   readonly docCommentTypes: ReadonlySet<string>;
   /** Narrow a shared node type to real documentation, e.g. only `/**` comments. */
@@ -27,8 +31,10 @@ export interface DecorationSpec {
   readonly decorationTypes: ReadonlySet<string>;
   /** Field that carries a declared name; defaults to `name`. */
   readonly nameField?: string;
+  /** Optional language-specific name extraction, e.g. Rust impl items use `type`. */
+  readonly nameOf?: (node: SyntaxNodeLike) => string | undefined;
   /** Optional language-specific note kind, e.g. Python's class-body functions are methods. */
-  readonly kindOf?: (node: SyntaxNodeLike) => string | undefined;
+  readonly kindOf?: (node: SyntaxNodeLike) => SpanKind | undefined;
 }
 
 /** A scope after wrapper ascent and leading-decoration attachment. */
@@ -41,8 +47,8 @@ interface DecoratedScope {
   readonly endLine: number;
   /** Declared or assigned name; absent when the node is anonymous. */
   readonly name?: string;
-  /** Language-specific note kind overriding the generic scope mapping. */
-  readonly kind?: string;
+  /** The table-derived note kind, optionally overridden per language. */
+  readonly kind?: SpanKind;
 }
 
 export type ScopeDecorator = (node: SyntaxNodeLike) => DecoratedScope;
@@ -101,8 +107,8 @@ function decorateScope(node: SyntaxNodeLike, spec: DecorationSpec): DecoratedSco
     previous = previous.previousNamedSibling;
   }
 
-  const name = declaredName(nameNode, spec);
-  const kind = spec.kindOf?.(node);
+  const name = spec.nameOf?.(nameNode) ?? declaredName(nameNode, spec);
+  const kind = spec.kindOf?.(node) ?? spec.kinds[node.type];
   return {
     node: span,
     startLine,
