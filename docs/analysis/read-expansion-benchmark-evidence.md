@@ -102,6 +102,22 @@ The stable number is **tokens per solved task: 171,340 with expansion against 16
 
 The trigger is 24 lines. A model that reads a whole 80-line file requests a window above the trigger, so the feature never engages. Expansion engages only when a model probes a *small slice* of a larger block. These benchmarks rarely provoke that behaviour.
 
+### Trigger sweep: 24 against 18 and 12
+
+The trigger is an upper bound on the requested window. A lower value therefore fires *less* often, not more. Two extra runs per suite set the trigger through `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER` on a build that reads it from the environment.
+
+| suite | trigger | tasks | passed | tokens | tokens per solved | widening notes |
+|---|---|---|---|---|---|---|
+| EDIT-Bench | 24 | 72 | 57 (79.2 %) | 9,025,111 | 158,335 | **15, in 2 trials** |
+| EDIT-Bench | 18 | 72 | 55 (76.4 %) | 8,454,138 | 153,711 | 0 |
+| EDIT-Bench | 12 | 72 | 57 (79.2 %) | 9,307,549 | 163,290 | 0 |
+| EDIT-Bench | off | 72 | 47 (65.3 %) | 7,829,811 | 166,591 | 0 |
+| Aider | 24 | 118 | 93 (78.8 %) | 6,561,320 | 70,551 | 0 |
+| Aider | 18 | 118 | 87 (73.7 %) | 6,570,120 | 75,518 | 0 |
+| Aider | 12 | 118 | 83 (70.3 %) | 6,020,058 | 72,530 | 0 |
+
+Two findings hold. First, at 18 and 12 the feature never fired at all, so those legs are behaviourally an off arm. Second, the pass rate of one unchanged configuration moved from 71/118 to 93/118 across the session, a 22-point swing on identical settings. Provider drift of that size dwarfs every trigger effect here, and it is why no accuracy claim rests on these legs.
+
 ## Lessons: what a benchmark must do to measure this feature
 
 1. **The benchmark must leave the file on disk.** Every cheap public edit benchmark pre-loads the target file into the prompt. Aider passes `fnames` into its coder and stubs file mentions to an empty set. EDIT-Bench hands over the whole file. With the file already in context, no read tool is called. An on/off trial therefore measures noise. Both suites here were re-anchored as file-on-disk agentic tasks for this reason.
