@@ -7,8 +7,9 @@
  * name), `impl` and `trait` (Rust items; mapping them to `Object` would be a lie), and the
  * non-AST prose units `section` and `paragraph`.
  *
- * Display stays lowercase because the note is model-facing prose, not a protocol symbol. A raw
- * grammar node type is never a member: an unmatched node declines expansion.
+ * Display stays lowercase because the note is model-facing prose, not a protocol symbol. The two
+ * camel-case LSP spellings, `enumMember` and `typeParameter`, are lowercased at render; no provider
+ * emits either today. A raw grammar node type is never a member: an unmatched node declines.
  */
 export const LSP_SYMBOL_KINDS = [
   "File",
@@ -152,6 +153,11 @@ export const SPAN_KIND_TO_LSP: Readonly<Record<SpanKind, LspSymbolKind | null>> 
 /** Runtime guard for the seam: a provider cannot smuggle a raw node type into a note. */
 export function isSpanKind(value: unknown): value is SpanKind {
   return typeof value === "string" && (SPAN_KINDS as readonly string[]).includes(value);
+}
+
+/** The lowercase note label for a union member; the audit keeps the union spelling. */
+export function spanKindLabel(kind: SpanKind): string {
+  return kind.toLowerCase();
 }
 
 /** One language's grammar-node-type to note-kind data table. */

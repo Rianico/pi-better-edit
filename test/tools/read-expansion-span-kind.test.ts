@@ -8,11 +8,14 @@ import {
   SPAN_KINDS,
   SPAN_KIND_TO_LSP,
   isSpanKind,
+  spanKindLabel,
 } from "../../src/read-expansion/span-kind";
 import {
   TYPESCRIPT_DECORATION,
   TYPESCRIPT_SPAN_KINDS,
 } from "../../src/read-expansion/typescript-decoration";
+import { LANGUAGES } from "../../src/read-expansion/ast-provider";
+import { GRAMMAR_MANIFEST } from "../../src/read-expansion/grammar-manifest";
 
 const TABLES = [TYPESCRIPT_SPAN_KINDS, PYTHON_SPAN_KINDS, GO_SPAN_KINDS, RUST_SPAN_KINDS] as const;
 
@@ -37,6 +40,12 @@ describe("read expansion: closed span-kind vocabulary", () => {
     }
   });
 
+  it("renders camel-case LSP members as lowercase note labels", () => {
+    expect(spanKindLabel("enumMember")).toBe("enummember");
+    expect(spanKindLabel("typeParameter")).toBe("typeparameter");
+    expect(spanKindLabel("method")).toBe("method");
+  });
+
   it("accepts every member and rejects a raw grammar node type", () => {
     for (const kind of SPAN_KINDS) expect(isSpanKind(kind)).toBe(true);
     for (const raw of [
@@ -47,6 +56,11 @@ describe("read expansion: closed span-kind vocabulary", () => {
     ]) {
       expect(isSpanKind(raw)).toBe(false);
     }
+  });
+
+  it("has a table for every manifest language, with tsx sharing the TypeScript table", () => {
+    expect(Object.keys(LANGUAGES).sort()).toEqual(Object.keys(GRAMMAR_MANIFEST).sort());
+    expect(LANGUAGES.tsx?.kinds).toBe(TYPESCRIPT_SPAN_KINDS);
   });
 
   it("ships a node table with every language and wires it into the decorator", () => {

@@ -21,6 +21,7 @@ export const TYPESCRIPT_SPAN_KINDS = {
   abstract_class_declaration: "class",
   interface_declaration: "interface",
   enum_declaration: "enum",
+  // WHY: TS `module`/`namespace` declarations are namespaces; LSP Module would overstate them.
   module: "namespace",
   internal_module: "namespace",
 } as const satisfies SpanKindTable;

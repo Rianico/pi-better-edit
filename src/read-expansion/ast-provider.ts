@@ -30,7 +30,7 @@ interface LanguageScope {
   readonly kinds: SpanKindTable;
 }
 
-const LANGUAGES: Readonly<Record<string, LanguageScope>> = {
+export const LANGUAGES: Readonly<Record<string, LanguageScope>> = {
   typescript: {
     decorate: createScopeDecorator(TYPESCRIPT_DECORATION),
     kinds: TYPESCRIPT_DECORATION.kinds,

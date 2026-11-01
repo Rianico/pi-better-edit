@@ -17,7 +17,7 @@
  * this module is never entered and the served output is exactly today's.
  */
 import { mergeServedSpans } from "../served-spans.js";
-import { isSpanKind, type SpanKind } from "./span-kind.js";
+import { isSpanKind, spanKindLabel, type SpanKind } from "./span-kind.js";
 
 /** Where a boundary came from. `lsp` is optional enrichment; it never widens on its own. */
 type SpanSource = "ast" | "md" | "text" | "lsp";
@@ -436,9 +436,10 @@ export function applyExpansions(
 }
 
 function quoteLabel(source: SpanSource, kind: SpanKind, name: string): string {
-  if (source === "md") return `${kind} "${name}"`;
-  if (source === "text") return kind;
-  return `${kind} ${name}`;
+  const label = spanKindLabel(kind);
+  if (source === "md") return `${label} "${name}"`;
+  if (source === "text") return label;
+  return `${label} ${name}`;
 }
 
 /**
