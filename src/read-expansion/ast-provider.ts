@@ -16,7 +16,7 @@ import {
 } from "./ast-span.js";
 import { discardCachedGrammar, ensureGrammar, type GrammarCacheOptions } from "./grammar-cache.js";
 import { grammarLanguageForFile } from "./grammar-manifest.js";
-import { loadWebTreeSitterGrammar } from "./grammar-runtime.js";
+import { hasWebTreeSitterRuntime, loadWebTreeSitterGrammar } from "./grammar-runtime.js";
 import type { OffsetWindow, SpanProvider, SpanWindow } from "./span-expansion.js";
 import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
@@ -37,6 +37,8 @@ export interface AstSpanProviderOptions extends GrammarCacheOptions {
   loadGrammar?: GrammarLanguageLoader;
   /** Override file reading (tests can supply source directly). */
   readTextFile?: (path: string) => Promise<string | undefined>;
+  /** Probe the optional wasm host; tests inject a resolution failure here. */
+  runtimeAvailable?: () => Promise<boolean>;
 }
 
 function isOffsetWindow(window: SpanWindow): window is OffsetWindow {
@@ -60,16 +62,38 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
   const handles = new Map<string, Promise<GrammarHandle | undefined>>();
   const loadGrammar = options.loadGrammar ?? loadWebTreeSitterGrammar;
   const readText = options.readTextFile ?? defaultReadText;
+  const runtimeAvailable = options.runtimeAvailable ?? hasWebTreeSitterRuntime;
+  const usesDefaultRuntime = options.loadGrammar === undefined;
+  let runtimeAbsent = false;
 
   const handleFor = (language: string): Promise<GrammarHandle | undefined> => {
     const existing = handles.get(language);
     if (existing !== undefined) return existing;
     const pending = (async (): Promise<GrammarHandle | undefined> => {
       try {
+        if (usesDefaultRuntime) {
+          try {
+            if (!(await runtimeAvailable())) {
+              runtimeAbsent = true;
+              return undefined;
+            }
+          } catch {
+            // SAFETY: an unresolvable optional module is an absent runtime, not a read failure.
+            runtimeAbsent = true;
+            return undefined;
+          }
+        }
         const artifact = await ensureGrammar(language, options);
         if (artifact === undefined) return undefined;
         const handle = await loadGrammar(artifact.bytes);
         if (handle === undefined) {
+          if (usesDefaultRuntime) {
+            try {
+              if (!(await runtimeAvailable())) runtimeAbsent = true;
+            } catch {
+              runtimeAbsent = true;
+            }
+          }
           discardCachedGrammar(artifact.path);
           return undefined;
         }
@@ -102,6 +126,9 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
   };
 
   return {
+    get runtimeAbsent() {
+      return runtimeAbsent;
+    },
     async enclosingSpan(file: string, window: SpanWindow) {
       if (!isOffsetWindow(window)) return null;
       const language = grammarLanguageForFile(file);

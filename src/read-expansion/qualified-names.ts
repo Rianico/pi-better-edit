@@ -42,6 +42,9 @@ export function withQualifiedNames(
   if (resolver === undefined) return provider;
   let disabled = false;
   return {
+    get runtimeAbsent() {
+      return provider.runtimeAbsent === true;
+    },
     async enclosingSpan(file, window) {
       const span = await provider.enclosingSpan(file, window);
       if (span === null || span.source !== "ast" || disabled) return span;

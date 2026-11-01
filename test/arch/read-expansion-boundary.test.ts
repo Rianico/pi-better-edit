@@ -103,6 +103,25 @@ describe("read expansion boundary", () => {
       expect(readFileSync(file, "utf-8"), file).not.toContain("SERVED_MAX_LINES");
     }
   });
+  it("keeps the optional wasm runtime off the extension load path", () => {
+    const staticValueImport = /^\s*import\s+(?!type\s)[^;\n]*["']web-tree-sitter["']/m;
+    for (const file of [join("index.ts"), ...sources("src")]) {
+      expect(readFileSync(file, "utf-8"), file).not.toMatch(staticValueImport);
+    }
+    expect(readFileSync(join(EXPANSION_DIR, "grammar-runtime.ts"), "utf-8")).toContain(
+      'import("web-tree-sitter")',
+    );
+  });
+
+  it("declares the wasm runtime as an optional dependency", () => {
+    const manifest = JSON.parse(readFileSync("package.json", "utf-8")) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    expect(manifest.optionalDependencies?.["web-tree-sitter"]).toBe("0.27.1");
+    expect(manifest.dependencies?.["web-tree-sitter"]).toBeUndefined();
+  });
+
   it("wires the default provider without an enrichment resolver", () => {
     expect(readFileSync("index.ts", "utf-8")).toContain("createReadSpanProvider()");
   });

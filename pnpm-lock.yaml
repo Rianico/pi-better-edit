@@ -131,9 +131,6 @@ importers:
       unbash:
         specifier: 5.0.0
         version: 5.0.0
-      web-tree-sitter:
-        specifier: 0.27.1
-        version: 0.27.1
       xxhash-wasm:
         specifier: ^1.1.0
         version: 1.1.0
@@ -198,6 +195,10 @@ importers:
       vitest:
         specifier: ^4.1.8
         version: 4.1.11(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(vite@8.3.5(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+    optionalDependencies:
+      web-tree-sitter:
+        specifier: 0.27.1
+        version: 0.27.1
 
 packages:
 
@@ -6261,7 +6262,8 @@ snapshots:
 
   web-streams-polyfill@3.3.3: {}
 
-  web-tree-sitter@0.27.1: {}
+  web-tree-sitter@0.27.1:
+    optional: true
 
   web-worker@1.5.0: {}
 

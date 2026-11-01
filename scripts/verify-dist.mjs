@@ -284,6 +284,7 @@ function assertHostPackagesAreOptionalPeers(manifest) {
 function assertSpecifiersResolve(code, manifest) {
   const declared = new Set([
     ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
     ...Object.keys(manifest.devDependencies ?? {}),
     ...Object.keys(manifest.peerDependencies ?? {}),
   ]);

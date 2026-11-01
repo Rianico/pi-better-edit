@@ -56,6 +56,8 @@ export interface SpanProvider {
     file: string,
     window: SpanWindow,
   ): EnclosingSpan | null | Promise<EnclosingSpan | null>;
+  /** Set once an AST attempt found the optional wasm runtime unavailable. */
+  readonly runtimeAbsent?: boolean;
 }
 
 /**

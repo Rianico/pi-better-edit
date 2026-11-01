@@ -30,6 +30,9 @@ export function createReadSpanProvider(options: ReadSpanProviderOptions = {}): S
     options.readTextFile === undefined ? {} : { readTextFile: options.readTextFile },
   );
   const base: SpanProvider = {
+    get runtimeAbsent() {
+      return ast.runtimeAbsent === true;
+    },
     enclosingSpan(file, window) {
       if (isMarkdownPath(file)) return markdown.enclosingSpan(file, window);
       if (isDataPath(file)) return null;

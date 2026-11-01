@@ -58,7 +58,11 @@ import {
   type SpanProvider,
   type WidenedBlock,
 } from "./read-expansion/span-expansion.js";
-import { recordReadExpansion, type ReadExpansionLogEntry } from "./read-expansion/audit.js";
+import {
+  recordReadExpansion,
+  recordReadExpansionRuntimeAbsent,
+  type ReadExpansionLogEntry,
+} from "./read-expansion/audit.js";
 import { resolveReadExpansionModeWithSource } from "./read-expansion-config.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
@@ -553,11 +557,26 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                         provider: spanProvider,
                       });
               decisions.push(decision);
-              recordReadExpansion(
-                auditEntryFor(decision, group, target.file, mode),
-                auditSessionKey,
-                readExpansion.source,
-              );
+              const runtimeDeclined =
+                spanProvider.runtimeAbsent === true &&
+                decision.outcome === "refused" &&
+                decision.reason === "provider_declined";
+              if (runtimeDeclined) {
+                recordReadExpansionRuntimeAbsent(
+                  {
+                    ...auditEntryFor(decision, group, target.file, mode),
+                    reason: "runtime_absent",
+                  },
+                  auditSessionKey,
+                  readExpansion.source,
+                );
+              } else {
+                recordReadExpansion(
+                  auditEntryFor(decision, group, target.file, mode),
+                  auditSessionKey,
+                  readExpansion.source,
+                );
+              }
             }
             const servedWindows = plan.windows.map((window) => {
               const index = folded.findIndex((group) => windowInside(group.window, window));

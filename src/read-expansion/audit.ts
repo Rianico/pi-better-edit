@@ -57,13 +57,14 @@ export function readExpansionLogPath(): string {
   return join(stateRoot(), READ_EXPANSION_LOG_NAME);
 }
 
-/** Test helper: forget which sessions already recorded their rung. */
+/** Test helper: forget which sessions already recorded their rung or runtime absence. */
 export function resetReadExpansionLogStateForTests(): void {
   rungRecordedSessions.clear();
+  runtimeAbsentSessions.clear();
 }
 
 let rungRecordedSessions = new Set<string>();
-
+let runtimeAbsentSessions = new Set<string>();
 /**
  * Append one attempt. Never throws: a lost audit record must not fail the read.
  *
@@ -74,14 +75,32 @@ export function recordReadExpansion(
   sessionKey: string,
   rung: ConfigRung,
 ): void {
+  const includeRung = !rungRecordedSessions.has(sessionKey);
+  if (includeRung) rungRecordedSessions.add(sessionKey);
+  appendRecord({ ...(includeRung ? { rung } : {}), ...entry });
+}
+
+/**
+ * Record the optional wasm runtime's absence once per session. Later reads stay silent, so a
+ * missing module is visible without one line per grammar-backed read.
+ */
+export function recordReadExpansionRuntimeAbsent(
+  entry: ReadExpansionLogEntry,
+  sessionKey: string,
+  rung: ConfigRung,
+): void {
+  if (runtimeAbsentSessions.has(sessionKey)) return;
+  runtimeAbsentSessions.add(sessionKey);
+  recordReadExpansion(entry, sessionKey, rung);
+}
+
+/** Append one JSONL record. Never throws: a lost audit line must not fail the read. */
+function appendRecord(fields: Record<string, unknown>): void {
   try {
-    const includeRung = !rungRecordedSessions.has(sessionKey);
-    if (includeRung) rungRecordedSessions.add(sessionKey);
     const line = `${JSON.stringify({
       ts: new Date().toISOString(),
       pid: process.pid,
-      ...(includeRung ? { rung } : {}),
-      ...entry,
+      ...fields,
     })}\n`;
     const path = readExpansionLogPath();
     // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
