@@ -155,10 +155,20 @@ async function makeCorpus(
   await writeSession(root, "markdown.jsonl", sessionLines("md", ...spec.markdown));
 }
 
-function runReplay(baseline: string, candidate: string): ReplayReport {
+function runReplay(baseline: string, candidate: string, language?: string): ReplayReport {
   const output = execFileSync(
     process.execPath,
-    [SCRIPT, "--baseline", baseline, "--candidate", candidate, "--limit-sessions", "10", "--json"],
+    [
+      SCRIPT,
+      "--baseline",
+      baseline,
+      "--candidate",
+      candidate,
+      "--limit-sessions",
+      "10",
+      "--json",
+      ...(language === undefined ? [] : ["--language", language]),
+    ],
     { encoding: "utf-8", cwd: process.cwd() },
   );
   return JSON.parse(output) as ReplayReport;
@@ -226,6 +236,26 @@ describe("read-expansion replay", () => {
       expect(report.gate.accepted).toEqual(["typescript"]);
       expect(report.gate.rejected).toEqual(["python"]);
       expect(report.gate.insufficientSample).toEqual(["markdown"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an explicitly selected zero-read language as insufficient sample", async () => {
+    const root = await mkdtemp(join(tmpdir(), "read-expansion-replay-zero-"));
+    try {
+      await writeSession(root, "typescript.jsonl", sessionLines("ts", 1, 0, true));
+
+      const report = runReplay(root, root, "go");
+
+      expect(report.gate.languages.go).toMatchObject({
+        sampleSize: 0,
+        verdict: "insufficient-sample",
+        decision: "reject-on-waste",
+        accepted: false,
+        wasteVerdict: "unknown",
+      });
+      expect(report.gate.insufficientSample).toEqual(["go"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

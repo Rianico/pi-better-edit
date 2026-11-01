@@ -562,6 +562,8 @@ export function buildReplayReport({
   const allLanguages = new Set([
     ...Object.keys(baseline.byLanguage),
     ...Object.keys(candidate.byLanguage),
+    // WHY: a requested language with zero reads still needs a visible, honest verdict.
+    ...(selected ?? []),
   ]);
   for (const language of [...allLanguages].sort()) {
     if (language === "unknown" || !isSelected(language)) continue;
