@@ -6,7 +6,7 @@ language, from the pi session JSONL already on disk. It adds no log format and n
 ## Command
 
 ```bash
-pnpm run replay:read-expansion -- \
+pnpm run replay:read-expansion \
   --baseline /path/to/sessions-before \
   --candidate /path/to/sessions-after \
   --limit-sessions 400 \
