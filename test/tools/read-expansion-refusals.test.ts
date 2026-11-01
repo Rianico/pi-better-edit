@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, rmSync } from "node:fs";
@@ -10,12 +10,14 @@ import {
   readExpansionLogPath,
   resetReadExpansionLogStateForTests,
 } from "../../src/read-expansion/audit";
+import { DEFAULT_GRAMMAR_READ_BUDGET_MS } from "../../src/read-expansion/grammar-cache";
 import type { GrammarLanguageLoader, SyntaxNodeLike } from "../../src/read-expansion/ast-span";
 import type {
   GrammarManifest,
   GrammarManifestEntry,
 } from "../../src/read-expansion/grammar-manifest";
 import { createReadSpanProvider } from "../../src/read-expansion/read-provider";
+import { READ_EXPANSION_ENV_VAR } from "../../src/read-expansion-config";
 import {
   REFUSAL_REASONS,
   widenWindow,
@@ -26,6 +28,7 @@ import {
   getText,
   makeFakePiRegistry,
   testSessionManager,
+  withTempDir,
   withTempFile,
 } from "../support/fixtures";
 
@@ -421,6 +424,76 @@ describe("read expansion refusal reasons", () => {
       expect(auditRecords()).toEqual([expect.objectContaining({ outcome: "applied" })]);
     } finally {
       await rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("pins the production grammar read budget", () => {
+    expect(DEFAULT_GRAMMAR_READ_BUDGET_MS).toBe(250);
+  });
+
+  it("does not prefetch a subdirectory-only workspace, then widens on first use", async () => {
+    clearAuditLog();
+    let fetches = 0;
+    const provider = createAstSpanProvider({
+      manifest: MANIFEST,
+      runtimeAvailable: async () => true,
+      fetchImpl: (async () => {
+        fetches += 1;
+        // SAFETY: Node's fetch accepts a Uint8Array body at runtime; the DOM BodyInit union narrows it.
+        return new Response(GOOD_BYTES as unknown as BodyInit);
+      }) as typeof fetch,
+      loadGrammar: fakeLoader({ count: 0 }),
+    });
+    const { pi, getTool } = makeFakePiRegistry();
+    regRead(pi, { spanProvider: provider });
+    const tool = getTool("read") as ReturnType<typeof readerWith>;
+
+    await withTempDir("pbe-subdir-prefetch-", async (cwd) => {
+      await mkdir(join(cwd, "sub"));
+      const nested = join(cwd, "sub", "nested.ts");
+      await writeFile(nested, numbered(20), "utf-8");
+
+      pi.startSession({ cwd });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fetches).toBe(0);
+
+      const result = await runRead(tool, cwd, {
+        file: nested,
+        windows: [{ offset: 3, limit: 2 }],
+      });
+      expect(notes(result)).toEqual(["[widened 3-4 -> 1-10, function fakeFn]"]);
+    });
+
+    expect(fetches).toBe(1);
+  });
+
+  it("does not prefetch while read.expansion is off", async () => {
+    const previous = process.env[READ_EXPANSION_ENV_VAR];
+    process.env[READ_EXPANSION_ENV_VAR] = "off";
+    let fetches = 0;
+    const provider = createAstSpanProvider({
+      manifest: MANIFEST,
+      runtimeAvailable: async () => true,
+      fetchImpl: (async () => {
+        fetches += 1;
+        // SAFETY: Node's fetch accepts a Uint8Array body at runtime; the DOM BodyInit union narrows it.
+        return new Response(GOOD_BYTES as unknown as BodyInit);
+      }) as typeof fetch,
+      loadGrammar: fakeLoader({ count: 0 }),
+    });
+    const { pi } = makeFakePiRegistry();
+    regRead(pi, { spanProvider: provider });
+
+    try {
+      await withTempDir("pbe-prefetch-off-", async (cwd) => {
+        await writeFile(join(cwd, "top.ts"), numbered(20), "utf-8");
+        pi.startSession({ cwd });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(fetches).toBe(0);
+      });
+    } finally {
+      if (previous === undefined) delete process.env[READ_EXPANSION_ENV_VAR];
+      else process.env[READ_EXPANSION_ENV_VAR] = previous;
     }
   });
 });

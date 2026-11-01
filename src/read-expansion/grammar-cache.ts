@@ -44,7 +44,8 @@ export type GrammarFetchResult =
   | { readonly status: "cold"; readonly language: string }
   | { readonly status: "unavailable"; readonly language: string };
 
-const DEFAULT_TIMEOUT_MS = 250;
+/** Production read budget before a first-use fetch reports cold. */
+export const DEFAULT_GRAMMAR_READ_BUDGET_MS = 250;
 const FETCH_HARD_TIMEOUT_MS = 30_000;
 const COLD = Symbol("cold");
 
@@ -189,7 +190,7 @@ export async function requestGrammar(
     void pending.then(settle, settle);
   }
 
-  const fetched = await waitWithin(pending, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const fetched = await waitWithin(pending, options.timeoutMs ?? DEFAULT_GRAMMAR_READ_BUDGET_MS);
   if (fetched === COLD) return { status: "cold", language };
   if (fetched === undefined) return { status: "unavailable", language };
   return { status: "ready", artifact: { language, path, bytes: fetched } };
