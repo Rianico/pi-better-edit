@@ -137,6 +137,20 @@ describe("read expansion: Go boundaries", () => {
     });
   });
 
+  it("widens a type declaration with the typeAlias label", async () => {
+    const source = `package demo\n\ntype Name = struct {\n\tValue string\n}\n`;
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("alias.go", source, async ({ cwd, path }) => {
+        const result = await runRead(reader(cacheRoot), cwd, {
+          file: path,
+          windows: [{ offset: 4, limit: 1 }],
+        });
+        expect(lines(result)).toEqual(["type Name = struct {", "\tValue string", "}"]);
+        expect(notes(result)).toEqual(["[widened 4-4 -> 3-5, typeAlias Name]"]);
+      });
+    });
+  });
+
   it("leaves package, import and top-level var probes at the requested window", async () => {
     const source = `package demo\n\nimport "fmt"\n\nvar top = 1\n\nfunc helper() {}\n`;
     await withRealGrammar(async (cacheRoot) => {

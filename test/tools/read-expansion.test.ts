@@ -554,6 +554,22 @@ describe("read expansion: audit log", () => {
     expect(records.slice(1).every((record) => !("rung" in record))).toBe(true);
   });
 
+  it("renders prose labels while the audit keeps the union spelling", async () => {
+    clearAuditLog();
+    await withTempFile("audit-label.txt", numbered(30), async ({ cwd, path }) => {
+      const result = await runRead(readerWith(fixedSpan(2, 5, "enumMember", "Value", "ast")), cwd, {
+        file: path,
+        windows: [{ offset: 3, limit: 1 }],
+      });
+      expect(widenedNotes(getText(result))).toEqual(["[widened 3-3 -> 2-5, enum member Value]"]);
+    });
+
+    expect(auditRecords().find((record) => record["outcome"] === "applied")).toMatchObject({
+      kind: "enumMember",
+      label: "enumMember Value",
+    });
+  });
+
   it("records the verbatim mode on an applied expansion", async () => {
     clearAuditLog();
     await withTempFile("audit-verbatim.txt", numbered(30), async ({ cwd, path }) => {

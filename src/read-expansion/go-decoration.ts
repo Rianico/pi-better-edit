@@ -1,12 +1,27 @@
 /** Go vocabulary for the shared scope-decoration walk. */
 import type { DecorationSpec } from "./scope-decoration.js";
 import type { SpanKindTable } from "./span-kind.js";
+import type { SyntaxNodeLike } from "./ast-span.js";
 
-/** Go scope nodes and their note kinds; a receiver method is already `method_declaration`. */
+/** Go scope nodes and their note kinds; type declarations use `typeAlias`. */
 export const GO_SPAN_KINDS = {
   function_declaration: "function",
   method_declaration: "method",
+  type_declaration: "typeAlias",
+  type_alias: "typeAlias",
+  type_spec: "typeAlias",
 } as const satisfies SpanKindTable;
+
+/** A grouped type declaration has no name; its single spec, or the requested spec, carries it. */
+function goName(node: SyntaxNodeLike): string | undefined {
+  const named = node.childForFieldName?.("name");
+  if (typeof named?.text === "string" && named.text.trim() !== "") return named.text.trim();
+  if (node.type !== "type_declaration") return undefined;
+  const specs = node.namedChildren.filter(
+    (child) => child.type === "type_alias" || child.type === "type_spec",
+  );
+  return specs.length === 1 ? goName(specs[0]!) : undefined;
+}
 
 /**
  * Go doc comments are the `//` (or block comment) run at column 0 directly above a
@@ -28,4 +43,5 @@ export const GO_DECORATION: DecorationSpec = {
   transparentTypes: new Set(),
   decorationTypes: new Set(),
   nameField: "name",
+  nameOf: goName,
 };

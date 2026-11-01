@@ -176,15 +176,16 @@ describe("read expansion: TypeScript and TSX boundaries", () => {
     });
   });
 
-  it("leaves a type alias probe exact because LSP has no honest kind for it", async () => {
+  it("widens a type alias again with the typeAlias label", async () => {
     await withRealGrammar(async (cacheRoot) => {
-      await withTempFile("alias.ts", `type A = string;\nconst x = 1;\n`, async ({ cwd, path }) => {
+      const source = `type A = {\n  value: string;\n};\nconst x = 1;\n`;
+      await withTempFile("alias.ts", source, async ({ cwd, path }) => {
         const result = await runRead(reader(cacheRoot), cwd, {
           file: path,
-          windows: [{ offset: 1, limit: 1 }],
+          windows: [{ offset: 2, limit: 1 }],
         });
-        expect(lines(result)).toEqual(["type A = string;"]);
-        expect(notes(result)).toEqual([]);
+        expect(lines(result)).toEqual(["type A = {", "  value: string;", "};"]);
+        expect(notes(result)).toEqual(["[widened 2-2 -> 1-3, typeAlias A]"]);
       });
     });
   });

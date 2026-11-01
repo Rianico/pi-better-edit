@@ -7,6 +7,7 @@ import {
   LSP_SYMBOL_KINDS,
   SPAN_KINDS,
   SPAN_KIND_TO_LSP,
+  PRODUCED_KINDS,
   isSpanKind,
   spanKindLabel,
 } from "../../src/read-expansion/span-kind";
@@ -22,12 +23,19 @@ const TABLES = [TYPESCRIPT_SPAN_KINDS, PYTHON_SPAN_KINDS, GO_SPAN_KINDS, RUST_SP
 const NON_AST_KINDS = ["function", "section", "paragraph"] as const;
 
 describe("read expansion: closed span-kind vocabulary", () => {
-  it("is exactly the LSP SymbolKind base plus the five documented extensions", () => {
+  it("is exactly the LSP SymbolKind base plus the six documented extensions", () => {
     expect(SPAN_KINDS).toEqual([
       ...LSP_SYMBOL_KINDS.map((kind) => kind.charAt(0).toLowerCase() + kind.slice(1)),
       ...EXTENSION_SPAN_KINDS,
     ]);
-    expect(EXTENSION_SPAN_KINDS).toEqual(["arrow", "impl", "trait", "section", "paragraph"]);
+    expect(EXTENSION_SPAN_KINDS).toEqual([
+      "arrow",
+      "impl",
+      "trait",
+      "section",
+      "paragraph",
+      "typeAlias",
+    ]);
   });
 
   it("documents every member's LSP counterpart and leaves only extensions unmapped", () => {
@@ -40,9 +48,10 @@ describe("read expansion: closed span-kind vocabulary", () => {
     }
   });
 
-  it("renders camel-case LSP members as lowercase note labels", () => {
-    expect(spanKindLabel("enumMember")).toBe("enummember");
-    expect(spanKindLabel("typeParameter")).toBe("typeparameter");
+  it("renders camel-case members with their documented labels", () => {
+    expect(spanKindLabel("enumMember")).toBe("enum member");
+    expect(spanKindLabel("typeParameter")).toBe("type parameter");
+    expect(spanKindLabel("typeAlias")).toBe("typeAlias");
     expect(spanKindLabel("method")).toBe("method");
   });
 
@@ -85,5 +94,16 @@ describe("read expansion: closed span-kind vocabulary", () => {
     expect(emitted.has("arrow")).toBe(true);
     expect(emitted.has("impl")).toBe(true);
     expect(emitted.has("trait")).toBe(true);
+  });
+
+  it("emits only PRODUCED_KINDS and keeps that set exact", () => {
+    const emitted = new Set<string>(NON_AST_KINDS);
+    for (const table of TABLES) {
+      for (const kind of Object.values(table)) {
+        expect(PRODUCED_KINDS).toContain(kind);
+        emitted.add(kind);
+      }
+    }
+    expect([...emitted].sort()).toEqual([...PRODUCED_KINDS].sort());
   });
 });

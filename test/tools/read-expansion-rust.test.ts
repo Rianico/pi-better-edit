@@ -171,6 +171,20 @@ describe("read expansion: Rust boundaries", () => {
     });
   });
 
+  it("widens a type item with the typeAlias label", async () => {
+    const source = `struct S;\n\ntype Alias = (\n    i32,\n);\n`;
+    await withRealGrammar(async (cacheRoot) => {
+      await withTempFile("alias.rs", source, async ({ cwd, path }) => {
+        const result = await runRead(reader(cacheRoot), cwd, {
+          file: path,
+          windows: [{ offset: 4, limit: 1 }],
+        });
+        expect(lines(result)).toEqual(["type Alias = (", "    i32,", ");"]);
+        expect(notes(result)).toEqual(["[widened 4-4 -> 3-5, typeAlias Alias]"]);
+      });
+    });
+  });
+
   it("widens a nested block to the enclosing function", async () => {
     const source = `fn outer(flag: bool) -> i32 {\n    if flag {\n        let x = 1;\n        return x;\n    }\n    0\n}\n`;
     await withRealGrammar(async (cacheRoot) => {

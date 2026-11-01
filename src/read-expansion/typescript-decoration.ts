@@ -5,8 +5,8 @@ import type { SpanKindTable } from "./span-kind.js";
 const JSDOC_PREFIX = "/**";
 
 /**
- * TypeScript scope nodes and their note kinds. `type_alias_declaration` is deliberately absent:
- * LSP has no honest type-alias kind, and the extension set is closed, so that probe stays exact.
+ * TypeScript scope nodes and their note kinds. `type_alias_declaration` uses the `typeAlias`
+ * extension; Swift and Kotlin will map their type declarations when they ship a table.
  */
 export const TYPESCRIPT_SPAN_KINDS = {
   arrow_function: "arrow",
@@ -21,6 +21,7 @@ export const TYPESCRIPT_SPAN_KINDS = {
   abstract_class_declaration: "class",
   interface_declaration: "interface",
   enum_declaration: "enum",
+  type_alias_declaration: "typeAlias",
   // WHY: TS `module`/`namespace` declarations are namespaces; LSP Module would overstate them.
   module: "namespace",
   internal_module: "namespace",

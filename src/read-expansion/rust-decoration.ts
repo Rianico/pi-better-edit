@@ -11,12 +11,13 @@ function isOwnerMethod(node: SyntaxNodeLike): boolean {
   return owner?.type === "impl_item" || owner?.type === "trait_item";
 }
 
-/** Rust scope nodes and their note kinds; impl and trait are extensions, never LSP Object. */
+/** Rust scope nodes and their note kinds; impl/trait and type items use extensions. */
 export const RUST_SPAN_KINDS = {
   function_item: "function",
   function_signature_item: "function",
   impl_item: "impl",
   trait_item: "trait",
+  type_item: "typeAlias",
 } as const satisfies SpanKindTable;
 
 /** Impl and trait nodes carry their name in `type`, while functions use `name`. */
