@@ -31,12 +31,12 @@ export function createMarkdownSpanProvider(
   const readText = options.readTextFile ?? defaultReadText;
   return {
     async enclosingSpan(file, window) {
-      if (!("offset" in window) || !("limit" in window)) return null;
-      if (!isMarkdownPath(file)) return null;
+      if (!("offset" in window) || !("limit" in window)) return { refusal: "provider_declined" };
+      if (!isMarkdownPath(file)) return { refusal: "no_provider" };
       const text = await readText(file);
-      if (text === undefined) return null;
+      if (text === undefined) return { refusal: "provider_declined" };
       const section = findMarkdownSection(text, window.offset, window.offset + window.limit - 1);
-      if (section === null) return null;
+      if (section === null) return { refusal: "boundary_crossing" };
       return {
         start: section.start,
         end: section.end,

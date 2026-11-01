@@ -79,7 +79,8 @@ describe("read expansion boundary", () => {
         expect(imports, `${file} imports "${token}"`).not.toContain(token);
       }
       for (const call of SEAM_FORBIDDEN_CALLS) {
-        expect(source, `${file} calls "${call}"`).not.toContain(call);
+        const escaped = call.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        expect(source, `${file} calls "${call}"`).not.toMatch(new RegExp(`\\b${escaped}`));
       }
     }
   });

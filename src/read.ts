@@ -61,9 +61,13 @@ import {
 import {
   recordReadExpansion,
   recordReadExpansionRuntimeAbsent,
+  recordReadExpansionToggleOff,
   type ReadExpansionLogEntry,
 } from "./read-expansion/audit.js";
-import { resolveReadExpansionModeWithSource } from "./read-expansion-config.js";
+import {
+  resolveReadExpansionMode,
+  resolveReadExpansionModeWithSource,
+} from "./read-expansion-config.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -294,6 +298,8 @@ function auditEntryFor(
     ...(decision.kind === undefined ? {} : { kind: decision.kind }),
     ...(decision.name === undefined ? {} : { name: decision.name }),
     ...(decision.source === undefined ? {} : { source: decision.source }),
+    ...(decision.language === undefined ? {} : { language: decision.language }),
+    ...(decision.blockSize === undefined ? {} : { blockSize: decision.blockSize }),
     ...(decision.kind === undefined || decision.name === undefined
       ? {}
       : { label: `${decision.kind} ${decision.name}` }),
@@ -363,6 +369,11 @@ async function fullHashesFor(
 // WHY: until a parser ticket injects one; a null answer is likewise today's exact read.
 export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvider }): void {
   const spanProvider = options?.spanProvider;
+  // WHY: session_start warms the grammars off the read path; a read still waits only its budget.
+  pi.on?.("session_start", (_event, ctx) => {
+    if (ctx.cwd === undefined || resolveReadExpansionMode(ctx.cwd) === "off") return;
+    void spanProvider?.prefetch?.(ctx.cwd);
+  });
   // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
   // WHY: `file_path ?? path` plus `offset`/`limit`. Our payload field is `file` (ADR-0041 D1), so
   // WHY: project it for rendering only — the call line shows the filename, and `args` is never
@@ -558,15 +569,10 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                       });
               decisions.push(decision);
               const runtimeDeclined =
-                spanProvider.runtimeAbsent === true &&
-                decision.outcome === "refused" &&
-                decision.reason === "provider_declined";
+                decision.outcome === "refused" && decision.reason === "runtime_absent";
               if (runtimeDeclined) {
                 recordReadExpansionRuntimeAbsent(
-                  {
-                    ...auditEntryFor(decision, group, target.file, mode),
-                    reason: "runtime_absent",
-                  },
+                  auditEntryFor(decision, group, target.file, mode),
                   auditSessionKey,
                   readExpansion.source,
                 );
@@ -587,6 +593,26 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               decision.outcome === "applied" ? [decision.expansion] : [],
             );
             expandedRead = applyExpansions(servedWindows, applied);
+          } else if (
+            spanProvider !== undefined &&
+            readExpansion?.value === "off" &&
+            plan.windows !== undefined &&
+            plan.windows.length > 0
+          ) {
+            // WHY: off still answers "why did this read not widen?" without touching provider work.
+            const auditSessionKey = sessionKeyFor(sessionCtx);
+            for (const group of foldWindows(plan.windows)) {
+              recordReadExpansionToggleOff(
+                auditEntryFor(
+                  { outcome: "refused", reason: "toggle_off" },
+                  group,
+                  target.file,
+                  mode,
+                ),
+                auditSessionKey,
+                readExpansion.source,
+              );
+            }
           }
           const effectivePlan =
             expandedRead === undefined ? plan : { ...plan, windows: expandedRead.windows };

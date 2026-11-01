@@ -81,7 +81,7 @@ async function withMode<T>(mode: string, run: () => Promise<T>): Promise<T> {
 }
 
 describe("read expansion toggle", () => {
-  it("off bypasses the provider and writes no audit record", async () => {
+  it("off bypasses the provider and records toggle_off", async () => {
     clearAuditLog();
     let calls = 0;
     const provider: SpanProvider = {
@@ -102,11 +102,26 @@ describe("read expansion toggle", () => {
 
         expect(lines(result)).toEqual(["line 3", "line 4"]);
         expect(notes(result)).toEqual([]);
+
+        const second = await readerWith(provider).execute(
+          "toggle-off-2",
+          { file: path, windows: [{ offset: 5, limit: 2 }] },
+          undefined,
+          undefined,
+          { cwd, sessionManager: testSessionManager },
+        );
+        expect(lines(second)).toEqual(["line 5", "line 6"]);
       });
     });
 
     expect(calls).toBe(0);
-    expect(auditRecords()).toEqual([]);
+    expect(auditRecords()).toEqual([
+      expect.objectContaining({
+        outcome: "refused",
+        reason: "toggle_off",
+        requested: [{ startLine: 3, endLine: 4 }],
+      }),
+    ]);
   });
 
   it("warns and stays on when the project config is unusable", async () => {

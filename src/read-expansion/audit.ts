@@ -14,6 +14,8 @@
  * session makes the effective policy visible without repeating it on every line. Later records omit
  * it. The rung is required, so a new caller cannot silently stamp the wrong value.
  *
+ * The refusal vocabulary lives in `docs/agents/read-expansion-replay.md#refusal-vocabulary`.
+ *
  * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
  * that already served its rows into a failed call.
  */
@@ -48,6 +50,10 @@ export interface ReadExpansionLogEntry {
   readonly name?: string;
   readonly source?: string;
   readonly clamped?: boolean;
+  /** Grammar language, when the refusal is about one. */
+  readonly language?: string;
+  /** Full block size for an over-cap refusal. */
+  readonly blockSize?: number;
   readonly reason?: string;
 }
 
@@ -57,14 +63,16 @@ export function readExpansionLogPath(): string {
   return join(stateRoot(), READ_EXPANSION_LOG_NAME);
 }
 
-/** Test helper: forget which sessions already recorded their rung or runtime absence. */
+/** Test helper: forget which sessions already recorded their rung, absence or toggle. */
 export function resetReadExpansionLogStateForTests(): void {
   rungRecordedSessions.clear();
   runtimeAbsentSessions.clear();
+  toggleOffSessions.clear();
 }
 
 let rungRecordedSessions = new Set<string>();
 let runtimeAbsentSessions = new Set<string>();
+let toggleOffSessions = new Set<string>();
 /**
  * Append one attempt. Never throws: a lost audit record must not fail the read.
  *
@@ -91,6 +99,17 @@ export function recordReadExpansionRuntimeAbsent(
 ): void {
   if (runtimeAbsentSessions.has(sessionKey)) return;
   runtimeAbsentSessions.add(sessionKey);
+  recordReadExpansion(entry, sessionKey, rung);
+}
+
+/** Record one `toggle_off` refusal per session; off reads stay cheap and do not flood. */
+export function recordReadExpansionToggleOff(
+  entry: ReadExpansionLogEntry,
+  sessionKey: string,
+  rung: ConfigRung,
+): void {
+  if (toggleOffSessions.has(sessionKey)) return;
+  toggleOffSessions.add(sessionKey);
   recordReadExpansion(entry, sessionKey, rung);
 }
 

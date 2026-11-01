@@ -48,6 +48,30 @@ Each corpus is parsed from pi's session records: assistant `toolCall` entries ar
   reported as `unknown` but never gated.
   A retired multi-file read shape attributes to its first file (`files[0]`); while `read` keeps its `files?.[0]` tolerance, this has no corpus impact.
 
+## Refusal vocabulary
+
+`read-expansion.log` uses one `reason` code per refused attempt. The audit sink's module comment points here; `REFUSAL_REASONS` in `src/read-expansion/span-expansion.ts` is the code authority.
+
+| Reason | Meaning | Extra fields |
+|---|---|---|
+| `above_trigger` | The folded window is larger than 24 lines, so expansion never starts. | — |
+| `past_eof` | The requested offset is beyond the visible line count. | — |
+| `not_text` | The file loaded as something other than text, so no boundary can be read. | — |
+| `toggle_off` | `read.expansion` resolved to `off`; the read is exact and provider work is skipped. Recorded once per session. | — |
+| `no_provider` | No expansion provider covers this file type (data extension or unsupported grammar). | — |
+| `boundary_crossing` | The window crosses a structural boundary or no single boundary contains it (two paragraphs, Setext/unclosed Markdown, no enclosing scope). | `language` for code |
+| `grammar_unavailable` | Permanent grammar failure: manifest missing, offline, corrupt bytes or unloadable wasm. | `language` |
+| `cold_grammar` | A grammar fetch started but did not finish inside the read budget; the fetch continues, so the next read can widen. | `language` |
+| `runtime_absent` | The optional `web-tree-sitter` module is unresolvable. Recorded once per session. | `language` |
+| `provider_declined` | Genuinely unclassified decline, such as unreadable text or a source tree with syntax errors. | `language` when known |
+| `provider_error` | The provider threw; the read stays exact. | — |
+| `invalid_answer` | The provider returned a malformed span. | — |
+| `not_superset` | The provider's span did not cover the requested window. | `section` |
+| `over_cap` | The code or plain-text block exceeds its cap and is refused, never clamped. | `blockSize`, `section` |
+
+`read-expansion.log` also carries the first-entry `rung` for the resolved configuration source. The read budget is 250 ms; `cold_grammar` is transient, while `grammar_unavailable` and `runtime_absent` are permanent for the session unless the host changes.
+
+
 ## Gate
 
 Binding D24 overlay:

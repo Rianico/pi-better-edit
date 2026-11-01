@@ -82,20 +82,20 @@ export function createBashSpanProvider(options: BashSpanProviderOptions = {}): S
   const readText = options.readTextFile ?? defaultReadText;
   return {
     async enclosingSpan(file, window) {
-      if (!("offset" in window) || !("limit" in window)) return null;
-      if (!isShellPath(file)) return null;
+      if (!("offset" in window) || !("limit" in window)) return { refusal: "provider_declined" };
+      if (!isShellPath(file)) return { refusal: "no_provider" };
       const text = await readText(file);
-      if (text === undefined) return null;
+      if (text === undefined) return { refusal: "provider_declined" };
 
       let script: ParsedScript;
       try {
         const { parse } = await loadUnbash();
         script = parse(text);
       } catch {
-        return null;
+        return { refusal: "provider_declined" };
       }
       // WHY: partial parses cannot prove a boundary; criterion 4 fails closed exactly like #202.
-      if (hasParseErrors(script)) return null;
+      if (hasParseErrors(script)) return { refusal: "provider_declined" };
 
       const requestedEnd = window.offset + window.limit - 1;
       const ownedSource = script.source ?? text;
@@ -122,7 +122,7 @@ export function createBashSpanProvider(options: BashSpanProviderOptions = {}): S
           best = { ...range, name: functionName(fn), pos: fn.pos, byteLength };
         }
       }
-      if (best === undefined) return null;
+      if (best === undefined) return { refusal: "boundary_crossing" };
 
       return {
         start: best.startLine,

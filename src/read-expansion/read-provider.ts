@@ -33,9 +33,12 @@ export function createReadSpanProvider(options: ReadSpanProviderOptions = {}): S
     get runtimeAbsent() {
       return ast.runtimeAbsent === true;
     },
+    prefetch(cwd?: string) {
+      return ast.prefetch?.(cwd);
+    },
     enclosingSpan(file, window) {
       if (isMarkdownPath(file)) return markdown.enclosingSpan(file, window);
-      if (isDataPath(file)) return null;
+      if (isDataPath(file)) return { refusal: "no_provider" };
       if (isPlainTextPath(file)) return paragraph.enclosingSpan(file, window);
       if (isShellPath(file)) return bash.enclosingSpan(file, window);
       return ast.enclosingSpan(file, window);

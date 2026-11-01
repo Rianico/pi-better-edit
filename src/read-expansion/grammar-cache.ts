@@ -32,14 +32,23 @@ export interface GrammarCacheOptions {
   cacheRoot?: string;
   /** Override `globalThis.fetch` (tests). */
   fetchImpl?: typeof fetch;
-  /** Bounded wait for a first-use fetch; offline reads must fail fast. */
+  /** Read budget for a first-use fetch; the fetch itself continues after this wait. */
   timeoutMs?: number;
   /** Override the committed manifest (tests). */
   manifest?: GrammarManifest;
 }
 
-const DEFAULT_TIMEOUT_MS = 2_000;
+/** Why a grammar request did not produce verified bytes. */
+export type GrammarFetchResult =
+  | { readonly status: "ready"; readonly artifact: GrammarArtifact }
+  | { readonly status: "cold"; readonly language: string }
+  | { readonly status: "unavailable"; readonly language: string };
 
+const DEFAULT_TIMEOUT_MS = 250;
+const FETCH_HARD_TIMEOUT_MS = 30_000;
+const COLD = Symbol("cold");
+
+const inFlight = new Map<string, Promise<Uint8Array | undefined>>();
 /** `<stateRoot>/grammars` — grammar cache lives beside the store and logs. */
 function grammarCacheRoot(root?: string): string {
   return root ?? join(stateRoot(), "grammars");
@@ -94,7 +103,7 @@ async function fetchVerified(
   if (typeof fetchImpl !== "function") return undefined;
   try {
     const response = await fetchImpl(entry.url, {
-      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(FETCH_HARD_TIMEOUT_MS),
     });
     if (!response.ok) return undefined;
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -126,18 +135,74 @@ function writeCache(path: string, bytes: Uint8Array): void {
  * Return verified grammar bytes for `language`, fetching at most once on the successful path.
  * A cached digest mismatch deletes the file and fetches; a fetched digest mismatch yields undefined.
  */
+/** Wait for a shared fetch inside the read budget, or report that it is still cold. */
+function waitWithin<T>(task: Promise<T>, timeoutMs: number): Promise<T | typeof COLD> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof COLD>((resolve) => {
+    timer = setTimeout(() => resolve(COLD), Math.max(0, timeoutMs));
+  });
+  return Promise.race([task, deadline]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+function fetchAndCache(
+  entry: GrammarManifestEntry,
+  path: string,
+  options: GrammarCacheOptions,
+): Promise<Uint8Array | undefined> {
+  return (async () => {
+    try {
+      const bytes = await fetchVerified(entry, options);
+      if (bytes === undefined) return undefined;
+      writeCache(path, bytes);
+      return bytes;
+    } catch {
+      // SAFETY: a fetch/write failure is the same answer as an offline grammar.
+      return undefined;
+    }
+  })();
+}
+
+/**
+ * Request verified grammar bytes. The first requester starts one shared fetch; every caller waits
+ * only its read budget. A budget expiry returns `cold` while the shared fetch keeps running, so the
+ * next read can widen once it lands.
+ */
+export async function requestGrammar(
+  language: string,
+  options: GrammarCacheOptions = {},
+): Promise<GrammarFetchResult> {
+  const entry = (options.manifest ?? GRAMMAR_MANIFEST)[language];
+  if (entry === undefined) return { status: "unavailable", language };
+  const path = grammarCachePath(language, entry, options.cacheRoot);
+  const cached = readVerifiedCache(path, entry.sha256);
+  if (cached !== undefined) return { status: "ready", artifact: { language, path, bytes: cached } };
+
+  let pending = inFlight.get(path);
+  if (pending === undefined) {
+    pending = fetchAndCache(entry, path, options);
+    inFlight.set(path, pending);
+    const settle = (): void => {
+      if (inFlight.get(path) === pending) inFlight.delete(path);
+    };
+    void pending.then(settle, settle);
+  }
+
+  const fetched = await waitWithin(pending, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  if (fetched === COLD) return { status: "cold", language };
+  if (fetched === undefined) return { status: "unavailable", language };
+  return { status: "ready", artifact: { language, path, bytes: fetched } };
+}
+
+/**
+ * Wait for verified grammar bytes. Kept for the cache tests and non-read callers; a read uses
+ * `requestGrammar` so a budget expiry is visible as `cold`.
+ */
 export async function ensureGrammar(
   language: string,
   options: GrammarCacheOptions = {},
 ): Promise<GrammarArtifact | undefined> {
-  const entry = (options.manifest ?? GRAMMAR_MANIFEST)[language];
-  if (entry === undefined) return undefined;
-  const path = grammarCachePath(language, entry, options.cacheRoot);
-  const cached = readVerifiedCache(path, entry.sha256);
-  if (cached !== undefined) return { language, path, bytes: cached };
-
-  const fetched = await fetchVerified(entry, options);
-  if (fetched === undefined) return undefined;
-  writeCache(path, fetched);
-  return { language, path, bytes: fetched };
+  const result = await requestGrammar(language, options);
+  return result.status === "ready" ? result.artifact : undefined;
 }

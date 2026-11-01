@@ -38,12 +38,12 @@ export function createParagraphSpanProvider(
   const readText = options.readTextFile ?? defaultReadText;
   return {
     async enclosingSpan(file, window) {
-      if (!("offset" in window) || !("limit" in window)) return null;
-      if (!isPlainTextPath(file)) return null;
+      if (!("offset" in window) || !("limit" in window)) return { refusal: "provider_declined" };
+      if (!isPlainTextPath(file)) return { refusal: "no_provider" };
       const text = await readText(file);
-      if (text === undefined) return null;
+      if (text === undefined) return { refusal: "provider_declined" };
       const paragraph = findParagraph(text, window.offset, window.offset + window.limit - 1);
-      if (paragraph === null) return null;
+      if (paragraph === null) return { refusal: "boundary_crossing" };
       return {
         start: paragraph.start,
         end: paragraph.end,

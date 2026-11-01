@@ -26,12 +26,13 @@ describe("extension registration", () => {
     expect(commandNames).toEqual(["pi-better-edit"]);
 
     // WHY: the extension's own subscriptions, one entry per `pi.on` site in `index.ts`'s factory.
-    // WHY: TWO `session_start` here — (#165) regEdit captures the session for the preview pane and
-    // WHY: the lifecycle hook does the session-start work; the janitor's is the third, and comes
-    // WHY: from `JANITOR_EVENTS` below. TWO `tool_call`: the pre-write served hash echo guard and the
+    // WHY: THREE `session_start` here — (#165) regEdit captures the session for the preview pane,
+    // WHY: the lifecycle hook does the session-start work, and regRead warms expansion grammars; the
+    // WHY: janitor's is the fourth, and comes from `JANITOR_EVENTS` below. TWO `tool_call`: the pre-write served hash echo guard and the
     // WHY: search line-number injection (spec §3.1); they filter by tool name independently, so order
     // WHY: is not load-bearing.
     const extensionSubscriptions = [
+      "session_start",
       "session_start",
       "session_start",
       "tool_call",

@@ -2,9 +2,11 @@
  * The AST boundary provider: every supported grammar through the shared lazy supply and decoration seams.
  *
  * The provider owns the boundary policy and the per-language handle cache; the grammar cache owns
- * fetch/verify and the runtime owns `web-tree-sitter`. Any failure on any layer returns null, which
- * the read seam turns into today's exact window.
+ * fetch/verify and the runtime owns `web-tree-sitter`. A typed decline keeps "no provider",
+ * "grammar unavailable" and "cold grammar" distinguishable at the audit seam, while every failure
+ * still degrades to today's exact window.
  */
+import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import {
   findEnclosingScope,
@@ -14,10 +16,10 @@ import {
   type GrammarHandle,
   type GrammarLanguageLoader,
 } from "./ast-span.js";
-import { discardCachedGrammar, ensureGrammar, type GrammarCacheOptions } from "./grammar-cache.js";
-import { grammarLanguageForFile } from "./grammar-manifest.js";
+import { discardCachedGrammar, requestGrammar, type GrammarCacheOptions } from "./grammar-cache.js";
+import { GRAMMAR_MANIFEST, grammarLanguageForFile } from "./grammar-manifest.js";
 import { hasWebTreeSitterRuntime, loadWebTreeSitterGrammar } from "./grammar-runtime.js";
-import type { OffsetWindow, SpanProvider, SpanWindow } from "./span-expansion.js";
+import type { OffsetWindow, SpanDecline, SpanProvider, SpanWindow } from "./span-expansion.js";
 import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
 import { PYTHON_DECORATION } from "./python-decoration.js";
@@ -41,6 +43,10 @@ export interface AstSpanProviderOptions extends GrammarCacheOptions {
   runtimeAvailable?: () => Promise<boolean>;
 }
 
+type HandleOutcome =
+  | { readonly kind: "ready"; readonly handle: GrammarHandle }
+  | { readonly kind: "decline"; readonly decline: SpanDecline };
+
 function isOffsetWindow(window: SpanWindow): window is OffsetWindow {
   return "offset" in window && "limit" in window;
 }
@@ -53,101 +59,143 @@ async function defaultReadText(path: string): Promise<string | undefined> {
   }
 }
 
+function grammarLanguagesForCwd(cwd: string): string[] {
+  try {
+    const languages = new Set<string>();
+    for (const entry of readdirSync(cwd, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const language = grammarLanguageForFile(entry.name);
+      if (language !== undefined) languages.add(language);
+    }
+    return [...languages];
+  } catch {
+    return [];
+  }
+}
+
+function decline(refusal: SpanDecline["refusal"], language?: string): SpanDecline {
+  return { refusal, ...(language === undefined ? {} : { language }) };
+}
+
 /**
  * Build a provider over one grammar manifest and one cache root. The handle cache is per provider,
  * so two reads in one session parse with one loaded grammar; a new provider still reuses the
  * verified file without a network call.
  */
 export function createAstSpanProvider(options: AstSpanProviderOptions = {}): SpanProvider {
-  const handles = new Map<string, Promise<GrammarHandle | undefined>>();
+  const handles = new Map<string, Promise<HandleOutcome>>();
   const loadGrammar = options.loadGrammar ?? loadWebTreeSitterGrammar;
   const readText = options.readTextFile ?? defaultReadText;
   const runtimeAvailable = options.runtimeAvailable ?? hasWebTreeSitterRuntime;
   const usesDefaultRuntime = options.loadGrammar === undefined;
   let runtimeAbsent = false;
 
-  const handleFor = (language: string): Promise<GrammarHandle | undefined> => {
+  const probeRuntime = async (): Promise<boolean> => {
+    if (!usesDefaultRuntime) return true;
+    try {
+      return await runtimeAvailable();
+    } catch {
+      // SAFETY: an unresolvable optional module is an absent runtime, not a read failure.
+      return false;
+    }
+  };
+
+  const handleFor = (language: string): Promise<HandleOutcome> => {
     const existing = handles.get(language);
     if (existing !== undefined) return existing;
-    const pending = (async (): Promise<GrammarHandle | undefined> => {
+    const pending = (async (): Promise<HandleOutcome> => {
       try {
-        if (usesDefaultRuntime) {
-          try {
-            if (!(await runtimeAvailable())) {
-              runtimeAbsent = true;
-              return undefined;
-            }
-          } catch {
-            // SAFETY: an unresolvable optional module is an absent runtime, not a read failure.
-            runtimeAbsent = true;
-            return undefined;
-          }
+        if (!(await probeRuntime())) {
+          runtimeAbsent = true;
+          return { kind: "decline", decline: decline("runtime_absent", language) };
         }
-        const artifact = await ensureGrammar(language, options);
-        if (artifact === undefined) return undefined;
-        const handle = await loadGrammar(artifact.bytes);
+        const fetched = await requestGrammar(language, options);
+        if (fetched.status === "cold") {
+          return { kind: "decline", decline: decline("cold_grammar", language) };
+        }
+        if (fetched.status === "unavailable") {
+          return { kind: "decline", decline: decline("grammar_unavailable", language) };
+        }
+        const handle = await loadGrammar(fetched.artifact.bytes);
         if (handle === undefined) {
-          if (usesDefaultRuntime) {
-            try {
-              if (!(await runtimeAvailable())) runtimeAbsent = true;
-            } catch {
-              runtimeAbsent = true;
-            }
-          }
-          discardCachedGrammar(artifact.path);
-          return undefined;
+          if (!(await probeRuntime())) runtimeAbsent = true;
+          discardCachedGrammar(fetched.artifact.path);
+          return {
+            kind: "decline",
+            decline: decline(runtimeAbsent ? "runtime_absent" : "grammar_unavailable", language),
+          };
         }
         return {
-          parse(source: string) {
-            try {
-              return handle.parse(source);
-            } catch {
+          kind: "ready",
+          handle: {
+            parse(source: string) {
+              try {
+                return handle.parse(source);
+              } catch {
+                handle.onFailure?.();
+                discardCachedGrammar(fetched.artifact.path);
+                return null;
+              }
+            },
+            onFailure: () => {
               handle.onFailure?.();
-              discardCachedGrammar(artifact.path);
-              return null;
-            }
-          },
-          onFailure: () => {
-            handle.onFailure?.();
-            discardCachedGrammar(artifact.path);
+              discardCachedGrammar(fetched.artifact.path);
+            },
           },
         };
       } catch {
         // SAFETY: load failures are the same answer as no boundary; the read stays exact.
-        return undefined;
+        return { kind: "decline", decline: decline("grammar_unavailable", language) };
       }
     })();
     handles.set(language, pending);
-    // WHY: a failed load is not memoized, so a later read can retry once the network returns.
-    void pending.then((handle) => {
-      if (handle === undefined) handles.delete(language);
+    // WHY: a failed or cold load is not memoized, so a later read can retry once the fetch lands.
+    void pending.then((outcome) => {
+      if (outcome.kind !== "ready") handles.delete(language);
     });
     return pending;
+  };
+
+  const prefetch = async (cwd?: string): Promise<void> => {
+    const languages =
+      cwd === undefined
+        ? Object.keys(options.manifest ?? GRAMMAR_MANIFEST)
+        : grammarLanguagesForCwd(cwd);
+    if (languages.length === 0) return;
+    if (!(await probeRuntime())) {
+      runtimeAbsent = true;
+      return;
+    }
+    // WHY: start every fetch now; the read path still waits only its own budget.
+    await Promise.allSettled(languages.map((language) => requestGrammar(language, options)));
   };
 
   return {
     get runtimeAbsent() {
       return runtimeAbsent;
     },
+    prefetch,
     async enclosingSpan(file: string, window: SpanWindow) {
-      if (!isOffsetWindow(window)) return null;
+      if (!isOffsetWindow(window)) return decline("provider_declined");
       const language = grammarLanguageForFile(file);
-      if (language === undefined) return null;
+      if (language === undefined) return decline("no_provider");
       const source = await readText(file);
-      if (source === undefined) return null;
+      if (source === undefined) return decline("provider_declined", language);
       const decorate = DECORATIONS[language];
-      if (decorate === undefined) return null;
-      const handle = await handleFor(language);
-      if (handle === undefined) return null;
-      const tree = handle.parse(source);
-      if (tree === null) return null;
+      if (decorate === undefined) return decline("no_provider", language);
+      const outcome = await handleFor(language);
+      if (outcome.kind === "decline") return outcome.decline;
+      const tree = outcome.handle.parse(source);
+      if (tree === null) return decline("grammar_unavailable", language);
       try {
-        if (tree.rootNode.hasError) return null;
+        if (tree.rootNode.hasError) return decline("provider_declined", language);
         const requestedEnd = window.offset + window.limit - 1;
         const node = findEnclosingScope(tree.rootNode, window.offset, requestedEnd);
-        if (node === null) return null;
+        if (node === null) return decline("boundary_crossing", language);
         const range = scopeLineRange(node);
-        if (range.startLine > window.offset || range.endLine < requestedEnd) return null;
+        if (range.startLine > window.offset || range.endLine < requestedEnd) {
+          return decline("boundary_crossing", language);
+        }
         const decorated = decorate(node);
         return {
           start: decorated.startLine,
@@ -157,8 +205,8 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
           source: "ast",
         };
       } catch {
-        handle.onFailure?.();
-        return null;
+        outcome.handle.onFailure?.();
+        return decline("provider_declined", language);
       } finally {
         tree.delete?.();
       }

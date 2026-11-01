@@ -45,9 +45,12 @@ export function withQualifiedNames(
     get runtimeAbsent() {
       return provider.runtimeAbsent === true;
     },
+    prefetch(cwd?: string) {
+      return provider.prefetch?.(cwd);
+    },
     async enclosingSpan(file, window) {
       const span = await provider.enclosingSpan(file, window);
-      if (span === null || span.source !== "ast" || disabled) return span;
+      if (span === null || "refusal" in span || span.source !== "ast" || disabled) return span;
       try {
         const qualified = await timeout(
           Promise.resolve(

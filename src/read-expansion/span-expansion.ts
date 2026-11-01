@@ -52,12 +52,11 @@ export type SpanWindow = OffsetWindow | AnchorWindow;
  * both sides share.
  */
 export interface SpanProvider {
-  enclosingSpan(
-    file: string,
-    window: SpanWindow,
-  ): EnclosingSpan | null | Promise<EnclosingSpan | null>;
+  enclosingSpan(file: string, window: SpanWindow): SpanAnswer | Promise<SpanAnswer>;
   /** Set once an AST attempt found the optional wasm runtime unavailable. */
   readonly runtimeAbsent?: boolean;
+  /** Start grammar fetches off the read path; session_start calls this without awaiting. */
+  prefetch?: (cwd?: string) => void | Promise<void>;
 }
 
 /**
@@ -81,16 +80,37 @@ export interface LineRange {
   endLine: number;
 }
 
+export const REFUSAL_REASONS = [
+  "above_trigger",
+  "past_eof",
+  "not_text",
+  "toggle_off",
+  "no_provider",
+  "boundary_crossing",
+  "grammar_unavailable",
+  "cold_grammar",
+  "runtime_absent",
+  "provider_declined",
+  "provider_error",
+  "invalid_answer",
+  "not_superset",
+  "over_cap",
+] as const;
+
 /** Why an expansion attempt did not widen. */
-type RefusalReason =
-  | "above_trigger"
-  | "past_eof"
-  | "not_text"
-  | "provider_declined"
-  | "provider_error"
-  | "invalid_answer"
-  | "not_superset"
-  | "over_cap";
+type RefusalReason = (typeof REFUSAL_REASONS)[number];
+
+/** A typed provider refusal: the cause is carried, not inferred from a bare null. */
+export interface SpanDecline {
+  readonly refusal: RefusalReason;
+  /** Grammar language, when the refusal is about one. */
+  readonly language?: string;
+  /** The full block size for an over-cap refusal. */
+  readonly blockSize?: number;
+}
+
+/** Every answer a provider may give the seam. */
+type SpanAnswer = EnclosingSpan | SpanDecline | null;
 
 /** The provider identity a refused attempt may still name (over-cap and non-superset answers). */
 interface RefusedBoundary {
@@ -98,6 +118,8 @@ interface RefusedBoundary {
   kind?: string;
   name?: string;
   source?: SpanSource;
+  language?: string;
+  blockSize?: number;
 }
 
 /** One widening: the served window plus the full structural extent and every requested window. */
@@ -265,7 +287,13 @@ function refused(reason: RefusalReason, boundary?: RefusedBoundary): ExpansionDe
     ...(boundary?.kind === undefined ? {} : { kind: boundary.kind }),
     ...(boundary?.name === undefined ? {} : { name: boundary.name }),
     ...(boundary?.source === undefined ? {} : { source: boundary.source }),
+    ...(boundary?.language === undefined ? {} : { language: boundary.language }),
+    ...(boundary?.blockSize === undefined ? {} : { blockSize: boundary.blockSize }),
   };
+}
+
+function isRefusalReason(value: unknown): value is RefusalReason {
+  return typeof value === "string" && (REFUSAL_REASONS as readonly string[]).includes(value);
 }
 
 /**
@@ -281,7 +309,7 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
     return refused("past_eof");
   }
 
-  let answer: EnclosingSpan | null;
+  let answer: SpanAnswer;
   try {
     answer = await provider.enclosingSpan(file, { offset: window.offset, limit: window.limit });
   } catch {
@@ -289,7 +317,14 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
     return refused("provider_error");
   }
   if (answer === null || typeof answer !== "object") return refused("provider_declined");
-  const { start, end, kind, name, source } = answer as Partial<EnclosingSpan>;
+  if ("refusal" in answer) {
+    if (!isRefusalReason(answer.refusal)) return refused("provider_declined");
+    return refused(answer.refusal, {
+      ...(typeof answer.language === "string" ? { language: oneLine(answer.language) } : {}),
+      ...(isPositiveInteger(answer.blockSize) ? { blockSize: answer.blockSize } : {}),
+    });
+  }
+  const { start, end, kind, name, source } = answer;
   if (!isPositiveInteger(start) || !isPositiveInteger(end) || end < start) {
     return refused("invalid_answer");
   }
@@ -318,7 +353,9 @@ export async function widenWindow(input: ExpansionInput): Promise<ExpansionDecis
   if (fullLength > cap) {
     // WHY: Markdown is the one clamp in the feature (D15): a section above the cap serves a
     // WHY: cap-sized window that still contains the requested window, and the note names the full extent.
-    if (source !== "md") return refused("over_cap", boundary);
+    if (source !== "md") {
+      return refused("over_cap", { ...boundary, blockSize: fullLength });
+    }
     let servedStart = start;
     if (requestedEnd > servedStart + cap - 1) servedStart = requestedEnd - cap + 1;
     servedStart = Math.max(start, servedStart);
