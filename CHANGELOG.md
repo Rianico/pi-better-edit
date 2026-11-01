@@ -4,7 +4,7 @@
 
 ### Documentation
 
-* **docs:** record the read-expansion benchmark evidence: a three-leg paired run on Pi 1.4.0 showing the 2.14.0 to 2.16.0 bump is cost-neutral and score-neutral once retry volume is normalised, with sandbox provenance, activation proof and the threats to validity.
+* **docs:** record the read-expansion benchmark evidence: a three-leg paired run on Pi 1.4.0 showing the 2.14.0 to 2.16.0 bump is cost-neutral and score-neutral once retry volume is normalised, with sandbox provenance, activation proof and the threats to validity. (#221)
 
 ## [2.16.0] - 2026-11-01
 
