@@ -69,6 +69,11 @@ process.env.XDG_STATE_HOME = "";
 // WHY: developer's real config directory (an abandoned store, a log line, a `.corrupt-*` dump).
 process.env.XDG_CONFIG_HOME = "";
 process.env.PI_CODING_AGENT_DIR = "";
+// WHY: expansion fetches a grammar on first use; verify must never reach the network. Tests that
+// WHY: exercise the supply inject their own fetch boundary double.
+globalThis.fetch = (async () => {
+  throw new Error("network disabled in tests");
+}) as typeof fetch;
 registry.dirs.add(workerStoreDir);
 registry.dirs.add(workerHomeDir);
 

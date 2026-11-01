@@ -9,11 +9,14 @@ import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
 import { attachIOBridgeAdapter } from "./src/integrations/pi-lens/io-bridge-adapter.js";
 import { registerJanitorHooks } from "./src/store-janitor.js";
+import { createReadSpanProvider } from "./src/read-expansion/read-provider.js";
 
 export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
 export default function (pi: ExtensionAPI): void {
-  regRead(pi);
+  // WHY: expansion is a built-in capability; the provider fetches its pinned grammar on first use
+  // WHY: and returns null (today's exact read) whenever the grammar cannot be loaded.
+  regRead(pi, { spanProvider: createReadSpanProvider() });
 
   regEdit(pi);
   regEditUndo(pi);

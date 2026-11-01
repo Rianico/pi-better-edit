@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readToolSchema } from "../../src/read";
 
 const INTEGRATION_DIR = join("src", "integrations", "pi-lens");
 const ENTRY = "index.ts";
@@ -51,6 +52,36 @@ describe("lens bridge boundary", () => {
     for (const file of ["prompts/read.md", "prompts/read-guidelines.md"]) {
       expect(readFileSync(file, "utf-8"), file).not.toContain("pi-lens");
     }
+  });
+
+  it("documents R4 widening chrome, trigger and caps in this tool's own terms", () => {
+    const retiredClaims = [
+      "ast symbol",
+      "markdown heading",
+      "before this tool runs",
+      "limit above 100",
+      "interop:",
+    ];
+    for (const file of ["prompts/read.md", "prompts/read-guidelines.md"]) {
+      const text = readFileSync(file, "utf-8");
+      expect(text, file).toContain("widened");
+      expect(text, file).toContain("24");
+      expect(text, file).toContain("80");
+      expect(text, file).toContain("40");
+      expect(text, file).toContain("->");
+      expect(text, file).toContain("<requested>");
+      expect(text.toLowerCase(), file).not.toContain("asked");
+      expect(text, file).toContain("(section <extent>)");
+      expect(text, file).toContain("verbatim");
+      expect(text, file).toContain("[widened N windows:");
+      for (const claim of retiredClaims) {
+        expect(text.toLowerCase(), `${file} still claims "${claim}"`).not.toContain(claim);
+      }
+    }
+  });
+
+  it("keeps the read payload flat and window-scoped", () => {
+    expect(Object.keys(readToolSchema.properties).sort()).toEqual(["file", "mode", "windows"]);
   });
 
   it("wires the command and the unified adapter from the extension entry point", () => {

@@ -101,17 +101,53 @@ function admitWindow(window: unknown, label: string): AdmittedWindow {
 }
 
 /**
+ * Fold the recorded flat payload (`path`/`offset`/`limit`) onto the canonical single-file shape
+ * (`file` + one `{ offset, limit }` window). WHY admission owns this: a transcript replay and a
+ * direct `execute` call bypass the model-facing schema, and both must reach the same window plan.
+ * A canonical payload passes through unchanged; `windows` wins over any stray flat fields.
+ */
+export function normalizeReadPayload(params: RawReadParams): RawReadParams {
+  if (params === null || typeof params !== "object") return params;
+  const raw = params;
+  const file =
+    typeof raw.file === "string" && raw.file !== ""
+      ? raw.file
+      : typeof raw.path === "string" && raw.path !== ""
+        ? raw.path
+        : undefined;
+  if (file === undefined) return raw;
+  const hasFlat = raw.offset !== undefined || raw.limit !== undefined;
+  const windows =
+    raw.windows !== undefined
+      ? raw.windows
+      : hasFlat
+        ? [
+            {
+              offset: raw.offset === undefined ? 1 : raw.offset,
+              ...(raw.limit === undefined ? {} : { limit: raw.limit }),
+            },
+          ]
+        : undefined;
+  return {
+    file,
+    ...(windows !== undefined ? { windows } : {}),
+    ...(raw.mode === undefined ? {} : { mode: raw.mode }),
+  };
+}
+
+/**
  * Admission for the flat single-file shape (ADR-0041 D1): validates the file, every window,
  * and the window cap. A payload without `file` was already rejected by the schema; the check
  * below is the safety net for callers that bypass validation.
  */
 export function admitReadRequest(params: RawReadParams): AdmittedRequest {
-  const mode = admitMode(params.mode) ?? "served";
-  const file = params.file;
+  const request = normalizeReadPayload(params);
+  const mode = admitMode(request.mode) ?? "served";
+  const file = request.file;
   if (typeof file !== "string" || file === "") {
     throw badPayload('Read request field "file" must be a non-empty path.');
   }
-  const rawWindows = params.windows;
+  const rawWindows = request.windows;
   if (rawWindows !== undefined && !Array.isArray(rawWindows)) {
     throw badPayload('Read request field "windows" must be an array.');
   }

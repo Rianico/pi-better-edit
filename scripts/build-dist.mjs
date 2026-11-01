@@ -33,16 +33,17 @@ export const DEFAULT_OUTFILE = "dist/index.js";
 
 /**
  * Host-provided packages stay external: pi aliases them to its own copies, and a vendored
- * copy builds a second module graph (measured upstream at 720 ms of 838 ms). The four
- * runtime dependencies (`diff`, `file-type`, `unbash`, `xxhash-wasm`) stay unbundled
- * so a user install gets them from the registry (`typebox` and `@earendil-works/*`
- * are host-provided peer surfaces, likewise external).
+ * copy builds a second module graph (measured upstream at 720 ms of 838 ms). The required runtime
+ * dependencies (`diff`, `file-type`, `unbash`, `xxhash-wasm`) and the optional wasm host
+ * (`web-tree-sitter`, loaded by dynamic import) stay unbundled so a user install gets them from the
+ * registry (`typebox` and `@earendil-works/*` are host-provided peer surfaces, likewise external).
  */
 export const EXTERNALS = [
   "diff",
   "file-type",
   "unbash",
   "xxhash-wasm",
+  "web-tree-sitter",
   "typebox",
   "@earendil-works/*",
 ];

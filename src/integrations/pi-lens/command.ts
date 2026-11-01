@@ -35,6 +35,15 @@ import {
   type BashViewMode,
 } from "../../bash-view-config.js";
 import {
+  READ_EXPANSION_ENV_VAR,
+  isReadExpansionMode,
+  isReadExpansionScope,
+  readReadExpansionConfig,
+  resolveReadExpansionModeWithSource,
+  saveReadExpansionConfig,
+  type ReadExpansionMode,
+} from "../../read-expansion-config.js";
+import {
   BASH_MULTI_FILE_LIMITS,
   isBashMultiFileMaxFiles,
   isBashMultiFileMaxRows,
@@ -80,6 +89,15 @@ const BASH_VIEW_USAGE = [
   `Alias: /${COMMAND_NAME} bash [on|off|status] [project|global]`,
 ].join("\n");
 
+const READ_EXPANSION_USAGE = [
+  `${COMMAND_NAME} — configure read expansion`,
+  `Usage: /${COMMAND_NAME} read-expansion [on|off|status] [project|global]`,
+  `  /${COMMAND_NAME} read-expansion              pick a mode interactively`,
+  `  /${COMMAND_NAME} read-expansion off global   write the global default`,
+  `  /${COMMAND_NAME} read-expansion status       show effective mode and config sources`,
+  `Alias: /${COMMAND_NAME} read [on|off|status] [project|global]`,
+].join("\n");
+
 const SETTINGS_USAGE = [
   `${COMMAND_NAME} — review every setting in one overlay`,
   `Usage: /${COMMAND_NAME} settings`,
@@ -105,6 +123,14 @@ const COMMAND_COMPLETIONS: readonly string[] = [
   "bash on",
   "bash off",
   "bash status",
+  "read-expansion",
+  "read-expansion on",
+  "read-expansion off",
+  "read-expansion status",
+  "read",
+  "read on",
+  "read off",
+  "read status",
   "settings",
 ];
 type LensPickerChoice =
@@ -136,6 +162,23 @@ type BashViewPickerChoice =
   | { readonly label: string; readonly kind: "status" };
 
 const BASH_VIEW_PICKER_CHOICES: readonly BashViewPickerChoice[] = [
+  { label: "On (Project)", kind: "set-mode", mode: "on", scope: "project" },
+  { label: "On (Global)", kind: "set-mode", mode: "on", scope: "global" },
+  { label: "Off (Project)", kind: "set-mode", mode: "off", scope: "project" },
+  { label: "Off (Global)", kind: "set-mode", mode: "off", scope: "global" },
+  { label: "Status", kind: "status" },
+];
+
+type ReadExpansionPickerChoice =
+  | {
+      readonly label: string;
+      readonly kind: "set-mode";
+      readonly mode: ReadExpansionMode;
+      readonly scope: ConfigScope;
+    }
+  | { readonly label: string; readonly kind: "status" };
+
+const READ_EXPANSION_PICKER_CHOICES: readonly ReadExpansionPickerChoice[] = [
   { label: "On (Project)", kind: "set-mode", mode: "on", scope: "project" },
   { label: "On (Global)", kind: "set-mode", mode: "on", scope: "global" },
   { label: "Off (Project)", kind: "set-mode", mode: "off", scope: "project" },
@@ -195,6 +238,8 @@ function statusText(cwd: string): string {
     storeStatusText(cwd),
     "",
     bashViewStatusText(cwd),
+    "",
+    readExpansionStatusText(cwd),
     "",
     multiFileStatusText(cwd),
     "",
@@ -264,6 +309,24 @@ function bashViewStatusText(cwd: string): string {
     `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
     `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
     `  env ${BASH_VIEW_ENV_VAR}: ${envValue}`,
+    "  precedence: env > project > global > on",
+    ...warnings.map((reason) => `  warning: ${reason}`),
+  ].join("\n");
+}
+
+function readExpansionStatusText(cwd: string): string {
+  const warnings: string[] = [];
+  const effective = resolveReadExpansionModeWithSource(cwd, (reason) => warnings.push(reason));
+  const config = readReadExpansionConfig(cwd);
+  const envRaw = process.env[READ_EXPANSION_ENV_VAR];
+  const envValue = envRaw === undefined || envRaw.trim().length === 0 ? "unset" : envRaw.trim();
+  return [
+    `${COMMAND_NAME} read expansion`,
+    `  effective: ${effective.value}`,
+    `  effective source: ${effective.source}`,
+    `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
+    `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
+    `  env ${READ_EXPANSION_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > on",
     ...warnings.map((reason) => `  warning: ${reason}`),
   ].join("\n");
@@ -512,6 +575,71 @@ async function handleBashView(args: string, ctx: ExtensionCommandContext): Promi
   }
   await pickBashViewInteractively(ctx);
 }
+function applyReadExpansionMode(mode: ReadExpansionMode, scope: ConfigScope, cwd: string): string {
+  const configPath = saveReadExpansionConfig(mode, scope, cwd).path;
+  return `${COMMAND_NAME} read expansion set to ${mode} (${scope}) — ${configPath}`;
+}
+
+async function pickReadExpansionInteractively(ctx: ExtensionCommandContext): Promise<void> {
+  const labels = READ_EXPANSION_PICKER_CHOICES.map((choice) => choice.label);
+  const picked = await ctx.ui.select(`${COMMAND_NAME} read expansion`, labels);
+  if (picked === undefined) return;
+  const choice = READ_EXPANSION_PICKER_CHOICES.find((candidate) => candidate.label === picked);
+  if (choice === undefined) {
+    notify(ctx, `Unrecognized choice "${picked}".`, "warning");
+    return;
+  }
+  if (choice.kind === "status") {
+    notify(ctx, readExpansionStatusText(ctx.cwd));
+    return;
+  }
+  notify(ctx, applyReadExpansionMode(choice.mode, choice.scope, ctx.cwd));
+}
+
+async function handleReadExpansion(args: string, ctx: ExtensionCommandContext): Promise<void> {
+  const tokens = args
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length > 3) {
+    notify(ctx, `Too many arguments.\n${READ_EXPANSION_USAGE}`, "warning");
+    return;
+  }
+  if (tokens[0] !== "read-expansion" && tokens[0] !== "read") {
+    notify(ctx, READ_EXPANSION_USAGE);
+    return;
+  }
+
+  const sub = tokens[1] ?? "interactive";
+  let scope: ConfigScope = "project";
+  const scopeToken = tokens[2];
+  if (scopeToken !== undefined) {
+    if (!isReadExpansionScope(scopeToken)) {
+      notify(ctx, `Unknown scope "${scopeToken}".\n${READ_EXPANSION_USAGE}`, "warning");
+      return;
+    }
+    scope = scopeToken;
+  }
+
+  if (sub === "status") {
+    notify(ctx, readExpansionStatusText(ctx.cwd));
+    return;
+  }
+  if (isReadExpansionMode(sub)) {
+    notify(ctx, applyReadExpansionMode(sub, scope, ctx.cwd));
+    return;
+  }
+  if (sub !== "interactive") {
+    notify(ctx, `Unknown option "${sub}".\n${READ_EXPANSION_USAGE}`, "warning");
+    return;
+  }
+  if (!ctx.hasUI) {
+    notify(ctx, readExpansionStatusText(ctx.cwd));
+    return;
+  }
+  await pickReadExpansionInteractively(ctx);
+}
+
 /**
  * WHY the overlay owns its scope switch: headed hosts pick the write scope inside
  * the dialog, so the command takes no scope argument; headless hosts read the
@@ -558,6 +686,8 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           .filter((token) => token.length > 0)[0];
         if (head === "bash-view" || head === "bash") {
           await handleBashView(args, ctx);
+        } else if (head === "read-expansion" || head === "read") {
+          await handleReadExpansion(args, ctx);
         } else if (head === undefined || head === "settings") {
           await handleSettings(args, ctx);
         } else {
