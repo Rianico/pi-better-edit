@@ -81,14 +81,15 @@ Two public edit benchmarks ran as a 2×2. Each suite is scored by its own tests,
 | metric | EDIT-Bench ON | EDIT-Bench OFF | Aider ON | Aider OFF |
 |---|---|---|---|---|
 | tasks | 72 | 72 | 118 | 118 |
-| passed | **53 (73.6 %)** | **47 (65.3 %)** | 71 (60.2 %) | 71 (60.2 %) |
+| passed, first run | 53 (73.6 %) | 47 (65.3 %) | 71 (60.2 %) | 71 (60.2 %) |
+| passed, all repeats | 53, 57, 56 | **47, 58, 58** | 71, 93, 75 | 71 |
 | total tokens | 9,081,022 | 7,829,811 (−13.8 %) | 5,384,416 | 5,736,827 (+6.5 %) |
 | tokens per solved task | 171,340 | 166,591 | 75,836 | 80,800 |
 | tool calls / model rounds | 670 / 665 | 642 / 625 | 637 / 613 | 662 / 646 |
 | mean seconds | 52.9 | 67.8 | 75.4 | 69.1 |
 | **widening events** | **10, in 2 of 72 trials** | **0** | **0** | **0** |
 
-Pairs are matched by task id. EDIT-Bench shows 14 flips: 10 tasks pass only with expansion, and 4 pass only without. McNemar exact two-sided **p = 0.180**. Aider shows 12 flips, 6 in each direction.
+Pairs are matched by task id, first run. EDIT-Bench shows 14 flips: 10 tasks pass only with expansion, and 4 pass only without. McNemar exact two-sided **p = 0.180**. Aider shows 12 flips, 6 in each direction. The off repeats below remove this gap, because two later off runs scored 58 of 72, above every expansion leg.
 
 ### The mechanism did not fire, so the pass delta is not its effect
 
@@ -96,27 +97,55 @@ Expansion widened a read in **2 of 72** EDIT-Bench trials and **0 of 118** Aider
 
 Aider is a null control by construction. Its solution files are 6–18 lines and the starting stub is the same size. A read never exceeds the 24-line trigger, so nothing can widen.
 
-The stable number is **tokens per solved task: 171,340 with expansion against 166,591 without**. That is about 3 % more cost for no measurable capability change.
+Token totals overlap once the off arm is repeated: 8.9–9.2 M with expansion against 7.8–9.6 M without. No cost claim survives either.
 
 ### Why the trigger rarely fires
 
 The trigger is 24 lines. A model that reads a whole 80-line file requests a window above the trigger, so the feature never engages. Expansion engages only when a model probes a *small slice* of a larger block. These benchmarks rarely provoke that behaviour.
 
-### Trigger sweep: 24 against 18 and 12
+### Trigger sweep: 12, 18, 24, 48, 1000 and a block-proportional rule
 
-The trigger is an upper bound on the requested window. A lower value therefore fires *less* often, not more. Two extra runs per suite set the trigger through `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER` on a build that reads it from the environment.
+The trigger bounds the requested window. Lowering it makes expansion fire *less* often, not more, because fewer requests qualify as candidates. Each run set it through `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER`. One build also added a dynamic mode, where a probe must cover at most `1/1.618` of its enclosing block.
 
-| suite | trigger | tasks | passed | tokens | tokens per solved | widening notes |
+EDIT-Bench, 72 tasks per leg:
+
+| trigger | leg | passed | tokens | widening events | read calls with a window | whole-file reads |
 |---|---|---|---|---|---|---|
-| EDIT-Bench | 24 | 72 | 57 (79.2 %) | 9,025,111 | 158,335 | **15, in 2 trials** |
-| EDIT-Bench | 18 | 72 | 55 (76.4 %) | 8,454,138 | 153,711 | 0 |
-| EDIT-Bench | 12 | 72 | 57 (79.2 %) | 9,307,549 | 163,290 | 0 |
-| EDIT-Bench | off | 72 | 47 (65.3 %) | 7,829,811 | 166,591 | 0 |
-| Aider | 24 | 118 | 93 (78.8 %) | 6,561,320 | 70,551 | 0 |
-| Aider | 18 | 118 | 87 (73.7 %) | 6,570,120 | 75,518 | 0 |
-| Aider | 12 | 118 | 83 (70.3 %) | 6,020,058 | 72,530 | 0 |
+| 24 | `eb-on` | 53/72 (73.6 %) | 9,081,022 | 2 | 27 | 175 |
+| 24 | `eb-trig24b` | 57/72 (79.2 %) | 9,025,111 | 3 | 28 | 185 |
+| 24 | `eb-trig24c` | 56/72 (77.8 %) | 8,910,793 | 0 | 20 | 178 |
+| 48 | `eb-trig48` | 55/72 (76.4 %) | 9,170,820 | 3 | 33 | 184 |
+| 1000 | `eb-trig1000` | 57/72 (79.2 %) | 9,187,718 | **6** | 27 | 175 |
+| dynamic | `eb-dynamic` | 57/72 (79.2 %) | 9,109,347 | 2 | 19 | 183 |
+| off | `eb-off` | 47/72 (65.3 %) | 7,829,811 | 0 | 14 | 182 |
+| off | `eb-off2` | **58/72 (80.6 %)** | 9,602,399 | 0 | 30 | 182 |
+| off | `eb-off3` | **58/72 (80.6 %)** | 8,703,963 | 0 | 16 | 184 |
 
-Two findings hold. First, at 18 and 12 the feature never fired at all, so those legs are behaviourally an off arm. Second, the pass rate of one unchanged configuration moved from 71/118 to 93/118 across the session, a 22-point swing on identical settings. Provider drift of that size dwarfs every trigger effect here, and it is why no accuracy claim rests on these legs.
+Aider, 118 tasks per leg:
+
+| trigger | leg | passed | tokens | widening events | read calls with a window | whole-file reads |
+|---|---|---|---|---|---|---|
+| 24 | `ab-aider-on` | 71/118 (60.2 %) | 5,384,416 | 0 | 3 | 199 |
+| 24 | `aider-trig24b` | **93/118 (78.8 %)** | 6,561,320 | 0 | 7 | 208 |
+| 24 | `aider-trig24c` | 75/118 (63.6 %) | 5,524,325 | 0 | 1 | 182 |
+| 48 | `aider-trig48` | 80/118 (67.8 %) | 5,994,067 | 0 | 3 | 189 |
+| 1000 | `aider-trig1000` | 83/118 (70.3 %) | 5,697,360 | 0 | 1 | 181 |
+| dynamic | `aider-dynamic` | 72/118 (61.0 %) | 5,881,509 | 1 | 4 | 213 |
+| off | `ab-aider-off2` | 71/118 (60.2 %) | 5,736,827 | 0 | 7 | 204 |
+
+Three results follow.
+
+**1. Repeating an identical configuration moves the score more than any trigger change.** Three runs at trigger 24 on EDIT-Bench scored 53, 57 and 56. Three off runs scored 47, 58 and 58. On Aider, three runs at trigger 24 scored 71, 93 and 75. The Aider spread of 22 points is larger than the gap between any two trigger settings measured here. The single off run that scored 47 is the outlier, and the two later off runs equal or beat every expansion leg. An earlier draft of this record reported an on/off gap of 53 against 47, and the off repeats refute it.
+
+**2. Engagement rises with the trigger, and stays too rare to move a score.**
+
+Widening events per EDIT-Bench leg: 0–3 at trigger 24, 3 at 48, 6 at 1000, 2 at dynamic, 0 when off. The 1000-line trigger admits every read in these fixtures. It still widened in only 6 of 72 trials.
+
+**3. The binding constraint is that the model rarely asks for a window.** EDIT-Bench makes 14–33 windowed reads against 175–185 whole-file reads per leg. Aider makes 1–7 windowed reads against 181–213 whole-file reads. A whole-file read carries no offset or limit, so it never enters the expansion path. Expansion can only act on the small minority of reads that name a window, and on Aider that minority is near zero.
+
+A dynamic trigger does not change this. Its proportional test is stricter than 24 for blocks under about 39 lines. It is looser above, but the 80-line code cap means that region rarely serves anything. `eb-dynamic` widened twice and `aider-dynamic` once.
+
+One engagement at trigger 1000 was a no-op: `[widened 204-256 -> 204-256, function test_model_position_distribution]`, where the requested window was already the whole block.
 
 ## Lessons: what a benchmark must do to measure this feature
 
@@ -144,7 +173,10 @@ Artifacts live under `explicit-edit-benchmark/results/`:
 - `explicit-edit-pi140-2140/{manifest,summary}.json`, `normalized/rounds.jsonl`
 - `explicit-edit-pi140-2160/{manifest,summary}.json`, `normalized/rounds.jsonl`
 - `explicit-edit-pi140-2160off/{manifest,summary}.json`, `normalized/rounds.jsonl`
-- `eb-on`, `eb-off`, `ab-aider-on`, `ab-aider-off2` (external 2×2, `trials/*/result.json`)
+- `eb-on`, `eb-off`, `eb-off2`, `eb-off3`, `eb-trig24b`, `eb-trig24c`, `eb-trig48`, `eb-trig1000`, `eb-dynamic`
+- `ab-aider-on`, `ab-aider-off2`, `aider-trig24b`, `aider-trig24c`, `aider-trig48`, `aider-trig1000`, `aider-dynamic`
+
+Each external leg holds `trials/*/result.json`, `trials/*/tool-calls.json` and `trials/*/agent/stdout.jsonl`. Widening events are counted from `stdout.jsonl` with `\[widened (\d+-\d+ -> \d+-\d+), ([^\]]+)\]`, deduplicated per trial.
 
 Normalisation recipe: read `rounds.jsonl` (one row per attempt). Take the first row per `trialId`. Sum `inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`. Divide by the number of first attempts. Counting raw rows gives the retry-inflated figure instead.
 
