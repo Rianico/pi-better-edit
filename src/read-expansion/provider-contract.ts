@@ -8,6 +8,10 @@
  *
  * A provider answers "what encloses this window" and nothing else. It does not render chrome, and
  * it does not know what the answer is used for.
+ *
+ * WHY `EnclosingSpan` and `AnchorWindow` stay internal: they are answer details, not part of what a
+ * provider author implements — `SpanProvider` is. Exporting them would let callers depend on a
+ * shape the seam must stay free to reshape.
  */
 import type { SpanKind } from "./span-kind.js";
 

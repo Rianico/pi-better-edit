@@ -67,6 +67,24 @@ function grammarCachePath(
   );
 }
 
+/**
+ * Seed the cache from a committed fixture. TEST-ONLY: production code never calls it; the name is
+ * the guard. A witness needs verified bytes without a network fetch, and the read budget would
+ * otherwise report `cold` before a fetch could land.
+ */
+export function primeGrammarForTests(
+  language: string,
+  bytes: Uint8Array,
+  options: GrammarCacheOptions = {},
+): string {
+  const entry = (options.manifest ?? GRAMMAR_MANIFEST)[language];
+  if (entry === undefined) throw new Error(`No grammar manifest entry for "${language}".`);
+  const path = grammarCachePath(language, entry, options.cacheRoot);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, bytes);
+  return path;
+}
+
 /** Remove one cached grammar (corrupt bytes, failed parse). Never throws. */
 export function discardCachedGrammar(path: string): void {
   try {

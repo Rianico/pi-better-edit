@@ -26,11 +26,11 @@ const PROVIDER_MODULES = [
 
 /** Each contract declaration, by the shape the seam must keep. */
 const CONTRACT_DECLARATIONS = [
-  "interface SpanProvider",
-  "type SpanWindow",
-  "interface SpanDecline",
-  "interface EnclosingSpan",
-  "interface LineRange",
+  "export interface SpanProvider",
+  "export type SpanWindow",
+  "export interface SpanDecline",
+
+  "export interface LineRange",
 ];
 
 describe("provider contract seam", () => {
@@ -52,5 +52,11 @@ describe("provider contract seam", () => {
 
   it("keeps the retired decision module deleted", () => {
     expect(existsSync(join(EXPANSION_DIR, "span-expansion.ts"))).toBe(false);
+  });
+
+  it("keeps provider-answer details internal", () => {
+    const source = readFileSync(CONTRACT_FILE, "utf-8");
+    expect(source).not.toContain("export interface EnclosingSpan");
+    expect(source).not.toContain("export interface AnchorWindow");
   });
 });
