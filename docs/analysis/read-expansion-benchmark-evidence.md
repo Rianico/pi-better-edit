@@ -147,6 +147,62 @@ A dynamic trigger does not change this. Its proportional test is stricter than 2
 
 One engagement at trigger 1000 was a no-op: `[widened 204-256 -> 204-256, function test_model_position_distribution]`, where the requested window was already the whole block.
 
+## A suite that does exercise the mechanism: micro-swe
+
+The two public suites never asked for a windowed read, so the trigger was never tested. A third suite removes that limitation: **micro-swe**.
+
+It holds 16 real tasks across `rich` and `flask`. Each is a single mechanical mutation injected into a function that starts below line 200 in a file above 400 lines. The workspace is the full repository with `.git` removed, and scoring runs the repository's own tests. Flask's entire suite runs in 0.67 s, so verification is free.
+
+The suite works as intended. **82 % of read calls request a window** (45 windowed against 10 whole-file), against 7–16 % on EDIT-Bench and 0.5–3 % on Aider.
+
+| leg | trigger | passed | tokens | tokens per task | widening events | windowed reads |
+|---|---|---|---|---|---|---|
+| `ms-off` | off | 15/16 | 4,402,713 | 275,169 | 0 | 45 |
+| `ms-trig24` | 24 | 15/16 | 4,496,369 | 281,023 | **0** | 31 |
+| `ms-trig48` | 48 | 14/16 | 4,817,749 | 301,109 | **4** | 35 |
+| `ms-trig96` | 96 | 13/16 | 4,230,313 | 264,394 | **0** | 37 |
+| `ms-trig1000` | 1000 | 15/16 | 4,976,809 | 311,050 | **2** | 42 |
+
+Paired against the off arm, per task: token deltas of +5,854, +25,940, −10,775 and +35,881, with 2, 3, 2 and 0 pass flips. Score and cost are flat within noise, on 16 tasks.
+
+### Why the mechanism stays inert even here
+
+Two measurements explain it.
+
+**The requested windows are large.**
+
+Across the five legs the model asked for 200 windowed reads. Sizes of 10–24 appear 37 times, and 25–50 appear 42 times. The rest run from 60 up to 330. A trigger of 24 admits 7 windows in a 16-task leg, and a trigger of 1000 admits all of them.
+
+**Where the trigger is not the limit, the cap is.**
+
+At trigger 1000 every windowed read reaches the parser. Only 2 of roughly 42 produced a widening. The rest were refused, overwhelmingly because the enclosing block exceeds the 80-line code cap.
+
+**And where it does fire, the gain is a few lines.** All six widenings observed across the sweep:
+
+| requested | served | added |
+|---|---|---|
+| 1092-1106 | 1092-1106 | **0** |
+| 1092-1106 | 1092-1107 | +1 |
+| 2450-2464 | 2450-2468 | +4 |
+| 1445-1464 | 1442-1470 | +6 |
+| 2386-2397 | 2386-2416 | +19 |
+| 2290-2319 | 2244-2319 | +46 |
+
+Mean +12.7 lines, and one of the six served exactly what was requested. The reason is visible in the sizes: when the model probes 15 lines inside a 20-line function, the enclosing block is the window. **The model already sizes its window to the block.** Expansion adds something only when the model under-shoots, and it under-shoots rarely.
+
+### What this establishes
+
+Read expansion is inert on real code for two independent reasons, and neither is a tuning problem:
+
+1. The model picks windows that already match the enclosing block, so there is little left to add. The observed gain is a median of a few lines per firing.
+2. Where the model does under-shoot badly, the block is large and the 80-line cap refuses it.
+
+The trigger is the wrong dial for both. Lowering it makes the feature fire less. Raising it exposes the cap instead. On this evidence the feature is best described as harmless and nearly always a no-op, rather than as either helpful or harmful.
+
+### Limits of this suite
+
+16 tasks is small, so the score comparison cannot resolve a difference below roughly two tasks. The mutations are machine-generated and therefore easier than real issue-driven work. Only two of the four intended repositories are represented: `httpx` and `click` did not reach a green baseline in the container. And the token figures per task, around 275,000, are an order of magnitude above the public suites, so a larger sample costs real money.
+
 ## Lessons: what a benchmark must do to measure this feature
 
 1. **The benchmark must leave the file on disk.** Every cheap public edit benchmark pre-loads the target file into the prompt. Aider passes `fnames` into its coder and stubs file mentions to an empty set. EDIT-Bench hands over the whole file. With the file already in context, no read tool is called. An on/off trial therefore measures noise. Both suites here were re-anchored as file-on-disk agentic tasks for this reason.
