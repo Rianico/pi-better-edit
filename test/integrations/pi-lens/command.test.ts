@@ -32,7 +32,6 @@ import {
   STORE_JANITOR_INTERVAL_DEFAULT_MS,
 } from "../../../src/store-kernel/settings.js";
 import { settingsRoot } from "../../../src/config-dir.js";
-import { SELECTION_RANGE_ENV_VAR } from "../../../src/selection-range-config.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const SETTLED_CHOICES = [
@@ -122,7 +121,6 @@ beforeEach(async () => {
   delete process.env[LENS_BRIDGE_ENV_VAR];
   previousBridge = (globalThis as Record<symbol, unknown>)[BRIDGE_KEY];
   delete process.env[STORE_JANITOR_ENV_VAR];
-  delete process.env[SELECTION_RANGE_ENV_VAR];
   delete (globalThis as Record<symbol, unknown>)[BRIDGE_KEY];
 });
 
@@ -134,7 +132,6 @@ afterEach(async () => {
   else process.env.HOME = savedHome;
   delete process.env[LENS_BRIDGE_ENV_VAR];
   delete process.env[STORE_JANITOR_ENV_VAR];
-  delete process.env[SELECTION_RANGE_ENV_VAR];
   if (savedStoreDir === undefined) delete process.env.PI_BETTER_EDIT_CONFIG_DIR;
   else process.env.PI_BETTER_EDIT_CONFIG_DIR = savedStoreDir;
   await rm(globalConfigPath(), { force: true });

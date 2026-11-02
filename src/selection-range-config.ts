@@ -5,13 +5,9 @@
  * Mirrors `bash.view`: a missing file is silent, an existing-but-unusable file warns and falls
  * through, an invalid value is ignored at its rung, and the read side never throws.
  */
-import { DomainError } from "./domain-errors.js";
 import {
-  configFilePath,
-  isConfigScope,
   isRecord,
   readScopeConfig,
-  updateConfigFile,
   type ConfigOnWarn,
   type ConfigRung,
   type ConfigScope,
@@ -20,7 +16,7 @@ import {
 export type SelectionRangeMode = "on" | "off";
 
 /** Environment override; values outside the enum are ignored, not fatal. */
-export const SELECTION_RANGE_ENV_VAR = "PI_BETTER_EDIT_READ_SELECTION_RANGE";
+const SELECTION_RANGE_ENV_VAR = "PI_BETTER_EDIT_READ_SELECTION_RANGE";
 
 /** An unconfigured session expands by default. */
 const SELECTION_RANGE_DEFAULT: SelectionRangeMode = "on";
@@ -32,10 +28,6 @@ const SELECTION_RANGE_KEY = "selectionRange";
 
 function isSelectionRangeMode(value: unknown): value is SelectionRangeMode {
   return typeof value === "string" && SELECTION_RANGE_MODES.some((mode) => mode === value);
-}
-
-function isSelectionRangeScope(value: unknown): value is ConfigScope {
-  return isConfigScope(value);
 }
 
 function readScopeMode(
@@ -51,7 +43,7 @@ function readScopeMode(
   return isSelectionRangeMode(mode) ? mode : undefined;
 }
 
-export function readSelectionRangeConfig(
+function readSelectionRangeConfig(
   cwd: string,
   onWarn?: ConfigOnWarn,
 ): { project?: SelectionRangeMode; global?: SelectionRangeMode } {
@@ -92,30 +84,4 @@ export function resolveSelectionRangeModeWithSource(
 
 export function resolveSelectionRangeMode(cwd: string, onWarn?: ConfigOnWarn): SelectionRangeMode {
   return resolveSelectionRangeModeWithSource(cwd, onWarn).value;
-}
-
-export function saveSelectionRangeConfig(
-  mode: SelectionRangeMode,
-  scope: ConfigScope,
-  cwd: string,
-): { path: string } {
-  if (!isSelectionRangeMode(mode)) {
-    throw new DomainError("E_INTERNAL_INVARIANT", {
-      message: `Unknown selection-range note mode "${String(mode)}".`,
-    });
-  }
-  if (!isSelectionRangeScope(scope)) {
-    throw new DomainError("E_INTERNAL_INVARIANT", {
-      message: `Unknown read expansion scope "${String(scope)}".`,
-    });
-  }
-
-  const path = configFilePath(scope, cwd);
-  // WHY: only `read.selectionRange` is ours to set; every other top-level and `read.*` key survives.
-  updateConfigFile(path, (existing) => ({
-    ...existing,
-    read: { ...(isRecord(existing.read) ? existing.read : {}), [SELECTION_RANGE_KEY]: mode },
-  }));
-
-  return { path };
 }
