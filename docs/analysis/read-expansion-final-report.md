@@ -10,6 +10,8 @@ Five task suites and roughly 1,500 trials were run. No configuration produced a 
 
 The mechanism explains why. In 76 observed widenings, the agent returned to that file in only 18. Of the 21 follow-up reads, 10 asked again for the range that had just been served. One widening in 76 was used at all.
 
+Real sessions put a ceiling on the feature. I took 15,190 windowed probes from transcripts that predate it. In 39 % the agent never read that file again. In 33 % it read a different region, a median of 156 lines away. Only 12.6 % wanted more around the probe.
+
 The sharpest single result is a bracketed pair on the suite built to exercise the feature. Two runs of the off arm scored 16 of 16 with zero timeouts. Two runs of a clamp configuration that widened 17 and 20 times scored 16 of 16 with zero timeouts. Tokens and wall time overlap. Twenty widenings per leg produced no measurable difference.
 
 ## What was measured
@@ -76,6 +78,37 @@ Three reasons, each measured:
    Exactly one of the 76 events used a line that expansion had added. That is a hit rate of 1.3 %.
 
 Point 3 is the decisive one. Expansion always serves more lines than were requested, so it cannot save anything in the read it fires on. Its only possible value is preventing a later read. In three events out of four the agent never comes back. When it does come back, it asks for the lines it already has.
+
+## What real sessions show
+
+The benchmark forced windowed reads. Real sessions do not. I measured the transcripts that predate the feature: 2,836 files, 33,694 read calls, 15,190 windowed probes across 1,168 sessions. No transcript contained expansion chrome, so every observation is un-widened.
+
+For each probe, what did the next read of that same file do?
+
+| the next read of the same file | share |
+|---|---|
+| **none** — never read that file again | **39.0 %** |
+| **elsewhere** — a different region, median 156 lines away | **33.1 %** |
+| **adjacent** — within 20 lines, not overlapping | 10.4 % |
+| **extends** — reached past one side of the probe | 9.9 % |
+| **contained** — re-read inside what the probe already served | 4.9 % |
+| **superset** — covered the probe and more | 2.7 % |
+
+Three facts follow.
+
+**39 % of probes were already one-shot.** The agent never returned to that file. A wider serve had nothing to prevent.
+
+**33 % returned for a different region**, a median of 156 lines away. Widening around the probe cannot serve a region that far away.
+
+**12.6 % returned for more around the probe.** That is the whole addressable surface. Of those, the union of probe and follow-up fits inside an 80-line cap in 8.1 % of all probes. The median union is 55 lines.
+
+The median follow-up asked for the same number of lines as the probe, shifted. The agent was not asking for more. It was asking for the same, moved.
+
+## The range-hint alternative
+
+Replacing the widened serve with a banner or trailer that names the enclosing block addresses the same 12.6 % ceiling. It costs bytes instead of lines, and it costs one call when the model acts on it. It is never worse in capability, because the model can still request the block.
+
+Neither a widened serve nor a block-range hint reaches the dominant 33 % case, which wants a different region of the file. An outline — symbol names with their line ranges — would reach it. That is a different feature.
 
 ## What would change the answer
 
