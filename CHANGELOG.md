@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Refactors
+
+* **read:** retire the served-rows invisible-codepoint notice; served rows carry no disclosure. The frozen classifier (`src/file-content/invisible.ts`: 21/16 code-point sets, 37-name table, `classifyCodepoint`/`invisibleName`/`scanInvisibleLine`) stays as the user-visible residue and the foundation for edit-path disclosure, tracked in #231. (#222)
+
 ## [2.16.0] - 2026-11-01
 
 ### Features
