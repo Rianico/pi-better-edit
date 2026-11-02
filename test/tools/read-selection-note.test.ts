@@ -189,18 +189,80 @@ describe("selection-range note: the pre-lookup gate reaches no provider", () => 
     });
   });
 
-  it("stays silent on a multi-window page until the section rule owns it", async () => {
-    let calls = 0;
+  it("keeps the multi-window page header bare while sections carry the notes", async () => {
+    const provider: SpanProvider = {
+      enclosingSpan: () => ({ start: 1, end: 5, kind: "function", name: "f", source: "ast" }),
+    };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
-      const result = await run(reader(spy(() => (calls += 1))), cwd, {
+      const result = await run(reader(provider), cwd, {
         file: path,
         windows: [
           { offset: 1, limit: 1 },
           { offset: 4, limit: 1 },
         ],
       });
-      expect(calls).toBe(0);
-      expect(getText(result)).not.toContain("; in ");
+      const text = getText(result);
+      expect(text.split("\n")[0]).toBe(`[${path} (5 lines total)]`);
+      expect(text.split("\n")[0]).not.toContain("; in ");
+      expect(text).toContain("[Lines 1-1 of 5 total; in function f, lines 1-5]");
+      expect(text).toContain("[Lines 4-4 of 5 total]\n");
+      expect(text.match(/; in function f, lines 1-5/g)).toHaveLength(1);
+    });
+  });
+});
+describe("selection-range note: one note per span on a multi-window page", () => {
+  it("names a span once when two sections sit inside it", async () => {
+    await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
+      const result = await run(reader(), cwd, {
+        file: path,
+        windows: [
+          { offset: 7, limit: 1 },
+          { offset: 8, limit: 1 },
+        ],
+      });
+      const text = getText(result);
+      expect(text.match(/; in section "Language", lines 5-13/g)).toHaveLength(1);
+      const headers = text.split("\n").filter((line) => line.startsWith("[Lines "));
+      expect(headers).toHaveLength(2);
+      expect(headers[0]).toContain('; in section "Language", lines 5-13');
+      expect(headers[1]).not.toContain("; in ");
+    });
+  });
+
+  it("places one note per span and leaves an unenclosed window undisturbed", async () => {
+    const provider: SpanProvider = {
+      enclosingSpan: (_file, window) => {
+        const offset = "offset" in window ? window.offset : 0;
+        return offset === 3
+          ? { refusal: "boundary_crossing" }
+          : {
+              start: offset <= 2 ? 1 : 4,
+              end: offset <= 2 ? 2 : 5,
+              kind: "function",
+              name: offset <= 2 ? "first" : "second",
+              source: "ast",
+            };
+      },
+    };
+    await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
+      const result = await run(reader(provider), cwd, {
+        file: path,
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 3, limit: 1 },
+          { offset: 4, limit: 1 },
+        ],
+      });
+      const headers = getText(result)
+        .split("\n")
+        .filter((line) => line.startsWith("[Lines "));
+      const rows = anchorRows(getText(result)).map((row) => row.slice(row.indexOf("│") + 1));
+      expect(rows).toEqual(["a", "c", "d"]);
+      expect(headers).toEqual([
+        "[Lines 1-1 of 5 total; in function first, lines 1-2]",
+        "[Lines 3-3 of 5 total]",
+        "[Lines 4-4 of 5 total; in function second, lines 4-5]",
+      ]);
     });
   });
 });
@@ -265,7 +327,10 @@ describe("selection-range note: failures are silent, logged once, and never brea
       enabled: true,
       timeoutMs: 5,
     });
-    expect(note).toEqual({ failure: { source: "ast", reason: "provider_error" } });
+    expect(note).toEqual({
+      clauses: [undefined],
+      failure: { source: "ast", reason: "provider_error" },
+    });
   });
 });
 

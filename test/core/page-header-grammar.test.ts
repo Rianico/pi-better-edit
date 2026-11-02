@@ -89,6 +89,9 @@ describe("page chrome grammar (spec §4.4)", () => {
     expect(formatSectionHeader(2, 3, 40, 50 * 1024)).toBe(
       "[Lines 2-3 of 40 total; stopped at 50.0KB]",
     );
+    expect(formatSectionHeader(2, 3, 40, undefined, "; in function f, lines 1-5")).toBe(
+      "[Lines 2-3 of 40 total; in function f, lines 1-5]",
+    );
   });
 });
 

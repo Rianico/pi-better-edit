@@ -5,16 +5,20 @@
  * formatter only places a finished clause, and the read path never formats note text. This module is
  * the one place those three meet, so the note cannot scatter across sources, read modes or arities.
  *
+ * One decision, two placements: the seam returns one clause per served window, keyed by span (a span
+ * is named once, on the first window served from it). A single-window page places its clause on the
+ * page header; a multi-window page places each clause on the section that serves it. Neither the
+ * read path nor the header formatter decides which windows get a note.
+ *
  * The note is silent in four distinct situations, and only one of them is a fault:
  *
  * - the window equals its span (nothing to add);
  * - nothing encloses the window (the provider declines);
- * - the pre-lookup gate declined it (no window, no registered provider, a whole-file window);
+ * - the pre-lookup gate declined it (no registered provider, a window that covers its file);
  * - the lookup failed (threw, timed out, or answered something invalid) — the only case that logs.
  *
- * The gate runs before any parser work: a whole-file read, a data path, and a window that covers its
- * file all reach no provider. The note is chrome — it changes no served line, holds no lease, and
- * carries no anchor.
+ * The gate runs before any parser work. The note is chrome: it changes no served line, holds no
+ * lease, and carries no anchor.
  */
 import {
   REFUSAL_REASONS,
@@ -53,10 +57,10 @@ interface SelectionNoteFailure {
   readonly reason: RefusalReason;
 }
 
-/** The seam's answer: a finished clause, a failure to log, or silence. */
+/** The seam's answer: one clause per served window (index-aligned), and any failure to log. */
 export interface SelectionRangeNote {
-  /** The finished header clause (`; in function parse_args, lines 230-290`), absent for silence. */
-  readonly clause?: string;
+  /** `clauses[i]` is the finished clause for `windows[i]`, or `undefined` when that window is silent. */
+  readonly clauses: readonly (string | undefined)[];
   readonly failure?: SelectionNoteFailure;
 }
 
@@ -116,23 +120,23 @@ function spanLabel(kind: SpanKind, name: string, source: SpanSource): string {
  * The pre-lookup gate: only a windowed read of a path with a registered provider, whose window is
  * smaller than its file, reaches a provider. Everything else is the ordinary no-note case.
  */
-function admittedWindow(
+function candidateWindows(
   input: SelectionRangeNoteInput,
-): { readonly window: OffsetWindow; readonly source: SpanSource } | undefined {
-  if (!input.enabled || input.provider === undefined || input.totalLines < 1) return undefined;
+): ReadonlyArray<{ readonly index: number; readonly window: OffsetWindow }> {
+  if (!input.enabled || input.provider === undefined || input.totalLines < 1) return [];
   const windows = input.windows;
-  // WHY: a multi-window page names each span on its own section, so the page carries no clause.
-  if (windows === undefined || windows.length !== 1) return undefined;
-  const window = windows[0];
-  if (window === undefined) return undefined;
-  if (!isPositiveInteger(window.offset) || !isPositiveInteger(window.limit)) return undefined;
-  if (window.offset > input.totalLines) return undefined;
-  const end = Math.min(window.offset + window.limit - 1, input.totalLines);
-  // WHY: a window that covers its file has no larger span to name, so it is not a candidate.
-  if (window.offset === 1 && end === input.totalLines) return undefined;
-  const source = providerSourceFor(input.file);
-  if (source === undefined) return undefined;
-  return { window: { offset: window.offset, limit: end - window.offset + 1 }, source };
+  if (windows === undefined || windows.length === 0) return [];
+  if (providerSourceFor(input.file) === undefined) return [];
+  const candidates: Array<{ index: number; window: OffsetWindow }> = [];
+  for (const [index, window] of windows.entries()) {
+    if (!isPositiveInteger(window.offset) || !isPositiveInteger(window.limit)) continue;
+    if (window.offset > input.totalLines) continue;
+    const end = Math.min(window.offset + window.limit - 1, input.totalLines);
+    // WHY: a window that covers its file has no larger span to name, so it is not a candidate.
+    if (window.offset === 1 && end === input.totalLines) continue;
+    candidates.push({ index, window: { offset: window.offset, limit: end - window.offset + 1 } });
+  }
+  return candidates;
 }
 
 interface AdmittedSpan {
@@ -158,22 +162,21 @@ function renderClause(span: AdmittedSpan): string {
   return `; in ${spanLabel(span.kind, sanitizeName(span.name), span.source)}, lines ${span.start}-${span.end}`;
 }
 
-/**
- * Decide whether the served window gets a note, and render the clause when it does.
- *
- * Never throws: a provider failure degrades to silence plus one failure record for the read path.
- */
-export async function selectionRangeNote(
-  input: SelectionRangeNoteInput,
-): Promise<SelectionRangeNote> {
-  const admitted = admittedWindow(input);
-  if (admitted === undefined || input.provider === undefined) return {};
-  const { window, source } = admitted;
+interface Lookup {
+  readonly span?: AdmittedSpan;
+  readonly failure?: SelectionNoteFailure;
+}
 
+/** One window's lookup: a validated span, a failure to log, or silence. */
+async function lookup(
+  input: SelectionRangeNoteInput,
+  source: SpanSource,
+  window: OffsetWindow,
+): Promise<Lookup> {
   let answer: SpanAnswer | typeof TIMED_OUT;
   try {
     answer = await withTimeout(
-      Promise.resolve(input.provider.enclosingSpan(input.file, window)),
+      Promise.resolve(input.provider!.enclosingSpan(input.file, window)),
       input.timeoutMs ?? NOTE_LOOKUP_TIMEOUT_MS,
     );
   } catch {
@@ -196,5 +199,42 @@ export async function selectionRangeNote(
   // WHY: exactly like no answer — the served rows are already correct, so this is silence.
   if (span.start > window.offset || span.end < windowEnd) return {};
   if (span.start === window.offset && span.end === windowEnd) return {};
-  return { clause: renderClause(span) };
+  return { span };
+}
+
+/** A span's identity for the once-per-span rule: two windows in one span share one clause. */
+function spanKey(span: AdmittedSpan): string {
+  return `${span.start}:${span.end}:${span.kind}:${span.source}:${span.name}`;
+}
+
+/**
+ * Decide which served windows get a note, and render one clause per named span.
+ *
+ * Never throws: a provider failure degrades to silence plus one failure record for the read path.
+ * Order follows the served windows, so a clause lands on the first window served from its span.
+ */
+export async function selectionRangeNote(
+  input: SelectionRangeNoteInput,
+): Promise<SelectionRangeNote> {
+  const clauses = new Array<string | undefined>(input.windows?.length ?? 0);
+  const candidates = candidateWindows(input);
+  if (candidates.length === 0 || input.provider === undefined) return { clauses };
+  const source = providerSourceFor(input.file);
+  if (source === undefined) return { clauses };
+
+  const seen = new Set<string>();
+  let failure: SelectionNoteFailure | undefined;
+  for (const candidate of candidates) {
+    const result = await lookup(input, source, candidate.window);
+    if (result.failure !== undefined) {
+      failure ??= result.failure;
+      continue;
+    }
+    if (result.span === undefined) continue;
+    const key = spanKey(result.span);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clauses[candidate.index] = renderClause(result.span);
+  }
+  return { clauses, ...(failure === undefined ? {} : { failure }) };
 }

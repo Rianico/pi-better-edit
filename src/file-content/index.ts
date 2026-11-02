@@ -100,6 +100,8 @@ export interface PrepareOptions {
   offset?: number;
   limit?: number;
   windows?: ReadWindow[];
+  /** Finished header clauses aligned with `windows`; the note seam owns their text. */
+  noteClauses?: readonly (string | undefined)[];
   /** The anchor-space line cap for served reads; ignored when `render` is `"verbatim"`. */
   maxLines?: number;
   accessMode?: number;
@@ -192,6 +194,7 @@ export async function prepareFile(
     ...(options?.offset !== undefined ? { offset: options.offset } : {}),
     ...(options?.limit !== undefined ? { limit: options.limit } : {}),
     ...(options?.windows !== undefined ? { windows: options.windows } : {}),
+    ...(options?.noteClauses !== undefined ? { noteClauses: options.noteClauses } : {}),
     ...(options?.render !== undefined ? { render: options.render } : {}),
   };
   const maxLineBytes = options?.maxLineBytes;

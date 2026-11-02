@@ -44,6 +44,7 @@ import {
 } from "./snapshot-store";
 import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic, reportWarning } from "./diagnostics.js";
+import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import type { SpanProvider } from "./read-expansion/provider-contract.js";
 import { selectionRangeNote } from "./read-expansion/selection-range-note.js";
 import { recordProviderFailure } from "./read-expansion/audit.js";
@@ -469,36 +470,35 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: `noPersist` defers the authoritative materialization until the served windows are
           // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
           // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
-          const prepared = await prepareFile(target.file, cwd, {
-            ...(signal !== undefined ? { signal } : {}),
-            ...(singlePage !== undefined
-              ? { offset: singlePage.offset, limit: singlePage.limit }
-              : plan.windows !== undefined
-                ? { windows: plan.windows }
-                : {}),
-            // WHY: the served cap stays the served budget (independent of the anchor space): the paged
-            // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
-            // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
-            maxLines: remainingServedLines,
-            ...(mode === "served" && store !== undefined ? { store } : {}),
-            noPersist: true,
-            render: mode,
-            ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
-          });
-          if (prepared.kind === "image") {
-            // WHY: the interception point — the image never becomes a `results` entry, so no image
-            // WHY: content enters the served / hash / snapshot / lease paths below. The lone image
-            // WHY: delegates directly to the builtin and returns its image block.
-            const imageResult = await readImageViaBuiltin(prepared.absolutePath);
-            return imageResult;
+          // WHY: the note needs the file's visible total, and the header needs the finished clause
+          // WHY: before it renders, so the text is loaded and decoded once here and handed on.
+          const noteWanted =
+            noteMode?.value === "on" &&
+            spanProvider !== undefined &&
+            plan.windows !== undefined &&
+            plan.windows.length > 0;
+          if (noteWanted) {
+            preloaded ??= await loadFileKindAndText(toCwd(target.file, cwd), {
+              ...cap,
+              displayPath: target.file,
+            });
+            if (preloaded.kind === "text") {
+              resolvedText ??= await decodeNormText(target.file, cwd, {
+                ...(signal !== undefined ? { signal } : {}),
+                ...cap,
+                preloadedFile: preloaded,
+              });
+            }
           }
-          if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
           const note =
-            noteMode?.value === "on"
+            noteWanted && resolvedText !== undefined
               ? await selectionRangeNote({
                   file: toCwd(target.file, cwd),
                   windows: plan.windows,
-                  totalLines: prepared.lineTotals.visible,
+                  totalLines: visibleLineTotal(
+                    resolvedText.normalized,
+                    walkLines(resolvedText.normalized).total,
+                  ),
                   provider: spanProvider,
                   enabled: true,
                 })
@@ -525,13 +525,42 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               noteMode.source,
             );
           }
+          const prepared = await prepareFile(target.file, cwd, {
+            ...(signal !== undefined ? { signal } : {}),
+            ...(singlePage !== undefined
+              ? { offset: singlePage.offset, limit: singlePage.limit }
+              : plan.windows !== undefined
+                ? { windows: plan.windows }
+                : {}),
+            // WHY: the served cap stays the served budget (independent of the anchor space): the paged
+            // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
+            // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
+            maxLines: remainingServedLines,
+            ...(plan.windows !== undefined && plan.windows.length > 1 && note !== undefined
+              ? { noteClauses: note.clauses }
+              : {}),
+            ...(mode === "served" && store !== undefined ? { store } : {}),
+            noPersist: true,
+            render: mode,
+            ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
+          });
+          if (prepared.kind === "image") {
+            // WHY: the interception point — the image never becomes a `results` entry, so no image
+            // WHY: content enters the served / hash / snapshot / lease paths below. The lone image
+            // WHY: delegates directly to the builtin and returns its image block.
+            const imageResult = await readImageViaBuiltin(prepared.absolutePath);
+            return imageResult;
+          }
+          if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
           ordered.push({
             kind: "file",
             entry: {
               file: target.file,
               mode,
               plan,
-              ...(note?.clause !== undefined ? { noteClause: note.clause } : {}),
+              ...(plan.windows?.length === 1 && note?.clauses[0] !== undefined
+                ? { noteClause: note.clauses[0] }
+                : {}),
               prepared,
               ...(plan.omittedAll
                 ? {}

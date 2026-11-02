@@ -73,6 +73,8 @@ export function formatSectionHeader(
   endLine: number,
   totalLines: number,
   stoppedAtBytes?: number,
+  clause?: string,
 ): string {
-  return `[Lines ${startLine}-${endLine} of ${totalLines} total${stopSuffix(stoppedAtBytes)}]`;
+  const note = clause ?? "";
+  return `[Lines ${startLine}-${endLine} of ${totalLines} total${stopSuffix(stoppedAtBytes)}${note}]`;
 }
