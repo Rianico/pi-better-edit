@@ -18,7 +18,7 @@ const CURRENT_PROJECT_LITERAL = ".pi/agents/pi-better-edit/settings.json";
 const RETIRED_FLAT_LITERAL = ".pi/agents/pi-better-edit.json";
 const SETTINGS_OWNERS = [
   join("src", "bash-view-config.ts"),
-  join("src", "read-expansion-config.ts"),
+  join("src", "selection-range-config.ts"),
   // WHY: (ADR-0049 M6) the multi-file caps are a second per-key ladder over the same file, so they
   // WHY: reach the seam exactly like the view owner instead of re-deriving it.
   join("src", "bash-multifile-config.ts"),

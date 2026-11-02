@@ -1,5 +1,5 @@
 /**
- * Read expansion setting — the `read.expansion` key, resolved through the shared ladder:
+ * Selection-range note setting — the `read.selectionRange` key, resolved through the shared ladder:
  * environment override, then project file, then global file, then the default `on`.
  *
  * Mirrors `bash.view`: a missing file is silent, an existing-but-unusable file warns and falls
@@ -17,24 +17,24 @@ import {
   type ConfigScope,
 } from "./json-config.js";
 
-export type ReadExpansionMode = "on" | "off";
+export type SelectionRangeMode = "on" | "off";
 
 /** Environment override; values outside the enum are ignored, not fatal. */
-export const READ_EXPANSION_ENV_VAR = "PI_BETTER_EDIT_READ_EXPANSION";
+export const SELECTION_RANGE_ENV_VAR = "PI_BETTER_EDIT_READ_SELECTION_RANGE";
 
 /** An unconfigured session expands by default. */
-export const READ_EXPANSION_DEFAULT: ReadExpansionMode = "on";
+const SELECTION_RANGE_DEFAULT: SelectionRangeMode = "on";
 
-const READ_EXPANSION_MODES: readonly ReadExpansionMode[] = ["on", "off"];
+const SELECTION_RANGE_MODES: readonly SelectionRangeMode[] = ["on", "off"];
 
 /** The single key this owner reads and writes under `read`. */
-const READ_EXPANSION_KEY = "expansion";
+const SELECTION_RANGE_KEY = "selectionRange";
 
-export function isReadExpansionMode(value: unknown): value is ReadExpansionMode {
-  return typeof value === "string" && READ_EXPANSION_MODES.some((mode) => mode === value);
+export function isSelectionRangeMode(value: unknown): value is SelectionRangeMode {
+  return typeof value === "string" && SELECTION_RANGE_MODES.some((mode) => mode === value);
 }
 
-export function isReadExpansionScope(value: unknown): value is ConfigScope {
+export function isSelectionRangeScope(value: unknown): value is ConfigScope {
   return isConfigScope(value);
 }
 
@@ -42,19 +42,19 @@ function readScopeMode(
   scope: ConfigScope,
   cwd: string,
   onWarn?: ConfigOnWarn,
-): ReadExpansionMode | undefined {
+): SelectionRangeMode | undefined {
   const config = readScopeConfig(scope, cwd, onWarn);
   if (config === undefined) return undefined;
   const read = config.read;
   if (!isRecord(read)) return undefined;
-  const mode = read[READ_EXPANSION_KEY];
-  return isReadExpansionMode(mode) ? mode : undefined;
+  const mode = read[SELECTION_RANGE_KEY];
+  return isSelectionRangeMode(mode) ? mode : undefined;
 }
 
-export function readReadExpansionConfig(
+export function readSelectionRangeConfig(
   cwd: string,
   onWarn?: ConfigOnWarn,
-): { project?: ReadExpansionMode; global?: ReadExpansionMode } {
+): { project?: SelectionRangeMode; global?: SelectionRangeMode } {
   const project = readScopeMode("project", cwd, onWarn);
   const global = readScopeMode("global", cwd, onWarn);
   return {
@@ -68,53 +68,53 @@ function envText(name: string): string | undefined {
   return raw === undefined ? undefined : raw.trim();
 }
 
-function readEnvMode(): ReadExpansionMode | undefined {
-  const mode = envText(READ_EXPANSION_ENV_VAR)?.toLowerCase();
-  return mode !== undefined && isReadExpansionMode(mode) ? mode : undefined;
+function readEnvMode(): SelectionRangeMode | undefined {
+  const mode = envText(SELECTION_RANGE_ENV_VAR)?.toLowerCase();
+  return mode !== undefined && isSelectionRangeMode(mode) ? mode : undefined;
 }
 
-export interface ResolvedReadExpansionMode {
-  readonly value: ReadExpansionMode;
+export interface ResolvedSelectionRangeMode {
+  readonly value: SelectionRangeMode;
   readonly source: ConfigRung;
 }
 
-export function resolveReadExpansionModeWithSource(
+export function resolveSelectionRangeModeWithSource(
   cwd: string,
   onWarn?: ConfigOnWarn,
-): ResolvedReadExpansionMode {
+): ResolvedSelectionRangeMode {
   const fromEnv = readEnvMode();
   if (fromEnv !== undefined) return { value: fromEnv, source: "env" };
-  const config = readReadExpansionConfig(cwd, onWarn);
+  const config = readSelectionRangeConfig(cwd, onWarn);
   if (config.project !== undefined) return { value: config.project, source: "project" };
   if (config.global !== undefined) return { value: config.global, source: "global" };
-  return { value: READ_EXPANSION_DEFAULT, source: "default" };
+  return { value: SELECTION_RANGE_DEFAULT, source: "default" };
 }
 
-export function resolveReadExpansionMode(cwd: string, onWarn?: ConfigOnWarn): ReadExpansionMode {
-  return resolveReadExpansionModeWithSource(cwd, onWarn).value;
+export function resolveSelectionRangeMode(cwd: string, onWarn?: ConfigOnWarn): SelectionRangeMode {
+  return resolveSelectionRangeModeWithSource(cwd, onWarn).value;
 }
 
-export function saveReadExpansionConfig(
-  mode: ReadExpansionMode,
+export function saveSelectionRangeConfig(
+  mode: SelectionRangeMode,
   scope: ConfigScope,
   cwd: string,
 ): { path: string } {
-  if (!isReadExpansionMode(mode)) {
+  if (!isSelectionRangeMode(mode)) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
-      message: `Unknown read expansion mode "${String(mode)}".`,
+      message: `Unknown selection-range note mode "${String(mode)}".`,
     });
   }
-  if (!isReadExpansionScope(scope)) {
+  if (!isSelectionRangeScope(scope)) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: `Unknown read expansion scope "${String(scope)}".`,
     });
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `read.expansion` is ours to set; every other top-level and `read.*` key survives.
+  // WHY: only `read.selectionRange` is ours to set; every other top-level and `read.*` key survives.
   updateConfigFile(path, (existing) => ({
     ...existing,
-    read: { ...(isRecord(existing.read) ? existing.read : {}), [READ_EXPANSION_KEY]: mode },
+    read: { ...(isRecord(existing.read) ? existing.read : {}), [SELECTION_RANGE_KEY]: mode },
   }));
 
   return { path };

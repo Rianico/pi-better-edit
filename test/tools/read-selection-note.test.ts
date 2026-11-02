@@ -18,7 +18,7 @@ import {
 
 type ReadResult = { content: Array<{ text?: string }> };
 
-const ENV_VAR = "PI_BETTER_EDIT_READ_EXPANSION";
+const ENV_VAR = "PI_BETTER_EDIT_READ_SELECTION_RANGE";
 
 function reader(provider: SpanProvider = createReadSpanProvider()) {
   const { pi, getTool } = makeFakePiRegistry();
@@ -92,6 +92,18 @@ describe("selection-range note: exact window plus a header clause", () => {
         expect(headerOf(bare)).not.toContain("; in ");
       } finally {
         delete process.env[ENV_VAR];
+      }
+    });
+  });
+
+  it("ignores the retired environment variable: the note still fires", async () => {
+    await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
+      process.env.PI_BETTER_EDIT_READ_EXPANSION = "off";
+      try {
+        const result = await run(reader(), cwd, { file: path, windows: [{ offset: 7, limit: 1 }] });
+        expect(headerOf(result)).toContain('; in section "Language", lines 5-13)]');
+      } finally {
+        delete process.env.PI_BETTER_EDIT_READ_EXPANSION;
       }
     });
   });
@@ -211,6 +223,26 @@ describe("selection-range note: the pre-lookup gate reaches no provider", () => 
   });
 });
 describe("selection-range note: one note per span on a multi-window page", () => {
+  it("carries section notes with no anchors in verbatim mode", async () => {
+    await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
+      const result = await run(reader(), cwd, {
+        file: path,
+        mode: "verbatim",
+        windows: [
+          { offset: 7, limit: 1 },
+          { offset: 15, limit: 1 },
+        ],
+      });
+      const text = getText(result);
+      expect(text).not.toContain("│");
+      const headers = text.split("\n").filter((line) => line.startsWith("[Lines "));
+      expect(headers).toEqual([
+        '[Lines 7-7 of 16 total; in section "Language", lines 5-13]',
+        '[Lines 15-15 of 16 total; in section "Next", lines 14-16]',
+      ]);
+    });
+  });
+
   it("names a span once when two sections sit inside it", async () => {
     await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
       const result = await run(reader(), cwd, {

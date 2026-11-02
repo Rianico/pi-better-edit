@@ -49,9 +49,9 @@ import type { SpanProvider } from "./read-expansion/provider-contract.js";
 import { selectionRangeNote } from "./read-expansion/selection-range-note.js";
 import { recordProviderFailure } from "./read-expansion/audit.js";
 import {
-  resolveReadExpansionMode,
-  resolveReadExpansionModeWithSource,
-} from "./read-expansion-config.js";
+  resolveSelectionRangeMode,
+  resolveSelectionRangeModeWithSource,
+} from "./selection-range-config.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -309,7 +309,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
   const spanProvider = options?.spanProvider;
   // WHY: session_start warms the grammars off the read path; a read still waits only its budget.
   pi.on?.("session_start", (_event, ctx) => {
-    if (ctx.cwd === undefined || resolveReadExpansionMode(ctx.cwd) === "off") return;
+    if (ctx.cwd === undefined || resolveSelectionRangeMode(ctx.cwd) === "off") return;
     void spanProvider?.prefetch?.(ctx.cwd);
   });
   // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
@@ -454,7 +454,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: the lookup itself runs after preparation, where the served window and total are known.
           const noteMode =
             spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0
-              ? resolveReadExpansionModeWithSource(cwd, (reason) =>
+              ? resolveSelectionRangeModeWithSource(cwd, (reason) =>
                   reportWarning("read-expansion", reason),
                 )
               : undefined;

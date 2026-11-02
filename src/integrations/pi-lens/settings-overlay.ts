@@ -21,12 +21,12 @@ import {
   type BashViewMode,
 } from "../../bash-view-config.js";
 import {
-  READ_EXPANSION_ENV_VAR,
-  readReadExpansionConfig,
-  resolveReadExpansionModeWithSource,
-  saveReadExpansionConfig,
-  type ReadExpansionMode,
-} from "../../read-expansion-config.js";
+  SELECTION_RANGE_ENV_VAR,
+  readSelectionRangeConfig,
+  resolveSelectionRangeModeWithSource,
+  saveSelectionRangeConfig,
+  type SelectionRangeMode,
+} from "../../selection-range-config.js";
 import { resolveBashMultiFileSettingsWithSources } from "../../bash-multifile-config.js";
 import type { ConfigScope } from "../../json-config.js";
 import {
@@ -83,13 +83,13 @@ function bashViewLine2(cwd: string): string {
 }
 
 function readExpansionLine2(cwd: string): string {
-  const effective = resolveReadExpansionModeWithSource(cwd);
-  const config = readReadExpansionConfig(cwd);
+  const effective = resolveSelectionRangeModeWithSource(cwd);
+  const config = readSelectionRangeConfig(cwd);
   const line =
     `Effective: ${effective.value} (source: ${effective.source}) ` +
-    `\u2022 Global: ${config.global ?? "unset"} \u2022 Env: ${envDisplay(process.env[READ_EXPANSION_ENV_VAR])}`;
+    `\u2022 Global: ${config.global ?? "unset"} \u2022 Env: ${envDisplay(process.env[SELECTION_RANGE_ENV_VAR])}`;
   return effective.source === "env"
-    ? `\u26a0\ufe0f Overridden by ${READ_EXPANSION_ENV_VAR} \u2022 ${line}`
+    ? `\u26a0\ufe0f Overridden by ${SELECTION_RANGE_ENV_VAR} \u2022 ${line}`
     : line;
 }
 
@@ -163,7 +163,7 @@ export class SettingsOverlay extends Container {
         id: "read-expansion",
         label: "Read expansion",
         description: `Read window expansion switch\n${readExpansionLine2(this.cwd)}`,
-        currentValue: resolveReadExpansionModeWithSource(this.cwd).value,
+        currentValue: resolveSelectionRangeModeWithSource(this.cwd).value,
         values: ["on", "off"],
       },
       {
@@ -223,8 +223,8 @@ export class SettingsOverlay extends Container {
       return;
     }
     if (id === "read-expansion" && (newValue === "on" || newValue === "off")) {
-      const mode: ReadExpansionMode = newValue;
-      saveReadExpansionConfig(mode, this.scope, this.cwd);
+      const mode: SelectionRangeMode = newValue;
+      saveSelectionRangeConfig(mode, this.scope, this.cwd);
       this.refreshRow("read-expansion");
       return;
     }
@@ -246,7 +246,7 @@ export class SettingsOverlay extends Container {
       this.list.updateValue(id, effective.value);
       item.description = `Bash view interception switch\n${bashViewLine2(this.cwd)}\n${multiFileLine(this.cwd)}`;
     } else if (id === "read-expansion") {
-      const effective = resolveReadExpansionModeWithSource(this.cwd);
+      const effective = resolveSelectionRangeModeWithSource(this.cwd);
       this.list.updateValue(id, effective.value);
       item.description = `Read window expansion switch\n${readExpansionLine2(this.cwd)}`;
     } else if (id === "store") {

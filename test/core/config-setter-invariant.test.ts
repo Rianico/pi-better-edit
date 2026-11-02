@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { saveBashViewConfig } from "../../src/bash-view-config.js";
-import { saveReadExpansionConfig } from "../../src/read-expansion-config.js";
+import { saveSelectionRangeConfig } from "../../src/selection-range-config.js";
 import { saveBashMultiFileConfig } from "../../src/bash-multifile-config.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { saveLensBridgeConfig } from "../../src/integrations/pi-lens/config.js";
@@ -35,9 +35,9 @@ const BASH_VIEW_MODE = (mode: unknown, dir: string): unknown =>
 const BASH_VIEW_SCOPE = (scope: unknown, dir: string): unknown =>
   saveBashViewConfig("off", scope as Parameters<typeof saveBashViewConfig>[1], dir);
 const READ_EXPANSION_MODE = (mode: unknown, dir: string): unknown =>
-  saveReadExpansionConfig(mode as Parameters<typeof saveReadExpansionConfig>[0], "project", dir);
+  saveSelectionRangeConfig(mode as Parameters<typeof saveSelectionRangeConfig>[0], "project", dir);
 const READ_EXPANSION_SCOPE = (scope: unknown, dir: string): unknown =>
-  saveReadExpansionConfig("off", scope as Parameters<typeof saveReadExpansionConfig>[1], dir);
+  saveSelectionRangeConfig("off", scope as Parameters<typeof saveSelectionRangeConfig>[1], dir);
 const STORE_SCOPE = (scope: unknown, dir: string): unknown =>
   saveStoreJanitorConfig(
     { mode: "on" },
