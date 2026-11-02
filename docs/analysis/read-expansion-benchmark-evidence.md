@@ -1,6 +1,6 @@
 # Read expansion: benchmark evidence
 
-Status: evidence record, 2026-11-01; corrected 2026-11-02. This is not a decision record. [ADR-0008](../adr/0008-read-expansion-requested-window-and-bounds.md) held the contract, and [ADR-0009](../adr/0009-serve-a-selection-range-note-instead-of-widening-the-read.md) reverses it on the evidence below.
+Status: evidence record, 2026-11-01; corrected 2026-11-02. This is not a decision record. [ADR-0008](../adr/0008-read-expansion-requested-window-and-bounds.md) held the contract, and [ADR-0012](../adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md) reverses it on the evidence below.
 
 > [!WARNING] Correction (2026-11-02)
 > An earlier version of this record named `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER`, `PI_BETTER_EDIT_READ_EXPANSION_CAP` and `PI_BETTER_EDIT_READ_EXPANSION_CAP_RATIO` as configuration the extension shipped. They never shipped: the trigger and cap knobs existed only as uncommitted changes in an experiment worktree. Released 2.16.0 keeps the fixed 24-line trigger and the fixed per-source caps (80 code, 80 Markdown, 40 plain text). Every table and measured number below stands; the two sentences that implied a released surface are corrected in place, and this note keeps the edit visible.

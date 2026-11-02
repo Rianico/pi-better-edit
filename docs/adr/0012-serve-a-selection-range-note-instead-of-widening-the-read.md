@@ -1,4 +1,4 @@
-# 0009. Serve a Selection-Range Note Instead of Widening the Read
+# 0012. Serve a Selection-Range Note Instead of Widening the Read
 
 Date: 2026-11-02
 

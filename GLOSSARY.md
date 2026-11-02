@@ -90,11 +90,11 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **enclosing span**:
-The smallest structural block that fully contains the window a read serves: a function, method, class, module, heading section, or paragraph, depending on the language. Its kind, name, and extent are what the `selection-range note` reports ([ADR-0009](docs/adr/0009-serve-a-selection-range-note-instead-of-widening-the-read.md)).
+The smallest structural block that fully contains the window a read serves: a function, method, class, module, heading section, or paragraph, depending on the language. Its kind, name, and extent are what the `selection-range note` reports ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
 _Avoid_: symbol range, node extent
 
 **selection-range note**:
-One clause appended to the read page header when the enclosing span of the window a read serves is strictly larger than that window: the span's kind, its name, and its extent. It changes no served line, carries no lease and no anchor, and is silent when the window already covers its span, when nothing encloses it, when the pre-lookup gate declines, and when the lookup fails ([ADR-0009](docs/adr/0009-serve-a-selection-range-note-instead-of-widening-the-read.md)).
+One clause appended to the read page header when the enclosing span of the window a read serves is strictly larger than that window: the span's kind, its name, and its extent. It changes no served line, carries no lease and no anchor, and is silent when the window already covers its span, when nothing encloses it, when the pre-lookup gate declines, and when the lookup fails ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
 _Avoid_: read expansion and its vocabulary (retired feature: requested window, served window), widening note, expansion note, block hint, span banner
 
 **served-range staleness**:
