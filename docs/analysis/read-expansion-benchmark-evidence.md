@@ -203,6 +203,32 @@ The trigger is the wrong dial for both. Lowering it makes the feature fire less.
 
 16 tasks is small, so the score comparison cannot resolve a difference below roughly two tasks. The mutations are machine-generated and therefore easier than real issue-driven work. Only two of the four intended repositories are represented: `httpx` and `click` did not reach a green baseline in the container. And the token figures per task, around 275,000, are an order of magnitude above the public suites, so a larger sample costs real money.
 
+## Cap sweep: the cap is the binding control
+
+The cap is now configurable through `PI_BETTER_EDIT_READ_EXPANSION_CAP`. A positive integer sets it for every source. `unlimited` removes it. `dynamic` scales it to the file as `floor(totalLines * ratio)`, where the ratio defaults to `1/1.618` and is overridable through `PI_BETTER_EDIT_READ_EXPANSION_CAP_RATIO`. Unset keeps the shipped per-source constants. Seven unit tests cover the modes, and the read-expansion suite passes 163 tests.
+
+Five legs on micro-swe at trigger 1000, so the cap alone decides whether a widening is served. All five used a 300 s trial timeout.
+
+| cap | widenings | requested median | served median | dilation | extra lines served | same-file re-reads | passed | timeouts |
+|---|---|---|---|---|---|---|---|---|
+| off | 0 | — | — | — | 0 | 16 | 12/16 | 1 |
+| 80 | 3 | 15 | 32 | 2.1× | 51 | 17 | 13/16 | 3 |
+| 400 | 11 | 20 | 253 | 7.0× | 1,658 | 18 | 7/16 | 9 |
+| unlimited | 14 | 205 | 1122 | 4.5× | **9,314** | 7 | 3/16 | 13 |
+| dynamic | 13 | 30 | 253 | 4.7× | 1,718 | 15 | 16/16 | 0 |
+
+**The cap is the binding control, and it works as designed.** Widening events rise with it: 0, 3, 11, 14. So does the amount served. The extra lines are 0, 51, 1,658 and 9,314.
+
+**Unlimited serves a class for a single probe.** The largest widening served 1,317 lines. A 20-line probe inside a 2,698-line file was answered with half the file. That dilation is what the 80-line cap existed to prevent. The sweep confirms the cap was doing real work.
+
+**It buys nothing.** Same-file re-reads are 16, 17, 18, 7 and 15 across the five legs. The 7 comes from the unlimited leg, where three trials timed out before issuing a read at all. Per trial that leg issues 0.54 reads against 1.0 for the off arm, so its re-read count falls only because its trials end early. On the legs that completed, serving 1,658 extra lines did not remove a single second read.
+
+**Score does not track the cap.** Pass counts are 12, 13, 7, 3 and 16. That is not a dose-response. The decisive pair is `cap400` at 7/16 and `dynamic` at 16/16. Both served a median of 253 lines. They widened 11 and 13 times. Yet they differ by nine tasks. Provider latency drifted by two to three times during the sweep. The timing and timeout columns are therefore confounded, and the score column is not attributable to the cap.
+
+### What this establishes
+
+The cap decides how much a widening serves. It can be made to serve a great deal. That extra context did not remove a second read. It did not improve the score beyond noise. At the top settings it produced a median dilation of four to seven times the request. The shipped 80-line ceiling is therefore doing its job: it bounds the cost of a feature whose benefit is not observable.
+
 ## Lessons: what a benchmark must do to measure this feature
 
 1. **The benchmark must leave the file on disk.** Every cheap public edit benchmark pre-loads the target file into the prompt. Aider passes `fnames` into its coder and stubs file mentions to an empty set. EDIT-Bench hands over the whole file. With the file already in context, no read tool is called. An on/off trial therefore measures noise. Both suites here were re-anchored as file-on-disk agentic tasks for this reason.
