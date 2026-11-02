@@ -2,11 +2,19 @@
 
 ## [Unreleased]
 
+### Features
+
+* **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
+
 ### Documentation
 
 * **docs:** record the final read-expansion verdict: across five task suites and roughly 1,500 trials no trigger or cap setting improved the score outside noise, twenty widenings in one bracketed leg made no difference, and the feature never reduced repeated reads. A transcript walk over 76 widenings shows why — the agent returned to that file in 18, re-read the just-served range in 10 of 21 follow-ups, and used an added line once. The shipped settings stay harmless and cheap. (#221)
 
 * **docs:** record the read-expansion benchmark evidence: a three-leg paired run on Pi 1.4.0 showing the 2.14.0 to 2.16.0 bump is cost-neutral and score-neutral once retry volume is normalised, with sandbox provenance, activation proof and the threats to validity. (#221)
+
+### Code Refactoring
+
+* **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)
 
 ## [2.16.0] - 2026-11-01
 

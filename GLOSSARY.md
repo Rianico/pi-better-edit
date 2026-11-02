@@ -23,6 +23,38 @@ The project's core contract: per-line anchors derive from the file's canonical p
 The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
 _Avoid_: whitespace set, trim set (use canon)
 
+**invisible codepoint**:
+A codepoint a served row cannot display distinguishably (a zero-width joiner, a non-breaking space, a bidi override), classified by the frozen sets in `src/file-content/invisible.ts` as `canon_stripped`, `canon_surviving` or `non_printable_control`.
+_Avoid_: invisible character, hidden character
+
+**non_printable_control codepoint**:
+The 62 control codepoints the classifier checks first (C0 except TAB, LF and CR, plus DEL and the C1 block): U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+007F–U+009F. Checked first, so the class wins at U+000B, U+000C and U+0085. Defined in `src/file-content/invisible.ts`; pinned by `test/core/invisible-codepoints.test.ts`.
+_Avoid_: control character, hidden control
+
+**canon_stripped codepoint**:
+The 21 non-ASCII codepoints the frozen canonicalization (`whitespace class`) removes before hashing. The set, verbatim: U+00A0, U+1680, U+2000–U+200A, U+200E, U+200F, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF. Hazard: **silent corruption**. Replacing one with ASCII whitespace leaves the anchor digest unchanged, so the edit is accepted and the file's bytes change with no other guard. **This class is coupled to the frozen list by construction: any change to `CANON_CODE_POINTS` in `src/hashline/hash-identity.ts` must re-examine the classifier sets in `src/file-content/invisible.ts` and the coupling assertion in `test/core/canon-v3-disposition.test.ts`; the `edit-path disclosure` is the consumer that would have to be re-examined.** Defined in `src/file-content/invisible.ts`; pinned by `test/core/invisible-codepoints.test.ts` and by the coupling assertion in `test/core/canon-v3-disposition.test.ts`.
+_Avoid_: silent-corruption codepoint, stripped character
+
+**canon_surviving codepoint**:
+The 16 zero-width, soft-hyphen and bidi format codepoints the canonicalization keeps: U+00AD, U+061C, U+180E, U+200B, U+200C, U+200D, U+202A–U+202E, U+2060, U+2066–U+2069. Effect: **anchor rotation** — substituting or dropping one changes the anchor digest, so the edit still applies, but the line reads back under a new anchor and a later edit anchored on the old one is rejected. Ten of the twelve `bidi control` codepoints sit in this set; U+200E and U+200F are `canon_stripped`. Defined in `src/file-content/invisible.ts`; pinned by `test/core/invisible-codepoints.test.ts` and by the coupling assertion in `test/core/canon-v3-disposition.test.ts`.
+_Avoid_: surviving codepoint, zero-width character
+
+**bidi control**:
+One of the twelve bidirectional format code points (`U+061C`, `U+200E`, `U+200F`, `U+202A`–`U+202E`, `U+2066`–`U+2069`). A renderer applies the Unicode Bidi Algorithm to them, so a line's glyphs can appear in an order its bytes do not contain (Trojan Source, CVE-2021-42574). The hazard is the **layout override**, and it belongs to the renderer: a model is token-sensitive and receives the code point in byte order, so no read-side disclosure is owed ([ADR-0011](docs/adr/0011-read-side-bidi-disclosure-for-trojan-source.md)). The edit path still reports a substitution, because it compares bytes. The subset is not a fourth class: it spans `canon_stripped` (U+200E, U+200F) and `canon_surviving` (the other ten).
+_Avoid_: bidi marker, direction character, RTL character
+
+**edit-path disclosure**:
+The tool's statement, in an edit response, of every in-scope `invisible codepoint` a write removed from or added to the replaced span. It compares the replaced span's on-disk lines against the written lines; it never compares against served text, because the store persists none. Plain text, no warning-code tier, and permissive — the edit always applies ([ADR-0009](docs/adr/0009-invisible-codepoint-disclosure-lives-on-the-edit-path.md)).
+_Avoid_: unicode warning, codepoint notice, fidelity hint
+
+**caret sub-row**:
+A diff row carrying one `edit-path disclosure` entry, placed immediately after the row it describes. It has an anchor-less gutter (`ANCHOR_LEN + 1` spaces then `│`) so it aligns with the content column but cannot be read as a served row, and it points `▲` at the code point's column. The content rows stay `byte-faithful`; the sub-row is separate precisely so nothing inside a row is escaped ([ADR-0009](docs/adr/0009-invisible-codepoint-disclosure-lives-on-the-edit-path.md)).
+_Avoid_: diff annotation, marker row
+
+**byte-faithful row**:
+A served or diff row whose content is exactly the file's bytes: no escape, marker, substitution, or extra column. The contract exists because a row is a paste surface — a model can reuse a row's content in `edit.text`, so any rendered escape is a corruption vector. Escaping the removed diff row was rejected for this reason: `a[U+000B]b` is 10 code points where the file's line is 3.
+_Avoid_: raw row, unescaped row
+
 **anchor staleness**:
 An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon` miss). Reported as `[E_STALE_ANCHOR]` with the current rows served; the model retries with those rows (no `read` needed).
 _Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)

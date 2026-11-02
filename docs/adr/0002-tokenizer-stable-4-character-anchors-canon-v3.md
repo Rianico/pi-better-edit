@@ -6,6 +6,10 @@ Date: 2026-10-30
 
 Accepted
 
+Clarified by [10. The Line Canon Stays a Pure Function of One Line](0010-the-line-canon-stays-a-pure-function-of-one-line.md)
+
+Relates to [9. Invisible-Codepoint Disclosure Lives on the Edit Path](0009-invisible-codepoint-disclosure-lives-on-the-edit-path.md)
+
 ## Context
 
 Line presentation anchors must be compact to conserve context window, deterministic and unique within each file to prevent ambiguity, and stable across external formatting tools (Prettier, Black, rustfmt, eslint). Empirical measurements on this repo's own source ([`docs/.archive_adrs/0003-two-signal-line-identity.md`](../.archive_adrs/0003-two-signal-line-identity.md), [`docs/.archive_adrs/0005-whitespace-insensitive-anchors.md`](../.archive_adrs/0005-whitespace-insensitive-anchors.md)) showed that 93%–98% of lines modified by formatters involve whitespace changes only (indentation, line breaks, trailing spaces). If line anchors hash raw bytes or simple trailing trims, every format-on-save pass rotates anchors, forcing models into repetitive re-reads.
