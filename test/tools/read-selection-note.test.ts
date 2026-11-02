@@ -219,6 +219,7 @@ describe("selection-range note: the pre-lookup gate reaches no provider", () => 
       expect(text).toContain("[Lines 1-1 of 5 total; in function f, lines 1-5]");
       expect(text).toContain("[Lines 4-4 of 5 total]\n");
       expect(text.match(/; in function f, lines 1-5/g)).toHaveLength(1);
+      expect(logRows()).toEqual([]);
     });
   });
 });
