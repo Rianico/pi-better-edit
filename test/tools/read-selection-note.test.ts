@@ -79,6 +79,7 @@ describe("selection-range note: exact window plus a header clause", () => {
       expect(rowsOf(result)).toEqual(["Alpha."]);
       expect(headerOf(result)).toMatch(/^\[.* \(lines 7-7 of \d+ total; /);
       expect(headerOf(result)).toContain('; in section "Language", lines 5-13)]');
+      expect(logRows()).toEqual([]);
     });
   });
 
@@ -387,6 +388,42 @@ describe("selection-range note: one bracket grammar", () => {
       expect(header).toContain("; in function runfast now, lines 1-3)]");
       expect(header.match(/\[/g)).toHaveLength(1);
       expect(header.match(/\]/g)).toHaveLength(1);
+    });
+  });
+});
+
+describe("selection-range note: hardening", () => {
+  it("logs invalid_answer for a non-object provider answer", async () => {
+    const provider: SpanProvider = { enclosingSpan: () => null };
+    await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
+      const result = await run(reader(provider), cwd, {
+        file: path,
+        windows: [{ offset: 7, limit: 1 }],
+      });
+      expect(headerOf(result)).not.toContain("; in ");
+      const logged = logRows();
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({ file: path, source: "md", reason: "invalid_answer" });
+    });
+  });
+
+  it("strips C0 control characters from a span name", async () => {
+    const provider: SpanProvider = {
+      enclosingSpan: () => ({
+        start: 1,
+        end: 3,
+        kind: "function",
+        name: "run\u0001fast",
+        source: "ast",
+      }),
+    };
+    await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
+      const result = await run(reader(provider), cwd, {
+        file: path,
+        windows: [{ offset: 2, limit: 1 }],
+      });
+      expect(headerOf(result)).toContain("; in function runfast, lines 1-3)]");
+      expect(headerOf(result)).not.toContain("\u0001");
     });
   });
 });

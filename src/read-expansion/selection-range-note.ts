@@ -105,7 +105,11 @@ function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T | typeof
 /** Collapse a provider-supplied name to what one header clause can carry safely. */
 function sanitizeName(value: string): string {
   // WHY: a Markdown heading may legally contain brackets, and the header is one bracket grammar.
-  const collapsed = value.replace(/[[\]]/g, "").replace(/\s+/g, " ").trim();
+  const collapsed = value
+    .replace(/[[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\x00-\x1F]/g, "")
+    .trim();
   return collapsed.slice(0, NOTE_NAME_MAX).trim();
 }
 
@@ -184,7 +188,9 @@ async function lookup(
     return { failure: { source, reason: "provider_error" } };
   }
   if (answer === TIMED_OUT) return { failure: { source, reason: "provider_error" } };
-  if (answer === null || typeof answer !== "object") return {};
+  if (answer === null || typeof answer !== "object") {
+    return { failure: { source, reason: "invalid_answer" } };
+  }
   if ("refusal" in answer) {
     if (!isRefusalReason(answer.refusal)) return { failure: { source, reason: "invalid_answer" } };
     return LOGGED_REFUSALS.has(answer.refusal)

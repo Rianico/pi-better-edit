@@ -54,7 +54,7 @@ describe("lens bridge boundary", () => {
     }
   });
 
-  it("documents no widening chrome, trigger or caps in this tool.s own terms", () => {
+  it("documents no widening chrome, trigger or caps in this tool's own terms", () => {
     const retiredClaims = [
       "ast symbol",
       "markdown heading",
@@ -65,6 +65,9 @@ describe("lens bridge boundary", () => {
     for (const file of ["prompts/read.md", "prompts/read-guidelines.md"]) {
       const text = readFileSync(file, "utf-8");
       expect(text, file).not.toContain("widened");
+      expect(text, file).not.toContain("24");
+      expect(text, file).not.toContain("80");
+      expect(text, file).not.toContain("40");
       expect(text, file).not.toContain("(section <extent>)");
       expect(text, file).toContain("verbatim");
       for (const claim of retiredClaims) {

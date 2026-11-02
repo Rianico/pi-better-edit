@@ -87,3 +87,39 @@ describe("schema", () => {
     expect(read["expansion"]).toBeUndefined();
   });
 });
+
+describe("selection-range config: seam behaviours", () => {
+  it("warns once and never throws for a malformed project file", async () => {
+    await withTempFile("note.txt", "x\n", async ({ cwd }) => {
+      const path = configFilePath("project", cwd);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "{ not json", "utf-8");
+      const warnings: string[] = [];
+      const resolved = resolveSelectionRangeModeWithSource(cwd, (reason) => warnings.push(reason));
+      expect(resolved).toEqual({ value: "on", source: "default" });
+      expect(warnings.length).toBeLessThanOrEqual(1);
+    });
+  });
+
+  it("falls through an invalid env value to the project rung", async () => {
+    await withTempFile("note.txt", "x\n", async ({ cwd }) => {
+      writeRead("project", cwd, { selectionRange: "off" });
+      process.env[ENV] = "maybe";
+      expect(resolveSelectionRangeModeWithSource(cwd)).toEqual({ value: "off", source: "project" });
+    });
+  });
+
+  it("reads read.selectionRange and leaves unknown keys untouched", async () => {
+    await withTempFile("note.txt", "x\n", async ({ cwd }) => {
+      const path = configFilePath("project", cwd);
+      mkdirSync(dirname(path), { recursive: true });
+      const body = JSON.stringify({
+        read: { selectionRange: "off", extra: 1 },
+        custom: { keep: true },
+      });
+      writeFileSync(path, body, "utf-8");
+      expect(resolveSelectionRangeModeWithSource(cwd)).toEqual({ value: "off", source: "project" });
+      expect(readFileSync(path, "utf-8")).toBe(body);
+    });
+  });
+});
