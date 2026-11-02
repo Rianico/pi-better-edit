@@ -170,10 +170,6 @@ describe("registerLensCommand", () => {
       "bash on",
       "bash off",
       "bash status",
-      "read",
-      "read on",
-      "read off",
-      "read status",
       "settings",
     ]);
     expect(options.getArgumentCompletions?.("lens z")).toEqual([]);

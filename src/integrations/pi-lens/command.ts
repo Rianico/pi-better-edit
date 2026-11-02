@@ -105,10 +105,6 @@ const COMMAND_COMPLETIONS: readonly string[] = [
   "bash on",
   "bash off",
   "bash status",
-  "read",
-  "read on",
-  "read off",
-  "read status",
   "settings",
 ];
 type LensPickerChoice =
