@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Features
+
+* **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
+
+### Code Refactoring
+
+* **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)
+
 ## [2.16.0] - 2026-11-01
 
 ### Features

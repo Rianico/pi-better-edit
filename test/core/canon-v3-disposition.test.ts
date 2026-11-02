@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 
 import { canon, canonDigest, _lineHashesPure } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
+import { classifyCodepoint } from "../../src/file-content/invisible.js";
 
 beforeAll(async () => {
   await initHasher();
@@ -111,6 +112,22 @@ describe("canon v3 disposition table — executable record (issue #22)", () => {
     }
     for (const cp of ["\u200B", "\u00AD", "\u2060"]) {
       expect(_lineHashesPure(`a${cp}b\n`)[0], `significant ${cp.codePointAt(0)}`).not.toBe(base[0]);
+    }
+  });
+  it("couples every disposition row to the disclosure classifier", () => {
+    for (const row of DISPOSITIONS) {
+      const codePoint = row.cp.codePointAt(0);
+      if (codePoint === undefined) throw new Error(`row ${row.name} has no code point`);
+      if (row.disposition === "normalize") {
+        if (codePoint > 0x7f && codePoint !== 0x0085) {
+          expect(classifyCodepoint(codePoint), row.name).toBe("canon_stripped");
+        }
+      } else {
+        const found = classifyCodepoint(codePoint);
+        expect(found === "canon_surviving" || found === "non_printable_control", row.name).toBe(
+          true,
+        );
+      }
     }
   });
 });

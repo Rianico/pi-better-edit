@@ -1,9 +1,23 @@
+/**
+ * SAFETY: edit-diff - row-intrinsic invisible-code-point annotation (issue #231).
+ *
+ * WHY: in-scope code points are a vanishingly small share of real-corpus characters,
+ * WHY: so fatigue is not the risk; a missed disclosure is a silent byte change. The
+ * WHY: annotation therefore lives on the diff rows themselves instead of a sentence:
+ * WHY: each `-` row lists its own in-scope code points as `removed`, each `+` row
+ * WHY: lists its own as `added`, in column order on one sub-row placed immediately
+ * WHY: after its row. There is no cross-row pairing and no aggregation - block
+ * WHY: rewrites annotate both sides independently - and context rows never get
+ * WHY: sub-rows. The sub-row carries no file-line slot: adjacency to its diff row,
+ * WHY: whose anchors map to the file line, carries the line.
+ */
 import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
 import { ANCHOR_LEN, HASH_SEP, defaultHashIdentity } from "./hashline/hash-identity.js";
 import type { ServedRow } from "./served-session/serve-render.js";
 
+import { invisibleName, scanInvisibleLine } from "./file-content/invisible.js";
 export type LineEnding = "\r\n" | "\n" | "\r";
 
 export function detectEnding(content: string): LineEnding {
@@ -32,6 +46,39 @@ export function stripBOM(content: string): { bom: string; text: string } {
     : { bom: "", text: content };
 }
 
+const SUB_ROW_BYTE_CAP = 200;
+const SUB_ROW_CARET = "▲";
+
+function hexToken(codePoint: number): string {
+  return `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+function entryToken(codePoint: number): string {
+  const name = invisibleName(codePoint);
+  return name === undefined ? hexToken(codePoint) : `${hexToken(codePoint)} ${name}`;
+}
+
+/**
+ * WHY: the sub-row is row-intrinsic - it lists only the in-scope code points of
+ * WHY: its own row, in column order, with the direction word naming the row kind.
+ * WHY: The caret points at the first entry's column; past the byte cap the caret
+ * WHY: and its padding are dropped rather than pointed at nothing, while every
+ * WHY: entry keeps its column and full name.
+ */
+function subRowForLine(line: string, direction: "removed" | "added"): string | undefined {
+  const found = scanInvisibleLine(line);
+  if (found.length === 0) return undefined;
+  const first = found[0]!;
+  const entries = found
+    .map((occurrence) => `col ${occurrence.column}: ${entryToken(occurrence.codePoint)}`)
+    .join("; ");
+  const body = `[${entries} ${direction}]`;
+  const gutter = " ".repeat(ANCHOR_LEN + 1) + HASH_SEP;
+  const caretForm = `${gutter}${" ".repeat(first.column - 1)}${SUB_ROW_CARET} ${body}`;
+  if (Buffer.byteLength(caretForm, "utf-8") > SUB_ROW_BYTE_CAP) return `${gutter} ${body}`;
+  return caretForm;
+}
+
 function fmtDiffLine(prefix: " " | "+" | "-", line: string, hash: string | undefined): string {
   if (hash === undefined) {
     return `${prefix}${" ".repeat(ANCHOR_LEN)}${HASH_SEP}${line}`;
@@ -50,8 +97,11 @@ function pushAddedLines(
   servedRows: ServedRow[],
 ): void {
   for (let k = 0; k < displayLines.length; k++) {
+    const line = displayLines[k]!;
     const hash = effectiveNewHashes[newLineNum.value - 1];
-    output.push(fmtDiffLine("+", displayLines[k]!, hash));
+    output.push(fmtDiffLine("+", line, hash));
+    const subRow = subRowForLine(line, "added");
+    if (subRow !== undefined) output.push(subRow);
     if (hash !== undefined) servedRows.push({ position: newLineNum.value - 1, hash });
     newLineNum.value++;
   }
@@ -65,6 +115,8 @@ function pushRemovedLines(
   const emit = (line: string): void => {
     const hash = oldContentHashes?.[oldLineNum.value - 1];
     output.push(fmtDiffLine("-", line, hash));
+    const subRow = subRowForLine(line, "removed");
+    if (subRow !== undefined) output.push(subRow);
     oldLineNum.value++;
   };
   if (displayLines.length <= DIFF_REMOVED_CAP) {
