@@ -426,4 +426,26 @@ describe("selection-range note: hardening", () => {
       expect(headerOf(result)).not.toContain("\u0001");
     });
   });
+
+  it("collapses a newline to one space before stripping C0 controls", async () => {
+    const provider: SpanProvider = {
+      enclosingSpan: () => ({
+        start: 1,
+        end: 3,
+        kind: "function",
+        name: "run\nfast\u0001now",
+        source: "ast",
+      }),
+    };
+    await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
+      const result = await run(reader(provider), cwd, {
+        file: path,
+        windows: [{ offset: 2, limit: 1 }],
+      });
+      const header = headerOf(result);
+      expect(header).toContain("; in function run fastnow, lines 1-3)]");
+      expect(header).not.toContain("\u0001");
+      expect(header).not.toContain("\n");
+    });
+  });
 });

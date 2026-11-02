@@ -97,15 +97,24 @@ describe("selection-range config: seam behaviours", () => {
       const warnings: string[] = [];
       const resolved = resolveSelectionRangeModeWithSource(cwd, (reason) => warnings.push(reason));
       expect(resolved).toEqual({ value: "on", source: "default" });
-      expect(warnings.length).toBeLessThanOrEqual(1);
+      expect(warnings).toHaveLength(1);
     });
   });
 
   it("falls through an invalid env value to the project rung", async () => {
     await withTempFile("note.txt", "x\n", async ({ cwd }) => {
       writeRead("project", cwd, { selectionRange: "off" });
-      process.env[ENV] = "maybe";
-      expect(resolveSelectionRangeModeWithSource(cwd)).toEqual({ value: "off", source: "project" });
+      const previous = process.env[ENV];
+      try {
+        process.env[ENV] = "maybe";
+        expect(resolveSelectionRangeModeWithSource(cwd)).toEqual({
+          value: "off",
+          source: "project",
+        });
+      } finally {
+        if (previous === undefined) delete process.env[ENV];
+        else process.env[ENV] = previous;
+      }
     });
   });
 
