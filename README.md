@@ -5,7 +5,8 @@
 <h1 align="center">pi-better-edit</h1>
 <p align="center">
   <strong>Production-grade, hash-anchored file editing for &pi;.<br>
-  Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
+  Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.<br>
+  Anchors survive formatter churn. Substituted invisible code points are named in the reply.</strong>
 </p>
 
 <p align="center">
@@ -230,6 +231,51 @@ undo_last_edit({ path: "src/index.ts" })
 
 ## Features
 
+### Formatter Insensitivity
+
+Run a formatter between your `read` and your `edit` and the anchors still resolve. No re-read, no retry, no token spent.
+
+The canon strips a frozen 28-code-point whitespace class before hashing ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)), so indentation, operator spacing, and line-ending style never enter the digest. When the file does change, the rebase aligns the previous snapshot to the current one on those same canon digests. A leased line therefore follows its content, not its coordinates.
+
+| Rewrite between `read` and `edit` | Edit outcome |
+| :--- | :--- |
+| **Whitespace only** — the file re-indented to a different depth | **applied** with the pre-rewrite anchor |
+| **Line insertion** — two lines added above the target line | **applied** with the pre-rewrite anchor |
+| **Token change** — a semicolon added, or a brace merged onto the line | `[E_TARGET_LOST]`, file untouched |
+
+The rule is the *target line's canon*, not the size of the rewrite. A rewrite is free when that canon does not move.
+
+A **canon-surviving** code point is the subtle case:
+
+| Rewrite | Outcome |
+| :--- | :--- |
+| NBSP (U+00A0) &rarr; space | applied |
+| ZWSP (U+200B) &rarr; space | `[E_TARGET_LOST]`, file untouched |
+
+> [!NOTE]
+> Anchors are derived per line. A rewrite that changes one line's canon can therefore move the anchors of later lines, even where their content is identical. Resolution tracks the leased `line_id`, not the anchor spelling, so the edit is unaffected.
+
+### Invisible-Codepoint Disclosure
+
+A code point you cannot see can be replaced without changing anything you can see. `edit` reports it.
+
+When an edit's replaced span drops a code point in the disclosure set, the response annotates the affected line. A caret sub-row names the class, the Unicode name, and the 1-indexed column:
+
+```text
+-SrkL│const s = "a b";
+     │            ▲ [col 13: U+00A0 NO-BREAK SPACE removed]
++AAAA│const s = "a b";
+```
+
+The two rows are visually identical. That is the defect being reported: the `-` row carries a NO-BREAK SPACE, the `+` row an ordinary space.
+
+- **The rows stay byte-faithful.** Nothing is escaped inside a `-`, `+`, or context row. Those are the bytes a model copies into the next `edit.text`, so escaping them would corrupt a paste. The caret sub-row is a *separate* row, so the honesty costs no pasteability.
+- **Permissive, not preventive.** The edit always applies. A refusal would fire on intentional whitespace cleanup, so the disclosure is post-hoc by design ([ADR-0009](docs/adr/0009-invisible-codepoint-disclosure-lives-on-the-edit-path.md)).
+- **On the edit path, not the read path.** Every in-scope code point already tokenizes distinctly from its ASCII twin. A read-side notice would therefore add attention, not information. The edit is where the model acts, and a response cannot be ignored the way a footnote can.
+- **Frozen data, no new dependency.** The class sets and Unicode names are frozen constants. No Unicode property escapes, which drift with the engine version.
+
+The read path adds no disclosure for this set. It already reports non-printable controls, and served rows stay byte-identical either way ([ADR-0010](docs/adr/0010-the-line-canon-stays-a-pure-function-of-one-line.md)).
+
 ### Read Expansion
 `read` automatically widens small requested windows to their enclosing structural block ([ADR-0008](docs/adr/0008-read-expansion-requested-window-and-bounds.md)):
 - **Trigger & Bounds**: A requested window of 24 lines or fewer widens to its enclosing block (function, method, class, module, Markdown section, or blank-line paragraph). Overlapping or adjacent requested windows fold into one span before this test. Caps are 80 lines of code, 80 lines of Markdown, and 40 lines of plain text.
@@ -240,7 +286,7 @@ undo_last_edit({ path: "src/index.ts" })
 
 ### Interoperability with `pi-lens`
 `pi-better-edit` deeply integrates with [`pi-lens`](https://github.com/apmantza/pi-lens) language intelligence:
-- **Formatter & Autofix Immunity**: Whitespace rewrites by formatters during deferred passes are absorbed by the 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). Note that zero-width characters (U+200B ZWSP) are deliberately excluded; formatters rewriting ZWSP to a space rotate the anchor and fail closed safely.
+- **Formatter & Autofix Immunity**: Whitespace rewrites by formatters during deferred passes are absorbed by the 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). See [Formatter Insensitivity](#formatter-insensitivity) for the outcomes and the canon-surviving exception.
 - **v2 I/O Bridge Compatibility**: Every served line and mutation (reads, bash views, diffs, reject-and-serve rows, `write` tool calls) is reported to the `pi-lens:io-bridge`, satisfying the read-before-edit guard with zero redundant `read` calls.
 
 ### Bash View Interception
@@ -373,6 +419,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | **Addressing Model** | 4-char (file, content)-addressed anchors | File tag + line numbers | Verbatim code strings |
 | **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
 | **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
+| **Formatter Tolerance** | **Whitespace-class insensitivity** — anchors survive re-indentation and any token-free rewrite | Line numbers shift on every insert and delete | Verbatim context must still match |
 | **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |
 | **Concurrent Disk Drift** | **Fail-closed reject-and-serve** | Tag mismatch refusal | Silent overwrite or text-mismatch error |
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Patch preflight | Single replacement per call |
