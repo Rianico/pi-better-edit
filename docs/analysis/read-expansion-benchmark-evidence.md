@@ -1,6 +1,9 @@
 # Read expansion: benchmark evidence
 
-Status: evidence record, 2026-11-01. This is not a decision record. ADR [0008](../adr/0008-read-expansion-requested-window-and-bounds.md) holds the contract.
+Status: evidence record, 2026-11-01; corrected 2026-11-02. This is not a decision record. [ADR-0008](../adr/0008-read-expansion-requested-window-and-bounds.md) held the contract, and [ADR-0009](../adr/0009-serve-a-selection-range-note-instead-of-widening-the-read.md) reverses it on the evidence below.
+
+> [!WARNING] Correction (2026-11-02)
+> An earlier version of this record named `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER`, `PI_BETTER_EDIT_READ_EXPANSION_CAP` and `PI_BETTER_EDIT_READ_EXPANSION_CAP_RATIO` as configuration the extension shipped. They never shipped: the trigger and cap knobs existed only as uncommitted changes in an experiment worktree. Released 2.16.0 keeps the fixed 24-line trigger and the fixed per-source caps (80 code, 80 Markdown, 40 plain text). Every table and measured number below stands; the two sentences that implied a released surface are corrected in place, and this note keeps the edit visible.
 
 ## Question
 
@@ -105,7 +108,7 @@ The trigger is 24 lines. A model that reads a whole 80-line file requests a wind
 
 ### Trigger sweep: 12, 18, 24, 48, 1000 and a block-proportional rule
 
-The trigger bounds the requested window. Lowering it makes expansion fire *less* often, not more, because fewer requests qualify as candidates. Each run set it through `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER`. One build also added a dynamic mode, where a probe must cover at most `1/1.618` of its enclosing block.
+The trigger bounds the requested window. Lowering it makes expansion fire *less* often, not more, because fewer requests qualify as candidates. Each run varied it through an experiment-only build's `PI_BETTER_EDIT_READ_EXPANSION_TRIGGER`, an uncommitted scratch change that never shipped; released 2.16.0 keeps the fixed 24-line trigger. One build also added a dynamic mode, where a probe must cover at most `1/1.618` of its enclosing block.
 
 EDIT-Bench, 72 tasks per leg:
 
@@ -205,7 +208,7 @@ The trigger is the wrong dial for both. Lowering it makes the feature fire less.
 
 ## Cap sweep: the cap is the binding control
 
-The cap is now configurable through `PI_BETTER_EDIT_READ_EXPANSION_CAP`. A positive integer sets it for every source. `unlimited` removes it. `dynamic` scales it to the file as `floor(totalLines * ratio)`, where the ratio defaults to `1/1.618` and is overridable through `PI_BETTER_EDIT_READ_EXPANSION_CAP_RATIO`. Unset keeps the shipped per-source constants. Seven unit tests cover the modes, and the read-expansion suite passes 163 tests.
+In an experiment-only build the cap was configurable through `PI_BETTER_EDIT_READ_EXPANSION_CAP`. A positive integer set it for every source. `unlimited` removed it. `dynamic` scaled it to the file as `floor(totalLines * ratio)`, where the ratio defaulted to `1/1.618` and was overridable through `PI_BETTER_EDIT_READ_EXPANSION_CAP_RATIO`. Unset kept the released per-source constants. That build was an uncommitted scratch change and never shipped: released 2.16.0 has only the fixed per-source caps. Seven unit tests cover the modes in that build, and the read-expansion suite passes 163 tests there.
 
 Five legs on micro-swe at trigger 1000, so the cap alone decides whether a widening is served. All five used a 300 s trial timeout.
 
