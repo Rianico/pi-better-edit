@@ -271,7 +271,7 @@ The external runs: `node scripts/bench-container.mjs -- --suite <editbench|aider
 
 ## The still-missing measurement
 
-The feature's own metric is the same-file re-read share. `pnpm run replay:read-expansion` computes it from session corpora, with a threshold of 20 % relative fall on at least 200 served-mode reads per language. On this host both corpora were identical, so it reports 0 % by construction. The missing input is a candidate corpus captured on a host running 2.16.0. No further `explicit-edit` run substitutes for it.
+The feature's own metric is the same-file re-read share. `pnpm run replay:read-expansion` computes it from session corpora, with a threshold of 20 % relative fall on at least 200 served-mode reads per language. On this host both corpora were identical, so it reports 0 % by construction. The missing input is a candidate corpus captured on a host running 2.16.0. No further `explicit-edit` run substitutes for it. The command was retired with the feature in #243; the note it now measures is gated by `pnpm run replay` ([selection-note-replay.md](../agents/selection-note-replay.md)).
 
 ## Threats to validity
 

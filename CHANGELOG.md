@@ -6,7 +6,13 @@
 
 * **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
 
+### Tooling
+
+* **replay:** retarget the corpus replay at the selection-range note, and retire `pnpm run replay:read-expansion` with the widening it measured. `pnpm run replay` counts the notes served read headers carried, by provider source, fails when a note names a span that is not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% two-proportion noise band instead of the 20% / 200-read target. An absent or session-less corpus exits 2 rather than passing vacuously. Measured on the operator host: zero notes in 31,185 served reads across 3,122 sessions, so the note's effect on re-reads is unmeasured, not zero. (#243)
+
 ### Documentation
+
+* **docs:** replace the read-expansion replay record with [selection-note-replay.md](docs/agents/selection-note-replay.md) — the single `pnpm run replay` command, the note evidence by source, the correctness rule, the noise rule and the measurement — record the same measurement in ADR-0012's Consequences, and drop the widening claims from the README's read section and slash-command list. (#243)
 
 * **docs:** record the final read-expansion verdict: across five task suites and roughly 1,500 trials no trigger or cap setting improved the score outside noise, twenty widenings in one bracketed leg made no difference, and the feature never reduced repeated reads. A transcript walk over 76 widenings shows why — the agent returned to that file in 18, re-read the just-served range in 10 of 21 follow-ups, and used an added line once. The shipped settings stay harmless and cheap. (#221)
 
