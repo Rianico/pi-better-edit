@@ -49,7 +49,7 @@
     "prepublishOnly": "node scripts/build-dist.mjs && pnpm run typecheck && pnpm run lint && pnpm test",
     "canon:audit": "node scripts/canon-churn-audit.mjs",
     "prompts:show": "node scripts/served-prompts.mjs",
-    "replay:read-expansion": "node scripts/read-expansion-replay.mjs",
+    "replay": "node scripts/selection-note-replay.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs",
     "build": "node scripts/build-dist.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",

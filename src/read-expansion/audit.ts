@@ -14,7 +14,7 @@
  * session makes the effective policy visible without repeating it on every line. Later records omit
  * it. The rung is required, so a new caller cannot silently stamp the wrong value.
  *
- * The refusal vocabulary lives in `docs/agents/read-expansion-replay.md#refusal-vocabulary`.
+ * The refusal vocabulary lives in `docs/agents/selection-note-replay.md#refusal-vocabulary`.
  *
  * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
  * that already served its rows into a failed call.
