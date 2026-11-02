@@ -216,7 +216,9 @@ function spanKey(span: AdmittedSpan): string {
 export async function selectionRangeNote(
   input: SelectionRangeNoteInput,
 ): Promise<SelectionRangeNote> {
-  const clauses = new Array<string | undefined>(input.windows?.length ?? 0);
+  const clauses: Array<string | undefined> = Array.from({
+    length: input.windows?.length ?? 0,
+  });
   const candidates = candidateWindows(input);
   if (candidates.length === 0 || input.provider === undefined) return { clauses };
   const source = providerSourceFor(input.file);

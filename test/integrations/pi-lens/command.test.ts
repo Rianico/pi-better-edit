@@ -32,10 +32,7 @@ import {
   STORE_JANITOR_INTERVAL_DEFAULT_MS,
 } from "../../../src/store-kernel/settings.js";
 import { settingsRoot } from "../../../src/config-dir.js";
-import {
-  SELECTION_RANGE_ENV_VAR,
-  resolveSelectionRangeMode,
-} from "../../../src/selection-range-config.js";
+import { SELECTION_RANGE_ENV_VAR } from "../../../src/selection-range-config.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const SETTLED_CHOICES = [
@@ -173,10 +170,6 @@ describe("registerLensCommand", () => {
       "bash on",
       "bash off",
       "bash status",
-      "read-expansion",
-      "read-expansion on",
-      "read-expansion off",
-      "read-expansion status",
       "read",
       "read on",
       "read off",
@@ -287,24 +280,6 @@ describe("registerLensCommand", () => {
     expect(headless.selectCalls).toEqual([]);
     expect(headless.notifications).toEqual([]);
     expect(log.mock.calls.flat().join("\n")).toContain("effective: auto");
-  });
-
-  it("routes read-expansion and the read alias to the setting", async () => {
-    const { options } = captureCommand();
-    const fake = fakeCtx({ hasUI: true, cwd: projectDir });
-
-    await options.handler("read-expansion status", fake.ctx);
-    expect(fake.notifications[0]).toContain("read expansion");
-    expect(fake.notifications[0]).toContain("effective: on");
-
-    fake.notifications.length = 0;
-    await options.handler("read off project", fake.ctx);
-    expect(fake.notifications[0]).toContain("read expansion set to off");
-    expect(resolveSelectionRangeMode(projectDir)).toBe("off");
-
-    fake.notifications.length = 0;
-    await options.handler("read status", fake.ctx);
-    expect(fake.notifications[0]).toContain("effective: off");
   });
 
   it("answers malformed input with usage and writes nothing", async () => {

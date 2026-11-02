@@ -35,15 +35,6 @@ import {
   type BashViewMode,
 } from "../../bash-view-config.js";
 import {
-  SELECTION_RANGE_ENV_VAR,
-  isSelectionRangeMode,
-  isSelectionRangeScope,
-  readSelectionRangeConfig,
-  resolveSelectionRangeModeWithSource,
-  saveSelectionRangeConfig,
-  type SelectionRangeMode,
-} from "../../selection-range-config.js";
-import {
   BASH_MULTI_FILE_LIMITS,
   isBashMultiFileMaxFiles,
   isBashMultiFileMaxRows,
@@ -89,15 +80,6 @@ const BASH_VIEW_USAGE = [
   `Alias: /${COMMAND_NAME} bash [on|off|status] [project|global]`,
 ].join("\n");
 
-const SELECTION_RANGE_USAGE = [
-  `${COMMAND_NAME} — configure read expansion`,
-  `Usage: /${COMMAND_NAME} read-expansion [on|off|status] [project|global]`,
-  `  /${COMMAND_NAME} read-expansion              pick a mode interactively`,
-  `  /${COMMAND_NAME} read-expansion off global   write the global default`,
-  `  /${COMMAND_NAME} read-expansion status       show effective mode and config sources`,
-  `Alias: /${COMMAND_NAME} read [on|off|status] [project|global]`,
-].join("\n");
-
 const SETTINGS_USAGE = [
   `${COMMAND_NAME} — review every setting in one overlay`,
   `Usage: /${COMMAND_NAME} settings`,
@@ -123,10 +105,6 @@ const COMMAND_COMPLETIONS: readonly string[] = [
   "bash on",
   "bash off",
   "bash status",
-  "read-expansion",
-  "read-expansion on",
-  "read-expansion off",
-  "read-expansion status",
   "read",
   "read on",
   "read off",
@@ -162,23 +140,6 @@ type BashViewPickerChoice =
   | { readonly label: string; readonly kind: "status" };
 
 const BASH_VIEW_PICKER_CHOICES: readonly BashViewPickerChoice[] = [
-  { label: "On (Project)", kind: "set-mode", mode: "on", scope: "project" },
-  { label: "On (Global)", kind: "set-mode", mode: "on", scope: "global" },
-  { label: "Off (Project)", kind: "set-mode", mode: "off", scope: "project" },
-  { label: "Off (Global)", kind: "set-mode", mode: "off", scope: "global" },
-  { label: "Status", kind: "status" },
-];
-
-type SelectionRangePickerChoice =
-  | {
-      readonly label: string;
-      readonly kind: "set-mode";
-      readonly mode: SelectionRangeMode;
-      readonly scope: ConfigScope;
-    }
-  | { readonly label: string; readonly kind: "status" };
-
-const SELECTION_RANGE_PICKER_CHOICES: readonly SelectionRangePickerChoice[] = [
   { label: "On (Project)", kind: "set-mode", mode: "on", scope: "project" },
   { label: "On (Global)", kind: "set-mode", mode: "on", scope: "global" },
   { label: "Off (Project)", kind: "set-mode", mode: "off", scope: "project" },
@@ -238,8 +199,6 @@ function statusText(cwd: string): string {
     storeStatusText(cwd),
     "",
     bashViewStatusText(cwd),
-    "",
-    selectionRangeStatusText(cwd),
     "",
     multiFileStatusText(cwd),
     "",
@@ -309,24 +268,6 @@ function bashViewStatusText(cwd: string): string {
     `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
     `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
     `  env ${BASH_VIEW_ENV_VAR}: ${envValue}`,
-    "  precedence: env > project > global > on",
-    ...warnings.map((reason) => `  warning: ${reason}`),
-  ].join("\n");
-}
-
-function selectionRangeStatusText(cwd: string): string {
-  const warnings: string[] = [];
-  const effective = resolveSelectionRangeModeWithSource(cwd, (reason) => warnings.push(reason));
-  const config = readSelectionRangeConfig(cwd);
-  const envRaw = process.env[SELECTION_RANGE_ENV_VAR];
-  const envValue = envRaw === undefined || envRaw.trim().length === 0 ? "unset" : envRaw.trim();
-  return [
-    `${COMMAND_NAME} read expansion`,
-    `  effective: ${effective.value}`,
-    `  effective source: ${effective.source}`,
-    `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
-    `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
-    `  env ${SELECTION_RANGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > on",
     ...warnings.map((reason) => `  warning: ${reason}`),
   ].join("\n");
@@ -575,74 +516,6 @@ async function handleBashView(args: string, ctx: ExtensionCommandContext): Promi
   }
   await pickBashViewInteractively(ctx);
 }
-function applySelectionRangeMode(
-  mode: SelectionRangeMode,
-  scope: ConfigScope,
-  cwd: string,
-): string {
-  const configPath = saveSelectionRangeConfig(mode, scope, cwd).path;
-  return `${COMMAND_NAME} read expansion set to ${mode} (${scope}) — ${configPath}`;
-}
-
-async function pickSelectionRangeInteractively(ctx: ExtensionCommandContext): Promise<void> {
-  const labels = SELECTION_RANGE_PICKER_CHOICES.map((choice) => choice.label);
-  const picked = await ctx.ui.select(`${COMMAND_NAME} read expansion`, labels);
-  if (picked === undefined) return;
-  const choice = SELECTION_RANGE_PICKER_CHOICES.find((candidate) => candidate.label === picked);
-  if (choice === undefined) {
-    notify(ctx, `Unrecognized choice "${picked}".`, "warning");
-    return;
-  }
-  if (choice.kind === "status") {
-    notify(ctx, selectionRangeStatusText(ctx.cwd));
-    return;
-  }
-  notify(ctx, applySelectionRangeMode(choice.mode, choice.scope, ctx.cwd));
-}
-
-async function handleSelectionRange(args: string, ctx: ExtensionCommandContext): Promise<void> {
-  const tokens = args
-    .trim()
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
-  if (tokens.length > 3) {
-    notify(ctx, `Too many arguments.\n${SELECTION_RANGE_USAGE}`, "warning");
-    return;
-  }
-  if (tokens[0] !== "read-expansion" && tokens[0] !== "read") {
-    notify(ctx, SELECTION_RANGE_USAGE);
-    return;
-  }
-
-  const sub = tokens[1] ?? "interactive";
-  let scope: ConfigScope = "project";
-  const scopeToken = tokens[2];
-  if (scopeToken !== undefined) {
-    if (!isSelectionRangeScope(scopeToken)) {
-      notify(ctx, `Unknown scope "${scopeToken}".\n${SELECTION_RANGE_USAGE}`, "warning");
-      return;
-    }
-    scope = scopeToken;
-  }
-
-  if (sub === "status") {
-    notify(ctx, selectionRangeStatusText(ctx.cwd));
-    return;
-  }
-  if (isSelectionRangeMode(sub)) {
-    notify(ctx, applySelectionRangeMode(sub, scope, ctx.cwd));
-    return;
-  }
-  if (sub !== "interactive") {
-    notify(ctx, `Unknown option "${sub}".\n${SELECTION_RANGE_USAGE}`, "warning");
-    return;
-  }
-  if (!ctx.hasUI) {
-    notify(ctx, selectionRangeStatusText(ctx.cwd));
-    return;
-  }
-  await pickSelectionRangeInteractively(ctx);
-}
 
 /**
  * WHY the overlay owns its scope switch: headed hosts pick the write scope inside
@@ -690,8 +563,6 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           .filter((token) => token.length > 0)[0];
         if (head === "bash-view" || head === "bash") {
           await handleBashView(args, ctx);
-        } else if (head === "read-expansion" || head === "read") {
-          await handleSelectionRange(args, ctx);
         } else if (head === undefined || head === "settings") {
           await handleSettings(args, ctx);
         } else {

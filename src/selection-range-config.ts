@@ -30,11 +30,11 @@ const SELECTION_RANGE_MODES: readonly SelectionRangeMode[] = ["on", "off"];
 /** The single key this owner reads and writes under `read`. */
 const SELECTION_RANGE_KEY = "selectionRange";
 
-export function isSelectionRangeMode(value: unknown): value is SelectionRangeMode {
+function isSelectionRangeMode(value: unknown): value is SelectionRangeMode {
   return typeof value === "string" && SELECTION_RANGE_MODES.some((mode) => mode === value);
 }
 
-export function isSelectionRangeScope(value: unknown): value is ConfigScope {
+function isSelectionRangeScope(value: unknown): value is ConfigScope {
   return isConfigScope(value);
 }
 
