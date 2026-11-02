@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import type { Function as BashFunction, ParsedScript } from "unbash";
 import { lineSpanForOffsets } from "./line-arithmetic.js";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 
 export interface BashSpanProviderOptions {
   /** Override file reading (tests can supply source directly). */

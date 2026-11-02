@@ -3,7 +3,7 @@ import { createAstSpanProvider, type AstSpanProviderOptions } from "./ast-provid
 import { createMarkdownSpanProvider, isMarkdownPath } from "./markdown-provider.js";
 import { createBashSpanProvider, isShellPath } from "./bash-provider.js";
 import { createParagraphSpanProvider, isDataPath, isPlainTextPath } from "./paragraph-provider.js";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 import {
   DEFAULT_QUALIFIED_NAME_TIMEOUT_MS,
   withQualifiedNames,

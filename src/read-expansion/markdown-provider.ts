@@ -1,6 +1,6 @@
 /** Markdown section provider: fence-aware ATX headings through the read-expansion seam. */
 import { readFile } from "node:fs/promises";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 import { findMarkdownSection } from "./markdown-section.js";
 
 export interface MarkdownSpanProviderOptions {

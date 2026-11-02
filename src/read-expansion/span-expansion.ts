@@ -15,50 +15,29 @@
  * WHY a seam: parsers are optional and arrive per language, while the read path must stay free of
  * grammar, wasm, network and language-server concerns. With no provider injected (`regRead(pi)`),
  * this module is never entered and the served output is exactly today's.
+ *
+ * The interfaces a provider satisfies — the enclosing-span answer, the decline, the window and the
+ * line range — are declared in `./provider-contract.js`. This module owns only the decision.
  */
 import { mergeServedSpans } from "../served-spans.js";
+import {
+  REFUSAL_REASONS,
+  type LineRange,
+  type OffsetWindow,
+  type RefusalReason,
+  type SpanAnswer,
+  type SpanProvider,
+  type SpanSource,
+  type SpanWindow,
+} from "./provider-contract.js";
 import { isSpanKind, spanKindLabel, type SpanKind } from "./span-kind.js";
 
-/** Where a boundary came from. `lsp` is optional enrichment; it never widens on its own. */
-type SpanSource = "ast" | "md" | "text" | "lsp";
-
-/** A structural block the provider answered, in 1-indexed inclusive line terms. */
-interface EnclosingSpan {
-  start: number;
-  end: number;
-  kind: SpanKind;
-  name: string;
-  source: SpanSource;
-}
-
-/** An admitted offset window, in the reader's 1-indexed terms. */
-export interface OffsetWindow {
-  offset: number;
-  limit: number;
-}
-
-/** An admitted anchor window. `read` resolves it through admission before widening. */
-interface AnchorWindow {
-  around_anchor: string;
-  radius: number;
-}
-
-/** The window shape the seam accepts; `read` delegates anchor resolution to admission. */
-export type SpanWindow = OffsetWindow | AnchorWindow;
-
 /**
- * The boundary provider seam. A provider may answer synchronously now and asynchronously once a
- * grammar has to be fetched, so the read path always awaits it. `around_anchor` windows reach the
- * provider already resolved to an offset window by `read` admission; the union documents the shape
- * both sides share.
+ * WHY re-exported: the existing read-expansion tests still import these three names from this
+ * module. They move to the contract module when this module is deleted. No provider may import
+ * the contract from here — providers import `./provider-contract.js` directly.
  */
-export interface SpanProvider {
-  enclosingSpan(file: string, window: SpanWindow): SpanAnswer | Promise<SpanAnswer>;
-  /** Set once an AST attempt found the optional wasm runtime unavailable. */
-  readonly runtimeAbsent?: boolean;
-  /** Start grammar fetches off the read path; session_start calls this without awaiting. */
-  prefetch?: (cwd?: string) => void | Promise<void>;
-}
+export { REFUSAL_REASONS, type SpanProvider, type SpanWindow } from "./provider-contract.js";
 
 /**
  * Only a folded requested span at or below this size triggers expansion. Folding happens first, so
@@ -74,44 +53,6 @@ export const SPAN_CAP_MARKDOWN = 80;
 
 /** Plain-text paragraphs refuse above their smaller ceiling. */
 export const SPAN_CAP_TEXT = 40;
-
-/** One 1-indexed inclusive line range. */
-export interface LineRange {
-  startLine: number;
-  endLine: number;
-}
-
-export const REFUSAL_REASONS = [
-  "above_trigger",
-  "past_eof",
-  "not_text",
-  "toggle_off",
-  "no_provider",
-  "boundary_crossing",
-  "grammar_unavailable",
-  "cold_grammar",
-  "runtime_absent",
-  "provider_declined",
-  "provider_error",
-  "invalid_answer",
-  "not_superset",
-  "over_cap",
-] as const;
-
-/** Why an expansion attempt did not widen. */
-type RefusalReason = (typeof REFUSAL_REASONS)[number];
-
-/** A typed provider refusal: the cause is carried, not inferred from a bare null. */
-export interface SpanDecline {
-  readonly refusal: RefusalReason;
-  /** Grammar language, when the refusal is about one. */
-  readonly language?: string;
-  /** The full block size for an over-cap refusal. */
-  readonly blockSize?: number;
-}
-
-/** Every answer a provider may give the seam. */
-type SpanAnswer = EnclosingSpan | SpanDecline | null;
 
 /** The provider identity a refused attempt may still name (over-cap and non-superset answers). */
 interface RefusedBoundary {

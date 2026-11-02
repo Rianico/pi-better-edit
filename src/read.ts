@@ -45,6 +45,7 @@ import {
 import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic, reportWarning } from "./diagnostics.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
+import type { OffsetWindow, SpanProvider } from "./read-expansion/provider-contract.js";
 import {
   applyExpansions,
   expansionNotes,
@@ -54,8 +55,6 @@ import {
   type ExpandedRead,
   type ExpansionDecision,
   type FoldedWindow,
-  type OffsetWindow,
-  type SpanProvider,
   type WidenedBlock,
 } from "./read-expansion/span-expansion.js";
 import {

@@ -50,8 +50,7 @@ Each corpus is parsed from pi's session records: assistant `toolCall` entries ar
 
 ## Refusal vocabulary
 
-`read-expansion.log` uses one `reason` code per refused attempt. The audit sink's module comment points here; `REFUSAL_REASONS` in `src/read-expansion/span-expansion.ts` is the code authority.
-
+`read-expansion.log` uses one `reason` code per refused attempt. The audit sink's module comment points here; `REFUSAL_REASONS` in `src/read-expansion/provider-contract.ts` is the code authority.
 | Reason | Meaning | Extra fields |
 |---|---|---|
 | `above_trigger` | The folded window is larger than 24 lines, so expansion never starts. | — |

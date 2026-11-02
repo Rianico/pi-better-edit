@@ -17,7 +17,7 @@ import {
 import { discardCachedGrammar, requestGrammar, type GrammarCacheOptions } from "./grammar-cache.js";
 import { GRAMMAR_MANIFEST, grammarLanguageForFile } from "./grammar-manifest.js";
 import { hasWebTreeSitterRuntime, loadWebTreeSitterGrammar } from "./grammar-runtime.js";
-import type { OffsetWindow, SpanDecline, SpanProvider, SpanWindow } from "./span-expansion.js";
+import type { OffsetWindow, SpanDecline, SpanProvider, SpanWindow } from "./provider-contract.js";
 import { createScopeDecorator, type ScopeDecorator } from "./scope-decoration.js";
 import type { SpanKindTable } from "./span-kind.js";
 import { TYPESCRIPT_DECORATION } from "./typescript-decoration.js";
