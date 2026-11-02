@@ -8,6 +8,8 @@ Final report, 2026-11-02. Contract: ADR [0008](../adr/0008-read-expansion-reques
 
 Five task suites and roughly 1,500 trials were run. No configuration produced a score improvement outside run-to-run noise. No configuration reduced the number of times an agent reads a file it has already read.
 
+The mechanism explains why. In 76 observed widenings, the agent returned to that file in only 18. Of the 21 follow-up reads, 10 asked again for the range that had just been served. One widening in 76 was used at all.
+
 The sharpest single result is a bracketed pair on the suite built to exercise the feature. Two runs of the off arm scored 16 of 16 with zero timeouts. Two runs of a clamp configuration that widened 17 and 20 times scored 16 of 16 with zero timeouts. Tokens and wall time overlap. Twenty widenings per leg produced no measurable difference.
 
 ## What was measured
@@ -67,9 +69,13 @@ Three reasons, each measured:
 2. **Where the agent under-shoots, the block is large and the cap refuses it.** On `micro-swe`, 87 % of windowed reads died at the cap.
 3. **Serving more does not remove a second read.**
 
-   The share of windowed reads that repeat an already-served range of the same file was 16 % with expansion off. With it on the share was 19–26 %. The feature served more, and the agent re-read anyway.
+   Across the clamp legs there were 76 widening events. In 58 of them (76 %) the trial never read that file again. Those widenings added lines for no possible saving.
 
-Point 3 is the decisive one. Expansion always serves more lines than were requested, so it cannot save anything in the read it fires on. Its only possible value is preventing a later read. That later read still happens.
+   The other 18 events produced 21 follow-up read ranges. Ten of the 21 re-read the range that had just been served. Expansion had added lines above and below it, and the agent asked for the same lines again anyway. One concrete case: the request was 1455–1474, the serve was 1395–1474, and the later read was 1455–1474.
+
+   Exactly one of the 76 events used a line that expansion had added. That is a hit rate of 1.3 %.
+
+Point 3 is the decisive one. Expansion always serves more lines than were requested, so it cannot save anything in the read it fires on. Its only possible value is preventing a later read. In three events out of four the agent never comes back. When it does come back, it asks for the lines it already has.
 
 ## What would change the answer
 
@@ -83,6 +89,7 @@ Point 3 is the decisive one. Expansion always serves more lines than were reques
 - Suites are re-anchored so the file stays on disk. A benchmark that pre-loads the file into the prompt cannot test a read tool at all.
 - Scoring runs each repository's or dataset's own tests. A `micro-swe` task is one mechanical mutation inside a function that starts below line 200 of a file above 400 lines. Every task was proven to fail with the mutation and pass without it.
 - Activation is counted from served chrome (`[widened <a>-<b> -> <c>-<d>]`) in the trial transcripts, never inferred from an environment variable.
+- The re-read count walks each transcript in order. It pairs every `tool_execution_start` with its `tool_execution_end`, so the requested range and the served range of each read are both known. It then asks what the agent read afterwards. A bash command counts as a re-read only when a reader verb applies to that exact path. An earlier loose matcher reported 18 bash re-reads. All but two were `pytest` runs on a test file whose name ends with the same basename.
 - The toggle and both experimental knobs are recorded in every leg's own run log.
 
 ## Threats to validity
