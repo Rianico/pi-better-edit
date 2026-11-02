@@ -46,7 +46,13 @@ describe("provider witnesses: enclosingSpan answers per source", () => {
     await withTempFile("run.sh", text, async ({ path }) => {
       const provider = createBashSpanProvider({ readTextFile: reader(text) });
       const span = await provider.enclosingSpan(path, { offset: 3, limit: 1 });
-      expect(span).toMatchObject({ start: 2, end: 4, kind: "function", source: "ast" });
+      expect(span).toMatchObject({
+        start: 2,
+        end: 4,
+        kind: "function",
+        name: "foo",
+        source: "ast",
+      });
     });
   });
 

@@ -56,7 +56,12 @@ describe("provider contract seam", () => {
 
   it("keeps provider-answer details internal", () => {
     const source = readFileSync(CONTRACT_FILE, "utf-8");
-    expect(source).not.toContain("export interface EnclosingSpan");
-    expect(source).not.toContain("export interface AnchorWindow");
+    // WHY a shape regex: a literal `export interface X` check ignores every other exported
+    // spelling — `export type`, `export class`, a re-export list — so the guard would stay green
+    // while the answer detail leaked. Pin the export keyword, the declaration form, the identifier.
+    expect(source).not.toMatch(
+      /\bexport\s+(interface|type|class)\s+(EnclosingSpan|AnchorWindow)\b/,
+    );
+    expect(source).not.toMatch(/\bexport\s+(?:type\s+)?\{[^}]*(EnclosingSpan|AnchorWindow)\b/);
   });
 });
