@@ -6,13 +6,12 @@
  * the direction of the import is the invariant worth pinning. The second case refutes a planted
  * violation: re-declaring a contract shape in the decision module passes every behaviour test.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const EXPANSION_DIR = join("src", "read-expansion");
 const CONTRACT_FILE = join(EXPANSION_DIR, "provider-contract.ts");
-const DECISION_FILE = join(EXPANSION_DIR, "span-expansion.ts");
 
 /** Every module that implements, composes or consumes the provider seam. */
 const PROVIDER_MODULES = [
@@ -51,11 +50,7 @@ describe("provider contract seam", () => {
     }
   });
 
-  it("does not re-declare the contract in the decision module", () => {
-    const source = readFileSync(DECISION_FILE, "utf-8");
-    for (const declaration of CONTRACT_DECLARATIONS) {
-      const pattern = new RegExp(`^(export\\s+)?${declaration}\\b`, "m");
-      expect(source, `span-expansion.ts still declares "${declaration}"`).not.toMatch(pattern);
-    }
+  it("keeps the retired decision module deleted", () => {
+    expect(existsSync(join(EXPANSION_DIR, "span-expansion.ts"))).toBe(false);
   });
 });

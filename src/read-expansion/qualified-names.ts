@@ -4,7 +4,7 @@
  */
 import type { SpanProvider } from "./provider-contract.js";
 
-export interface QualifiedNameRequest {
+interface QualifiedNameRequest {
   readonly file: string;
   readonly name: string;
   readonly startLine: number;

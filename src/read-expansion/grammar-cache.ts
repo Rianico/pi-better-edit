@@ -21,7 +21,7 @@ import {
 } from "./grammar-manifest.js";
 
 /** One verified grammar artifact on disk, plus the bytes the loader can use directly. */
-export interface GrammarArtifact {
+interface GrammarArtifact {
   readonly language: string;
   readonly path: string;
   readonly bytes: Uint8Array;
@@ -45,7 +45,7 @@ export type GrammarFetchResult =
   | { readonly status: "unavailable"; readonly language: string };
 
 /** Production read budget before a first-use fetch reports cold. */
-export const DEFAULT_GRAMMAR_READ_BUDGET_MS = 250;
+const DEFAULT_GRAMMAR_READ_BUDGET_MS = 250;
 const FETCH_HARD_TIMEOUT_MS = 30_000;
 const COLD = Symbol("cold");
 
@@ -56,7 +56,7 @@ function grammarCacheRoot(root?: string): string {
 }
 
 /** Version and digest are in the filename, so a manifest bump cannot reuse old bytes. */
-export function grammarCachePath(
+function grammarCachePath(
   language: string,
   entry: GrammarManifestEntry,
   cacheRoot?: string,
@@ -194,16 +194,4 @@ export async function requestGrammar(
   if (fetched === COLD) return { status: "cold", language };
   if (fetched === undefined) return { status: "unavailable", language };
   return { status: "ready", artifact: { language, path, bytes: fetched } };
-}
-
-/**
- * Wait for verified grammar bytes. Kept for the cache tests and non-read callers; a read uses
- * `requestGrammar` so a budget expiry is visible as `cold`.
- */
-export async function ensureGrammar(
-  language: string,
-  options: GrammarCacheOptions = {},
-): Promise<GrammarArtifact | undefined> {
-  const result = await requestGrammar(language, options);
-  return result.status === "ready" ? result.artifact : undefined;
 }
