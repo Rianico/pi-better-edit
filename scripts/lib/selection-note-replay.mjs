@@ -296,7 +296,12 @@ function notesInPage(text) {
     if (window === undefined) continue;
     const note = clauseOf(line);
     if (note === undefined) continue;
-    notes.push({ note, window: { start: window.start, end: window.end } });
+    // WHY: the whole-file case needs the page total, so the window keeps it; a page that covers its
+    // file has no larger span to name, and the renderer never notes one.
+    notes.push({
+      note,
+      window: { start: window.start, end: window.end, totalLines: window.totalLines },
+    });
   }
   return notes;
 }
@@ -306,8 +311,13 @@ function notesInPage(text) {
  * first line, must not be the window itself, and — when the clause prints one — must carry the
  * preposition the containment implies. `in` claims the span reaches the window's end; `starts in`
  * claims the window escapes it. A legacy clause prints no preposition, so its corpus stays valid.
+ *
+ * A window that covers its whole file is illegal whatever the clause says: nothing larger can enclose
+ * the file, and the renderer never notes such a window, so a note on one is a violation by
+ * construction rather than a measurement.
  */
 function isLegalNote(note, window) {
+  if (window.start === 1 && window.end === window.totalLines) return false;
   const containsFirstLine = note.start <= window.start && note.end >= window.start;
   if (!containsFirstLine) return false;
   if (note.start === window.start && note.end === window.end) return false;

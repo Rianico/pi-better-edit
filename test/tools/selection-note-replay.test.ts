@@ -15,7 +15,7 @@ interface NoteEvidence {
   violationCount: number;
   violations: Array<{
     file: string;
-    window: { start: number; end: number };
+    window: { start: number; end: number; totalLines?: number };
     note: { source: string; label: string; start: number; end: number; preposition?: string };
   }>;
 }
@@ -87,9 +87,16 @@ function assistantProse(text: string) {
   return { type: "message", message: { role: "assistant", content: [{ type: "text", text }] } };
 }
 
+/** The range a page header prints: a full file restates its total, a partial page names its lines. */
+function pageRange(start: number, end: number, total: number): string {
+  return start === 1 && end === total
+    ? `${total} lines total`
+    : `lines ${start}-${end} of ${total} total`;
+}
+
 /** One served page: the chrome line a read prints, plus its anchored rows. */
 function served(file: string, start: number, end: number, total: number, clause = "", rows = 1) {
-  const header = `[${file} (lines ${start}-${end} of ${total} total${clause})]`;
+  const header = `[${file} (${pageRange(start, end, total)}${clause})]`;
   const body = Array.from(
     { length: rows },
     (_, index) => `${anchorAt(index)}│line ${start + index}`,
@@ -369,6 +376,103 @@ describe("selection-range note replay", () => {
             file: "/repo/src/b.ts",
             // The legacy clause prints no preposition, so a legacy straddle stays legal.
             text: served("/repo/src/b.ts", 5, 9, 40, "; in function legacy, lines 3-7"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(result.stdout) as ReplayReport;
+      expect(report.candidate.notes.fires).toBe(2);
+      expect(report.candidate.notes.violationCount).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a shipped `starts in` note on a whole-file page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-whole-file-shipped-"));
+    try {
+      await writeSession(
+        root,
+        "typescript.jsonl",
+        sessionLines("whole-file-shipped", [
+          {
+            file: "/repo/src/a.ts",
+            // The page covers its file, so its window normalises to 1-40 and `starts in` cannot hold.
+            // The renderer never notes a whole-file page, so a note here is a violation by construction.
+            text: served("/repo/src/a.ts", 1, 40, 40, "; starts in function a (span 1-30)"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.stderr).toContain("violation");
+      expect(result.status).toBe(1);
+      const report = JSON.parse(result.stdout) as ReplayReport;
+      expect(report.candidate.notes.fires).toBe(1);
+      expect(report.candidate.notes.violationCount).toBe(1);
+      expect(report.candidate.notes.violations.map((entry) => entry.file)).toEqual([
+        "/repo/src/a.ts",
+      ]);
+      expect(report.candidate.notes.violations[0]?.window).toEqual({
+        start: 1,
+        end: 40,
+        totalLines: 40,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a legacy note on a whole-file page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-whole-file-legacy-"));
+    try {
+      await writeSession(
+        root,
+        "text.jsonl",
+        sessionLines("whole-file-legacy", [
+          {
+            file: "/repo/notes.txt",
+            // A legacy clause prints no preposition, so only the whole-file window can make it illegal.
+            text: served("/repo/notes.txt", 1, 40, 40, "; in paragraph, lines 1-7"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.status).toBe(1);
+      const report = JSON.parse(result.stdout) as ReplayReport;
+      expect(report.candidate.notes.fires).toBe(1);
+      expect(report.candidate.notes.violationCount).toBe(1);
+      expect(report.candidate.notes.violations.map((entry) => entry.file)).toEqual([
+        "/repo/notes.txt",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a note legal on a partial section of a multi-window page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-multi-window-"));
+    try {
+      await writeSession(
+        root,
+        "typescript.jsonl",
+        sessionLines("multi-window", [
+          {
+            file: "/repo/src/a.ts",
+            // The section is partial, so a span that contains line 1 is still legal: only a window
+            // that covers its whole file is a violation by construction.
+            text: `[Lines 10-20 of 40 total; in function a (span 1-30)]\n${anchorAt(0)}│line 10`,
+          },
+          {
+            file: "/repo/src/b.ts",
+            // The last section ends at the file's end but does not start at line 1, so it stays legal.
+            text: `[Lines 21-40 of 40 total; starts in function b (span 5-35)]\n${anchorAt(0)}│line 21`,
           },
         ]),
       );

@@ -160,6 +160,26 @@ describe("breadcrumb note", () => {
     expect(clause).not.toContain("starts in");
   });
 
+  it("keeps `in` when the window ends exactly on the innermost span's last line", async () => {
+    const provider = chainProvider([
+      { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
+      { start: 1, end: 40, kind: "class", name: "C", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      // WHY: `lastLine == innermost.end` is the boundary the renderer's `<=` decides. Line 20 still
+      // sits inside the span, so the clause reads `in`; only line 21 escapes and reads `starts in`.
+      windows: [{ offset: 12, limit: 9 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    const clause = note.clauses[0] ?? "";
+    expect(clause).toContain("; in ");
+    expect(clause).not.toContain("starts in");
+    expect(clause).toContain("(span 10-20)");
+  });
+
   it("joins the levels with ASCII ` > ` and no code point above U+007F", async () => {
     const provider = chainProvider([
       { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
