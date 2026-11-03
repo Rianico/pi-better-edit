@@ -6,7 +6,7 @@
 <p align="center">
   <strong>Production-grade, hash-anchored file editing for &pi;.<br>
   Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.<br>
-  Anchors survive formatter churn. Substituted invisible code points are named in the reply.</strong>
+  What survives a format pass is the lease, not the anchor spelling. Substituted invisible code points are named in the reply.</strong>
 </p>
 
 <p align="center">
@@ -232,9 +232,9 @@ undo_last_edit({ path: "src/index.ts" })
 
 ### Formatter Insensitivity
 
-Run a formatter between your `read` and your `edit` and the anchors still resolve. No re-read, no retry, no token spent.
+Run a formatter between your `read` and your `edit` and the anchor you already hold still resolves. No re-read, no retry, no token spent.
 
-The canon strips a frozen 28-code-point whitespace class before hashing ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)), so indentation, operator spacing, and line-ending style never enter the digest. When the file does change, the rebase aligns the previous snapshot to the current one on those same canon digests. A leased line therefore follows its content, not its coordinates.
+What survives a format pass is the **lease**, not the anchor spelling. An anchor is derived from its line's bytes ([ADR-0013](docs/adr/0013-anchor-identity-derives-from-raw-bytes.md)), so a rewrite that changes a line's bytes moves that line's anchor. The edit does not care: the lease binds the anchor you were served to the line's immutable `line_id`, and the rebase aligns the previous snapshot to the current one on canon digests — the frozen 28-code-point whitespace class of [ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md), which is an alignment digest and no longer an identity function. Indentation, operator spacing, and line-ending style are all still free.
 
 | Rewrite between `read` and `edit` | Edit outcome |
 | :--- | :--- |
@@ -242,7 +242,7 @@ The canon strips a frozen 28-code-point whitespace class before hashing ([ADR-00
 | **Line insertion** — two lines added above the target line | **applied** with the pre-rewrite anchor |
 | **Token change** — a semicolon added, or a brace merged onto the line | `[E_TARGET_LOST]`, file untouched |
 
-The rule is the *target line's canon*, not the size of the rewrite. A rewrite is free when that canon does not move.
+The rule for whether the edit applies is the *target line's canon*, not the size of the rewrite: a rewrite is free when that canon does not move. The anchor moves with the bytes; the lease does not.
 
 A **canon-surviving** code point is the subtle case:
 
@@ -252,7 +252,7 @@ A **canon-surviving** code point is the subtle case:
 | ZWSP (U+200B) &rarr; space | `[E_TARGET_LOST]`, file untouched |
 
 > [!NOTE]
-> Anchors are derived per line. A rewrite that changes one line's canon can therefore move the anchors of later lines, even where their content is identical. Resolution tracks the leased `line_id`, not the anchor spelling, so the edit is unaffected.
+> Anchors are derived per line from the line's raw bytes, so `const s = "a`+NBSP+`b";` and `const s = "a b";` are two identities, not one. A rewrite that changes a line's bytes moves that line's anchor, and can move a later line's spelling where two lines derive the same base index — there the allocator's probe separates them by position. Resolution tracks the leased `line_id`, not the anchor spelling, so the edit is unaffected.
 
 ### Invisible-Codepoint Disclosure
 
@@ -286,7 +286,7 @@ The read path adds no disclosure for this set. It already reports non-printable 
 
 ### Interoperability with `pi-lens`
 `pi-better-edit` deeply integrates with [`pi-lens`](https://github.com/apmantza/pi-lens) language intelligence:
-- **Formatter & Autofix Immunity**: Whitespace rewrites by formatters during deferred passes are absorbed by the 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)). See [Formatter Insensitivity](#formatter-insensitivity) for the outcomes and the canon-surviving exception.
+- **Formatter & Autofix Immunity**: a whitespace rewrite by a formatter during a deferred pass does not invalidate the anchors you hold — the lease binds them to the line's identity and the rebase aligns the two snapshots on the canon digest ([ADR-0013](docs/adr/0013-anchor-identity-derives-from-raw-bytes.md)). See [Formatter Insensitivity](#formatter-insensitivity) for the outcomes.
 - **v2 I/O Bridge Compatibility**: Every served line and mutation (reads, bash views, diffs, reject-and-serve rows, `write` tool calls) is reported to the `pi-lens:io-bridge`, satisfying the read-before-edit guard with zero redundant `read` calls.
 
 ### Bash View Interception
@@ -356,8 +356,8 @@ Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `g
 ```
 
 ### 1. Anchor Generation Pipeline
-1. **Frozen Whitespace Canonicalization**: Strips a frozen 28-code-point class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)) before hashing. Formatter passes (`prettier`, `black`, `gofmt`) leave anchors intact.
-2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 seeded with the file's canonical path and projected into 4-character base62 strings (`A-Za-z0-9`), yielding $62^4 - 10^4 = 14,766,336$ allocatable anchors per file (all-digit spellings reserved to prevent confusion with line numbers).
+1. **Raw-Byte Identity**: An anchor derives from its line's raw bytes ([ADR-0013](docs/adr/0013-anchor-identity-derives-from-raw-bytes.md)), so a whitespace change rotates that line's anchor. The frozen 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)) no longer derives an anchor: it is the alignment and verification digest, shared by `pairSnapshots`, the stat-matched page gate, drift, and the served-row echo scan.
+2. **xxHash32 & Base62 Space**: Raw lines are hashed using xxHash32 seeded with the file's canonical path and projected into 4-character base62 strings (`A-Za-z0-9`), yielding $62^4 - 10^4 = 14,766,336$ allocatable anchors per file (all-digit spellings reserved to prevent confusion with line numbers).
 3. **Coprime Collision Probing**: Duplicate lines probe with a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a guaranteed unique anchor.
 
 ### 2. Multi-Version Snapshot Lineage
@@ -419,7 +419,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | **Addressing Model** | 4-char (file, content)-addressed anchors | File tag + line numbers | Verbatim code strings |
 | **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
 | **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
-| **Formatter Tolerance** | **Whitespace-class insensitivity** — anchors survive re-indentation and any token-free rewrite | Line numbers shift on every insert and delete | Verbatim context must still match |
+| **Formatter Tolerance** | **Lease-backed tolerance** — a pre-rewrite anchor still applies after re-indentation and any token-free rewrite | Line numbers shift on every insert and delete | Verbatim context must still match |
 | **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |
 | **Concurrent Disk Drift** | **Fail-closed reject-and-serve** | Tag mismatch refusal | Silent overwrite or text-mismatch error |
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Patch preflight | Single replacement per call |

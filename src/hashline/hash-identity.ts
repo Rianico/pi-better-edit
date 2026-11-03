@@ -112,10 +112,14 @@ export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 export const CANON_VERSION = 3;
 
 /**
- * ANCHOR_GENERATION 1 (issue #20, ADR-0031): the file-scoped anchor-derivation generation.
+ * ANCHOR_GENERATION 2 (issue #230, ADR-0013): the file-scoped anchor-derivation generation.
  * It covers exactly: (1) the width (`HASH_LEN`, `ALPHA`, `HASH_SPACE`/`USABLE_HASH_SPACE`);
  * (2) the (path, content) seeding (`fileBaseIndex` seeds xxh32 with the canonical absolute path,
- * `contentBaseIndex` is the explicit content-only fallback); (3) the all-digit reservation
+ * `contentBaseIndex` is the explicit content-only fallback) — generation 2 seeds on the line's RAW
+ * bytes, where generation 1 seeded on the canonicalised line, because identity and alignment are
+ * different questions: `canon` folds 28 whitespace code points, so a canon-seeded identity cannot
+ * tell `const s = "a`+NBSP+`b";` from `const s = "a b";` and falls back to its positional probe;
+ * (3) the all-digit reservation
  * (`DIGIT_CHARS`/`RESERVED_HASH_SPELLINGS`/`RESERVED_BITS` pre-marked in allocation); (4) the probe
  * stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
  *
@@ -124,7 +128,7 @@ export const CANON_VERSION = 3;
  * cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a canon-only change
  * misses the cache without invalidating anchor state while a generation change invalidates both.
  */
-export const ANCHOR_GENERATION = 1;
+export const ANCHOR_GENERATION = 2;
 
 /**
  * WHY: an explicit code-point list, never a Unicode property escape — \p{White_Space} and \p{Cf}
@@ -155,14 +159,6 @@ export function canon(line: string): string {
  */
 export function canonDigest(line: string): string {
   return String(xxh32(canon(line)));
-}
-
-function getCanon(cache: Map<string, string>, line: string): string {
-  let v = cache.get(line);
-  if (v !== undefined) return v;
-  v = canon(line);
-  cache.set(line, v);
-  return v;
 }
 
 function hashToIndex(hash: string): number {
@@ -210,13 +206,15 @@ export function canonicalAnchorPath(path: string): string {
   // WHY: trailing separator, so `/x/a.ts/` and `/x/a.ts` seed identically.
   return resolve(path);
 }
-function contentBaseIndex(canonText: string): number {
-  return (xxh32(canonText) >>> 14) % HASH_SPACE;
+// WHY: the seed is the line's RAW bytes ([ADR-0013](../../docs/adr/0013-anchor-identity-derives-from-raw-bytes.md));
+// WHY: `canon` is an alignment and verification digest, never the identity function.
+function contentBaseIndex(line: string): number {
+  return (xxh32(line) >>> 14) % HASH_SPACE;
 }
-export function fileBaseIndex(canonText: string, pathSeed: number): number {
-  return (xxh32(canonText, pathSeed) >>> 0) % HASH_SPACE;
+export function fileBaseIndex(line: string, pathSeed: number): number {
+  return (xxh32(line, pathSeed) >>> 0) % HASH_SPACE;
 }
-// SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
+// SAFETY: large-class — HashIdentity owns hash allocation and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 // WHY: the hashCache bound is the served admission budget (SERVED_MAX_LINES),
 // WHY: not an arbitrary number: every product materialization is hard-capped at one
 // WHY: budget per call by the throwing lines clamp (src/file-content/loader.ts:91-100,
@@ -229,9 +227,9 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
 // WHY: allocator-exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so the
 // WHY: RangeError pre-empts E_LARGE_FILE on a small-cap runtime once the memo alone passes
 // WHY: that ceiling. The pure-API exhaustion path is therefore RangeError-free only for
-// WHY: inputs with at most ~2^23 distinct line contents: the sibling per-call maps
-// WHY: (canonCache, and the pairing index built by buildNewByContent) stay bounded by the
-// WHY: input rather than by this bound, so no claim is made above that ceiling.
+// WHY: inputs with at most ~2^23 distinct line contents: the pairing index built by
+// WHY: buildNewByContent is bounded by the input rather than by this bound, so no claim is made
+// WHY: above that ceiling.
 // WHY: buildNewByContent is deliberately not cleared — it is per-call structural state for
 // WHY: survivor pairing, not a recomputable memo. Eviction is clear-on-full (amortized O(1),
 // WHY: no per-line iterator — FIFO via keys().next() measured ~1400x slower,
@@ -315,13 +313,12 @@ export class HashIdentity {
     // WHY: probe in `assignHash` can ever return a reserved index.
     used.set(RESERVED_BITS);
     const hint = { value: 0 };
-    const canonCache = new Map<string, string>();
     if (blockedHashes) {
       for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
     return (line: string): string => {
-      const c = getCanon(canonCache, line);
-      const baseIdx = pathSeed === undefined ? contentBaseIndex(c) : fileBaseIndex(c, pathSeed);
+      const baseIdx =
+        pathSeed === undefined ? contentBaseIndex(line) : fileBaseIndex(line, pathSeed);
       return this.assignHash(used, baseIdx, hint);
     };
   }
@@ -342,13 +339,11 @@ export class HashIdentity {
     const used = new Uint32Array(BITSET_WORDS);
     used.set(RESERVED_BITS);
     const hint = { value: 0 };
-    const canonCache = new Map<string, string>();
     if (blockedHashes) {
       for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
     for (let i = 0; i < lines.length; i++) {
-      const c = getCanon(canonCache, lines[i]!);
-      const h = this.assignHash(used, fileBaseIndex(c, pathSeed), hint);
+      const h = this.assignHash(used, fileBaseIndex(lines[i]!, pathSeed), hint);
       hashes[i] = h;
     }
     return hashes;
@@ -407,13 +402,10 @@ export class HashIdentity {
     }
     return { survivors, removedEntries };
   }
-  private buildNewByContent(
-    newLines: string[],
-    canonCache: Map<string, string>,
-  ): Map<string, number[]> {
+  private buildNewByContent(newLines: string[]): Map<string, number[]> {
     const newByContent = new Map<string, number[]>();
     for (let i = 0; i < newLines.length; i++) {
-      const key = getCanon(canonCache, newLines[i]!);
+      const key = newLines[i]!;
       const list = newByContent.get(key);
       if (list) list.push(i);
       else newByContent.set(key, [i]);
@@ -433,12 +425,11 @@ export class HashIdentity {
     newHashes: string[],
     used: Uint32Array,
     hint: { value: number },
-    canonCache: Map<string, string>,
     spanEnd: number,
     shiftAfterSpan: number,
   ): void {
     for (const entry of survivors) {
-      const candidates = newByContent.get(getCanon(canonCache, oldLines[entry.index]!));
+      const candidates = newByContent.get(oldLines[entry.index]!);
       if (!candidates || candidates.length === 0) continue;
       const target = entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
       const pos = nearestNew(candidates, target);
@@ -452,15 +443,13 @@ export class HashIdentity {
   private allocateFreshHashes(
     newLines: string[],
     newHashes: string[],
-    canonCache: Map<string, string>,
     used: Uint32Array,
     hint: { value: number },
     pathSeed: number,
   ): void {
     for (let i = 0; i < newLines.length; i++) {
       if (newHashes[i]) continue;
-      const c = getCanon(canonCache, newLines[i]!);
-      const baseIdx = fileBaseIndex(c, pathSeed);
+      const baseIdx = fileBaseIndex(newLines[i]!, pathSeed);
       const h = this.assignHash(used, baseIdx, hint);
       newHashes[i] = h;
     }
@@ -475,7 +464,6 @@ export class HashIdentity {
   ): string[] {
     const oldLines = splitLines(oldContent);
     const newLines = splitLines(newContent);
-    const canonCache = new Map<string, string>();
     const newHashes: string[] = [];
     newHashes.length = newLines.length;
     const used = new Uint32Array(BITSET_WORDS);
@@ -495,7 +483,7 @@ export class HashIdentity {
       newLines.length,
     );
     const { survivors } = this.partitionEntries(oldHashes, removedIndexes);
-    const newByContent = this.buildNewByContent(newLines, canonCache);
+    const newByContent = this.buildNewByContent(newLines);
     this.reuseSurvivorHashes(
       survivors,
       oldLines,
@@ -503,11 +491,10 @@ export class HashIdentity {
       newHashes,
       used,
       hint,
-      canonCache,
       spanEnd,
       shiftAfterSpan,
     );
-    this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint, pathSeed);
+    this.allocateFreshHashes(newLines, newHashes, used, hint, pathSeed);
     return newHashes;
   }
 

@@ -10,11 +10,17 @@
 
 * **read:** anchor the selection-range note on the window's first line and render the enclosing chain as a breadcrumb of at most three levels, outermost first, keeping the innermost on trim. A straddling window now names the method it starts in instead of degrading to the class, with the innermost extent as the clause range. The read payload shape and served lines are unchanged. (#252)
 
+### Bug Fixes
+
+* **hashline:** derive the anchor from the line's raw bytes, so an anchor is a function of its own line. `canon` keeps alignment and verification — `pairSnapshots`, the page gate, drift, the write-hook served-row scan — and no longer derives one. Two lines whose canons fold together (`const s = "a`+NBSP+`b";` and `const s = "a b";`) are now two identities, and a canon-unchanged edit serves the content-derived anchor instead of a probe spelling. `ANCHOR_GENERATION` moves 1 → 2; `CANON_VERSION` does not. (ADR-0013) (#254)
+
 ### Tests
 
 * **replay:** retarget the corpus replay at the selection-range note, retiring `pnpm run replay:read-expansion` with the widening it measured. The gate counts the notes served headers carried by provider source, fails when a note names a span not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% noise band. An absent or session-less corpus exits 2 rather than passing vacuously. On the operator host the corpus predates the note, so its effect on re-reads is unmeasured, not zero. (#243)
 
 ### Documentation
+
+* **docs:** record ADR-0013 — anchors derive from raw bytes and the canon is an alignment digest — and correct the README's formatter claim: what survives a format pass is the lease, not the anchor spelling. The measured outcome table is unchanged. `GLOSSARY.md` restates the `anchor`, `canon`, `canon digest` and `canon_stripped codepoint` entries, and ADR-0002 and ADR-0010 carry the amendment. (#254)
 
 * **docs:** replace the read-expansion replay record with [selection-note-replay.md](docs/agents/selection-note-replay.md) — the single `pnpm run replay` command, the note evidence by source, the correctness rule, the noise rule and the measurement — record the same measurement in ADR-0012's Consequences, and drop the widening claims from the README's read section and slash-command list. (#243)
 

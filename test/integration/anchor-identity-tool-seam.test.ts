@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
+import { fileHashesFor } from "../../src/hashline/hash-identity.js";
 import { withTempFile, getText, extractHash, testSessionManager } from "../support/fixtures";
 
 type ToolResultEvent = {
@@ -83,7 +84,7 @@ const RENDER_LINTED = [
   "",
 ].join("\n");
 
-describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
+describe("anchor identity at the tool seam: raw-byte anchors, lease-surviving formatter churn", () => {
   it("edit -> external whitespace-only rewrite -> edit applies with pre-rewrite anchors", async () => {
     await withTempFile("render.ts", RENDER_SRC, async ({ cwd }) => {
       const { handlers, getTool } = makeSeamPi();
@@ -129,12 +130,15 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
         ctx,
       );
 
-      await writeFile(abs, RENDER_LINTED, "utf-8");
+      // The anchor edit1's own diff served for the line it wrote — the anchor the model holds
+      // when the formatter runs.
+      const pushRow = (edit1.details.diff as string)
+        .split("\n")
+        .find((row) => row.startsWith("+") && row.includes("out.push(it.name);"))!;
+      const preRewriteRef = extractHash(pushRow.slice(1));
 
-      // Post-fix: external whitespace-only rewrite invalidates the old anchor (blocked hash + fresh hash).
-      // Re-read to get the fresh anchor for the same line, then edit with it.
-      const freshRefs = await hashRefs(readTool, "render.ts", ctx, ["out.push(it.name);"]);
-      const freshPushRef = freshRefs["out.push(it.name);"]!;
+      // Whitespace-only relative to what edit1 wrote: the same lines, re-indented.
+      await writeFile(abs, RENDER_LINTED, "utf-8");
 
       const edit2: any = await editTool.execute(
         "e2",
@@ -142,8 +146,8 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
           file: "render.ts",
           edits: [
             {
-              anchor_from: freshPushRef,
-              anchor_to: freshPushRef,
+              anchor_from: preRewriteRef,
+              anchor_to: preRewriteRef,
               text: "out.push(it.name); // tagged",
             },
           ],
@@ -159,7 +163,56 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
     });
   });
 
-  it("brace merged onto the signature line rejects with E_STALE_RANGE", async () => {
+  it("#233: a canon-unchanged edit serves the content-derived anchor, not a probe fallback", async () => {
+    await withTempFile(
+      "nbsp.ts",
+      'const a = 1;\nconst s = "a\u00A0b";\nconst z = 2;\n',
+      async ({ cwd }) => {
+        const { getTool } = makeSeamPi();
+        const readTool = getTool("read");
+        const editTool = getTool("edit");
+        const ctx = { cwd, sessionManager: testSessionManager };
+        const abs = join(cwd, "nbsp.ts");
+
+        const refs = await hashRefs(readTool, "nbsp.ts", ctx, ["a\u00A0b"]);
+        const nbspRef = refs["a\u00A0b"]!;
+
+        // NBSP -> space: the line's bytes change, its canon does not. A canon-keyed allocator
+        // cannot tell the written line from the line it replaced.
+        const result: any = await editTool.execute(
+          "e1",
+          {
+            file: "nbsp.ts",
+            edits: [{ anchor_from: nbspRef, anchor_to: nbspRef, text: 'const s = "a b";' }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(getText(result)).toContain("Successfully edited");
+
+        const onDisk = await readFile(abs, "utf-8");
+        const derived = fileHashesFor(abs, onDisk);
+        const diffRow = (result.details.diff as string)
+          .split("\n")
+          .find((row) => row.startsWith("+") && row.includes('const s = "a b";'))!;
+        const reRead = await readTool.execute("r2", { file: "nbsp.ts" }, undefined, undefined, ctx);
+        const readRow = getText(reRead)
+          .split("\n")
+          .find((row) => row.includes('const s = "a b";'))!;
+
+        // WHY: measured before the fix — both serves handed back a probe spelling while the line's
+        // WHY: own content derived a different anchor. The written line's identity is its own bytes.
+        expect(extractHash(diffRow.slice(1))).toBe(derived[1]);
+        expect(extractHash(readRow)).toBe(derived[1]);
+        expect(extractHash(readRow)).not.toBe("AAAA");
+        // The byte change is a real identity change, so the anchor moves with it.
+        expect(extractHash(readRow)).not.toBe(nbspRef);
+      },
+    );
+  });
+
+  it("brace merged onto the signature line rejects with E_TARGET_LOST", async () => {
     await withTempFile("f.ts", "func hello()\n{\n    }\n", async ({ cwd }) => {
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");

@@ -7,6 +7,7 @@ Date: 2026-11-02
 Accepted
 
 Clarifies [0002. Tokenizer-Stable 4-Character Anchors, Canon v3 Whitespace Class, and File-Scoped Allocator](0002-tokenizer-stable-4-character-anchors-canon-v3.md)
+Resolved by [0013. Anchor Identity Derives From Raw Bytes; the Canon Is an Alignment Digest](0013-anchor-identity-derives-from-raw-bytes.md) — the deferred option's intent is taken, with the canon kept for alignment
 
 ## Context
 
