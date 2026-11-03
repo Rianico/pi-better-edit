@@ -6,9 +6,11 @@
 
 * **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
 
-### Tooling
+* **read:** serve exactly the window a read asks for, and name the enclosing span on the page header instead of widening the serve to that span. The note states the span's kind, name and extent, appears only when the span is strictly larger than the window, and is keyed by span so several windows inside one block share one note. A pre-lookup gate keeps unreadable paths and whole-file reads away from the parser. The provider layer, the grammar host and its fixtures are kept; the trigger, the four caps, the superset rule and five control surfaces are deleted. (#247)
 
-* **replay:** retarget the corpus replay at the selection-range note, and retire `pnpm run replay:read-expansion` with the widening it measured. `pnpm run replay` counts the notes served read headers carried, by provider source, fails when a note names a span that is not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% two-proportion noise band instead of the 20% / 200-read target. An absent or session-less corpus exits 2 rather than passing vacuously. Measured on the operator host: zero notes in 31,185 served reads across 3,122 sessions, so the note's effect on re-reads is unmeasured, not zero. (#243)
+### Tests
+
+* **replay:** retarget the corpus replay at the selection-range note, retiring `pnpm run replay:read-expansion` with the widening it measured. The gate counts the notes served headers carried by provider source, fails when a note names a span not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% noise band. An absent or session-less corpus exits 2 rather than passing vacuously. On the operator host the corpus predates the note, so its effect on re-reads is unmeasured, not zero. (#243)
 
 ### Documentation
 
