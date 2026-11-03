@@ -24,6 +24,9 @@
 
 * **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)
 
+### Build System
+
+* **gate:** run the pull-request-free ledger shape floor in `pnpm run verify`, so an invented `### Section` or an over-budget entry fails locally instead of on the first push. Section integrity moves into the gate's `ticket` phase, which needs no pull-request number; `ledger` still reports the same finding once, and the eleven conventional-commit section names are unchanged.
 ## [2.16.0] - 2026-11-01
 
 ### Features
