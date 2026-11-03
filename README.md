@@ -145,7 +145,7 @@ The response returns a unified diff with newly allocated anchors for modified li
 
 Settings are partitioned into two distinct roots ([ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md)):
 1. **Settings Root** (human configuration): `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` (global) or `.pi/agents/pi-better-edit/settings.json` (project-local).
-2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, `diagnostics.log`, and `read-expansion.log`).
+2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, `diagnostics.log`, and `selection-range.log`).
 
 Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
 
@@ -281,7 +281,7 @@ The read path adds no disclosure for this set. It already reports non-printable 
 - **When it appears**: Only when the enclosing span is strictly larger than the served window. A window that covers its span, a whole-file read, a declined lookup, and a failed lookup all produce no note.
 - **Multi-window pages**: The note is keyed by span, not by window. A multi-window page prints it once per distinct span, on the first section served from that span.
 - **Degradation by source**: A code span carries its kind and name (LSP `SymbolKind` labels plus `arrow`, `impl`, `trait`, `typeAlias`); a Markdown heading section carries its title; a paragraph carries only its extent.
-- **Configuration & Audit**: One setting, `read.selectionRange` (`"on"` | `"off"`, default `"on"`), or `PI_BETTER_EDIT_READ_SELECTION_RANGE`. The retired `read.expansion` key is ignored rather than honoured. Failed lookups append to `read-expansion.log` in the extension state root.
+- **Configuration & Audit**: One setting, `read.selectionRange` (`"on"` | `"off"`, default `"on"`), or `PI_BETTER_EDIT_READ_SELECTION_RANGE`. The retired `read.expansion` key is ignored rather than honoured. Failed lookups append to `selection-range.log` in the extension state root.
 - **Measurement**: `pnpm run replay` reports how often the note fires, by source, and whether same-file re-reads moved against a pre-change corpus. See **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**.
 
 ### Interoperability with `pi-lens`

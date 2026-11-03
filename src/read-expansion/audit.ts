@@ -4,8 +4,15 @@
  * WHY its own file beside `diagnostics.log`: a failed span lookup is an expected event, not a
  * diagnostic failure, and a queryable "which lookup failed, on what, and why" belongs in its own
  * JSONL stream. The placement and rotation policy are deliberately the diagnostics one:
- * `<stateRoot>/read-expansion.log` with one rotated generation, so an operator can attach the pair
+ * `<stateRoot>/selection-range.log` with one rotated generation, so an operator can attach the pair
  * whole.
+ *
+ * WHY the retired name is ADOPTED rather than left behind: this sink was `read-expansion.log` before
+ * the read-expansion retirement, and the log that explains a bug an operator is reporting is exactly
+ * the file a rename must not orphan. The first write moves the old pair onto the new names, each
+ * generation only while its new path is absent — the rule `MOVED_ARTIFACTS` applies to a state-root
+ * move, and for the same reason: a log already written under the new name is this install's own
+ * record and wins over the history beside it.
  *
  * WHY failures only: an ordinary read — note-free, gated out, or served with a note — writes no row,
  * so the file stays proportional to the defects worth fixing instead of every tool call.
@@ -19,17 +26,20 @@
  * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
  * that already served its rows into a failed call.
  */
-import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "../config-dir.js";
 import type { ConfigRung } from "../json-config.js";
 import type { SpanSource } from "./provider-contract.js";
 
 /** Fixed file name inside `stateRoot()`; exported so tests and status readers agree on it. */
-const READ_EXPANSION_LOG_NAME = "read-expansion.log";
+const SELECTION_RANGE_LOG_NAME = "selection-range.log";
+
+/** The name this sink carried before the read-expansion retirement; read once, for adoption. */
+const RETIRED_LOG_NAME = "read-expansion.log";
 
 /** One rotated generation, matching the diagnostics sink's ceiling. */
-const READ_EXPANSION_LOG_MAX_BYTES = 1024 * 1024;
+const SELECTION_RANGE_LOG_MAX_BYTES = 1024 * 1024;
 
 interface LoggedWindow {
   readonly startLine: number;
@@ -46,14 +56,35 @@ export interface ProviderFailureLogEntry {
   readonly requested?: readonly LoggedWindow[];
 }
 
-/** `<stateRoot>/read-expansion.log` — a sibling of `diagnostics.log`. */
-export function readExpansionLogPath(): string {
+/** `<stateRoot>/selection-range.log` — a sibling of `diagnostics.log`. */
+export function selectionRangeLogPath(): string {
   // SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
-  return join(stateRoot(), READ_EXPANSION_LOG_NAME);
+  return join(stateRoot(), SELECTION_RANGE_LOG_NAME);
+}
+
+/**
+ * Move a pre-rename log pair onto the new names, each generation only while its new path is absent.
+ *
+ * WHY here and not in `state-migration.ts`: that pass adopts artifacts that followed a STATE-ROOT
+ * move, and its marker makes it a once-per-root event. This is a rename INSIDE the root, so it has
+ * to be in place before the very next write rather than at the next migration.
+ */
+function adoptRetiredLogName(): void {
+  for (const generation of ["", ".1"] as const) {
+    const from = join(stateRoot(), `${RETIRED_LOG_NAME}${generation}`);
+    const to = join(stateRoot(), `${SELECTION_RANGE_LOG_NAME}${generation}`);
+    if (existsSync(to) || !existsSync(from)) continue;
+    try {
+      renameSync(from, to);
+    } catch {
+      // SAFETY: best effort — the append this precedes still succeeds, and the old pair stays
+      // SAFETY: readable under its retired name, which is a worse report than a moved one.
+    }
+  }
 }
 
 /** Test helper: forget which sessions already recorded their rung. */
-export function resetReadExpansionLogStateForTests(): void {
+export function resetSelectionRangeLogStateForTests(): void {
   rungRecordedSessions.clear();
 }
 
@@ -82,9 +113,10 @@ function appendRecord(fields: Record<string, unknown>): void {
       pid: process.pid,
       ...fields,
     })}\n`;
-    const path = readExpansionLogPath();
+    const path = selectionRangeLogPath();
     // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
     mkdirSync(dirname(path), { recursive: true });
+    adoptRetiredLogName();
     rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
     appendFileSync(path, line, "utf-8");
   } catch {
@@ -101,6 +133,6 @@ function rotateIfOversize(path: string, incomingBytes: number): void {
     // SAFETY: an absent log is the first-run state, not a fault.
     return;
   }
-  if (current + incomingBytes <= READ_EXPANSION_LOG_MAX_BYTES) return;
+  if (current + incomingBytes <= SELECTION_RANGE_LOG_MAX_BYTES) return;
   renameSync(path, `${path}.1`);
 }
