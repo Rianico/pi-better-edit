@@ -8,7 +8,7 @@
 
 * **read:** serve exactly the window a read asks for, and name the enclosing span on the page header instead of widening the serve to that span. The note states the span's kind, name and extent, and is keyed by span so several windows inside one block share one note. A pre-lookup gate keeps unreadable paths and whole-file reads away from the parser. The provider layer, the grammar host and its fixtures are kept; the trigger, the four caps, the superset rule and five control surfaces are deleted. (#247)
 
-* **read:** anchor the selection-range note on the window's first line and render the enclosing chain as a breadcrumb of at most three levels, outermost first, keeping the innermost on trim. A straddling window now names the method it starts in instead of degrading to the class, with the innermost extent as the clause range. The read payload shape and served lines are unchanged.
+* **read:** anchor the selection-range note on the window's first line and render the enclosing chain as a breadcrumb of at most three levels, outermost first, keeping the innermost on trim. A straddling window now names the method it starts in instead of degrading to the class, with the innermost extent as the clause range. The read payload shape and served lines are unchanged. (#252)
 
 ### Tests
 
