@@ -94,7 +94,7 @@ The structural block that contains a read's **first served line**: a function, m
 _Avoid_: symbol range, node extent
 
 **selection-range note**:
-One clause appended to the read page header: the chain of `enclosing span`s for the window's first line, at most three levels joined by ` › ` and trimmed from the outer end, followed by the innermost span's extent. A window that crosses a boundary names the block it starts in, so a straddle is not silence. It changes no served line, carries no lease and no anchor, and is silent only when the innermost span equals the window, when nothing encloses the first line, when the pre-lookup gate declines, and when the lookup fails ([ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)).
+One clause appended to the read page header: the chain of `enclosing span`s for the window's first line, at most three levels joined by ASCII ` > ` and trimmed from the outer end, followed by the innermost span's extent bound to its own name as `(span a-b)`. The preposition is `in` when the innermost span contains the window's last line, and `starts in` otherwise, so a window that crosses a boundary states the escape instead of denying it. A straddle names the block it starts in, so it is not silence. It changes no served line, carries no lease and no anchor, and is silent only when the innermost span equals the window, when nothing encloses the first line, when the pre-lookup gate declines, and when the lookup fails ([ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)).
 _Avoid_: read expansion and its vocabulary (retired feature: requested window, served window), widening note, expansion note, block hint, span banner
 
 **served-range staleness**:
