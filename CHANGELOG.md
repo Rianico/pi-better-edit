@@ -30,7 +30,9 @@
 
 * **docs:** measure the selection-range note. Four `micro-swe` legs on Pi 1.4.0 show it fires on 51.4% and 56.2% of windowed reads, that the named span covers over half the file in 42% and 39% of firings, and that no follow-up read ever covered the named span — 0 of 20. The cause is the straddle: a window crossing two methods has no method containing it, so the note degrades to the enclosing class. The score comparison is invalid — the same arm scored 16/16 then 10/16 as provider latency drifted about 2x. (#251)
 
-* **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle, and states that the refined form is unmeasured. (#253)
+* **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle. (#253)
+
+* **docs:** fold the refined note's measurement into [selection-range-note-measurement.md](docs/analysis/selection-range-note-measurement.md) and ADR-0014. Two legs of the same suite show the coarse share — the named span covering over half its file — falling from 15 of 37 (41%) to 3 of 50 (6%). A bare class name survives once in 32 notes, where it was 8 in 19. The score endpoint stays dead: the on arm spans 7 to 15, the off arm 12 to 16, and the within-arm spread exceeds the between-arm difference. (#255)
 
 ### Code Refactoring
 
