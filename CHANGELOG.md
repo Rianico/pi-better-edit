@@ -24,6 +24,8 @@
 
 * **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)
 
+* **read:** rename the provider-failure log to `selection-range.log`, the artifact's name having outlived the widening it was built for. The first write adopts an operator's existing `read-expansion.log` and its rotated generation, each only while its new path is absent, so a bug report written before the rename stays readable. What the log records is unchanged: the file, the source and the refusal reason of a failed span lookup. (#249)
+
 ## [2.16.0] - 2026-11-01
 
 ### Features
