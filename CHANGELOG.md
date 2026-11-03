@@ -26,7 +26,7 @@
 
 * **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle. (#253)
 
-* **docs:** fold the refined note's measurement into [selection-range-note-measurement.md](docs/analysis/selection-range-note-measurement.md) and ADR-0014. Two legs of the same suite show the coarse share — the named span covering over half its file — falling from 15 of 37 (41%) to 3 of 50 (6%). A bare class name survives once in 32 notes, where it was 8 in 19. The score endpoint stays dead: the on arm spans 7 to 15, the off arm 12 to 16, and the within-arm spread exceeds the between-arm difference.
+* **docs:** fold the refined note's measurement into [selection-range-note-measurement.md](docs/analysis/selection-range-note-measurement.md) and ADR-0014. Two legs of the same suite show the coarse share — the named span covering over half its file — falling from 15 of 37 (41%) to 3 of 50 (6%). A bare class name survives once in 32 notes, where it was 8 in 19. The score endpoint stays dead: the on arm spans 7 to 15, the off arm 12 to 16, and the within-arm spread exceeds the between-arm difference. (#255)
 
 ### Code Refactoring
 
