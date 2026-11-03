@@ -480,6 +480,35 @@ describe("selection-range note replay", () => {
     }
   });
 
+  it("names every reason the predicate applies in the stderr violation line", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-message-"));
+    try {
+      await writeSession(
+        root,
+        "typescript.jsonl",
+        sessionLines("message", [
+          {
+            file: "/repo/src/a.ts",
+            // A whole-file window, so the message must name the predicate's first reason too.
+            text: served("/repo/src/a.ts", 1, 40, 40, "; starts in function a (span 1-30)"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.status).toBe(1);
+      // The four reasons in the order `isLegalNote` checks them: whole-file window, a span that
+      // misses the first line, a span equal to the window, and the wrong preposition.
+      expect(result.stderr).toContain(
+        "a note whose window covers its whole file, whose span does not contain the served " +
+          "window's first line or equals the window, or whose preposition is wrong",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a note legal on a partial section of a multi-window page", async () => {
     const root = await mkdtemp(join(tmpdir(), "selection-note-replay-multi-window-"));
     try {

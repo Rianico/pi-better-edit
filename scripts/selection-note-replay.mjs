@@ -98,8 +98,9 @@ function main() {
   const violations = report.candidate.notes.violationCount;
   if (violations > 0) {
     console.error(
-      `selection-note-replay: ${violations} note violation(s): a note named a span that does not ` +
-        `contain its served window's first line, equals the window, or carries the wrong preposition`,
+      `selection-note-replay: ${violations} note violation(s): a note whose window covers its whole ` +
+        `file, whose span does not contain the served window's first line or equals the window, or ` +
+        `whose preposition is wrong`,
     );
     process.exit(1);
   }
