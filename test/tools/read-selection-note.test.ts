@@ -1,10 +1,11 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { regRead } from "../../src/read";
 import { createReadSpanProvider } from "../../src/read-expansion/read-provider";
 import {
-  readExpansionLogPath,
-  resetReadExpansionLogStateForTests,
+  resetSelectionRangeLogStateForTests,
+  selectionRangeLogPath,
 } from "../../src/read-expansion/audit";
 import type { SpanProvider } from "../../src/read-expansion/provider-contract";
 import { selectionRangeNote } from "../../src/read-expansion/selection-range-note";
@@ -51,7 +52,7 @@ function rowsOf(result: ReadResult): string[] {
 
 /** Every log row written this session, oldest first. */
 function logRows(): Array<Record<string, unknown>> {
-  const path = readExpansionLogPath();
+  const path = selectionRangeLogPath();
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf-8")
     .split("\n")
@@ -60,8 +61,14 @@ function logRows(): Array<Record<string, unknown>> {
 }
 
 function clearLog(): void {
-  rmSync(readExpansionLogPath(), { force: true });
-  resetReadExpansionLogStateForTests();
+  for (const path of [selectionRangeLogPath(), `${selectionRangeLogPath()}.1`]) {
+    rmSync(path, { force: true });
+  }
+  // WHY: the retired name is cleared too — a leftover would be adopted by the next write and add a
+  // WHY: row this suite never asked for.
+  const retired = join(dirname(selectionRangeLogPath()), "read-expansion.log");
+  for (const path of [retired, `${retired}.1`]) rmSync(path, { force: true });
+  resetSelectionRangeLogStateForTests();
 }
 
 const MARKDOWN = `# Guide\n\nIntro.\n\n## Language\n\nAlpha.\nBeta.\n\n### Nested\n\nGamma.\n\n## Next\n\nDelta.\n`;

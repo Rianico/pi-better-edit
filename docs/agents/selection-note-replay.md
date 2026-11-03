@@ -145,7 +145,7 @@ together.
 
 ## Refusal vocabulary
 
-`read-expansion.log` uses one `reason` code per refused attempt. The audit sink's module comment points here; `REFUSAL_REASONS` in `src/read-expansion/provider-contract.ts` is the code authority.
+`selection-range.log` uses one `reason` code per refused attempt. The audit sink's module comment points here; `REFUSAL_REASONS` in `src/read-expansion/provider-contract.ts` is the code authority.
 | Reason | Meaning | Extra fields |
 |---|---|---|
 | `above_trigger` | The folded window is larger than 24 lines, so expansion never starts. | — |
@@ -163,7 +163,7 @@ together.
 | `not_superset` | The provider's span did not cover the requested window. | `section` |
 | `over_cap` | The code or plain-text block exceeds its cap and is refused, never clamped. | `blockSize`, `section` |
 
-`read-expansion.log` also carries the first-entry `rung` for the resolved configuration source. The read budget is 250 ms; `cold_grammar` is transient, while `grammar_unavailable` and `runtime_absent` are permanent for the session unless the host changes.
+`selection-range.log` also carries the first-entry `rung` for the resolved configuration source. The read budget is 250 ms; `cold_grammar` is transient, while `grammar_unavailable` and `runtime_absent` are permanent for the session unless the host changes.
 
 ## Machine-readable fields
 
