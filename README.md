@@ -277,8 +277,8 @@ The read path adds no disclosure for this set. It already reports non-printable 
 
 ### Selection-Range Note
 `read` serves exactly the window you ask for, and names the chain of structural blocks enclosing it on the page header, instead of widening the serve ([ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)):
-- **The note**: One clause appended inside the header's bracket, e.g. `[app.py (lines 250-264 of 2698 total; in class Flask › method parse_args, lines 230-290)]`. It names the blocks enclosing the window's **first line**, innermost last, at most three levels, trimmed from the outer end. The extent it prints is the innermost block's. It changes no served line, carries no anchor, and spends no lease.
-- **When it appears**: Whenever the innermost block differs from the served window. A window that crosses a boundary therefore names the block it starts in, and a straddle is not silence. A whole-file read, a declined lookup, and a failed lookup all produce no note.
+- **The note**: One clause appended inside the header's bracket, e.g. `[app.py (lines 250-264 of 2698 total; in class Flask > method parse_args (span 230-290))]`. It names the blocks enclosing the window's **first line**, innermost last, at most three levels joined by ASCII ` > `, trimmed from the outer end. The extent it prints is the innermost block's, parenthesized and bound to that name. It changes no served line, carries no anchor, and spends no lease.
+- **When it appears**: Whenever the innermost block differs from the served window. A window that crosses a boundary therefore names the block it starts in and reads `starts in` rather than `in`, so a straddle is not silence and the clause never claims the window is inside a block it escapes. A whole-file read, a declined lookup, and a failed lookup all produce no note.
 - **Multi-window pages**: The note is keyed by chain, not by window. A multi-window page prints it once per distinct chain, on the first section served from that chain.
 - **Degradation by source**: A code span carries its kind and name (LSP `SymbolKind` labels plus `arrow`, `impl`, `trait`, `typeAlias`); a Markdown heading section carries its title; a paragraph carries only its extent.
 - **Configuration & Audit**: One setting, `read.selectionRange` (`"on"` | `"off"`, default `"on"`), or `PI_BETTER_EDIT_READ_SELECTION_RANGE`. The retired `read.expansion` key is ignored rather than honoured. Failed lookups append to `selection-range.log` in the extension state root.
@@ -429,7 +429,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are documented in **[Benchmarks & Comparison Reference](docs/reference/benchmarks.md)**.
 
-Selection-range note measurement is documented in **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**: `pnpm run replay` counts the notes that served read headers carried, by provider source, checks that each names a span strictly larger than its window, and reports the same-file re-read movement against a pre-change corpus with a 95% noise band.
+Selection-range note measurement is documented in **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**: `pnpm run replay` counts the notes that served read headers carried, by provider source, checks that no note's window covers its whole file, that each note's span contains its window's first line, is not the window itself and — for the shipped clause — carries the preposition its containment implies, and reports the same-file re-read movement against a pre-change corpus with a 95% noise band.
 
 ---
 

@@ -79,9 +79,9 @@ describe("page chrome grammar (spec §4.4)", () => {
         file: "app.py",
         totalLines: 2698,
         shownRange: { startLine: 250, endLine: 264 },
-        clause: "; in function parse_args, lines 230-290",
+        clause: "; in function parse_args (span 230-290)",
       }),
-    ).toBe("[app.py (lines 250-264 of 2698 total; in function parse_args, lines 230-290)]");
+    ).toBe("[app.py (lines 250-264 of 2698 total; in function parse_args (span 230-290))]");
   });
 
   it("names a multi-window section by its own range", () => {
@@ -89,8 +89,8 @@ describe("page chrome grammar (spec §4.4)", () => {
     expect(formatSectionHeader(2, 3, 40, 50 * 1024)).toBe(
       "[Lines 2-3 of 40 total; stopped at 50.0KB]",
     );
-    expect(formatSectionHeader(2, 3, 40, undefined, "; in function f, lines 1-5")).toBe(
-      "[Lines 2-3 of 40 total; in function f, lines 1-5]",
+    expect(formatSectionHeader(2, 3, 40, undefined, "; in function f (span 1-5)")).toBe(
+      "[Lines 2-3 of 40 total; in function f (span 1-5)]",
     );
   });
 });

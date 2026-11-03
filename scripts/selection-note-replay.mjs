@@ -6,7 +6,7 @@
  * cites; the default is a short human table.
  *
  * Exit codes: 2 on an argument or corpus error (an absent corpus never passes), 1 when a served note
- * named a span that does not strictly exceed its window, 0 otherwise.
+ * named an illegal span, 0 otherwise.
  */
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -32,8 +32,10 @@ Options:
   --out <path>            also write the machine-readable report to a file
   --help                  show this help
 
-Correctness gate: every note must name a span that covers its served window and is strictly larger
-than it. One violation exits 1.
+Correctness gate: a note is illegal when its window covers its whole file, when its span does not
+contain its served window's first line or equals the window, or when its preposition is wrong — the
+clause must print 'in' when its span reaches the window's end, and 'starts in' otherwise. One
+violation exits 1.
 
 Noise rule: a movement is reported as inside-noise when it is smaller than 1.96 standard errors of
 the two-proportion difference (95%).`;
@@ -97,8 +99,9 @@ function main() {
   const violations = report.candidate.notes.violationCount;
   if (violations > 0) {
     console.error(
-      `selection-note-replay: ${violations} note violation(s): a note named a span that is not ` +
-        `strictly larger than its served window`,
+      `selection-note-replay: ${violations} note violation(s): a note whose window covers its whole ` +
+        `file, whose span does not contain the served window's first line or equals the window, or ` +
+        `whose preposition is wrong`,
     );
     process.exit(1);
   }

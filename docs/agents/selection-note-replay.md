@@ -29,8 +29,9 @@ separator: `pnpm run replay --limit-sessions 4000 --json`.
 Exit codes:
 
 - `0` — measured; the report is on stdout.
-- `1` — at least one served note named a span that is not strictly larger than its own window. The
-  count and a bounded sample of the offenders are in `candidate.notes`.
+- `1` — at least one served note's window covers its whole file, or named a span that does not contain
+  its own window's first line, that equals the window, or whose preposition contradicts the
+  containment. The count and a bounded sample of the offenders are in `candidate.notes`.
 - `2` — an argument or corpus error: an absent corpus, a path that is not a directory, or a corpus
   with no `.jsonl` sessions. The message names the path; an empty sample never passes.
 
@@ -38,8 +39,10 @@ Exit codes:
 
 Only a **served-mode** read can carry a note, and only its header carries one. The replay reads the
 clause back out of the header the model saw — it does not re-run the decision layer, so the gate
-cannot drift from the shipped note. A quoted clause inside an assistant message, and a note-shaped
-line in a served body behind an anchor, are both ignored.
+cannot drift from the shipped note. Two clause shapes parse: the shipped
+`; <in|starts in> <label> (span a-b)` and the legacy `; in <label>, lines a-b`, kept so a corpus
+recorded before the parenthesized extent still counts. A quoted clause inside an assistant message,
+and a note-shaped line in a served body behind an anchor, are both ignored.
 
 `notes.fires` counts clauses; `notes.readsWithNote` counts reads; `notes.fireShare` is
 `fires / totals.reads`. A multi-window page keys the note to its span, so one read may carry more
@@ -57,11 +60,13 @@ clause prints:
 Shell answers travel the AST provider, so they land in `ast`. `lsp` is enrichment only and never a
 source of a note, so it cannot appear.
 
-**Correctness rule.** A note is legal only when its span covers its served window and is strictly
-larger than it: `span.start <= window.start && span.end >= window.end && (span.start < window.start
-|| span.end > window.end)`. A whole-file page is normalised to the range it covers, so a note on one
-is a violation by construction. `notes.violationCount` is the authority; `notes.violations` is a
-bounded sample of 20.
+**Correctness rule.** A note is legal only when its window does not cover its whole file, its span
+contains its served window's first line, is not the window itself, and — for the shipped clause —
+carries the preposition its containment implies. In full: `span.start <= window.start && span.end >=
+window.start`, not (`span.start === window.start && span.end === window.end`), and either the clause
+is legacy (no preposition to check) or `preposition === "in" ? span.end >= window.end : span.end <
+window.end`. A whole-file page is normalised to the range it covers, so a note on one is a violation
+by construction. `notes.violationCount` is the authority; `notes.violations` is a bounded sample of 20.
 
 ## Re-read metric and movement
 

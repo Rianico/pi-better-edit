@@ -87,8 +87,15 @@ const MAX_REPORTED_VIOLATIONS = 20;
 /** An unreadable or absent corpus: a structural error, never a measurement. */
 class CorpusError extends Error {}
 
-/** The clause the note seam closes a header with: `; in <label>, lines <start>-<end>`. */
-const NOTE_CLAUSE = /; in (.*), lines (\d+)-(\d+)$/;
+/**
+ * The two clause shapes a served header can carry. The shipped shape is
+ * `; <in|starts in> <label> (span <start>-<end>)`; the legacy shape is
+ * `; in <label>, lines <start>-<end>`, kept so recorded history still parses. The page window's own
+ * closing paren and the header's closing bracket are part of the anchor, not of the label, and both
+ * label matches are greedy so a name containing a comma or a parenthesis still parses.
+ */
+const SHIPPED_CLAUSE = /; (in|starts in) (.*) \(span (\d+)-(\d+)\)\)?\]$/;
+const LEGACY_CLAUSE = /; in (.*), lines (\d+)-(\d+)\)?\]$/;
 /** A page header's body: a served range, or a whole-file count. */
 const PAGE_WINDOW = / \((?:verbatim, )?(?:lines (\d+)-(\d+) of (\d+) total|(\d+) lines total)/;
 /** A multi-window section header names its own range. */
@@ -238,23 +245,30 @@ function admitRange(start, end, totalLines) {
   if (start < 1 || totalLines < 1 || end < start) return undefined;
   return { start, end, totalLines };
 }
-
 /**
- * The clause a served header carries, or `undefined` when it carries none.
- *
- * The clause closes the header, so the trailing punctuation belongs to the bracket grammar rather
- * than to the span name: one closing bracket is stripped before the label is read, and the label
- * match is greedy so a name containing a comma still parses.
+ * The clause a served header carries, or `undefined` when it carries none. The shipped shape is
+ * tried first, so a label that itself holds a `(span a-b)` still reads as the legacy shape.
  */
 function clauseOf(line) {
-  const body = line.endsWith(")]") ? line.slice(0, -2) : line.slice(0, -1);
-  const match = NOTE_CLAUSE.exec(body);
-  if (match === null) return undefined;
-  const label = match[1];
+  const shipped = SHIPPED_CLAUSE.exec(line);
+  if (shipped !== null) {
+    const label = shipped[2];
+    return {
+      label,
+      preposition: shipped[1],
+      start: Number(shipped[3]),
+      end: Number(shipped[4]),
+      source: sourceOfLabel(label),
+    };
+  }
+  const legacy = LEGACY_CLAUSE.exec(line);
+  if (legacy === null) return undefined;
+  const label = legacy[1];
   return {
     label,
-    start: Number(match[2]),
-    end: Number(match[3]),
+    preposition: undefined,
+    start: Number(legacy[2]),
+    end: Number(legacy[3]),
     source: sourceOfLabel(label),
   };
 }
@@ -282,16 +296,37 @@ function notesInPage(text) {
     if (window === undefined) continue;
     const note = clauseOf(line);
     if (note === undefined) continue;
-    notes.push({ note, window: { start: window.start, end: window.end } });
+    // WHY: the whole-file rule needs the page total, which a served window does not carry; it travels
+    // beside the window so the recorded window keeps only the span a reader expects.
+    notes.push({
+      note,
+      window: { start: window.start, end: window.end },
+      totalLines: window.totalLines,
+    });
   }
   return notes;
 }
 
-/** The correctness rule the note owes a reader: the named span covers the window and exceeds it. */
-function isStrictlyLarger(note, window) {
-  const covers = note.start <= window.start && note.end >= window.end;
-  const exceeds = note.start < window.start || note.end > window.end;
-  return covers && exceeds;
+/**
+ * The ADR-0014 legality rule the note owes a reader, in the order this predicate checks it: a window
+ * that covers its whole file is illegal whatever the clause says, the named span must contain the
+ * served window's first line, must not be the window itself, and — when the clause prints one — must
+ * carry the preposition the containment implies. `in` claims the span reaches the window's end;
+ * `starts in` claims the window escapes it. A legacy clause prints no preposition, so its corpus
+ * stays valid.
+ *
+ * The whole-file rule needs the page total, which a served window does not carry: `totalLines` is the
+ * page's own total, passed beside the window so the recorded window stays the two fields the report
+ * publishes. Nothing larger can enclose the file, and the renderer never notes such a window, so a
+ * note on one is a violation by construction rather than a measurement.
+ */
+function isLegalNote(note, window, totalLines) {
+  if (window.start === 1 && window.end === totalLines) return false;
+  const containsFirstLine = note.start <= window.start && note.end >= window.start;
+  if (!containsFirstLine) return false;
+  if (note.start === window.start && note.end === window.end) return false;
+  if (note.preposition === undefined) return true;
+  return note.preposition === "in" ? note.end >= window.end : note.end < window.end;
 }
 
 function emptyMetrics() {
@@ -346,10 +381,10 @@ function analyzeSession(session, sessionFile) {
 
     const found = notesInPage(event.result.text);
     if (found.length > 0) notes.readsWithNote++;
-    for (const { note, window } of found) {
+    for (const { note, window, totalLines } of found) {
       notes.fires++;
       if (note.source in notes.bySource) notes.bySource[note.source]++;
-      if (!isStrictlyLarger(note, window)) {
+      if (!isLegalNote(note, window, totalLines)) {
         notes.violations.push({ session: sessionFile, file: target.file, window, note });
       }
     }

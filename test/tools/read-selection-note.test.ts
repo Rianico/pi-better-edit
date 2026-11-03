@@ -88,7 +88,7 @@ describe("selection-range note: exact window plus a header clause", () => {
 
       expect(rowsOf(result)).toEqual(["Alpha."]);
       expect(headerOf(result)).toMatch(/^\[.* \(lines 7-7 of \d+ total; /);
-      expect(headerOf(result)).toContain('; in section "Language", lines 5-13)]');
+      expect(headerOf(result)).toContain('; in section "Language" (span 5-13))]');
       expect(logRows()).toEqual([]);
     });
   });
@@ -112,7 +112,7 @@ describe("selection-range note: exact window plus a header clause", () => {
       process.env.PI_BETTER_EDIT_READ_EXPANSION = "off";
       try {
         const result = await run(reader(), cwd, { file: path, windows: [{ offset: 7, limit: 1 }] });
-        expect(headerOf(result)).toContain('; in section "Language", lines 5-13)]');
+        expect(headerOf(result)).toContain('; in section "Language" (span 5-13))]');
       } finally {
         delete process.env.PI_BETTER_EDIT_READ_EXPANSION;
       }
@@ -123,7 +123,7 @@ describe("selection-range note: exact window plus a header clause", () => {
     await withTempFile("note.txt", "one\ntwo\n\nthree\nfour\n", async ({ cwd, path }) => {
       const oneLine = await run(reader(), cwd, { file: path, windows: [{ offset: 1, limit: 1 }] });
       expect(rowsOf(oneLine)).toEqual(["one"]);
-      expect(headerOf(oneLine)).toContain("; in paragraph, lines 1-2)]");
+      expect(headerOf(oneLine)).toContain("; in paragraph (span 1-2))]");
 
       const wholeSpan = await run(reader(), cwd, {
         file: path,
@@ -144,7 +144,7 @@ describe("selection-range note: exact window plus a header clause", () => {
 
       expect(getText(result)).not.toContain("│");
       expect(headerOf(result)).toContain("(verbatim, lines 7-7 of ");
-      expect(headerOf(result)).toContain('; in section "Language", lines 5-13)]');
+      expect(headerOf(result)).toContain('; in section "Language" (span 5-13))]');
       // WHY: the clause is chrome, not a row — the served window is still exactly one line.
       expect(
         getText(result)
@@ -229,9 +229,9 @@ describe("selection-range note: the pre-lookup gate reaches no provider", () => 
       const text = getText(result);
       expect(text.split("\n")[0]).toBe(`[${path} (5 lines total)]`);
       expect(text.split("\n")[0]).not.toContain("; in ");
-      expect(text).toContain("[Lines 1-1 of 5 total; in function f, lines 1-5]");
+      expect(text).toContain("[Lines 1-1 of 5 total; in function f (span 1-5)]");
       expect(text).toContain("[Lines 4-4 of 5 total]\n");
-      expect(text.match(/; in function f, lines 1-5/g)).toHaveLength(1);
+      expect(text.match(/; in function f \(span 1-5\)/g)).toHaveLength(1);
       expect(logRows()).toEqual([]);
     });
   });
@@ -251,8 +251,8 @@ describe("selection-range note: one note per span on a multi-window page", () =>
       expect(text).not.toContain("│");
       const headers = text.split("\n").filter((line) => line.startsWith("[Lines "));
       expect(headers).toEqual([
-        '[Lines 7-7 of 16 total; in section "Language", lines 5-13]',
-        '[Lines 15-15 of 16 total; in section "Next", lines 14-16]',
+        '[Lines 7-7 of 16 total; in section "Language" (span 5-13)]',
+        '[Lines 15-15 of 16 total; in section "Next" (span 14-16)]',
       ]);
     });
   });
@@ -267,10 +267,10 @@ describe("selection-range note: one note per span on a multi-window page", () =>
         ],
       });
       const text = getText(result);
-      expect(text.match(/; in section "Language", lines 5-13/g)).toHaveLength(1);
+      expect(text.match(/; in section "Language" \(span 5-13\)/g)).toHaveLength(1);
       const headers = text.split("\n").filter((line) => line.startsWith("[Lines "));
       expect(headers).toHaveLength(2);
-      expect(headers[0]).toContain('; in section "Language", lines 5-13');
+      expect(headers[0]).toContain('; in section "Language" (span 5-13');
       expect(headers[1]).not.toContain("; in ");
     });
   });
@@ -309,9 +309,9 @@ describe("selection-range note: one note per span on a multi-window page", () =>
       const rows = anchorRows(getText(result)).map((row) => row.slice(row.indexOf("│") + 1));
       expect(rows).toEqual(["a", "c", "d"]);
       expect(headers).toEqual([
-        "[Lines 1-1 of 5 total; in function first, lines 1-2]",
+        "[Lines 1-1 of 5 total; in function first (span 1-2)]",
         "[Lines 3-3 of 5 total]",
-        "[Lines 4-4 of 5 total; in function second, lines 4-5]",
+        "[Lines 4-4 of 5 total; in function second (span 4-5)]",
       ]);
     });
   });
@@ -399,7 +399,7 @@ describe("selection-range note: one bracket grammar", () => {
         windows: [{ offset: 2, limit: 1 }],
       });
       const header = headerOf(result);
-      expect(header).toContain("; in function runfast now, lines 1-3)]");
+      expect(header).toContain("; in function runfast now (span 1-3))]");
       expect(header.match(/\[/g)).toHaveLength(1);
       expect(header.match(/\]/g)).toHaveLength(1);
     });
@@ -432,7 +432,7 @@ describe("selection-range note: hardening", () => {
         file: path,
         windows: [{ offset: 2, limit: 1 }],
       });
-      expect(headerOf(result)).toContain("; in function runfast, lines 1-3)]");
+      expect(headerOf(result)).toContain("; in function runfast (span 1-3))]");
       expect(headerOf(result)).not.toContain("\u0001");
     });
   });
@@ -449,7 +449,7 @@ describe("selection-range note: hardening", () => {
         windows: [{ offset: 2, limit: 1 }],
       });
       const header = headerOf(result);
-      expect(header).toContain("; in function run fastnow, lines 1-3)]");
+      expect(header).toContain("; in function run fastnow (span 1-3))]");
       expect(header).not.toContain("\u0001");
       expect(header).not.toContain("\n");
     });
