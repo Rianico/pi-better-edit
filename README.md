@@ -429,7 +429,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are documented in **[Benchmarks & Comparison Reference](docs/reference/benchmarks.md)**.
 
-Selection-range note measurement is documented in **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**: `pnpm run replay` counts the notes that served read headers carried, by provider source, checks that each note's span contains its window's first line, is not the window itself and — for the shipped clause — carries the preposition its containment implies, and reports the same-file re-read movement against a pre-change corpus with a 95% noise band.
+Selection-range note measurement is documented in **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**: `pnpm run replay` counts the notes that served read headers carried, by provider source, checks that no note's window covers its whole file, that each note's span contains its window's first line, is not the window itself and — for the shipped clause — carries the preposition its containment implies, and reports the same-file re-read movement against a pre-change corpus with a 95% noise band.
 
 ---
 

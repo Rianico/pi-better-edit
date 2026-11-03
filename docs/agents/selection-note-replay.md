@@ -29,9 +29,9 @@ separator: `pnpm run replay --limit-sessions 4000 --json`.
 Exit codes:
 
 - `0` — measured; the report is on stdout.
-- `1` — at least one served note named a span that does not contain its own window's first line, that
-  equals the window, or whose preposition contradicts the containment. The count and a bounded sample
-  of the offenders are in `candidate.notes`.
+- `1` — at least one served note's window covers its whole file, or named a span that does not contain
+  its own window's first line, that equals the window, or whose preposition contradicts the
+  containment. The count and a bounded sample of the offenders are in `candidate.notes`.
 - `2` — an argument or corpus error: an absent corpus, a path that is not a directory, or a corpus
   with no `.jsonl` sessions. The message names the path; an empty sample never passes.
 
@@ -60,13 +60,13 @@ clause prints:
 Shell answers travel the AST provider, so they land in `ast`. `lsp` is enrichment only and never a
 source of a note, so it cannot appear.
 
-**Correctness rule.** A note is legal only when its span contains its served window's first line,
-is not the window itself, and — for the shipped clause — carries the preposition its containment
-implies. In full: `span.start <= window.start && span.end >= window.start`, not
-(`span.start === window.start && span.end === window.end`), and either the clause is legacy (no
-preposition to check) or `preposition === "in" ? span.end >= window.end : span.end < window.end`.
-A whole-file page is normalised to the range it covers, so a note on one is a violation by
-construction. `notes.violationCount` is the authority; `notes.violations` is a bounded sample of 20.
+**Correctness rule.** A note is legal only when its window does not cover its whole file, its span
+contains its served window's first line, is not the window itself, and — for the shipped clause —
+carries the preposition its containment implies. In full: `span.start <= window.start && span.end >=
+window.start`, not (`span.start === window.start && span.end === window.end`), and either the clause
+is legacy (no preposition to check) or `preposition === "in" ? span.end >= window.end : span.end <
+window.end`. A whole-file page is normalised to the range it covers, so a note on one is a violation
+by construction. `notes.violationCount` is the authority; `notes.violations` is a bounded sample of 20.
 
 ## Re-read metric and movement
 
