@@ -16,7 +16,7 @@ interface NoteEvidence {
   violations: Array<{
     file: string;
     window: { start: number; end: number };
-    note: { source: string; label: string; start: number; end: number };
+    note: { source: string; label: string; start: number; end: number; preposition?: string };
   }>;
 }
 
@@ -135,13 +135,14 @@ async function writeSession(root: string, name: string, lines: unknown[]) {
 }
 
 /**
+/**
  * `pairs` files read twice in a row (the first read is a same-file re-read) plus `singles` files
- * read once. Every page carries a note whose span covers and exceeds its two-line window, so the
- * fixture also pins the correctness rule on happy data.
+ * read once. Every page carries a shipped note whose span contains its two-line window's first line
+ * and reaches its end, so the fixture also pins the correctness rule on happy data.
  */
 function repeatedReads(extension: string, pairs: number, singles: number): unknown[] {
   const steps: ReadStep[] = [];
-  const span = `; in function body_${pairs}_${singles}, lines 1-9`;
+  const span = `; in function body_${pairs}_${singles} (span 1-9)`;
   for (let index = 0; index < pairs; index++) {
     const file = `/repo/src/pair-${index}.${extension}`;
     const text = served(file, 1, 2, 9, span);
@@ -195,15 +196,15 @@ describe("selection-range note replay", () => {
         sessionLines("candidate-ts", [
           {
             file: "/repo/src/a.ts",
-            text: served("/repo/src/a.ts", 10, 11, 120, "; in function parse_args, lines 5-30"),
+            text: served("/repo/src/a.ts", 10, 11, 120, "; in function parse_args (span 5-30)"),
           },
           {
             file: "/repo/src/a.ts",
-            text: served("/repo/src/a.ts", 10, 11, 120, "; in function parse_args, lines 5-30"),
+            text: served("/repo/src/a.ts", 10, 11, 120, "; in function parse_args (span 5-30)"),
           },
           {
             file: "/repo/src/b.ts",
-            text: served("/repo/src/b.ts", 4, 5, 90, "; in class Engine, lines 1-80"),
+            text: served("/repo/src/b.ts", 4, 5, 90, "; in class Engine (span 1-80)"),
           },
         ]),
       );
@@ -213,7 +214,7 @@ describe("selection-range note replay", () => {
         sessionLines("candidate-md", [
           {
             file: "/repo/README.md",
-            text: served("/repo/README.md", 5, 6, 60, '; in section "Install", lines 3-20'),
+            text: served("/repo/README.md", 5, 6, 60, '; in section "Install" (span 3-20)'),
           },
         ]),
       );
@@ -225,11 +226,12 @@ describe("selection-range note replay", () => {
           [
             {
               file: "/repo/notes.txt",
+              // The legacy clause, recorded before the parenthesized extent: still counted.
               text: `${served("/repo/notes.txt", 2, 3, 60, "; in paragraph, lines 1-7")}\nabcd│[x.ts (lines 1-2 of 9 total; in function f, lines 1-9)]`,
             },
           ],
           [
-            "The note reads `[x.ts (lines 1-2 of 9 total; in function f, lines 1-9)]` in the header.",
+            "The note reads `[x.ts (lines 1-2 of 9 total; in function f (span 1-9))]` in the header.",
           ],
         ),
       );
@@ -288,7 +290,7 @@ describe("selection-range note replay", () => {
     }
   });
 
-  it("fails on a note that does not name a span strictly larger than its window", async () => {
+  it("fails a note whose span misses the window's first line, equals the window, or carries the wrong preposition", async () => {
     const root = await mkdtemp(join(tmpdir(), "selection-note-replay-violation-"));
     try {
       await writeSession(
@@ -298,22 +300,32 @@ describe("selection-range note replay", () => {
           // span equal to the window
           {
             file: "/repo/src/a.ts",
-            text: served("/repo/src/a.ts", 5, 6, 40, "; in function a, lines 5-6"),
+            text: served("/repo/src/a.ts", 5, 6, 40, "; in function a (span 5-6)"),
           },
-          // span smaller than the window
+          // span that does not contain the window's first line
           {
             file: "/repo/src/b.ts",
-            text: served("/repo/src/b.ts", 5, 9, 40, "; in function b, lines 6-7"),
+            text: served("/repo/src/b.ts", 5, 9, 40, "; in function b (span 6-7)"),
           },
-          // span that does not contain the window
+          // `in` whose span ends before the window ends: the window escapes the span
           {
             file: "/repo/src/c.ts",
-            text: served("/repo/src/c.ts", 5, 6, 40, "; in function c, lines 8-30"),
+            text: served("/repo/src/c.ts", 5, 9, 40, "; in function c (span 3-7)"),
+          },
+          // `starts in` whose span covers the whole window: the preposition denies the containment
+          {
+            file: "/repo/src/e.ts",
+            text: served("/repo/src/e.ts", 5, 6, 40, "; starts in function e (span 1-30)"),
           },
           // honest note, must not be counted as a violation
           {
             file: "/repo/src/d.ts",
-            text: served("/repo/src/d.ts", 5, 6, 40, "; in function d, lines 1-30"),
+            text: served("/repo/src/d.ts", 5, 6, 40, "; in function d (span 1-30)"),
+          },
+          // legal straddle, must not be counted as a violation
+          {
+            file: "/repo/src/f.ts",
+            text: served("/repo/src/f.ts", 10, 11, 40, "; starts in function f (span 5-10)"),
           },
         ]),
       );
@@ -323,12 +335,50 @@ describe("selection-range note replay", () => {
       expect(result.stderr).toContain("violation");
       expect(result.status).toBe(1);
       const report = JSON.parse(result.stdout) as ReplayReport;
-      expect(report.candidate.notes.violationCount).toBe(3);
+      expect(report.candidate.notes.violationCount).toBe(4);
       expect(report.candidate.notes.violations.map((entry) => entry.file)).toEqual([
         "/repo/src/a.ts",
         "/repo/src/b.ts",
         "/repo/src/c.ts",
+        "/repo/src/e.ts",
       ]);
+      expect(report.candidate.notes.violations.map((entry) => entry.note.preposition)).toEqual([
+        "in",
+        "in",
+        "in",
+        "starts in",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a legal straddle and a legacy straddle", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-straddle-"));
+    try {
+      await writeSession(
+        root,
+        "typescript.jsonl",
+        sessionLines("straddle", [
+          {
+            file: "/repo/src/a.ts",
+            // The span contains the window's first line 10 and ends at 10, inside the window.
+            text: served("/repo/src/a.ts", 10, 11, 40, "; starts in function straddle (span 5-10)"),
+          },
+          {
+            file: "/repo/src/b.ts",
+            // The legacy clause prints no preposition, so a legacy straddle stays legal.
+            text: served("/repo/src/b.ts", 5, 9, 40, "; in function legacy, lines 3-7"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(result.stdout) as ReplayReport;
+      expect(report.candidate.notes.fires).toBe(2);
+      expect(report.candidate.notes.violationCount).toBe(0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
