@@ -110,6 +110,34 @@ Replacing the widened serve with a banner or trailer that names the enclosing bl
 
 Neither a widened serve nor a block-range hint reaches the dominant 33 % case, which wants a different region of the file. An outline — symbol names with their line ranges — would reach it. That is a different feature.
 
+## Do agents use the tools that already exist?
+
+The outline was deferred because pi-lens already offers analogous tools and agents rarely reach for them. That was an impression. A census puts numbers on it: 1,853 local session transcripts, 1.5 GiB, 106,086 tool results, and 1,253 sessions that used a tool at all.
+
+| tool | calls | sessions | share of 1,253 tool-using sessions |
+|---|---:|---:|---:|
+| `bash` (baseline) | 70,563 | 1,029 | 82.1 % |
+| `read` (baseline) | 17,532 | 996 | 79.5 % |
+| `lens_diagnostics` | 256 | 155 | 12.4 % |
+| `symbol_search` | 248 | 66 | 5.3 % |
+| `module_report` | 94 | 38 | 3.0 % |
+| `read_symbol` | 57 | 16 | 1.3 % |
+| `read_enclosing` | 4 | 3 | 0.2 % |
+| `ast_grep_outline` | **0** | **0** | **0 %** |
+| `ast_grep_replace` | **0** | **0** | **0 %** |
+| all pi-lens tools | 1,067 | 175 | **14.0 %** |
+
+Three readings.
+
+**The tools that already answer "what is in this file" are barely used.** Together, `read_symbol`, `module_report` and `read_enclosing` reach 5.5 % of tool-using sessions. `ast_grep_outline` is the closest existing analogue to the deferred outline, and it has **zero** calls in the sample. So does `ast_grep_replace`.
+
+**Where they are used, they win.** `read_symbol` returns a median of 19 lines. A whole-file read of the same file returns 1,303, so the tool serves 2.6 % of it. Against a real `read` of the same path in the same session it returns 5.3 times fewer lines. `module_report` returns 4.6 % of the file and 12.7 times fewer lines. The efficiency is real. The adoption is not.
+
+**One tool loses on cost.** `symbol_search` returns a median of 5,876 characters. A bash command in its own sessions returns 724, so the tool costs 8.1 times more. Its lines are long, at roughly 220 characters each. A sample-wide `rg -n` median is 1,001 characters.
+
+So the deferral is not caution about a promising idea. The instruments exist, they are measurably cheaper than what agents do instead, and agents reach for them in one session in eighteen. An outline would be a fifth such tool, and the same question would apply to it.
+
+**What this does not settle.** The census counts what agents chose, not what would have helped. A tool can be under-used because it is undiscoverable, because its name does not match the task, or because the agent never learned it exists. The `ast_grep_outline` zero is both the strongest signal and the weakest evidence. The tool was advertised, and the sample cannot say whether it was ever offered at the moment it would have paid.
 ## What would change the answer
 
 - **A workload where a whole-file read is impossible.** Every suite here has files small enough to read whole. A repository with 5,000-line files would force windowed reads and make the trigger and the cap live variables rather than inert gates.
@@ -124,6 +152,7 @@ Neither a widened serve nor a block-range hint reaches the dominant 33 % case, w
 - Activation is counted from served chrome (`[widened <a>-<b> -> <c>-<d>]`) in the trial transcripts, never inferred from an environment variable.
 - The re-read count walks each transcript in order. It pairs every `tool_execution_start` with its `tool_execution_end`, so the requested range and the served range of each read are both known. It then asks what the agent read afterwards. A bash command counts as a re-read only when a reader verb applies to that exact path. An earlier loose matcher reported 18 bash re-reads. All but two were `pytest` runs on a test file whose name ends with the same basename.
 - The toggle and both experimental knobs are recorded in every leg's own run log.
+- The adoption table walks the same session store separately: 1,853 transcripts, newest by modification time, under a 1.5 GiB budget, parsing 106,086 tool results. Tool-call pairing is exact id, then a `|` prefix, then a suffix. A sample of six files produced identical counts through two independent implementations.
 
 ## Threats to validity
 
@@ -132,6 +161,8 @@ Neither a widened serve nor a block-range hint reaches the dominant 33 % case, w
 - **The public suites are subsets.** EDIT-Bench ran 72 of 108 problems, and Aider ran 118 of 225.
 - **One model, one effort setting.** Every result is `muse-spark-1.3-contributor` at thinking low.
 - **Mutations are machine-generated.** They are easier than real issue-driven work.
+- **The adoption census samples one operator's sessions.** It covers 1,853 of 2,712 transcripts, newest by modification time, across five and a half weeks.
+- **A subagent rollout counts as its own session.** A rollout stored separately contributes its own row, so one task can appear several times.
 
 ## Recommendation
 
