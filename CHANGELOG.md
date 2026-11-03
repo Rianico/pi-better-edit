@@ -24,7 +24,7 @@
 
 * **docs:** measure the selection-range note. Four `micro-swe` legs on Pi 1.4.0 show it fires on 51.4% and 56.2% of windowed reads, that the named span covers over half the file in 42% and 39% of firings, and that no follow-up read ever covered the named span — 0 of 20. The cause is the straddle: a window crossing two methods has no method containing it, so the note degrades to the enclosing class. The score comparison is invalid — the same arm scored 16/16 then 10/16 as provider latency drifted about 2x. (#251)
 
-* **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle, and states that the refined form is unmeasured.
+* **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle, and states that the refined form is unmeasured. (#253)
 
 ### Code Refactoring
 
