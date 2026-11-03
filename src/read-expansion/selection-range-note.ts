@@ -190,16 +190,29 @@ function admittedChain(
   return { valid: true, spans };
 }
 
-/** The finished breadcrumb clause: at most 3 levels, outermost first, trimmed from the outer end. */
-function renderClause(chain: readonly AdmittedSpan[]): string {
+/**
+ * The finished clause: at most 3 levels, outermost first, trimmed from the outer end, with the
+ * innermost span's extent bound to its own name by parentheses.
+ *
+ * `lastLine` is the window's last served line, and it decides the preposition: a window whose last
+ * line escapes the innermost span is not *in* that span, so the clause says `starts in` instead.
+ * The window's first line is already known to sit inside it, so only the upper bound is in doubt.
+ */
+function renderClause(chain: readonly AdmittedSpan[], lastLine: number): string {
   const innermost = chain[0]!;
   // WHY: Neovim trims from the outer end (`trim_scope = 'outer'), keeping the innermost.
   const kept = chain.slice(0, 3);
   const labels: string[] = [];
   for (let index = kept.length - 1; index >= 0; index--)
     labels.push(spanLabel(kept[index]!.kind, sanitizeName(kept[index]!.name), kept[index]!.source));
-  const breadcrumb = labels.join(" \u203A ");
-  return `; in ${breadcrumb}, lines ${innermost.start}-${innermost.end}`;
+  // WHY: ASCII `>` over U+203A: the note is machine-facing, and the glyph has width and
+  // WHY: replacement risk in a constrained terminal font.
+  const breadcrumb = labels.join(" > ");
+  const preposition = lastLine <= innermost.end ? "in" : "starts in";
+  // WHY: parentheses bind the extent to the innermost name, where a comma bound it to the whole
+  // WHY: chain, and `lines` collided with the window's own `lines a-b of N total`. `(span a-b)`
+  // WHY: binds and names the extent in the same eight characters.
+  return `; ${preposition} ${breadcrumb} (span ${innermost.start}-${innermost.end})`;
 }
 
 interface Lookup {
@@ -282,7 +295,10 @@ export async function selectionRangeNote(
     const key = chainKey(result.chain);
     if (seen.has(key)) continue;
     seen.add(key);
-    clauses[candidate.index] = renderClause(result.chain);
+    clauses[candidate.index] = renderClause(
+      result.chain,
+      candidate.window.offset + candidate.window.limit - 1,
+    );
   }
   return { clauses, ...(failure === undefined ? {} : { failure }) };
 }

@@ -66,7 +66,7 @@ describe("breadcrumb note", () => {
     });
     // WHY: the straddle no longer degrades to the class alone; the chain anchors on line 18.
     expect(note.clauses[0]).toContain("method first");
-    expect(note.clauses[0]).toContain("lines 10-20");
+    expect(note.clauses[0]).toContain("(span 10-20)");
   });
   it("trims from the outer end: a 4-deep chain renders 3 levels keeping the innermost", async () => {
     const provider = chainProvider([
@@ -83,10 +83,10 @@ describe("breadcrumb note", () => {
       enabled: true,
     });
     const clause = note.clauses[0] ?? "";
-    expect(clause).toContain(" › ");
+    expect(clause).toContain(" > ");
     expect(clause).toContain("inner");
     expect(clause).not.toContain("root");
-    expect(clause.split("›")).toHaveLength(3);
+    expect(clause.split(" > ")).toHaveLength(3);
   });
 
   it("stays silent when the innermost span equals the window", async () => {
@@ -101,5 +101,103 @@ describe("breadcrumb note", () => {
       enabled: true,
     });
     expect(note.clauses).toEqual([undefined]);
+  });
+
+  it("binds the extent to the innermost name: `(span a-b)`, never `, lines a-b`", async () => {
+    const provider = chainProvider([
+      { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
+      { start: 1, end: 40, kind: "class", name: "C", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      windows: [{ offset: 12, limit: 2 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    const clause = note.clauses[0] ?? "";
+    // WHY: the operator's objection in #257 — `, lines 10-20` bound to the whole compound chain, so
+    // a reader had to infer which level owned the extent. Parentheses bind it to the innermost name.
+    expect(clause).toContain("(span 10-20)");
+    expect(clause).not.toContain(", lines ");
+    expect(clause).toContain(" > ");
+  });
+
+  it("says `starts in` when the window escapes the innermost span", async () => {
+    const provider = chainProvider([
+      { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
+      { start: 1, end: 40, kind: "class", name: "C", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      // WHY: the window's last line is 27, past the innermost span's end 20, so the window is not
+      // *in* the named method — only its first line is.
+      windows: [{ offset: 18, limit: 10 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    const clause = note.clauses[0] ?? "";
+    expect(clause).toContain("starts in");
+    expect(clause).not.toContain("; in ");
+    expect(clause).toContain("(span 10-20)");
+  });
+
+  it("keeps the plain `in` when the window sits inside the innermost span", async () => {
+    const provider = chainProvider([
+      { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
+      { start: 1, end: 40, kind: "class", name: "C", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      windows: [{ offset: 12, limit: 2 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    const clause = note.clauses[0] ?? "";
+    expect(clause).toContain("; in ");
+    expect(clause).not.toContain("starts in");
+  });
+
+  it("joins the levels with ASCII ` > ` and no code point above U+007F", async () => {
+    const provider = chainProvider([
+      { start: 10, end: 20, kind: "method", name: "first", source: "ast" },
+      { start: 1, end: 40, kind: "class", name: "C", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      windows: [{ offset: 12, limit: 1 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    const clause = note.clauses[0] ?? "";
+    expect(clause).toContain(" > ");
+    // WHY: U+203A is a three-byte glyph with replacement risk in constrained terminal fonts; the
+    // note is machine-facing, so ASCII carries the same meaning at no cost.
+    expect(clause).not.toContain("\u203A");
+    expect(clause).toMatch(/^[\x20-\x7E]+$/);
+  });
+
+  it("renders a four-level chain as three levels, keeping the innermost", async () => {
+    const provider = chainProvider([
+      { start: 14, end: 15, kind: "method", name: "inner", source: "ast" },
+      { start: 12, end: 18, kind: "class", name: "mid", source: "ast" },
+      { start: 10, end: 20, kind: "namespace", name: "outer", source: "ast" },
+      { start: 1, end: 40, kind: "module", name: "root", source: "ast" },
+    ]);
+    const note = await selectionRangeNote({
+      file: "app.ts",
+      // WHY: the last line 18 escapes the innermost span 14-15, so this one string pins the trim,
+      // the ASCII separator, the parenthesized binding and the chosen preposition together.
+      windows: [{ offset: 14, limit: 5 }],
+      totalLines: 50,
+      provider,
+      enabled: true,
+    });
+    expect(note.clauses[0]).toBe(
+      "; starts in namespace outer > class mid > method inner (span 14-15)",
+    );
   });
 });
