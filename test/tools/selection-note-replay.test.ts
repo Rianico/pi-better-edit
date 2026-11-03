@@ -15,7 +15,7 @@ interface NoteEvidence {
   violationCount: number;
   violations: Array<{
     file: string;
-    window: { start: number; end: number; totalLines?: number };
+    window: { start: number; end: number };
     note: { source: string; label: string; start: number; end: number; preposition?: string };
   }>;
 }
@@ -417,11 +417,7 @@ describe("selection-range note replay", () => {
       expect(report.candidate.notes.violations.map((entry) => entry.file)).toEqual([
         "/repo/src/a.ts",
       ]);
-      expect(report.candidate.notes.violations[0]?.window).toEqual({
-        start: 1,
-        end: 40,
-        totalLines: 40,
-      });
+      expect(report.candidate.notes.violations[0]?.window).toEqual({ start: 1, end: 40 });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -451,6 +447,34 @@ describe("selection-range note replay", () => {
       expect(report.candidate.notes.violations.map((entry) => entry.file)).toEqual([
         "/repo/notes.txt",
       ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a violation window with exactly the served span's start and end", async () => {
+    const root = await mkdtemp(join(tmpdir(), "selection-note-replay-window-shape-"));
+    try {
+      await writeSession(
+        root,
+        "typescript.jsonl",
+        sessionLines("window-shape", [
+          {
+            file: "/repo/src/a.ts",
+            // The span equals the window, so the note is illegal and the window is the served span.
+            text: served("/repo/src/a.ts", 5, 6, 40, "; in function a (span 5-6)"),
+          },
+        ]),
+      );
+
+      const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
+
+      expect(result.status).toBe(1);
+      const report = JSON.parse(result.stdout) as ReplayReport;
+      const window = report.candidate.notes.violations[0]?.window;
+      expect(window).toEqual({ start: 5, end: 6 });
+      // A recorded window describes a served window only: the page total is not part of its shape.
+      expect(Object.keys(window ?? {}).sort()).toEqual(["end", "start"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

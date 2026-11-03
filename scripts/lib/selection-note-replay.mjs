@@ -296,11 +296,12 @@ function notesInPage(text) {
     if (window === undefined) continue;
     const note = clauseOf(line);
     if (note === undefined) continue;
-    // WHY: the whole-file case needs the page total, so the window keeps it; a page that covers its
-    // file has no larger span to name, and the renderer never notes one.
+    // WHY: the whole-file rule needs the page total, which a served window does not carry; it travels
+    // beside the window so the recorded window keeps only the span a reader expects.
     notes.push({
       note,
-      window: { start: window.start, end: window.end, totalLines: window.totalLines },
+      window: { start: window.start, end: window.end },
+      totalLines: window.totalLines,
     });
   }
   return notes;
@@ -314,10 +315,11 @@ function notesInPage(text) {
  *
  * A window that covers its whole file is illegal whatever the clause says: nothing larger can enclose
  * the file, and the renderer never notes such a window, so a note on one is a violation by
- * construction rather than a measurement.
+ * construction rather than a measurement. `totalLines` is the page's own total, passed beside the
+ * window so the recorded window stays the two fields the report publishes.
  */
-function isLegalNote(note, window) {
-  if (window.start === 1 && window.end === window.totalLines) return false;
+function isLegalNote(note, window, totalLines) {
+  if (window.start === 1 && window.end === totalLines) return false;
   const containsFirstLine = note.start <= window.start && note.end >= window.start;
   if (!containsFirstLine) return false;
   if (note.start === window.start && note.end === window.end) return false;
@@ -377,10 +379,10 @@ function analyzeSession(session, sessionFile) {
 
     const found = notesInPage(event.result.text);
     if (found.length > 0) notes.readsWithNote++;
-    for (const { note, window } of found) {
+    for (const { note, window, totalLines } of found) {
       notes.fires++;
       if (note.source in notes.bySource) notes.bySource[note.source]++;
-      if (!isLegalNote(note, window)) {
+      if (!isLegalNote(note, window, totalLines)) {
         notes.violations.push({ session: sessionFile, file: target.file, window, note });
       }
     }
