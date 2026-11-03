@@ -51,12 +51,12 @@ export function createReadSpanProvider(options: ReadSpanProviderOptions = {}): S
     prefetch(cwd?: string) {
       return ast.prefetch?.(cwd);
     },
-    enclosingSpan(file, window) {
-      if (isMarkdownPath(file)) return markdown.enclosingSpan(file, window);
+    enclosingChain(file, window) {
+      if (isMarkdownPath(file)) return markdown.enclosingChain(file, window);
       if (isDataPath(file)) return { refusal: "no_provider" };
-      if (isPlainTextPath(file)) return paragraph.enclosingSpan(file, window);
-      if (isShellPath(file)) return bash.enclosingSpan(file, window);
-      return ast.enclosingSpan(file, window);
+      if (isPlainTextPath(file)) return paragraph.enclosingChain(file, window);
+      if (isShellPath(file)) return bash.enclosingChain(file, window);
+      return ast.enclosingChain(file, window);
     },
   };
   return withQualifiedNames(

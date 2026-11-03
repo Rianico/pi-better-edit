@@ -6,7 +6,9 @@
 
 * **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
 
-* **read:** serve exactly the window a read asks for, and name the enclosing span on the page header instead of widening the serve to that span. The note states the span's kind, name and extent, appears only when the span is strictly larger than the window, and is keyed by span so several windows inside one block share one note. A pre-lookup gate keeps unreadable paths and whole-file reads away from the parser. The provider layer, the grammar host and its fixtures are kept; the trigger, the four caps, the superset rule and five control surfaces are deleted. (#247)
+* **read:** serve exactly the window a read asks for, and name the enclosing span on the page header instead of widening the serve to that span. The note states the span's kind, name and extent, and is keyed by span so several windows inside one block share one note. A pre-lookup gate keeps unreadable paths and whole-file reads away from the parser. The provider layer, the grammar host and its fixtures are kept; the trigger, the four caps, the superset rule and five control surfaces are deleted. (#247)
+
+* **read:** anchor the selection-range note on the window's first line and render the enclosing chain as a breadcrumb of at most three levels, outermost first, keeping the innermost on trim. A straddling window now names the method it starts in instead of degrading to the class, with the innermost extent as the clause range. The read payload shape and served lines are unchanged. (#252)
 
 ### Bug Fixes
 
@@ -27,6 +29,8 @@
 * **docs:** record the read-expansion benchmark evidence: a three-leg paired run on Pi 1.4.0 showing the 2.14.0 to 2.16.0 bump is cost-neutral and score-neutral once retry volume is normalised, with sandbox provenance, activation proof and the threats to validity. (#221)
 
 * **docs:** measure the selection-range note. Four `micro-swe` legs on Pi 1.4.0 show it fires on 51.4% and 56.2% of windowed reads, that the named span covers over half the file in 42% and 39% of firings, and that no follow-up read ever covered the named span — 0 of 20. The cause is the straddle: a window crossing two methods has no method containing it, so the note degrades to the enclosing class. The score comparison is invalid — the same arm scored 16/16 then 10/16 as provider latency drifted about 2x. (#251)
+
+* **docs:** record [ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), which amends ADR-0012's anchor. The note now names the chain of blocks enclosing the window's first line, at most three levels joined by ` › `, rather than the smallest block containing the whole window. The glossary's `enclosing span` and `selection-range note` entries and the README's note section all stated the superseded rule, and move with it. The record defers naming both ends of a straddle, and states that the refined form is unmeasured. (#253)
 
 ### Code Refactoring
 
