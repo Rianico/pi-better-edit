@@ -90,11 +90,11 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **enclosing span**:
-The smallest structural block that fully contains the window a read serves: a function, method, class, module, heading section, or paragraph, depending on the language. Its kind, name, and extent are what the `selection-range note` reports ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
+The structural block that contains a read's **first served line**: a function, method, class, module, heading section, or paragraph, depending on the language. A window may sit inside several at once, so a read's answer is the enclosing **chain**, innermost first. The note reports that chain's kind, names and extents ([ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)).
 _Avoid_: symbol range, node extent
 
 **selection-range note**:
-One clause appended to the read page header when the enclosing span of the window a read serves is strictly larger than that window: the span's kind, its name, and its extent. It changes no served line, carries no lease and no anchor, and is silent when the window already covers its span, when nothing encloses it, when the pre-lookup gate declines, and when the lookup fails ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
+One clause appended to the read page header: the chain of `enclosing span`s for the window's first line, at most three levels joined by ` › ` and trimmed from the outer end, followed by the innermost span's extent. A window that crosses a boundary names the block it starts in, so a straddle is not silence. It changes no served line, carries no lease and no anchor, and is silent only when the innermost span equals the window, when nothing encloses the first line, when the pre-lookup gate declines, and when the lookup fails ([ADR-0014](docs/adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)).
 _Avoid_: read expansion and its vocabulary (retired feature: requested window, served window), widening note, expansion note, block hint, span banner
 
 **served-range staleness**:
