@@ -16,13 +16,13 @@
 
 ### Tests
 
-* **replay:** retarget the corpus replay at the selection-range note, retiring `pnpm run replay:read-expansion` with the widening it measured. The gate counts the notes served headers carried by provider source, fails when a note names a span not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% noise band. An absent or session-less corpus exits 2 rather than passing vacuously. On the operator host the corpus predates the note, so its effect on re-reads is unmeasured, not zero. (#243)
+* **replay:** retarget the corpus replay at the selection-range note, retiring `pnpm run replay:read-expansion` with the widening it measured. The gate counts the notes served headers carried by provider source, fails when a note names a span not strictly larger than its window, and reports the same-file re-read share against a pre-change corpus with a 95% noise band. An absent or session-less corpus exits 2 rather than passing vacuously. On the operator host the corpus predates the note, so its effect on re-reads is unmeasured, not zero. (#247)
 
 ### Documentation
 
 * **docs:** record ADR-0013 — anchors derive from raw bytes and the canon is an alignment digest — and correct the README's formatter claim: what survives a format pass is the lease, not the anchor spelling. The measured outcome table is unchanged. `GLOSSARY.md` restates the `anchor`, `canon`, `canon digest` and `canon_stripped codepoint` entries, and ADR-0002 and ADR-0010 carry the amendment. (#254)
 
-* **docs:** replace the read-expansion replay record with [selection-note-replay.md](docs/agents/selection-note-replay.md) — the single `pnpm run replay` command, the note evidence by source, the correctness rule, the noise rule and the measurement — record the same measurement in ADR-0012's Consequences, and drop the widening claims from the README's read section and slash-command list. (#243)
+* **docs:** replace the read-expansion replay record with [selection-note-replay.md](docs/agents/selection-note-replay.md) — the single `pnpm run replay` command, the note evidence by source, the correctness rule, the noise rule and the measurement — record the same measurement in ADR-0012's Consequences, and drop the widening claims from the README's read section and slash-command list. (#247)
 
 * **docs:** record the final read-expansion verdict: across five task suites and roughly 1,500 trials no trigger or cap setting improved the score outside noise, twenty widenings in one bracketed leg made no difference, and the feature never reduced repeated reads. A transcript walk over 76 widenings shows why — the agent returned to that file in 18, re-read the just-served range in 10 of 21 follow-ups, and used an added line once. The shipped settings stay harmless and cheap. (#221)
 
