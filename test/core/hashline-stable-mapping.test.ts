@@ -220,7 +220,7 @@ describe("mapStableHashes — edge cases", () => {
     expect(result[3]).not.toBe(oldHashes[0]);
   });
 
-  it("handles content with carriage returns (\\r\\n)", async () => {
+  it("does not reuse a hash across a raw CRLF -> LF rewrite; the load path normalizes first", async () => {
     const oldContent = "a\r\nb\r\nc\r\n";
     const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc\nd";
@@ -231,10 +231,23 @@ describe("mapStableHashes — edge cases", () => {
     });
 
     expect(result).toHaveLength(4);
-    expect(result[0]).toBe(oldHashes[0]);
-    expect(result[1]).toBe(oldHashes[1]);
-    expect(result[2]).toBe(oldHashes[2]);
+    // WHY: identity is byte-exact, so `a\r` is not `a`. The product never reaches this state:
+    // WHY: `decodeNormText` normalizes BOM and line endings on BOTH sides before hashing, so the
+    // WHY: reuse asserted below is what the seam sees.
+    expect(result[0]).not.toBe(oldHashes[0]);
+    expect(result[1]).not.toBe(oldHashes[1]);
+    expect(result[2]).not.toBe(oldHashes[2]);
     expect(result[3]).toMatch(/^[A-Za-z0-9]{4}$/);
+
+    const normalizedOld = await lineHashes("a\nb\nc\n", home.testPath);
+    const normalized = await lineHashes(newContent, home.testPath, {
+      content: "a\nb\nc\n",
+      hashes: normalizedOld,
+    });
+    expect(normalized[0]).toBe(normalizedOld[0]);
+    expect(normalized[1]).toBe(normalizedOld[1]);
+    expect(normalized[2]).toBe(normalizedOld[2]);
+    expect(normalized[3]).toMatch(/^[A-Za-z0-9]{4}$/);
   });
 });
 
@@ -418,7 +431,7 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
     expect(unique.size).toBe(result.length);
   });
 
-  it("reuses the same hash for lines with the same canonical form despite different trailing whitespace", async () => {
+  it("rotates the hash when trailing whitespace changes and reuses the untouched line", async () => {
     const oldContent = "x  \ny";
     const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "x\ny";
@@ -428,7 +441,9 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[0]);
+    // WHY: the trailing spaces are bytes, so `x  ` and `x` are different lines; `y` is untouched
+    // WHY: and keeps its hash.
+    expect(result[0]).not.toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
   });
 });

@@ -71,16 +71,19 @@ describe("anchor file scope", () => {
     const lines = Array.from({ length: 2_000 }, (_, i) => `crow ${i}`);
     const content = lines.join("\n") + "\n";
     const a = fileHashesFor("/test/c1c-a.ts", content);
-    const b = fileHashesFor("/test/c1c-1.ts", content);
+    const b = fileHashesFor("/test/c1c-7.ts", content);
     const setA = new Set(a);
     let intersection = 0;
     for (const h of b) if (setA.has(h)) intersection++;
     expect(intersection).toBeGreaterThanOrEqual(1);
     // WHY: the exact shared spelling is pinned — a derivation change that moves it
-    // WHY: must fail loudly here, not silently re-luck the fixture.
-    expect(b.find((h) => setA.has(h))).toBe("xN7H");
-    expect(a.indexOf("xN7H") + 1).toBe(1211);
-    expect(b.indexOf("xN7H") + 1).toBe(1245);
+    // WHY: must fail loudly here, not silently re-luck the fixture. Re-baselined for
+    // WHY: ANCHOR_GENERATION 2 (raw-byte seeding, ADR-0013): the pair moved from
+    // WHY: (`c1c-1.ts`, `xN7H` @ 1211/1245) to (`c1c-7.ts`, `d46W` @ 1746/1683), found by
+    // WHY: sweeping the b-path suffix and taking the first colliding spelling.
+    expect(b.find((h) => setA.has(h))).toBe("d46W");
+    expect(a.indexOf("d46W") + 1).toBe(1746);
+    expect(b.indexOf("d46W") + 1).toBe(1683);
   });
 
   it("C1 companion: a runtime shared spelling resolves lease-scoped", async () => {

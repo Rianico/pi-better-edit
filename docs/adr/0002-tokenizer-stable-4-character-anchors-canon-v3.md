@@ -7,6 +7,7 @@ Date: 2026-10-30
 Accepted
 
 Clarified by [10. The Line Canon Stays a Pure Function of One Line](0010-the-line-canon-stays-a-pure-function-of-one-line.md)
+Amended by [0013. Anchor Identity Derives From Raw Bytes; the Canon Is an Alignment Digest](0013-anchor-identity-derives-from-raw-bytes.md) — the canon no longer derives an anchor
 
 Relates to [9. Invisible-Codepoint Disclosure Lives on the Edit Path](0009-invisible-codepoint-disclosure-lives-on-the-edit-path.md)
 

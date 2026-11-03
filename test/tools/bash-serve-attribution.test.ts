@@ -95,6 +95,16 @@ function splitNormLines(norm: string): string[] {
   return parts;
 }
 
+/**
+ * WHY: (#230) an anchor keys on the MATERIALIZED line: the load path strips a BOM and normalizes
+ * WHY: CRLF/CR to LF before hashing (`decodeNormText`, `src/file-content/loader.ts`), so an oracle
+ * WHY: that hashed the raw on-disk bytes derived a different anchor for a CRLF or BOM file and
+ * WHY: probed a lease the serve never granted. Normalize first, exactly as `normText` does.
+ */
+async function diskAnchors(dir: string, file: string, raw: string): Promise<string[]> {
+  return lineHashes(normText(raw), join(dir, file));
+}
+
 // WHY: (#175) intervals from COUNTERS only — cumulative byte lengths over the normalized
 // WHY: stream, never content matching. Returns one [lo, hi) per observed line and asserts the
 // WHY: separators are exactly the stream's newlines.
@@ -183,7 +193,7 @@ async function probeLease(
       leased = false;
       return;
     }
-    const hashes = await lineHashes(files[file]!, join(dir, file));
+    const hashes = await diskAnchors(dir, file, files[file]!);
     const anchor = hashes[line1 - 1];
     if (anchor === undefined) {
       leased = false;
@@ -535,7 +545,7 @@ describe("bash serve attribution invariant (#175)", () => {
           const hashesByFile = new Map<string, string[]>();
           for (const file of Object.keys(c.served)) {
             onDiskByFile.set(file, await diskLines(dir, file));
-            hashesByFile.set(file, await lineHashes(c.files[file]!, join(dir, file)));
+            hashesByFile.set(file, await diskAnchors(dir, file, c.files[file]!));
           }
           // WHY: per-file row counts in render order — every declared coordinate renders once.
           for (const [file, leased] of Object.entries(c.served)) {
@@ -559,7 +569,7 @@ describe("bash serve attribution invariant (#175)", () => {
           // WHY: must be present, so a seam that leased matches only cannot pass.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
-          const hashes = await lineHashes(c.files[file]!, join(dir, file));
+          const hashes = await diskAnchors(dir, file, c.files[file]!);
           const leased = c.served[file]!;
           // WHY: `--` is a group separator, not a row: it is dropped by INDEX here so it can never
           // WHY: consume a row slot and shift every later coordinate.
@@ -865,7 +875,7 @@ describe("bash serve attribution invariant (#175)", () => {
       expect(result).toBeDefined();
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(2);
-      const hashesA = await lineHashes(files["a.txt"]!, join(dir, "a.txt"));
+      const hashesA = await diskAnchors(dir, "a.txt", files["a.txt"]!);
       const anchorA = hashesA[0]!;
       // WHY: a's anchor authorizes a — and the same bytes never authorize b.
       const ok = await editTool.execute(
@@ -883,7 +893,7 @@ describe("bash serve attribution invariant (#175)", () => {
       const command = "grep -n same a.txt b.txt";
       const observed = realStdout(dir, command);
       const { editTool, ctx } = await serveOnce(dir, command, observed, "xfile2");
-      const hashesA = await lineHashes(files["a.txt"]!, join(dir, "a.txt"));
+      const hashesA = await diskAnchors(dir, "a.txt", files["a.txt"]!);
       const anchorA = hashesA[0]!;
       // WHY: the other-file direction — a's anchor against b is refused, even with equal bytes.
       // WHY: `E_FOREIGN_ANCHOR` (not unknown): the lease exists but is bound to a's path.

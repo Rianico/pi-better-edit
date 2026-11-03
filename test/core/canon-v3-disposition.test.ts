@@ -105,13 +105,18 @@ describe("canon v3 disposition table — executable record (issue #22)", () => {
     }
   });
 
-  it("carries the disposition through the anchor hashing surface for representative cps", () => {
+  it("carries the disposition through the canon, not through the anchor (ADR-0013)", () => {
     const base = _lineHashesPure("ab\n");
     for (const cp of ["\u00A0", "\u2003", "\u3000", "\uFEFF"]) {
-      expect(_lineHashesPure(`a${cp}b\n`)[0], `normalize ${cp.codePointAt(0)}`).toBe(base[0]);
+      // WHY: the canon folds the code point away, so canon evidence still matches...
+      expect(canon(`a${cp}b`), `normalize ${cp.codePointAt(0)}`).toBe(canon("ab"));
+      // WHY: ...while the anchor does not: identity is the raw line, so the substitution is a
+      // WHY: different line and cannot reuse the old anchor (issue #230).
+      expect(_lineHashesPure(`a${cp}b\n`)[0], `raw ${cp.codePointAt(0)}`).not.toBe(base[0]);
     }
     for (const cp of ["\u200B", "\u00AD", "\u2060"]) {
-      expect(_lineHashesPure(`a${cp}b\n`)[0], `significant ${cp.codePointAt(0)}`).not.toBe(base[0]);
+      expect(canon(`a${cp}b`), `significant ${cp.codePointAt(0)}`).not.toBe(canon("ab"));
+      expect(_lineHashesPure(`a${cp}b\n`)[0], `raw ${cp.codePointAt(0)}`).not.toBe(base[0]);
     }
   });
   it("couples every disposition row to the disclosure classifier", () => {
