@@ -54,7 +54,6 @@ export function scopeLineRange(node: SyntaxNodeLike): LineRange {
 }
 
 /**
-/**
  * Every scope-like node whose line range contains the point line, innermost first.
  * A node counts only when the language table owns its grammar type; that same table
  * supplies the note kind. The root is never included: it is the whole file. Empty when
