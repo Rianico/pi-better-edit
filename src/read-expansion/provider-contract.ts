@@ -3,15 +3,15 @@
  *
  * WHY its own module: the providers outlive the expansion decision layer. The decision module is
  * due for deletion, and a provider that imported its shapes from there would stop compiling the
- * day it goes. This module is the one definition site for the enclosing-span answer, the decline,
+ * day it goes. This module is the one definition site for the enclosing-chain answer, the decline,
  * the window, and the line range, so it survives that removal unchanged.
  *
- * A provider answers "what encloses this window" and nothing else. It does not render chrome, and
- * it does not know what the answer is used for.
- *
- * WHY `EnclosingSpan` and `AnchorWindow` stay internal: they are answer details, not part of what a
- * provider author implements — `SpanProvider` is. Exporting them would let callers depend on a
- * shape the seam must stay free to reshape.
+ * A provider answers "what encloses this window's first line" and nothing else — innermost
+ * first. It does not render chrome, and it does not know what the answer is used for.
+ * WHY `EnclosingSpan` stays internal: it is an answer detail, not part of what a provider
+ * author implements — `SpanProvider` is. Exporting it would let callers depend on a shape
+ * the seam must stay free to reshape. `EnclosingChain` is the exported answer: the chain
+ * of spans from innermost to outermost.
  */
 import type { SpanKind } from "./span-kind.js";
 
@@ -49,8 +49,7 @@ export type SpanWindow = OffsetWindow | AnchorWindow;
  * both sides share.
  */
 export interface SpanProvider {
-  enclosingSpan(file: string, window: SpanWindow): SpanAnswer | Promise<SpanAnswer>;
-  /** Set once an AST attempt found the optional wasm runtime unavailable. */
+  enclosingChain(file: string, window: SpanWindow): ChainAnswer | Promise<ChainAnswer>;
   readonly runtimeAbsent?: boolean;
   /** Start grammar fetches off the read path; session_start calls this without awaiting. */
   prefetch?: (cwd?: string) => void | Promise<void>;
@@ -91,5 +90,10 @@ export interface SpanDecline {
   readonly blockSize?: number;
 }
 
+/** The chain a provider answers: every enclosing span, innermost first. */
+export interface EnclosingChain {
+  readonly spans: readonly EnclosingSpan[];
+}
+
 /** Every answer a provider may give the seam. */
-export type SpanAnswer = EnclosingSpan | SpanDecline | null;
+export type ChainAnswer = EnclosingChain | SpanDecline | null;

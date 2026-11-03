@@ -81,7 +81,7 @@ function functionName(fn: BashFunction): string {
 export function createBashSpanProvider(options: BashSpanProviderOptions = {}): SpanProvider {
   const readText = options.readTextFile ?? defaultReadText;
   return {
-    async enclosingSpan(file, window) {
+    async enclosingChain(file, window) {
       if (!("offset" in window) || !("limit" in window)) return { refusal: "provider_declined" };
       if (!isShellPath(file)) return { refusal: "no_provider" };
       const text = await readText(file);
@@ -125,11 +125,15 @@ export function createBashSpanProvider(options: BashSpanProviderOptions = {}): S
       if (best === undefined) return { refusal: "boundary_crossing" };
 
       return {
-        start: best.startLine,
-        end: best.endLine,
-        kind: "function",
-        name: best.name,
-        source: "ast",
+        spans: [
+          {
+            start: best.startLine,
+            end: best.endLine,
+            kind: "function",
+            name: best.name,
+            source: "ast",
+          },
+        ],
       };
     },
   };

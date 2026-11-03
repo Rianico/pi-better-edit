@@ -12,17 +12,24 @@ import { withTempFile } from "../support/fixtures";
 
 const reader = (text: string) => async () => text;
 
-describe("provider witnesses: enclosingSpan answers per source", () => {
+// WHY the expectations below wrap in `{ spans: [...] }`: the seam now answers an
+// innermost-first chain anchored on the window's first line (selectionRange), not one span.
+
+describe("provider witnesses: enclosingChain answers per source", () => {
   it("markdown answers the heading section", async () => {
     const text = "# Guide\n\nIntro.\n\n## Language\n\nAlpha.\nBeta.\n\n## Next\n\ntail\n";
     await withTempFile("guide.md", text, async ({ path }) => {
       const provider = createMarkdownSpanProvider({ readTextFile: reader(text) });
-      expect(await provider.enclosingSpan(path, { offset: 7, limit: 1 })).toEqual({
-        start: 5,
-        end: 9,
-        kind: "section",
-        name: "Language",
-        source: "md",
+      expect(await provider.enclosingChain(path, { offset: 7, limit: 1 })).toEqual({
+        spans: [
+          {
+            start: 5,
+            end: 9,
+            kind: "section",
+            name: "Language",
+            source: "md",
+          },
+        ],
       });
     });
   });
@@ -31,12 +38,16 @@ describe("provider witnesses: enclosingSpan answers per source", () => {
     const text = "one\ntwo\n\nthree\nfour\n";
     await withTempFile("note.txt", text, async ({ path }) => {
       const provider = createParagraphSpanProvider({ readTextFile: reader(text) });
-      expect(await provider.enclosingSpan(path, { offset: 1, limit: 1 })).toEqual({
-        start: 1,
-        end: 2,
-        kind: "paragraph",
-        name: "lines 1-2",
-        source: "text",
+      expect(await provider.enclosingChain(path, { offset: 1, limit: 1 })).toEqual({
+        spans: [
+          {
+            start: 1,
+            end: 2,
+            kind: "paragraph",
+            name: "lines 1-2",
+            source: "text",
+          },
+        ],
       });
     });
   });
@@ -45,20 +56,24 @@ describe("provider witnesses: enclosingSpan answers per source", () => {
     const text = "#!/bin/sh\nfoo() {\n  echo hi\n}\nbar() {\n  :\n}\n";
     await withTempFile("run.sh", text, async ({ path }) => {
       const provider = createBashSpanProvider({ readTextFile: reader(text) });
-      const span = await provider.enclosingSpan(path, { offset: 3, limit: 1 });
-      expect(span).toMatchObject({
-        start: 2,
-        end: 4,
-        kind: "function",
-        name: "foo",
-        source: "ast",
+      const chain = await provider.enclosingChain(path, { offset: 3, limit: 1 });
+      expect(chain).toMatchObject({
+        spans: [
+          {
+            start: 2,
+            end: 4,
+            kind: "function",
+            name: "foo",
+            source: "ast",
+          },
+        ],
       });
     });
   });
 
   it("a data path declines", async () => {
     const provider = createMarkdownSpanProvider({ readTextFile: reader("a,b\n1,2\n") });
-    expect(await provider.enclosingSpan("rows.csv", { offset: 1, limit: 1 })).toEqual({
+    expect(await provider.enclosingChain("rows.csv", { offset: 1, limit: 1 })).toEqual({
       refusal: "no_provider",
     });
   });
@@ -88,7 +103,7 @@ describe("provider witness: AST through a primed grammar fixture", () => {
     };
   }
 
-  it("answers the enclosing function span from a fake tree", async () => {
+  it("answers the enclosing function chain from a fake tree", async () => {
     const text = "function parseArgs() {\n  return 1;\n}\n";
     await withTempFile("app.tsx", text, async ({ path }) => {
       const identifier = node({ type: "identifier", start: 0, end: 0, text: "parseArgs" });
@@ -114,13 +129,17 @@ describe("provider witness: AST through a primed grammar fixture", () => {
         runtimeAvailable: async () => true,
         readTextFile: reader(text),
       });
-      const span = await provider.enclosingSpan(path, { offset: 2, limit: 1 });
-      expect(span, JSON.stringify(span)).toMatchObject({
-        start: 1,
-        end: 3,
-        kind: "function",
-        name: "parseArgs",
-        source: "ast",
+      const chain = await provider.enclosingChain(path, { offset: 2, limit: 1 });
+      expect(chain, JSON.stringify(chain)).toMatchObject({
+        spans: [
+          {
+            start: 1,
+            end: 3,
+            kind: "function",
+            name: "parseArgs",
+            source: "ast",
+          },
+        ],
       });
     });
   });

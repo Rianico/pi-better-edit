@@ -1,3 +1,6 @@
+// WHY the mocks below answer `{ spans: [...] }`: the seam now returns an innermost-first chain
+// anchored on the window's first line. Single-level chains render exactly as the old single span,
+// so no expectation moved — only the answer shape did.
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -155,9 +158,9 @@ describe("selection-range note: exact window plus a header clause", () => {
 describe("selection-range note: the pre-lookup gate reaches no provider", () => {
   function spy(onCall: () => void): SpanProvider {
     return {
-      enclosingSpan() {
+      enclosingChain() {
         onCall();
-        return { start: 1, end: 5, kind: "function", name: "f", source: "ast" };
+        return { spans: [{ start: 1, end: 5, kind: "function", name: "f", source: "ast" }] };
       },
     };
   }
@@ -211,7 +214,9 @@ describe("selection-range note: the pre-lookup gate reaches no provider", () => 
 
   it("keeps the multi-window page header bare while sections carry the notes", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: () => ({ start: 1, end: 5, kind: "function", name: "f", source: "ast" }),
+      enclosingChain: () => ({
+        spans: [{ start: 1, end: 5, kind: "function", name: "f", source: "ast" }],
+      }),
     };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
       const result = await run(reader(provider), cwd, {
@@ -272,16 +277,20 @@ describe("selection-range note: one note per span on a multi-window page", () =>
 
   it("places one note per span and leaves an unenclosed window undisturbed", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: (_file, window) => {
+      enclosingChain: (_file, window) => {
         const offset = "offset" in window ? window.offset : 0;
         return offset === 3
           ? { refusal: "boundary_crossing" }
           : {
-              start: offset <= 2 ? 1 : 4,
-              end: offset <= 2 ? 2 : 5,
-              kind: "function",
-              name: offset <= 2 ? "first" : "second",
-              source: "ast",
+              spans: [
+                {
+                  start: offset <= 2 ? 1 : 4,
+                  end: offset <= 2 ? 2 : 5,
+                  kind: "function",
+                  name: offset <= 2 ? "first" : "second",
+                  source: "ast",
+                },
+              ],
             };
       },
     };
@@ -311,7 +320,7 @@ describe("selection-range note: one note per span on a multi-window page", () =>
 describe("selection-range note: failures are silent, logged once, and never break the read", () => {
   it("keeps the read complete and records one row when the provider throws", async () => {
     const provider: SpanProvider = {
-      enclosingSpan() {
+      enclosingChain() {
         throw new Error("boom");
       },
     };
@@ -330,7 +339,7 @@ describe("selection-range note: failures are silent, logged once, and never brea
   });
 
   it("writes no row for an ordinary decline", async () => {
-    const provider: SpanProvider = { enclosingSpan: () => ({ refusal: "boundary_crossing" }) };
+    const provider: SpanProvider = { enclosingChain: () => ({ refusal: "boundary_crossing" }) };
     await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
       const result = await run(reader(provider), cwd, {
         file: path,
@@ -344,7 +353,9 @@ describe("selection-range note: failures are silent, logged once, and never brea
 
   it("records invalid_answer once for a malformed provider answer", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: () => ({ start: 1, end: 3, kind: "function", name: "", source: "ast" }),
+      enclosingChain: () => ({
+        spans: [{ start: 1, end: 3, kind: "function", name: "", source: "ast" }],
+      }),
     };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
       const result = await run(reader(provider), cwd, {
@@ -364,7 +375,7 @@ describe("selection-range note: failures are silent, logged once, and never brea
       file: "app.ts",
       windows: [{ offset: 2, limit: 1 }],
       totalLines: 5,
-      provider: { enclosingSpan: () => new Promise(() => {}) },
+      provider: { enclosingChain: () => new Promise(() => {}) },
       enabled: true,
       timeoutMs: 5,
     });
@@ -378,12 +389,8 @@ describe("selection-range note: failures are silent, logged once, and never brea
 describe("selection-range note: one bracket grammar", () => {
   it("sanitizes brackets and newlines out of a span name", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: () => ({
-        start: 1,
-        end: 3,
-        kind: "function",
-        name: "run[fast]\nnow",
-        source: "ast",
+      enclosingChain: () => ({
+        spans: [{ start: 1, end: 3, kind: "function", name: "run[fast]\nnow", source: "ast" }],
       }),
     };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
@@ -401,7 +408,7 @@ describe("selection-range note: one bracket grammar", () => {
 
 describe("selection-range note: hardening", () => {
   it("logs invalid_answer for a non-object provider answer", async () => {
-    const provider: SpanProvider = { enclosingSpan: () => null };
+    const provider: SpanProvider = { enclosingChain: () => null };
     await withTempFile("guide.md", MARKDOWN, async ({ cwd, path }) => {
       const result = await run(reader(provider), cwd, {
         file: path,
@@ -416,12 +423,8 @@ describe("selection-range note: hardening", () => {
 
   it("strips C0 control characters from a span name", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: () => ({
-        start: 1,
-        end: 3,
-        kind: "function",
-        name: "run\u0001fast",
-        source: "ast",
+      enclosingChain: () => ({
+        spans: [{ start: 1, end: 3, kind: "function", name: "run\u0001fast", source: "ast" }],
       }),
     };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {
@@ -436,12 +439,8 @@ describe("selection-range note: hardening", () => {
 
   it("collapses a newline to one space before stripping C0 controls", async () => {
     const provider: SpanProvider = {
-      enclosingSpan: () => ({
-        start: 1,
-        end: 3,
-        kind: "function",
-        name: "run\nfast\u0001now",
-        source: "ast",
+      enclosingChain: () => ({
+        spans: [{ start: 1, end: 3, kind: "function", name: "run\nfast\u0001now", source: "ast" }],
       }),
     };
     await withTempFile("app.ts", "a\nb\nc\nd\ne\n", async ({ cwd, path }) => {

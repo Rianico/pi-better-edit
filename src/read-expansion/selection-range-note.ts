@@ -1,22 +1,23 @@
 /**
  * The selection-range note seam — one module decides whether a note is due and renders it.
  *
- * WHY its own module: a provider answers "what encloses this window" and nothing else, the header
- * formatter only places a finished clause, and the read path never formats note text. This module is
- * the one place those three meet, so the note cannot scatter across sources, read modes or arities.
+ * WHY its own module: a provider answers "what encloses this window's first line" and nothing else —
+ * innermost first — the header formatter only places a finished clause, and the read path never
+ * formats note text. This module is the one place those three meet, so the note cannot scatter
  *
- * One decision, two placements: the seam returns one clause per served window, keyed by span (a span
+ * One decision, two placements: the seam returns one clause per served window, keyed by chain (a chain
  * is named once, on the first window served from it). A single-window page places its clause on the
  * page header; a multi-window page places each clause on the section that serves it. Neither the
  * read path nor the header formatter decides which windows get a note.
  *
  * The note is silent in four distinct situations, and only one of them is a fault:
- *
- * - the window equals its span (nothing to add);
- * - nothing encloses the window (the provider declines);
+ * - the window equals its innermost span (nothing to add);
+ * - nothing encloses the window's first line (the provider declines or answers an empty chain);
  * - the pre-lookup gate declined it (no registered provider, a window that covers its file);
  * - the lookup failed (threw, timed out, or answered something invalid) — the only case that logs.
  *
+ * A window that straddles two siblings is not silence: the chain anchors on the window's first
+ * line, so the innermost span names the sibling the window starts in.
  * The gate runs before any parser work. The note is chrome: it changes no served line, holds no
  * lease, and carries no anchor.
  */
@@ -24,7 +25,8 @@ import {
   REFUSAL_REASONS,
   type OffsetWindow,
   type RefusalReason,
-  type SpanAnswer,
+  type ChainAnswer,
+  type EnclosingChain,
   type SpanProvider,
   type SpanSource,
 } from "./provider-contract.js";
@@ -151,36 +153,70 @@ interface AdmittedSpan {
   readonly source: SpanSource;
 }
 
-/** The provider answer, validated into a span the clause may name; `undefined` means silence. */
-function admittedSpan(answer: SpanAnswer): AdmittedSpan | undefined {
-  if (answer === null || typeof answer !== "object" || "refusal" in answer) return undefined;
-  const { start, end, kind, name, source } = answer;
-  if (!isPositiveInteger(start) || !isPositiveInteger(end) || end < start) return undefined;
+/** One validated chain level the clause may name. */
+function admittedLevel(value: unknown): AdmittedSpan | undefined {
+  if (value === null || typeof value !== "object" || "refusal" in value) return undefined;
+  const { start, end, kind, name, source } = value as Record<string, unknown>;
+  if (!isPositiveInteger(start) || !isPositiveInteger(end) || (end as number) < (start as number))
+    return undefined;
   if (!isSpanKind(kind) || typeof name !== "string" || name.trim() === "") return undefined;
   if (!isSpanSource(source)) return undefined;
-  return { start, end, kind, name, source };
+  return { start: start as number, end: end as number, kind, name, source };
 }
 
-/** The finished clause for a span strictly larger than the served window. */
-function renderClause(span: AdmittedSpan): string {
-  return `; in ${spanLabel(span.kind, sanitizeName(span.name), span.source)}, lines ${span.start}-${span.end}`;
+/**
+ * The provider chain, validated into the levels the clause may name.
+ * An invalid level drops that level and everything outside it, keeping the innermost valid
+ * prefix; an invalid innermost level fails the whole answer. Empty chain means silence.
+ */
+function admittedChain(
+  answer: ChainAnswer,
+):
+  | { readonly valid: true; readonly spans: readonly AdmittedSpan[] }
+  | { readonly valid: false }
+  | { readonly empty: true } {
+  if (answer === null || typeof answer !== "object" || "refusal" in answer || !("spans" in answer))
+    return { valid: false };
+  const raw: unknown = (answer as EnclosingChain).spans;
+  if (!Array.isArray(raw)) return { valid: false };
+  if (raw.length === 0) return { empty: true };
+  const spans: AdmittedSpan[] = [];
+  for (const level of raw) {
+    const admitted = admittedLevel(level);
+    if (admitted === undefined) break;
+    spans.push(admitted);
+  }
+  if (spans.length === 0) return { valid: false };
+  return { valid: true, spans };
+}
+
+/** The finished breadcrumb clause: at most 3 levels, outermost first, trimmed from the outer end. */
+function renderClause(chain: readonly AdmittedSpan[]): string {
+  const innermost = chain[0]!;
+  // WHY: Neovim trims from the outer end (`trim_scope = 'outer'), keeping the innermost.
+  const kept = chain.slice(0, 3);
+  const labels: string[] = [];
+  for (let index = kept.length - 1; index >= 0; index--)
+    labels.push(spanLabel(kept[index]!.kind, sanitizeName(kept[index]!.name), kept[index]!.source));
+  const breadcrumb = labels.join(" \u203A ");
+  return `; in ${breadcrumb}, lines ${innermost.start}-${innermost.end}`;
 }
 
 interface Lookup {
-  readonly span?: AdmittedSpan;
+  readonly chain?: readonly AdmittedSpan[];
   readonly failure?: SelectionNoteFailure;
 }
 
-/** One window's lookup: a validated span, a failure to log, or silence. */
+/** One window's lookup: a validated chain, a failure to log, or silence. */
 async function lookup(
   input: SelectionRangeNoteInput,
   source: SpanSource,
   window: OffsetWindow,
 ): Promise<Lookup> {
-  let answer: SpanAnswer | typeof TIMED_OUT;
+  let answer: ChainAnswer | typeof TIMED_OUT;
   try {
     answer = await withTimeout(
-      Promise.resolve(input.provider!.enclosingSpan(input.file, window)),
+      Promise.resolve(input.provider!.enclosingChain(input.file, window)),
       input.timeoutMs ?? NOTE_LOOKUP_TIMEOUT_MS,
     );
   } catch {
@@ -197,27 +233,31 @@ async function lookup(
       ? { failure: { source, reason: answer.refusal } }
       : {};
   }
-
-  const span = admittedSpan(answer);
-  if (span === undefined) return { failure: { source, reason: "invalid_answer" } };
-  const windowEnd = window.offset + window.limit - 1;
-  // WHY: an answer that misses the window is a wrong answer, and a wrong answer must behave
-  // WHY: exactly like no answer — the served rows are already correct, so this is silence.
-  if (span.start > window.offset || span.end < windowEnd) return {};
-  if (span.start === window.offset && span.end === windowEnd) return {};
-  return { span };
+  const admitted = admittedChain(answer);
+  if ("empty" in admitted) return {};
+  if (!("valid" in admitted) || admitted.valid !== true)
+    return { failure: { source, reason: "invalid_answer" } };
+  const innermost = admitted.spans[0]!;
+  // WHY: a chain whose innermost level misses the window's first line is a wrong answer, and a
+  // WHY: wrong answer must behave exactly like no answer — the served rows are already correct.
+  if (innermost.start > window.offset || innermost.end < window.offset) return {};
+  if (innermost.start === window.offset && innermost.end === window.offset + window.limit - 1)
+    return {};
+  return { chain: admitted.spans };
 }
 
-/** A span's identity for the once-per-span rule: two windows in one span share one clause. */
-function spanKey(span: AdmittedSpan): string {
-  return `${span.start}:${span.end}:${span.kind}:${span.source}:${span.name}`;
+/** A chain's identity for the once-per-chain rule: two windows in one chain share one clause. */
+function chainKey(chain: readonly AdmittedSpan[]): string {
+  return chain
+    .map((span) => `${span.start}:${span.end}:${span.kind}:${span.source}:${span.name}`)
+    .join("|");
 }
 
 /**
- * Decide which served windows get a note, and render one clause per named span.
+ * Decide which served windows get a note, and render one clause per named chain.
  *
  * Never throws: a provider failure degrades to silence plus one failure record for the read path.
- * Order follows the served windows, so a clause lands on the first window served from its span.
+ * Order follows the served windows, so a clause lands on the first window served from its chain.
  */
 export async function selectionRangeNote(
   input: SelectionRangeNoteInput,
@@ -238,11 +278,11 @@ export async function selectionRangeNote(
       failure ??= result.failure;
       continue;
     }
-    if (result.span === undefined) continue;
-    const key = spanKey(result.span);
+    if (result.chain === undefined) continue;
+    const key = chainKey(result.chain);
     if (seen.has(key)) continue;
     seen.add(key);
-    clauses[candidate.index] = renderClause(result.span);
+    clauses[candidate.index] = renderClause(result.chain);
   }
   return { clauses, ...(failure === undefined ? {} : { failure }) };
 }
