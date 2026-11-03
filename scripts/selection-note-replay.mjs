@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 /**
- * CLI for the read-expansion round-trip replay. Reads two pi session corpora and prints the
- * per-language re-read/waste comparison plus the acceptance gate. `--json` is the machine-readable
- * surface a ticket cites; the default is a short human table.
+ * CLI for the selection-range note replay. Reads one or two pi session corpora, counts the notes the
+ * served headers carried (by provider source) and the same-file re-read share, then reports the
+ * before/after movement with its own noise band. `--json` is the machine-readable surface a ticket
+ * cites; the default is a short human table.
+ *
+ * Exit codes: 2 on an argument or corpus error (an absent corpus never passes), 1 when a served note
+ * named a span that does not strictly exceed its window, 0 otherwise.
  */
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -11,30 +15,31 @@ import {
   buildReplayReport,
   formatSummary,
   sessionsRoot,
-} from "./lib/read-expansion-replay.mjs";
+} from "./lib/selection-note-replay.mjs";
 
-const USAGE = `Usage: node scripts/read-expansion-replay.mjs [options]
+const USAGE = `Usage: node scripts/selection-note-replay.mjs [options]
 
-Measure per-language same-file re-read share and served-line waste from pi session JSONL.
+Measure the selection-range note over recorded pi sessions: how often a served read carried a note,
+by provider source, and whether the same-file re-read share moved against a pre-change corpus.
 
 Options:
-  --baseline <dir>        transcript corpus recorded before the candidate build
+  --candidate <dir>       transcript corpus to measure, normally recorded with the note installed
                           (default: $PI_CODING_AGENT_DIR/sessions or ~/.pi/agent/sessions)
-  --candidate <dir>       transcript corpus recorded with the candidate build
-                          (default: --baseline when given, else the same default root)
+  --baseline <dir>        transcript corpus recorded before the note; omit it and the movement is
+                          reported as unmeasured rather than as a zero
   --limit-sessions <n>    newest session files per corpus (default: ${DEFAULT_LIMIT_SESSIONS})
-  --language <name>       limit metrics/gate to one language; repeat or comma-separate
   --json                  print the machine-readable report only
   --out <path>            also write the machine-readable report to a file
-  --fail-on-reject        exit 1 when a language does not pass the gate
   --help                  show this help
 
-Gate: a language is accepted only when its same-file re-read share falls by at least 20% on at
-least 200 served-mode reads and served-line waste does not rise. Below 200 reads the verdict is
-"insufficient-sample" and the waste metric alone decides.`;
+Correctness gate: every note must name a span that covers its served window and is strictly larger
+than it. One violation exits 1.
+
+Noise rule: a movement is reported as inside-noise when it is smaller than 1.96 standard errors of
+the two-proportion difference (95%).`;
 
 function fail(message) {
-  console.error(`read-expansion-replay: ${message}`);
+  console.error(`selection-note-replay: ${message}`);
   process.exit(2);
 }
 
@@ -44,13 +49,11 @@ function main() {
     parsed = parseArgs({
       args: process.argv.slice(2),
       options: {
-        baseline: { type: "string" },
         candidate: { type: "string" },
+        baseline: { type: "string" },
         "limit-sessions": { type: "string" },
-        language: { type: "string", multiple: true },
         json: { type: "boolean", default: false },
         out: { type: "string" },
-        "fail-on-reject": { type: "boolean", default: false },
         help: { type: "boolean", default: false },
       },
       allowPositionals: false,
@@ -73,21 +76,14 @@ function main() {
     fail(`--limit-sessions must be a positive integer, got ${values["limit-sessions"]}`);
   }
 
-  const defaultRoot = sessionsRoot();
-  const baselineRoot = values.baseline ?? defaultRoot;
-  const candidateRoot = values.candidate ?? values.baseline ?? defaultRoot;
-  const languages = values.language
-    ?.flatMap((value) => value.split(","))
-    .map((value) => value.trim())
-    .filter((value) => value !== "");
+  const candidateRoot = values.candidate ?? sessionsRoot();
 
   let report;
   try {
     report = buildReplayReport({
-      baselineRoot,
       candidateRoot,
+      ...(values.baseline === undefined ? {} : { baselineRoot: values.baseline }),
       limitSessions,
-      ...(languages === undefined || languages.length === 0 ? {} : { languages }),
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
@@ -98,10 +94,12 @@ function main() {
   if (values.json) process.stdout.write(machine);
   else console.log(formatSummary(report));
 
-  if (
-    values["fail-on-reject"] &&
-    Object.values(report.gate.languages).some((entry) => entry.accepted !== true)
-  ) {
+  const violations = report.candidate.notes.violationCount;
+  if (violations > 0) {
+    console.error(
+      `selection-note-replay: ${violations} note violation(s): a note named a span that is not ` +
+        `strictly larger than its served window`,
+    );
     process.exit(1);
   }
 }

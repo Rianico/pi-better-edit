@@ -5,7 +5,7 @@
  * inject a tree at the boundary, and the seam stays testable without a grammar binary. The default
  * loader adapts `web-tree-sitter` nodes to this shape.
  */
-import type { LineRange } from "./span-expansion.js";
+import type { LineRange } from "./provider-contract.js";
 import type { SpanKindTable } from "./span-kind.js";
 
 /** A zero-based parser position. */

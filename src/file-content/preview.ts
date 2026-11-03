@@ -381,6 +381,8 @@ function walkPage(
 
 function buildWindowedPreview(params: {
   windows: ReadWindow[];
+  /** Finished clauses aligned with `windows`; the note seam owns them. */
+  noteClauses?: readonly (string | undefined)[];
   /** The lines the walk retained, one array per window in request order. */
   ranges: string[][];
   totalLines: number;
@@ -398,6 +400,7 @@ function buildWindowedPreview(params: {
 } {
   const {
     windows,
+    noteClauses,
     ranges,
     totalLines,
     allHashes,
@@ -427,7 +430,7 @@ function buildWindowedPreview(params: {
     const selectedHashes = rangedHashes?.[index] ?? allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
-        `${formatSectionHeader(window.offset, endIdx, totalLines)}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
+        `${formatSectionHeader(window.offset, endIdx, totalLines, undefined, noteClauses?.[index])}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
       );
       // WHY: `metrics.truncated` must be honest when the shared budget cut a window away, so the
       // WHY: same function that reports truncation elsewhere derives it from the budget actually spent.
@@ -468,6 +471,7 @@ function buildWindowedPreview(params: {
             built.shownRange?.endLine ?? endIdx,
             totalLines,
             built.truncation?.truncatedBy === "bytes" ? built.truncation.maxBytes : undefined,
+            noteClauses?.[index],
           )}\n${built.text}`;
     sections.push(block);
     shownRange = built.shownRange;
@@ -593,6 +597,7 @@ export async function fmtReadPreview(
     offset?: number;
     limit?: number;
     windows?: ReadWindow[];
+    noteClauses?: readonly (string | undefined)[];
     render?: "served" | "verbatim";
   },
   anchors?: RenderAnchors,
@@ -703,6 +708,7 @@ export async function fmtReadPreview(
     return {
       ...buildWindowedPreview({
         windows,
+        ...(options.noteClauses === undefined ? {} : { noteClauses: options.noteClauses }),
         ranges,
         totalLines,
         // WHY: a ranged source resolves the page, not the file: its array is aligned to the merged ranges,

@@ -73,10 +73,24 @@ describe("page chrome grammar (spec §4.4)", () => {
     );
   });
 
+  it("appends a finished clause inside the bracket", () => {
+    expect(
+      formatPageHeader({
+        file: "app.py",
+        totalLines: 2698,
+        shownRange: { startLine: 250, endLine: 264 },
+        clause: "; in function parse_args, lines 230-290",
+      }),
+    ).toBe("[app.py (lines 250-264 of 2698 total; in function parse_args, lines 230-290)]");
+  });
+
   it("names a multi-window section by its own range", () => {
     expect(formatSectionHeader(2, 3, 40)).toBe("[Lines 2-3 of 40 total]");
     expect(formatSectionHeader(2, 3, 40, 50 * 1024)).toBe(
       "[Lines 2-3 of 40 total; stopped at 50.0KB]",
+    );
+    expect(formatSectionHeader(2, 3, 40, undefined, "; in function f, lines 1-5")).toBe(
+      "[Lines 2-3 of 40 total; in function f, lines 1-5]",
     );
   });
 });

@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import type { Function as BashFunction, ParsedScript } from "unbash";
 import { lineSpanForOffsets } from "./line-arithmetic.js";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 
 export interface BashSpanProviderOptions {
   /** Override file reading (tests can supply source directly). */
@@ -10,7 +10,7 @@ export interface BashSpanProviderOptions {
 }
 
 /**
- * The replay corpus map (`scripts/lib/read-expansion-replay.mjs`) and this provider are the two
+ * The replay corpus map (`scripts/lib/selection-note-replay.mjs`) and this provider are the two
  * canonical shell-family lists. That map is an MJS script outside the src TypeScript graph and no
  * src shell classifier exists, so the three values are intentionally duplicated, not imported.
  */

@@ -147,7 +147,7 @@ Settings are partitioned into two distinct roots ([ADR-0005](docs/adr/0005-store
 1. **Settings Root** (human configuration): `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` (global) or `.pi/agents/pi-better-edit/settings.json` (project-local).
 2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, `diagnostics.log`, and `read-expansion.log`).
 
-Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_EXPANSION`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
+Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
 
 ### Interactive Settings & Slash Commands
 
@@ -157,7 +157,6 @@ Run the interactive settings overlay inside `pi`:
 ```
 - `/pi-better-edit` (alias `/pi-better-edit settings`): Interactive overlay inspecting active effective settings across env, project, and global rungs. Headless hosts receive structured status text.
 - `/pi-better-edit bash-view [on|off|status] [project|global]` (alias `/pi-better-edit bash ...`): Configures Bash View interception. Subcommand `multi-file [status | max-files N | max-rows N]` tunes multi-file limits.
-- `/pi-better-edit read-expansion [on|off|status] [project|global]` (alias `/pi-better-edit read ...`): Configures Read Expansion.
 - `/pi-better-edit lens [auto|on|off|status] [project|global]`: Configures pi-lens bridge. `/pi-better-edit lens status` reports resolved store and bridge states.
 
 ---
@@ -276,13 +275,14 @@ The two rows are visually identical. That is the defect being reported: the `-` 
 
 The read path adds no disclosure for this set. It already reports non-printable controls, and served rows stay byte-identical either way ([ADR-0010](docs/adr/0010-the-line-canon-stays-a-pure-function-of-one-line.md)).
 
-### Read Expansion
-`read` automatically widens small requested windows to their enclosing structural block ([ADR-0008](docs/adr/0008-read-expansion-requested-window-and-bounds.md)):
-- **Trigger & Bounds**: A requested window of 24 lines or fewer widens to its enclosing block (function, method, class, module, Markdown section, or blank-line paragraph). Overlapping or adjacent requested windows fold into one span before this test. Caps are 80 lines of code, 80 lines of Markdown, and 40 lines of plain text.
-- **Chrome & Notes**: A widened read begins with a chrome line `[widened <requested> -> <served>, <label>]`; more than three requested windows collapse to `[widened N windows: <ranges>]`. Construct labels use LSP `SymbolKind` names plus `arrow`, `impl`, `trait`, `typeAlias`, `section`, and `paragraph`.
-- **Refusals & Markdown clamping**: Code and plain-text blocks above their caps refuse and serve the requested window with no note. Markdown sections above the cap clamp to a cap-sized window and report `(section <extent>)`.
-- **Mode Independence**: Expansion applies in `served` mode (anchored and leased) and in `mode: "verbatim"` (raw text without anchors).
-- **Configuration & Audit**: Toggle via `read.expansion` (`"on"` | `"off"`, default `"on"`) in settings files or `PI_BETTER_EDIT_READ_EXPANSION` environment variable. Expansions and refusals append to `read-expansion.log` in the extension state root.
+### Selection-Range Note
+`read` serves exactly the window you ask for, and names the enclosing structural block on the page header instead of widening the serve ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)):
+- **The note**: One clause appended inside the header's bracket, e.g. `[app.py (lines 250-264 of 2698 total; in function parse_args, lines 230-290)]`. It states the span's kind, name, and extent; it changes no served line, carries no anchor, and spends no lease.
+- **When it appears**: Only when the enclosing span is strictly larger than the served window. A window that covers its span, a whole-file read, a declined lookup, and a failed lookup all produce no note.
+- **Multi-window pages**: The note is keyed by span, not by window. A multi-window page prints it once per distinct span, on the first section served from that span.
+- **Degradation by source**: A code span carries its kind and name (LSP `SymbolKind` labels plus `arrow`, `impl`, `trait`, `typeAlias`); a Markdown heading section carries its title; a paragraph carries only its extent.
+- **Configuration & Audit**: One setting, `read.selectionRange` (`"on"` | `"off"`, default `"on"`), or `PI_BETTER_EDIT_READ_SELECTION_RANGE`. The retired `read.expansion` key is ignored rather than honoured. Failed lookups append to `read-expansion.log` in the extension state root.
+- **Measurement**: `pnpm run replay` reports how often the note fires, by source, and whether same-file re-reads moved against a pre-change corpus. See **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**.
 
 ### Interoperability with `pi-lens`
 `pi-better-edit` deeply integrates with [`pi-lens`](https://github.com/apmantza/pi-lens) language intelligence:
@@ -429,7 +429,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 
 Detailed edge-case test matrices, recovery behaviors, and benchmark datasets are documented in **[Benchmarks & Comparison Reference](docs/reference/benchmarks.md)**.
 
-Read-expansion acceptance measurement is documented in **[Read Expansion Replay](docs/agents/read-expansion-replay.md)**: `pnpm run replay:read-expansion --baseline <dir> --candidate <dir> --json` reports per-language same-file re-read share and served-line waste, then applies the 20% / 200-read gate.
+Selection-range note measurement is documented in **[Selection-Range Note Replay](docs/agents/selection-note-replay.md)**: `pnpm run replay` counts the notes that served read headers carried, by provider source, checks that each names a span strictly larger than its window, and reports the same-file re-read movement against a pre-change corpus with a 95% noise band.
 
 ---
 

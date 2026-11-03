@@ -1,6 +1,6 @@
 /** Plain-text paragraph provider with an explicit data-file refusal list. */
 import { readFile } from "node:fs/promises";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 import { findParagraph } from "./paragraph-section.js";
 
 export interface ParagraphSpanProviderOptions {

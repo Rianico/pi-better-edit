@@ -1,6 +1,6 @@
 # Read expansion: does it help?
 
-Final report, 2026-11-02. Contract: ADR [0008](../adr/0008-read-expansion-requested-window-and-bounds.md). Raw evidence: [read-expansion-benchmark-evidence.md](read-expansion-benchmark-evidence.md).
+Final report, 2026-11-02. Contract: ADR [0008](../adr/0008-read-expansion-requested-window-and-bounds.md), reversed by [0012](../adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md) on this evidence. Raw evidence: [read-expansion-benchmark-evidence.md](read-expansion-benchmark-evidence.md).
 
 ## Verdict
 

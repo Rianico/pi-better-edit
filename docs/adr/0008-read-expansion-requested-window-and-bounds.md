@@ -4,7 +4,7 @@ Date: 2026-10-31
 
 ## Status
 
-Accepted
+Superceded by [12. Serve a Selection-Range Note Instead of Widening the Read](0012-serve-a-selection-range-note-instead-of-widening-the-read.md)
 
 ## Context
 

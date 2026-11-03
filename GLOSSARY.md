@@ -75,34 +75,30 @@ The resolved contiguous run of lines between `anchor_from` and `anchor_to` in th
 _Avoid_: hunk, region
 
 **span**:
-A contiguous interval of lines; the technical word used when verification compares two such intervals. The check compares the served span against the current span.
+A contiguous interval of lines; the technical word used when verification compares two such intervals. The check compares the served span against the disk span.
 _Avoid_: hunk
 
 **served span**:
 The contiguous run of served hashes between the two boundary anchors' served positions — the served-state reconstruction of the model's view of a range.
+
+**disk span**:
+The contiguous run of lines the current file on disk holds between two coordinates — the disk-state counterpart of a `served span`, reconstructed from the file as it is now. The verification check compares the `served span` against the `disk span`; a mismatch is drift or `served-range staleness`.
+_Avoid_: current span (the name this entry replaces), live span
 
 **served range**:
 The model-facing word for the `served span` — the span between `anchor_from` and `anchor_to` as the model saw it. Alias to `served span` for glossary search.
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **enclosing span**:
-The smallest structural block that fully contains a requested window: a function, method, class, module, heading section, or paragraph, depending on the language. Its first and last lines become the served window after expansion ([ADR-0008](docs/adr/0008-read-expansion-requested-window-and-bounds.md)).
+The smallest structural block that fully contains the window a read serves: a function, method, class, module, heading section, or paragraph, depending on the language. Its kind, name, and extent are what the `selection-range note` reports ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
 _Avoid_: symbol range, node extent
 
-**read expansion**:
-Replacing a requested window with its enclosing span in the same call, when the span fits the size caps ([ADR-0008](docs/adr/0008-read-expansion-requested-window-and-bounds.md)). It applies in both read modes. A `verbatim` read serves the wider range without anchors or leases.
-_Avoid_: widening (reserve it for a third-party mechanism being quoted), auto-read, context expansion
-
-**requested window**:
-The line range a read payload asks for: one `{ offset, limit }` window, or one `{ around_anchor, radius }` window whose range is the radius span. Overlapping or adjacent requested windows fold into one span before the expansion trigger is tested. A served window is always a superset of it.
-_Avoid_: requested range (that phrase names a verification span), ask
-
-**served window**:
-The line range a read actually serves. Without expansion it equals the requested window. With expansion it equals the enclosing span. Distinct from `served range`, which is the verification span between `anchor_from` and `anchor_to`.
-_Avoid_: served range (that term is the verification span), served lines
+**selection-range note**:
+One clause appended to the read page header when the enclosing span of the window a read serves is strictly larger than that window: the span's kind, its name, and its extent. It changes no served line, carries no lease and no anchor, and is silent when the window already covers its span, when nothing encloses it, when the pre-lookup gate declines, and when the lookup fails ([ADR-0012](docs/adr/0012-serve-a-selection-range-note-instead-of-widening-the-read.md)).
+_Avoid_: read expansion and its vocabulary (retired feature: requested window, served window), widening note, expansion note, block hint, span banner
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`len`), a served interior row whose lease is retired or whose `line_id` moved off its coordinate, a boundary row the mirror never served, or a mirror row a serve truncated away while its lease still lives (issue #151). Reported as `[E_STALE_RANGE]` — retired: `[E_UNSERVED_RANGE]`, see [ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md). An **unread interior** line between two leased boundaries is not staleness and does not fail closed ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)): it carries no identity to verify, and the boundaries plus the window-length gate already pin the span. Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)).
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `disk span` mismatch (`hash`/`canon`/`len`), a served interior row whose lease is retired or whose `line_id` moved off its coordinate, a boundary row the mirror never served, or a mirror row a serve truncated away while its lease still lives (issue #151). Reported as `[E_STALE_RANGE]` — retired: `[E_UNSERVED_RANGE]`, see [ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md). An **unread interior** line between two leased boundaries is not staleness and does not fail closed ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)): it carries no identity to verify, and the boundaries plus the window-length gate already pin the span. Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)).
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
@@ -159,7 +155,7 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read: its defining property is that served rows carry no anchors, not a promise that the served window equals the requested window. Expansion applies unchanged, so a small window may widen to its enclosing block with the same note, and no lease is recorded for any row. It loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's admission ceiling (`SERVED_MAX_LINES = 200_000` in `src/constants.ts:23`), so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read: its defining property is that served rows carry no anchors, not a promise about which window is served. A `selection-range note` rides the page header in both modes, and no lease is recorded for any row. It loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's admission ceiling (`SERVED_MAX_LINES = 200_000` in `src/constants.ts:23`), so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
 _Avoid_: unmanaged read
 
 **mode-as-intent**:

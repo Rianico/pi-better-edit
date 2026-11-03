@@ -2,9 +2,9 @@
  * Optional qualified-name enrichment. This is the whole server seam: it consumes a resolver only
  * when one is injected; it never discovers, starts, installs or proposes a server.
  */
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider } from "./provider-contract.js";
 
-export interface QualifiedNameRequest {
+interface QualifiedNameRequest {
   readonly file: string;
   readonly name: string;
   readonly startLine: number;

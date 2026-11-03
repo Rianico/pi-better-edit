@@ -1,14 +1,29 @@
 /** The one provider the read tool receives: Markdown, paragraphs, data, shell or AST by path. */
 import { createAstSpanProvider, type AstSpanProviderOptions } from "./ast-provider.js";
-import { createMarkdownSpanProvider, isMarkdownPath } from "./markdown-provider.js";
 import { createBashSpanProvider, isShellPath } from "./bash-provider.js";
+import { grammarLanguageForFile } from "./grammar-manifest.js";
+import { createMarkdownSpanProvider, isMarkdownPath } from "./markdown-provider.js";
 import { createParagraphSpanProvider, isDataPath, isPlainTextPath } from "./paragraph-provider.js";
-import type { SpanProvider } from "./span-expansion.js";
+import type { SpanProvider, SpanSource } from "./provider-contract.js";
 import {
   DEFAULT_QUALIFIED_NAME_TIMEOUT_MS,
   withQualifiedNames,
   type QualifiedNameResolver,
 } from "./qualified-names.js";
+
+/**
+ * The source this path's provider answers with, or `undefined` when no provider is registered.
+ *
+ * The read's pre-lookup gate uses this to decline a data file or an unregistered extension before a
+ * provider is called, so an ordinary read pays no parse work and writes no log row.
+ */
+export function providerSourceFor(file: string): SpanSource | undefined {
+  if (isMarkdownPath(file)) return "md";
+  if (isDataPath(file)) return undefined;
+  if (isPlainTextPath(file)) return "text";
+  if (isShellPath(file)) return "ast";
+  return grammarLanguageForFile(file) === undefined ? undefined : "ast";
+}
 
 export interface ReadSpanProviderOptions extends AstSpanProviderOptions {
   /** An already-attached server resolver, or undefined when no server is attached. */

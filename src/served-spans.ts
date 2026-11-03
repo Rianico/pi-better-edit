@@ -77,39 +77,6 @@ export function servedRowsToSpans(rows: readonly ServedRow[]): ServedSpan[] {
   return spans;
 }
 
-/**
- * Merge 1-indexed spans into ascending, maximal runs: overlapping or adjacent spans become one.
- *
- * WHY here and not in the expansion module: the "every row once" rule is the same union the served
- * rows already use, so one definition owns the adjacency predicate for both row positions and line
- * ranges. Invalid spans (fractional, non-positive, zero-length) are dropped rather than coerced.
- */
-export function mergeServedSpans(spans: readonly ServedSpan[]): ServedSpan[] {
-  const sorted = spans
-    .filter(
-      (span) =>
-        Number.isInteger(span.startLine) &&
-        Number.isInteger(span.lineCount) &&
-        span.startLine >= 1 &&
-        span.lineCount >= 1,
-    )
-    .map((span) => ({ startLine: span.startLine, lineCount: span.lineCount }))
-    .sort((left, right) => left.startLine - right.startLine || left.lineCount - right.lineCount);
-  const merged: ServedSpan[] = [];
-  for (const span of sorted) {
-    const last = merged[merged.length - 1];
-    // SAFETY: a span covers [startLine, startLine + lineCount - 1]; a next span starting exactly
-    // SAFETY: at startLine + lineCount is adjacent and joins the same run.
-    if (last !== undefined && span.startLine <= last.startLine + last.lineCount) {
-      const end = Math.max(last.startLine + last.lineCount, span.startLine + span.lineCount);
-      last.lineCount = end - last.startLine;
-      continue;
-    }
-    merged.push(span);
-  }
-  return merged;
-}
-
 let observers: ServedSpanObserver[] = [];
 
 /**

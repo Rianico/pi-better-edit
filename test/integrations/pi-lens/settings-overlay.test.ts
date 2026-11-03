@@ -85,15 +85,9 @@ describe("SettingsOverlay", () => {
     expect(out).toContain("maxRows 2000 (source: default)");
   });
 
-  it("exposes the read-expansion row with its effective rung", () => {
-    const overlay = new SettingsOverlay(projectDir, () => undefined);
-    overlay.selectItem("read-expansion");
-    expect(rendered(overlay).replace(/\s+/g, " ")).toContain("Effective: on (source: default)");
-  });
-
   it("exposes the settings rows including the target scope switch", () => {
     const overlay = new SettingsOverlay(projectDir, () => undefined);
-    for (const id of ["target-scope", "lens", "bash-view", "read-expansion", "store"]) {
+    for (const id of ["target-scope", "lens", "bash-view", "store"]) {
       overlay.selectItem(id);
       const out = rendered(overlay);
       expect(out).toContain("Effective:");

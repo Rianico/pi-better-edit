@@ -1,0 +1,67 @@
+/**
+ * The provider contract seam — one declaration site, and no provider reaches the decision module.
+ *
+ * WHY a guard: the providers outlive the expansion decision layer. A provider that imports the
+ * contract from the decision module compiles today and breaks the day that module is deleted, so
+ * the direction of the import is the invariant worth pinning. The second case refutes a planted
+ * violation: re-declaring a contract shape in the decision module passes every behaviour test.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const EXPANSION_DIR = join("src", "read-expansion");
+const CONTRACT_FILE = join(EXPANSION_DIR, "provider-contract.ts");
+
+/** Every module that implements, composes or consumes the provider seam. */
+const PROVIDER_MODULES = [
+  "ast-provider.ts",
+  "ast-span.ts",
+  "bash-provider.ts",
+  "markdown-provider.ts",
+  "paragraph-provider.ts",
+  "qualified-names.ts",
+  "read-provider.ts",
+];
+
+/** Each contract declaration, by the shape the seam must keep. */
+const CONTRACT_DECLARATIONS = [
+  "export interface SpanProvider",
+  "export type SpanWindow",
+  "export interface SpanDecline",
+
+  "export interface LineRange",
+];
+
+describe("provider contract seam", () => {
+  it("declares every provider interface in the contract module", () => {
+    const source = readFileSync(CONTRACT_FILE, "utf-8");
+    for (const declaration of CONTRACT_DECLARATIONS) {
+      expect(source, `provider-contract.ts is missing "${declaration}"`).toContain(declaration);
+    }
+  });
+
+  it("keeps every provider's contract import pointed at the contract module", () => {
+    for (const name of PROVIDER_MODULES) {
+      const source = readFileSync(join(EXPANSION_DIR, name), "utf-8");
+      expect(source, `${name} imports the contract from the decision module`).not.toContain(
+        'from "./span-expansion.js"',
+      );
+    }
+  });
+
+  it("keeps the retired decision module deleted", () => {
+    expect(existsSync(join(EXPANSION_DIR, "span-expansion.ts"))).toBe(false);
+  });
+
+  it("keeps provider-answer details internal", () => {
+    const source = readFileSync(CONTRACT_FILE, "utf-8");
+    // WHY a shape regex: a literal `export interface X` check ignores every other exported
+    // spelling — `export type`, `export class`, a re-export list — so the guard would stay green
+    // while the answer detail leaked. Pin the export keyword, the declaration form, the identifier.
+    expect(source).not.toMatch(
+      /\bexport\s+(interface|type|class)\s+(EnclosingSpan|AnchorWindow)\b/,
+    );
+    expect(source).not.toMatch(/\bexport\s+(?:type\s+)?\{[^}]*(EnclosingSpan|AnchorWindow)\b/);
+  });
+});

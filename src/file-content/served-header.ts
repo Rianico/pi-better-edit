@@ -31,6 +31,11 @@ export interface PageHeader {
   readonly verbatim?: boolean;
   /** The byte budget a page stopped at, set only when truncation cut by bytes. */
   readonly stoppedAtBytes?: number;
+  /**
+   * A finished clause appended inside the bracket, absent when the page has none. The formatter
+   * places it verbatim: it never learns what a clause describes (the selection-range note owns it).
+   */
+  readonly clause?: string;
 }
 
 /** WHY: `stopped at` names the budget the page stopped under, so the model can size its next ask. */
@@ -55,7 +60,8 @@ export function formatPageHeader(parts: PageHeader): string {
   const count = rangeOf(parts.shownRange, parts.totalLines);
   const body = parts.verbatim === true ? `verbatim, ${count}` : count;
   const label = parts.label === undefined ? "" : `${parts.label}: `;
-  return `[${label}${parts.file} (${body}${stopSuffix(parts.stoppedAtBytes)})]`;
+  const clause = parts.clause ?? "";
+  return `[${label}${parts.file} (${body}${stopSuffix(parts.stoppedAtBytes)}${clause})]`;
 }
 
 /**
@@ -67,6 +73,8 @@ export function formatSectionHeader(
   endLine: number,
   totalLines: number,
   stoppedAtBytes?: number,
+  clause?: string,
 ): string {
-  return `[Lines ${startLine}-${endLine} of ${totalLines} total${stopSuffix(stoppedAtBytes)}]`;
+  const note = clause ?? "";
+  return `[Lines ${startLine}-${endLine} of ${totalLines} total${stopSuffix(stoppedAtBytes)}${note}]`;
 }
