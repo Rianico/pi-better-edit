@@ -6,7 +6,7 @@
 <p align="center">
   <strong>Production-grade, hash-anchored file editing for &pi;.<br>
   Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.<br>
-  Anchors survive formatter churn. Substituted invisible code points are named in the reply.</strong>
+  What survives a format pass is the lease, not the anchor spelling. Substituted invisible code points are named in the reply.</strong>
 </p>
 
 <p align="center">
@@ -356,8 +356,8 @@ Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `g
 ```
 
 ### 1. Anchor Generation Pipeline
-1. **Frozen Whitespace Canonicalization**: Strips a frozen 28-code-point class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)) before hashing. Formatter passes (`prettier`, `black`, `gofmt`) leave anchors intact.
-2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 seeded with the file's canonical path and projected into 4-character base62 strings (`A-Za-z0-9`), yielding $62^4 - 10^4 = 14,766,336$ allocatable anchors per file (all-digit spellings reserved to prevent confusion with line numbers).
+1. **Raw-Byte Identity**: An anchor derives from its line's raw bytes ([ADR-0013](docs/adr/0013-anchor-identity-derives-from-raw-bytes.md)), so a whitespace change rotates that line's anchor. The frozen 28-code-point whitespace class ([ADR-0002](docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md)) no longer derives an anchor: it is the alignment and verification digest, shared by `pairSnapshots`, the stat-matched page gate, drift, and the served-row echo scan.
+2. **xxHash32 & Base62 Space**: Raw lines are hashed using xxHash32 seeded with the file's canonical path and projected into 4-character base62 strings (`A-Za-z0-9`), yielding $62^4 - 10^4 = 14,766,336$ allocatable anchors per file (all-digit spellings reserved to prevent confusion with line numbers).
 3. **Coprime Collision Probing**: Duplicate lines probe with a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a guaranteed unique anchor.
 
 ### 2. Multi-Version Snapshot Lineage
@@ -419,7 +419,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | **Addressing Model** | 4-char (file, content)-addressed anchors | File tag + line numbers | Verbatim code strings |
 | **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
 | **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
-| **Formatter Tolerance** | **Whitespace-class insensitivity** — anchors survive re-indentation and any token-free rewrite | Line numbers shift on every insert and delete | Verbatim context must still match |
+| **Formatter Tolerance** | **Lease-backed tolerance** — a pre-rewrite anchor still applies after re-indentation and any token-free rewrite | Line numbers shift on every insert and delete | Verbatim context must still match |
 | **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |
 | **Concurrent Disk Drift** | **Fail-closed reject-and-serve** | Tag mismatch refusal | Silent overwrite or text-mismatch error |
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Patch preflight | Single replacement per call |
