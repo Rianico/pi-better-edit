@@ -26,6 +26,9 @@
 
 * **read:** rename the provider-failure log to `selection-range.log`, the artifact's name having outlived the widening it was built for. The first write adopts an operator's existing `read-expansion.log` and its rotated generation, each only while its new path is absent, so a bug report written before the rename stays readable. What the log records is unchanged: the file, the source and the refusal reason of a failed span lookup. (#249)
 
+### Build System
+
+* **gate:** run the pull-request-free ledger shape floor in `pnpm run verify`, so an invented `### Section` or an over-budget entry fails locally instead of on the first push. Section integrity moves into the gate's `ticket` phase, which needs no pull-request number; `ledger` still reports the same finding once, and the eleven conventional-commit section names are unchanged. (#250)
 ## [2.16.0] - 2026-11-01
 
 ### Features

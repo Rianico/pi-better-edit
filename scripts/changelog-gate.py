@@ -24,7 +24,7 @@ Usage:
   uv run scripts/changelog-gate.py ledger --pr 123 --waiver "reason"
   uv run scripts/changelog-gate.py ledger --pr 123 --landing squash
   uv run scripts/changelog-gate.py ledger --pr 123 --squash-title "feat(scope): subject"
-  uv run scripts/changelog-gate.py ticket   # pre-merge shape-only phase over the ledger
+  uv run scripts/changelog-gate.py ticket   # PR-free floor: sections, bullets, shape budget
 """
 
 from __future__ import annotations
@@ -286,6 +286,18 @@ def check_entry_shape(block: str) -> list[Finding]:
     return findings
 
 
+def shape_floor(block: str) -> list[Finding]:
+    """The pull-request-free floor over one `## [Unreleased]` block.
+
+    Section integrity, bullet well-formedness and the entry-shape budget all decide on the
+    block alone, so both phases run this one definition — `ledger` adds provenance,
+    duplicates and the PR-boundary audits on top, `ticket` has nothing to add. One
+    definition is what makes "the shape floor" mean the same thing before and after a pull
+    request exists; two copies would drift into exactly the gap this closes.
+    """
+    return check_sections(block) + check_entries(block) + check_entry_shape(block)
+
+
 def title_is_hidden(title: str) -> bool:
     """A hidden Conventional Commit type owes no ledger entry: docs, chore, ... without `!`."""
     match = HIDDEN_TITLE_RE.match(title.strip().casefold())
@@ -457,7 +469,7 @@ def check_ledger(
         return findings + [
             Finding("section-integrity", f"no '{UNRELEASED_HEADING}' block to check")
         ]
-    findings += check_sections(block) + check_entries(block) + check_entry_shape(block)
+    findings += shape_floor(block)
     sections = parse_unreleased_sections(content)
     findings += check_duplicates(sections)
 
@@ -531,8 +543,10 @@ def check_ticket(changelog: Path) -> list[Finding]:
     """The pre-merge audit phase: the shape-only floor over `## [Unreleased]`.
 
     Runs after the squash (ADR-0016 ticket boundary), where provenance is not yet
-    resolvable: a missing ledger or block passes, the curated entries themselves must
-    be well-formed and inside the shape budget.
+    resolvable: a missing ledger or block passes, and the curated entries themselves must
+    be well-formed, inside the shape budget, and filed under a section a renderer knows.
+    Section integrity belongs here, not only in `ledger`: a pull-request number does not
+    exist until the PR does, which is the window the section heading is chosen in.
     """
     if not changelog.exists():
         return []
@@ -543,7 +557,7 @@ def check_ticket(changelog: Path) -> list[Finding]:
     block = unreleased_block(content)
     if block is None:
         return []
-    return check_entries(block) + check_entry_shape(block)
+    return shape_floor(block)
 
 
 def exit_code(findings: list[Finding]) -> int:

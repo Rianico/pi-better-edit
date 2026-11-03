@@ -265,7 +265,7 @@ reddens — and a doc in which every section passes by construction is the versi
 
 ## The commands this repo's gate actually uses
 
-`pnpm run lint` (oxlint + `knip --max-issues`) · `pnpm run format` (oxfmt `--check`) · `pnpm run typecheck` (tsc
+`python3 scripts/changelog-gate.py ticket` (the PR-free shape floor `pnpm run verify` starts with) · `pnpm run lint` (oxlint + `knip --max-issues`) · `pnpm run format` (oxfmt `--check`) · `pnpm run typecheck` (tsc
 `--noEmit`) · `pnpm run test:coverage` (vitest + thresholds) · `uv run python scripts/changelog-gate.py ledger
 --landing squash` · the two residue scans, `git diff-index --quiet HEAD`, and `git ls-files --others --ignored
 --exclude-standard` above · `git ls-remote --heads origin <branch>`.

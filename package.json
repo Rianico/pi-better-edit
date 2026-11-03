@@ -59,7 +59,7 @@
     "prepare": "node scripts/prepare.mjs",
     "prepack": "node scripts/build-dist.mjs && node scripts/verify-dist.mjs",
     "audit": "pnpm audit --audit-level high --registry https://registry.npmjs.org/",
-    "verify": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage"
+    "verify": "python3 scripts/changelog-gate.py ticket && pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage"
   },
   "dependencies": {
     "diff": "^8.0.2",

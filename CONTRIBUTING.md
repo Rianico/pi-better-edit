@@ -24,6 +24,8 @@ So a future reader neither panics nor learns to ignore output: it is real, it is
 
 Gates and hooks can probe the ledger read-only with `uv run python scripts/changelog-gate.py ledger --pr <N>` (exit 0 when the PR's entries are attributed, 1 on drift, 2 when the file is absent; nothing is written, staged or committed). A blocked gate can be waived via a `Ledger-Waiver: <reason>` line in the PR body — accepts fixable findings only, never unverified code.
 
+`pnpm run verify` runs this gate's pull-request-free half first — `python3 scripts/changelog-gate.py ticket`, the section/bullet/shape floor over `## [Unreleased]` — so an unknown `### Section` or an over-budget entry fails locally instead of on the first push. It reads one markdown file, needs no PR number, and touches no remote.
+
 ## Reporting Issues
 Pick the template that matches your intent — see `.github/ISSUE_TEMPLATE/` (blank issues disabled).
 - Bugs: paste-complete input plus the exact args/payload, quote the diff or log; text beats screenshots.
@@ -32,7 +34,7 @@ Prompt rule: when the model helps file an issue, infer `bug` vs `feat` from inte
 
 ## Before PR
 
-`pnpm run verify` (`lint → format → typecheck → test:coverage`) and `pnpm run audit` must pass. See `AGENTS.md` for agent rules.
+`pnpm run verify` (`changelog-gate.py ticket` → `lint` → `format` → `typecheck` → `test:coverage`) and `pnpm run audit` must pass. See `AGENTS.md` for agent rules.
 
 ### Gate preconditions
 
