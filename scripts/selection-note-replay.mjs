@@ -32,9 +32,10 @@ Options:
   --out <path>            also write the machine-readable report to a file
   --help                  show this help
 
-Correctness gate: every note's span must contain its served window's first line, must not be the
-window itself, and — for the shipped clause — must carry the preposition its containment implies
-('in' when it reaches the window's end, 'starts in' otherwise). One violation exits 1.
+Correctness gate: a note is illegal when its window covers its whole file, when its span does not
+contain its served window's first line or equals the window, or when its preposition is wrong — the
+clause must print 'in' when its span reaches the window's end, and 'starts in' otherwise. One
+violation exits 1.
 
 Noise rule: a movement is reported as inside-noise when it is smaller than 1.96 standard errors of
 the two-proportion difference (95%).`;

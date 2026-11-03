@@ -308,15 +308,17 @@ function notesInPage(text) {
 }
 
 /**
- * The ADR-0014 legality rule the note owes a reader: the named span must contain the served window's
- * first line, must not be the window itself, and — when the clause prints one — must carry the
- * preposition the containment implies. `in` claims the span reaches the window's end; `starts in`
- * claims the window escapes it. A legacy clause prints no preposition, so its corpus stays valid.
+ * The ADR-0014 legality rule the note owes a reader, in the order this predicate checks it: a window
+ * that covers its whole file is illegal whatever the clause says, the named span must contain the
+ * served window's first line, must not be the window itself, and — when the clause prints one — must
+ * carry the preposition the containment implies. `in` claims the span reaches the window's end;
+ * `starts in` claims the window escapes it. A legacy clause prints no preposition, so its corpus
+ * stays valid.
  *
- * A window that covers its whole file is illegal whatever the clause says: nothing larger can enclose
- * the file, and the renderer never notes such a window, so a note on one is a violation by
- * construction rather than a measurement. `totalLines` is the page's own total, passed beside the
- * window so the recorded window stays the two fields the report publishes.
+ * The whole-file rule needs the page total, which a served window does not carry: `totalLines` is the
+ * page's own total, passed beside the window so the recorded window stays the two fields the report
+ * publishes. Nothing larger can enclose the file, and the renderer never notes such a window, so a
+ * note on one is a violation by construction rather than a measurement.
  */
 function isLegalNote(note, window, totalLines) {
   if (window.start === 1 && window.end === totalLines) return false;
