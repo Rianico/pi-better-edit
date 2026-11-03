@@ -28,7 +28,7 @@
 
 ### Build System
 
-* **gate:** run the pull-request-free ledger shape floor in `pnpm run verify`, so an invented `### Section` or an over-budget entry fails locally instead of on the first push. Section integrity moves into the gate's `ticket` phase, which needs no pull-request number; `ledger` still reports the same finding once, and the eleven conventional-commit section names are unchanged.
+* **gate:** run the pull-request-free ledger shape floor in `pnpm run verify`, so an invented `### Section` or an over-budget entry fails locally instead of on the first push. Section integrity moves into the gate's `ticket` phase, which needs no pull-request number; `ledger` still reports the same finding once, and the eleven conventional-commit section names are unchanged. (#250)
 ## [2.16.0] - 2026-11-01
 
 ### Features
