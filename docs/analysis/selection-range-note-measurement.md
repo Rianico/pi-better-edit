@@ -137,6 +137,57 @@ Only a small portion is actionable, and the share is now measured rather than gu
 - The cause is the straddle, not the wording. A window that crosses a boundary has no
   tight container, and crossing a boundary is what exploration looks like.
 
+
+## Follow-up: the point anchor moves the metric it was aimed at
+
+The note was then re-anchored on the window's first line and reshaped into a breadcrumb
+([ADR-0014](../adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)).
+Four fresh legs of the same suite measure the new form against the old one.
+
+| form | leg | noted reads | named span over half its file |
+|---|---|---|---|
+| range anchor | `note-on-a` | 19 of 37 | **8 of 19** |
+| range anchor | `note-on-b` | 18 of 32 | **7 of 18** |
+| point anchor | `crumb-on-a` | 18 of 33 | **2 of 18** |
+| point anchor | `crumb-on-b` | 31 of 43 | **1 of 32** |
+
+The coarse share falls from **15 of 37 (41 %)** to **3 of 50 (6 %)**. The note also fires
+more often, 51-56 % becoming 55-72 %, because a straddle is no longer silence.
+
+The names change accordingly. The old anchor produced a bare `class Console` of 2 062
+lines and a bare `class Flask` of 1 579. The new one reaches three levels and tight spans:
+
+| span named | median extent | notes in `crumb-on-b` |
+|---|---|---|
+| `class Console › method export_svg` | 253 lines | 16 |
+| `class Flask › method make_response` | 141 lines | 4 |
+| `class Console › method export_svg › function escape_text` | 3 lines | 2 |
+| `class Scaffold › method route › function decorator` | 4 lines | 1 |
+| `class Flask › method finalize_request` | 35 lines | 1 |
+| `class Flask` | 1 579 lines | 1 |
+
+A bare class name survives once in 32 notes, against 8 in 19 under the old anchor.
+
+### The score endpoint stays dead
+
+| leg | passed | timed out at 300 s | median seconds |
+|---|---|---|---|
+| `crumb-on-a` | 7 / 16 | 8 | 275 |
+| `crumb-off-a` | 16 / 16 | 0 | 182 |
+| `crumb-on-b` | 15 / 16 | 0 | 129 |
+| `crumb-off-b` | 12 / 16 | 4 | 232 |
+
+The on arm spans 7 to 15, the off arm 12 to 16. The arms overlap and the within-arm spread
+of 8 points exceeds the whole between-arm difference. The 8 timeouts in `crumb-on-a`
+belong to the leg that ran when the provider was slowest, not to the note. This is the same
+finding as Result 4, reproduced on a second experiment.
+
+### What the follow-up does not settle
+
+The 6 % figure is a structural result: it counts what the note names, not what the model
+does with it. The strict action test still reads 0. A tighter name is a better answer to
+"what am I looking at", and that is all this measures. Whether the model acts on it more
+often than it acted on a class name remains unmeasured.
 ## Threats to validity
 
 - **One suite.** `micro-swe` was picked for its high windowed-read share. A suite with
