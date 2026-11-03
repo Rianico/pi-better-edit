@@ -8,6 +8,8 @@ Accepted
 
 Supercedes [0008. Read Expansion: Requested Window, Served Window, and Its Bounds](0008-read-expansion-requested-window-and-bounds.md)
 
+Amended by [ADR-0014. Anchor the Selection-Range Note on a Point, Not a Range](0014-anchor-the-selection-range-note-on-a-point-not-a-range.md)
+
 ## Context
 
 [ADR-0008](0008-read-expansion-requested-window-and-bounds.md) made read expansion a built-in capability of `read`: the tool computed the structural block enclosing a requested window, served that block instead of the window, and stated what it had served. The rationale was that a model inspecting a file often needs two calls to understand one block, and that a widened serve could remove the second call. That record stands as written; this one records why it was reversed.
