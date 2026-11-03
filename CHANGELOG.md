@@ -20,6 +20,8 @@
 
 * **docs:** record the read-expansion benchmark evidence: a three-leg paired run on Pi 1.4.0 showing the 2.14.0 to 2.16.0 bump is cost-neutral and score-neutral once retry volume is normalised, with sandbox provenance, activation proof and the threats to validity. (#221)
 
+* **docs:** measure the selection-range note. Four `micro-swe` legs on Pi 1.4.0 show it fires on 51.4% and 56.2% of windowed reads, that the named span covers over half the file in 42% and 39% of firings, and that no follow-up read ever covered the named span — 0 of 20. The cause is the straddle: a window crossing two methods has no method containing it, so the note degrades to the enclosing class. The score comparison is invalid — the same arm scored 16/16 then 10/16 as provider latency drifted about 2x. (#251)
+
 ### Code Refactoring
 
 * **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)
