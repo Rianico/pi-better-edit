@@ -16,13 +16,13 @@
 
 * **read:** bind the selection-range note's extent to its own name as `(span a-b)`, choose the preposition from the window's last line (`in` inside, `starts in` on an escape), and join the breadcrumb with ASCII ` > `. The comma bound the extent to the whole compound chain, the shared word `lines` collided with the window's own extent, and `in` asserted a containment the window escaped in 23 of 45 recorded notes. Binding costs no characters; `starts in` costs 7 on a straddle only. (#258)
 
-* **replay:** fail a note carried by a whole-file page. Such a page normalises to the range it covers, and nothing larger can enclose the file, so a note there is a violation by construction — which the gate's own doc already said while the predicate waved it through. `notesInPage` keeps the page total on the window it records, and `isLegalNote` rejects any window that is its whole file. The hole was unreachable: the renderer never notes a whole-file page.
+* **replay:** fail a note carried by a whole-file page. Such a page normalises to the range it covers, and nothing larger can enclose the file, so a note there is a violation by construction — which the gate's own doc already said while the predicate waved it through. `notesInPage` passes the page total to `isLegalNote` beside the window it records, and `isLegalNote` rejects any window that is its whole file. The hole was unreachable: the renderer never notes a whole-file page.
 
 ### Tests
 
 * **replay:** retarget the corpus replay at the selection-range note, retiring `pnpm run replay:read-expansion` with the widening it measured. The gate counts the notes served headers carried by provider source, fails an illegal note, and reports the same-file re-read share against a pre-change corpus with a 95% noise band. An absent or session-less corpus exits 2 rather than passing vacuously. On the operator host the corpus predates the note, so its effect on re-reads is unmeasured, not zero. (#247)
 
-* **replay:** read the shipped `; <in|starts in> <label> (span a-b)` clause in the gate, keeping the legacy `; in <label>, lines a-b` shape so a corpus recorded before the parenthesized extent still counts. A note is illegal when its span misses its window's first line, equals the window, or contradicts its own preposition; the gate doc, the CLI help and the README state that rule exactly. (#258)
+* **replay:** read the shipped `; <in|starts in> <label> (span a-b)` clause in the gate, keeping the legacy `; in <label>, lines a-b` shape so a corpus recorded before the parenthesized extent still counts. A note is illegal when its window covers its whole file, when its span misses its window's first line or equals the window, or when it contradicts its own preposition; the gate doc, the CLI help and the README state that rule exactly. (#258)
 
 ### Documentation
 
