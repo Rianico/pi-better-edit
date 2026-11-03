@@ -30,7 +30,7 @@ export function createMarkdownSpanProvider(
 ): SpanProvider {
   const readText = options.readTextFile ?? defaultReadText;
   return {
-    async enclosingSpan(file, window) {
+    async enclosingChain(file, window) {
       if (!("offset" in window) || !("limit" in window)) return { refusal: "provider_declined" };
       if (!isMarkdownPath(file)) return { refusal: "no_provider" };
       const text = await readText(file);
@@ -38,11 +38,15 @@ export function createMarkdownSpanProvider(
       const section = findMarkdownSection(text, window.offset, window.offset + window.limit - 1);
       if (section === null) return { refusal: "boundary_crossing" };
       return {
-        start: section.start,
-        end: section.end,
-        kind: "section",
-        name: section.title,
-        source: "md",
+        spans: [
+          {
+            start: section.start,
+            end: section.end,
+            kind: "section",
+            name: section.title,
+            source: "md",
+          },
+        ],
       };
     },
   };

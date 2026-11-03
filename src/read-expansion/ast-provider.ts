@@ -8,12 +8,7 @@
  */
 import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import {
-  findEnclosingScope,
-  scopeLineRange,
-  type GrammarHandle,
-  type GrammarLanguageLoader,
-} from "./ast-span.js";
+import { findEnclosingChain, type GrammarHandle, type GrammarLanguageLoader } from "./ast-span.js";
 import { discardCachedGrammar, requestGrammar, type GrammarCacheOptions } from "./grammar-cache.js";
 import { GRAMMAR_MANIFEST, grammarLanguageForFile } from "./grammar-manifest.js";
 import { hasWebTreeSitterRuntime, loadWebTreeSitterGrammar } from "./grammar-runtime.js";
@@ -188,7 +183,7 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
       return runtimeAbsent;
     },
     prefetch,
-    async enclosingSpan(file: string, window: SpanWindow) {
+    async enclosingChain(file: string, window: SpanWindow) {
       if (!isOffsetWindow(window)) return decline("provider_declined");
       const language = grammarLanguageForFile(file);
       if (language === undefined) return decline("no_provider");
@@ -202,29 +197,28 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Spa
       if (tree === null) return decline("grammar_unavailable", language);
       try {
         if (tree.rootNode.hasError) return decline("provider_declined", language);
-        const requestedEnd = window.offset + window.limit - 1;
-        const node = findEnclosingScope(
-          tree.rootNode,
-          window.offset,
-          requestedEnd,
-          languageScope.kinds,
-        );
-        if (node === null) return decline("boundary_crossing", language);
-        const range = scopeLineRange(node);
-        if (range.startLine > window.offset || range.endLine < requestedEnd) {
-          return decline("boundary_crossing", language);
+        const chain = findEnclosingChain(tree.rootNode, window.offset, languageScope.kinds);
+        if (chain.length === 0) return decline("boundary_crossing", language);
+        const spans: Array<{
+          start: number;
+          end: number;
+          kind: NonNullable<ReturnType<ScopeDecorator>["kind"]>;
+          name: string;
+          source: "ast";
+        }> = [];
+        for (const node of chain) {
+          const decorated = languageScope.decorate(node);
+          if (decorated.kind === undefined || decorated.name === undefined) continue;
+          spans.push({
+            start: decorated.startLine,
+            end: decorated.endLine,
+            kind: decorated.kind,
+            name: decorated.name,
+            source: "ast",
+          });
         }
-        const decorated = languageScope.decorate(node);
-        if (decorated.kind === undefined || decorated.name === undefined) {
-          return decline("provider_declined", language);
-        }
-        return {
-          start: decorated.startLine,
-          end: decorated.endLine,
-          kind: decorated.kind,
-          name: decorated.name,
-          source: "ast",
-        };
+        if (spans.length === 0) return decline("provider_declined", language);
+        return { spans };
       } catch {
         outcome.handle.onFailure?.();
         return decline("provider_declined", language);

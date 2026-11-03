@@ -54,33 +54,31 @@ export function scopeLineRange(node: SyntaxNodeLike): LineRange {
 }
 
 /**
- * The smallest scope-like node that contains every requested line, or null when the request sits
- * outside every block (imports, file header, an unparseable region). A node widens only when the
- * language table owns its grammar type; that same table supplies the note kind.
+/**
+ * Every scope-like node whose line range contains the point line, innermost first.
+ * A node counts only when the language table owns its grammar type; that same table
+ * supplies the note kind. The root is never included: it is the whole file. Empty when
+ * nothing encloses the line (imports, file header, an unparseable region).
  */
-export function findEnclosingScope(
+export function findEnclosingChain(
   root: SyntaxNodeLike,
-  requestedStart: number,
-  requestedEnd: number,
+  line: number,
   scopeKinds: SpanKindTable,
-): SyntaxNodeLike | null {
-  let best: SyntaxNodeLike | undefined;
-  let bestLength = Number.POSITIVE_INFINITY;
+): SyntaxNodeLike[] {
+  const enclosing: Array<{ node: SyntaxNodeLike; length: number }> = [];
 
   const visit = (node: SyntaxNodeLike): void => {
     const range = scopeLineRange(node);
-    if (range.startLine > requestedStart || range.endLine < requestedEnd) return;
+    if (range.startLine > line || range.endLine < line) return;
     // WHY: the root is the whole file; widening to it would turn a top-level probe into the file.
     if (node !== root && Object.hasOwn(scopeKinds, node.type)) {
-      const length = range.endLine - range.startLine + 1;
-      if (length < bestLength) {
-        best = node;
-        bestLength = length;
-      }
+      enclosing.push({ node, length: range.endLine - range.startLine + 1 });
     }
     for (const child of node.namedChildren) visit(child);
   };
 
   visit(root);
-  return best ?? null;
+  // WHY: stable sort keeps discovery order for equal extents; nesting depth then decides.
+  enclosing.sort((a, b) => a.length - b.length);
+  return enclosing.map((entry) => entry.node);
 }
