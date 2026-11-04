@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-11-04
+
 ### Features
 
 * **edit:** disclose invisible code-point substitutions in the edit response. A frozen classifier (`src/file-content/invisible.ts` — the 21 canon-stripped, 16 canon-surviving and control code-point sets with a Unicode name table) compares the replaced span's on-disk lines against the written lines and annotates each substituted code point with a caret sub-row naming its class, its Unicode name and its 1-indexed code-point column. Content rows stay byte-faithful, the edit always applies, and no warning code is added. (#234)
@@ -51,6 +53,7 @@
 ### Build System
 
 * **gate:** run the pull-request-free ledger shape floor in `pnpm run verify`, so an invented `### Section` or an over-budget entry fails locally instead of on the first push. Section integrity moves into the gate's `ticket` phase, which needs no pull-request number; `ledger` still reports the same finding once, and the eleven conventional-commit section names are unchanged. (#250)
+
 ## [2.16.0] - 2026-11-01
 
 ### Features
