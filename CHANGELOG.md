@@ -40,6 +40,8 @@
 
 * **docs:** fold the refined note's measurement into [selection-range-note-measurement.md](docs/analysis/selection-range-note-measurement.md) and ADR-0014. Two legs of the same suite show the coarse share — the named span covering over half its file — falling from 15 of 37 (41%) to 3 of 50 (6%). A bare class name survives once in 32 notes, where it was 8 in 19. The score endpoint stays dead: the on arm spans 7 to 15, the off arm 12 to 16, and the within-arm spread exceeds the between-arm difference. (#255)
 
+* **docs:** record [ADR-0015](docs/adr/0015-reject-naming-both-ends-of-a-straddle.md), which closes the item ADR-0014 deferred by rejecting a second span on a straddle. A straddle is 23 of 45 noted reads. Every candidate form was measured on one real window: ` + ` costs 38 characters, ` to ` costs 39, `, ends in ` costs 45, and per-level extents cost 49. The record corrects ADR-0014's estimate for that last option, which was 14. Naming endpoints hides the interior of a window crossing three blocks, and a second span needs a second parse of the source.
+
 ### Code Refactoring
 
 * **read:** retire the served-rows invisible-codepoint notice. Served rows carry no disclosure; the classifier stays as the edit path's data layer. The notice was retired on four measurements: every in-scope code point already tokenizes distinctly, the benchmark cannot observe a notice's effect, the shipped notice asserted a hazard the code did not implement, and the load-bearing mechanism is the model's own edit. (#234)

@@ -188,6 +188,28 @@ The 6 % figure is a structural result: it counts what the note names, not what t
 does with it. The strict action test still reads 0. A tighter name is a better answer to
 "what am I looking at", and that is all this measures. Whether the model acts on it more
 often than it acted on a class name remains unmeasured.
+
+### The straddle item, closed
+
+ADR-0014 deferred one option: name both ends of a straddle. That item is now closed by
+[ADR-0015](../adr/0015-reject-naming-both-ends-of-a-straddle.md), which rejects it. The clause keeps
+one span.
+
+Every candidate form was measured on the worked example above, against the 79-character shipped
+clause. A second span joined by ` to ` costs +39 characters, by ` + ` costs +38, and naming the
+escape with `, ends in ` costs +45. A straddle is 23 of 45 noted reads, so that cost lands on the
+majority case.
+
+Two arguments decided it. Naming endpoints hides the interior: a window crossing three methods and
+rendered `A to C` omits B, which may be the largest block in the window. And a second span needs a
+second provider lookup, which `enclosingChain` answers by parsing the source again — the provider
+caches the grammar handle, not the tree.
+
+The escape stays legible without a second name. The header carries both extents, so a reader sees
+`1114 > 1107` directly, and `starts in` says the window leaves the named span.
+
+This is why ADR-0014's per-level-extents estimate is corrected there: that record rejected the
+option on roughly 14 characters of growth, and the measured figure is 49.
 ## Threats to validity
 
 - **One suite.** `micro-swe` was picked for its high windowed-read share. A suite with
