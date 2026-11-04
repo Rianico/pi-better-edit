@@ -8,6 +8,8 @@ Accepted
 
 Amends [0012. Serve a Selection-Range Note Instead of Widening the Read](0012-serve-a-selection-range-note-instead-of-widening-the-read.md)
 
+Amended by [15. Reject naming both ends of a straddle](0015-reject-naming-both-ends-of-a-straddle.md)
+
 ## Context
 
 [ADR-0012](0012-serve-a-selection-range-note-instead-of-widening-the-read.md) introduced the note and fixed its anchor as "the enclosing span of the window actually served". The implementation required that span to contain the **whole** window. `findEnclosingScope` kept a node only when `range.startLine <= requestedStart && range.endLine >= requestedEnd`.
