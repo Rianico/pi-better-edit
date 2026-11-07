@@ -210,6 +210,13 @@ An edit item carries **flat, discriminator-free semantics**: exactly one payload
 | `text` | string | By-value payload — bare file content (`\n` joins lines). **`""` deletes the range when placed in-place** (no `at`). With `"before"`/`"after"` an empty `text` does NOT delete: it writes nothing and the call narrates `[W_NOOP_INSERT]` as a no-op. |
 | `text_ref` | `{ anchor_from, anchor_to, file?, mode }` | By-reference payload — the bytes of a `served span` bounded by two anchors of the file it names. `mode` is **required** (never inferred): `"copy"` re-inserts the span and keeps the source; `"cut"` additionally retires it. `file` may name another served file — a **foreign-source copy** (never called "cross-file" here; that word named a dropped multi-file batching idea). Both modes apply to a foreign file, and a foreign `cut` commits insert and retirement as one correlated transaction. |
 
+The EOF rule: `at: "after"` on the final anchor splices after the last line's content, before the file's existing trailing newline (if any) — it never adds or removes a terminator of its own. `text` splits literally on `\n`, so a trailing newline is one more (empty) line, never a terminator:
+
+- A newline-terminated file plus `after` plus `text: "P"` appends one terminated line (`a\nb\n` → `a\nb\nP\n`): the file's own terminator closes the insert, so POSIX fidelity holds with no blank line.
+- A file with no trailing newline plus `after` plus `text: "P"` stays unterminated (`a\nb` → `a\nb\nP`): no newline is added beyond the contract.
+- One trailing newline terminates an unterminated file (`text: "P\n"` on `a\nb` → `a\nb\nP\n`) but appends a blank line on a terminated file (`a\nb\n` → `a\nb\nP\n\n`); each further trailing newline adds one more blank line.
+- Pinned byte-exact in [test/core/hashline.placement.test.ts](test/core/hashline.placement.test.ts) and [test/tools/edit.eof-contract.test.ts](test/tools/edit.eof-contract.test.ts).
+
 ##### Example Items
 - **In-place replacement**: `{ anchor_from: "a1bX", anchor_to: "c3dX", text: "new code\n" }`
 - **In-place deletion**: `{ anchor_from: "a1bX", anchor_to: "c3dX", text: "" }`
