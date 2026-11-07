@@ -91,6 +91,10 @@ describe("prompts/read.md (model-facing contract)", () => {
   it("documents the verbatim mode", () => {
     expect(readPrompt).toContain('mode: "verbatim"');
   });
+
+  it("documents the outline mode", () => {
+    expect(readPrompt).toContain('mode: "outline"');
+  });
 });
 
 describe("prompt guidelines", () => {

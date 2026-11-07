@@ -175,12 +175,13 @@ read({
     { offset: 1, limit: 50 },            // Line offset slice (default limit: 50)
     { around_anchor: "kQmx", radius: 5 } // Anchor-centered neighborhood slice
   ],
-  mode?: "served"      // "served" (default, grants leases) | "verbatim" (raw text, no hashes)
+  mode?: "served"      // "served" (default, grants leases) | "verbatim" (raw text, no hashes) | "outline" (declarations, point leases)
 })
 ```
 - **Whole-File vs Windowed Reads**: Omitting `windows` reads the entire file from line 1. Supplying `windows` scopes the output to up to 16 disjoint slices (either `{ offset, limit }` or `{ around_anchor, radius }`).
 - **Disjoint Multi-Window Leases**: In the default `served` mode, every row across all returned windows receives an active lease, enabling batched edits across distant parts of the file in the subsequent turn.
 - **Large-Line Protection**: Individual lines exceeding pi's `DEFAULT_MAX_BYTES` (50 KB) are replaced with a concise unservable placeholder marker to prevent context explosion.
+- **Outline Mode**: Pass `mode: "outline"` to serve symbol declaration lines as leased point anchors for rapid orientation in large files without reading bodies.
 
 ### 2. `edit`
 Applies atomic single or batched modifications.
