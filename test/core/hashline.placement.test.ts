@@ -3,6 +3,7 @@ import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import { applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
+import { parseText } from "../../src/hashline/parse.js";
 import type { HEdit } from "../../src/hashline/resolve";
 import { restoreEndings } from "../../src/edit-diff";
 
@@ -24,7 +25,20 @@ function editFor(
   if (placement !== undefined) edit.placement = placement;
   return edit;
 }
-
+function editForText(
+  content: string,
+  line: number,
+  text: string,
+  placement?: HEdit["placement"],
+): HEdit {
+  const hashes = contentOnlyHashes(content);
+  const edit: HEdit = {
+    hash_bounds: [{ hash: hashes[line - 1]! }, { hash: hashes[line - 1]! }],
+    content_lines: parseText(text),
+  };
+  if (placement !== undefined) edit.placement = placement;
+  return edit;
+}
 function canonDigestsFor(content: string): (string | null)[] {
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
   if (content === "") return [];
@@ -86,6 +100,67 @@ describe("applyEdit — placement insertions (internal seam, zero-width splice)"
       contentOnlyHashes(content),
     );
     expect(result.content).toBe("a\nb\nP\nQ");
+  });
+
+  it("EOF contract: bare text after the final anchor preserves POSIX fidelity", () => {
+    const terminated = "a\nb\n";
+    const terminatedResult = applyEdit(
+      terminated,
+      editForText(terminated, 2, "P", "after"),
+      undefined,
+      contentOnlyHashes(terminated),
+    );
+    expect(terminatedResult.content).toBe("a\nb\nP\n");
+    const unterminated = "a\nb";
+    const unterminatedResult = applyEdit(
+      unterminated,
+      editForText(unterminated, 2, "P", "after"),
+      undefined,
+      contentOnlyHashes(unterminated),
+    );
+    expect(unterminatedResult.content).toBe("a\nb\nP");
+    expect(unterminatedResult.content.endsWith("\n")).toBe(false);
+  });
+
+  it("EOF contract: one trailing newline terminates an unterminated file", () => {
+    const content = "a\nb";
+    const result = applyEdit(
+      content,
+      editForText(content, 2, "P\n", "after"),
+      undefined,
+      contentOnlyHashes(content),
+    );
+    expect(result.content).toBe("a\nb\nP\n");
+  });
+
+  it("EOF contract: one trailing newline on a terminated file appends a blank line", () => {
+    const content = "a\nb\n";
+    const result = applyEdit(
+      content,
+      editForText(content, 2, "P\n", "after"),
+      undefined,
+      contentOnlyHashes(content),
+    );
+    expect(result.content).toBe("a\nb\nP\n\n");
+  });
+
+  it("EOF contract: two trailing newlines append one blank line past the insert", () => {
+    const terminated = "a\nb\n";
+    const terminatedResult = applyEdit(
+      terminated,
+      editForText(terminated, 2, "P\n\n", "after"),
+      undefined,
+      contentOnlyHashes(terminated),
+    );
+    expect(terminatedResult.content).toBe("a\nb\nP\n\n\n");
+    const unterminated = "a\nb";
+    const unterminatedResult = applyEdit(
+      unterminated,
+      editForText(unterminated, 2, "P\n\n", "after"),
+      undefined,
+      contentOnlyHashes(unterminated),
+    );
+    expect(unterminatedResult.content).toBe("a\nb\nP\n\n");
   });
 
   it("before on the first line of a file without a trailing newline", () => {
