@@ -48,8 +48,28 @@ export interface LeaseSpanSource {
    * special case is kept.
    */
   anchorHomes?(anchor: string): string[];
+
+  /**
+   * Outline fold ranges hiding unserved lines for this file (tranche 3 fold-gate). Absent or
+   * empty means no outline coverage is recorded, and the span gate stays inert (ADR-0024).
+   */
+  outlineFolds?: readonly OutlineFoldRange[];
 }
 
+/**
+ * One unserved gap an outline read left behind (tranche 3 fold-gate): the 1-based closed line
+ * interval strictly between two served declaration rows. The edit seam refuses a multi-line
+ * replacement whose interior covers one of these lines while it is still unserved, so an outline
+ * fold can never be silently erased. Ranges are recorded in the read snapshot's coordinates;
+ * later served reads fill the mirror (the gate requires a mirror-null interior), so only a
+ * shifting edit can misalign them — and a misaligned range still fails closed, never erases.
+ */
+export interface OutlineFoldRange {
+  /** 1-based first folded line. */
+  startLine: number;
+  /** 1-based last folded line (`>= startLine`). */
+  endLine: number;
+}
 /**
  * The O(1) fast path qualifies **iff** both anchors were leased from the content now on disk —
  * `S_from === C ∧ S_to === C ∧ S_from === S_to` (spec §3.5). The predicate selects the coordinate
@@ -233,10 +253,6 @@ function assertAligned(fileLines: string[], fileHashes: string[], ctx: string): 
       `${ctx}: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
     );
   }
-}
-
-function _fmtMismatch(mismatches: HMismatch[], snapshot: FileSnapshotContext): string {
-  return fmtMismatchWithServes(mismatches, snapshot).message;
 }
 
 function formatNotFound(

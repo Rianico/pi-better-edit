@@ -6,6 +6,7 @@
  */
 
 import type { ServedRow } from "./serve-render.js";
+import type { OutlineFoldRange } from "../hashline/resolve.js";
 
 /**
  * SAFETY: one served row's fact for this (session, path) — no canon text: canon evidence is derived
@@ -94,4 +95,8 @@ export interface SessionHandle {
   driftReported(): Promise<Set<string>>;
   /** SAFETY: Drift: mark hashes as reported. */
   markDriftReported(hashes: string[]): Promise<void>;
+  /** SAFETY: Fold-gate: load outline fold ranges hiding unserved lines for this (session, path). */
+  loadOutlineFolds(): Promise<readonly OutlineFoldRange[]>;
+  /** SAFETY: Fold-gate: replace the outline fold record; an empty array clears it. */
+  recordOutlineFolds(folds: readonly OutlineFoldRange[]): Promise<void>;
 }

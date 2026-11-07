@@ -157,6 +157,7 @@ const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
   file_snapshots: { stat_key: "TEXT" },
   file_undo: { snapshot_hash: "TEXT", transaction_id: "TEXT", raw_pre: "TEXT" },
+  served_session_meta: { outline_folds: "TEXT" },
   served: { retired: "TEXT", canons: "TEXT", snapshotId: "TEXT" },
   undo: { result_content: "TEXT NOT NULL DEFAULT ''" },
 } as const;
@@ -203,6 +204,7 @@ function addColumnIfMissing<T extends MigrationTable>(
   const definitions: Readonly<Record<string, string>> = MIGRATION_COLUMNS[table];
   const definition = definitions[column];
   if (!tableColumns(db, table).has(column)) {
+    // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
@@ -212,10 +214,13 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
   if (cols.has("anchor_generation")) return;
   if (cols.has("canon_version")) {
     try {
+      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
       db.exec(`ALTER TABLE ${table} RENAME COLUMN canon_version TO anchor_generation`);
       return;
     } catch {
+      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
       db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
+      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
       db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
       // SAFETY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused
       // SAFETY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES
@@ -227,11 +232,15 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
       // SAFETY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —
       // SAFETY: exposure is the unreleased intermediate build only; see ADR-0031 §4.
       try {
+        // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
         db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
-      } catch {}
+      } catch {
+        // WHY: DROP failure leaves the inert both-columns store; see SAFETY above.
+      }
       return;
     }
   }
+  // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
   db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
 }
 
@@ -533,9 +542,13 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   const hasLeases = hasTable("served_leases");
   const sweepGenerations = (): void => {
     if (hasLeases) {
+      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
       db.exec(`DELETE FROM served_leases WHERE ${FOREIGN_GENERATION_LEASE_SQL}`);
+      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
     }
+    // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
     db.exec(`DELETE FROM file_snapshots WHERE ${FOREIGN_GENERATION_SNAPSHOT_SQL}`);
+    // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
     db.exec(`DELETE FROM line_lineage WHERE ${ORPHAN_LINEAGE_SQL}`);
     // WHY: one provenance rule as of this sweep — a lease that names no surviving
     // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
@@ -548,6 +561,7 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
     // WHY: (the generation-gated grant misses) and self-healing.
     if (hasLeases) {
+      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
       db.exec(`DELETE FROM served_leases WHERE ${DANGLING_LEASE_SQL}`);
     }
   };
@@ -693,6 +707,7 @@ function buildStore(db: DatabaseSync): boolean {
       "session_id TEXT NOT NULL, " +
       "file_path TEXT NOT NULL, " +
       "reported TEXT, " +
+      "outline_folds TEXT, " +
       "updated_at INTEGER NOT NULL, " +
       "PRIMARY KEY (session_id, file_path)" +
       ")",
@@ -745,6 +760,8 @@ function buildStore(db: DatabaseSync): boolean {
   addColumnIfMissing(db, "served", "retired");
   addColumnIfMissing(db, "served", "canons");
   addColumnIfMissing(db, "served", "snapshotId");
+  addColumnIfMissing(db, "served_session_meta", "outline_folds");
+
   addColumnIfMissing(db, "undo", "result_content");
   // WHY: (#87c) the other half of the fast path: a stamp that is already current records this version
   // WHY: and this generation, so re-writing either would take the write lock on every open to say what

@@ -108,6 +108,8 @@ export interface PrepareOptions {
   maxLineBytes?: number;
   maxTruncLines?: number;
   render?: "served" | "verbatim";
+  /** Server-derived windows (outline declaration rows): the caller-window count cap does not apply. */
+  derivedWindows?: boolean;
   store?: import("../hash-store.js").HashStore;
   noPersist?: boolean;
   preloadedFile?: LFile;
@@ -196,6 +198,7 @@ export async function prepareFile(
     ...(options?.windows !== undefined ? { windows: options.windows } : {}),
     ...(options?.noteClauses !== undefined ? { noteClauses: options.noteClauses } : {}),
     ...(options?.render !== undefined ? { render: options.render } : {}),
+    ...(options?.derivedWindows === true ? { derivedWindows: true } : {}),
   };
   const maxLineBytes = options?.maxLineBytes;
   const maxTruncLines = options?.maxTruncLines ?? AUTO_READ_MAX;

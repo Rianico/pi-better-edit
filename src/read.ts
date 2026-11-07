@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_ANCHOR_RADIUS,
   DEFAULT_WINDOW_LIMIT,
+  OUTLINE_IGNORED_WINDOWS_WARNING,
   admitReadRequest,
   normalizeReadPayload,
   planWindows,
@@ -46,6 +47,24 @@ import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic, reportWarning } from "./diagnostics.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import type { SpanProvider } from "./read-expansion/provider-contract.js";
+import type { OutlineFoldRange } from "./hashline/resolve.js";
+
+/**
+ * Gaps between served single-line outline windows: the 1-based closed line intervals no outline
+ * row covers. The edit seam refuses a multi-line replacement whose strict interior covers one of
+ * these lines while it is still unserved (tranche 3 fold-gate), so an outline fold can never be
+ * silently erased. Sorted ascending; empty when every served line is adjacent.
+ */
+function outlineFoldRanges(servedLines: readonly number[]): OutlineFoldRange[] {
+  const folds: OutlineFoldRange[] = [];
+  for (let i = 1; i < servedLines.length; i++) {
+    const startLine = servedLines[i - 1]! + 1;
+    const endLine = servedLines[i]! - 1;
+    if (startLine <= endLine) folds.push({ startLine, endLine });
+  }
+  return folds;
+}
+import type { OutlineSymbol } from "./read-expansion/ast-provider.js";
 import { selectionRangeNote } from "./read-expansion/selection-range-note.js";
 import { recordProviderFailure } from "./read-expansion/audit.js";
 import {
@@ -62,10 +81,7 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
-const renderModeSchema = Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
-  description: `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix.`,
-});
-
+const OUTLINE_MODE_DESCRIPTION = `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix; "outline" serves only symbol declaration lines as anchors (caller windows are ignored).`;
 const readOffsetWindowSchema = Type.Object(
   {
     offset: Type.Optional(
@@ -107,17 +123,36 @@ const readWindowSchema = Type.Union([readAnchorWindowSchema, readOffsetWindowSch
 // WHY: one file per call (ADR-0041 D1): `file` names it, `windows` scopes it, `mode` renders
 // WHY: it. Parallel reads are parallel tool calls — there is no outer array and no per-file mode.
 // WHY: A payload without `file` fails validation before admission runs.
-export const readToolSchema = Type.Object({
-  file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
-  windows: Type.Optional(
-    Type.Array(readWindowSchema, {
-      maxItems: MAX_READ_WINDOWS,
-      description:
-        "One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; in the default `served` mode every window's rows are served, so anchors from all of them work in a single `edit`",
+export const readToolSchema = Type.Union(
+  [
+    Type.Object({
+      file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
+      windows: Type.Optional(
+        Type.Array(readWindowSchema, {
+          description:
+            "One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; ignored in outline mode, which serves only symbol declaration lines",
+        }),
+      ),
+      mode: Type.Literal("outline", { description: OUTLINE_MODE_DESCRIPTION }),
     }),
-  ),
-  mode: Type.Optional(renderModeSchema),
-});
+    Type.Object({
+      file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
+      windows: Type.Optional(
+        Type.Array(readWindowSchema, {
+          maxItems: MAX_READ_WINDOWS,
+          description:
+            "One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; in the default `served` mode every window's rows are served, so anchors from all of them work in a single `edit`",
+        }),
+      ),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
+          description: OUTLINE_MODE_DESCRIPTION,
+        }),
+      ),
+    }),
+  ],
+  { description: OUTLINE_MODE_DESCRIPTION },
+);
 
 // WHY: the builtin renderers key on `file_path ?? path` plus `offset`/`limit`; our payload
 // WHY: field is `file` (ADR-0041 D1/D4), but recorded history (`files`-shaped per ADR-0040, or a
@@ -390,7 +425,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
         // WHY: not the target serves rows. A call naming neither a served target nor an anchor window
         // WHY: still opens nothing, so the read that serves nothing pays nothing.
         const needsStore =
-          request.mode === "served" ||
+          request.mode !== "verbatim" ||
           request.windows?.some((window) => window.kind === "anchor") === true;
         const store = needsStore ? await loadHashStore() : undefined;
         const ordered: OrderedOutcome[] = [];
@@ -413,12 +448,40 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           const target = request;
           abortIf(signal);
           const mode = request.mode;
+          // WHY: outline mode derives its own window set from the tranche-1 AST seam: one
+          // WHY: single-line window per declaration line, so the standard serve seam below leases
+          // WHY: declaration lines only (ADR-0004) with no new storage or projection layers.
+          // WHY: Caller windows are ignored — the mode defines the coverage.
+          let outlineOffsets: Array<{ kind: "offset"; offset: number; limit: number }> | undefined;
+          if (mode === "outline") {
+            const outlineOf = (
+              spanProvider as
+                | { outline?: (file: string) => Promise<readonly OutlineSymbol[]> }
+                | undefined
+            )?.outline;
+            const symbols = (await outlineOf?.(toCwd(target.file, cwd))) ?? [];
+            const lines = [
+              ...new Set(
+                symbols
+                  .map((symbol) => symbol.line)
+                  .filter((line) => Number.isInteger(line) && line >= 1),
+              ),
+            ].sort((a, b) => a - b);
+            outlineOffsets = lines.map((line) => ({
+              kind: "offset" as const,
+              offset: line,
+              limit: 1,
+            }));
+          }
+          const requested = outlineOffsets ?? target.windows;
           // WHY: the served cap bounds the anchor space a read materializes; a verbatim file serves no
           // WHY: anchors, so it carries no cap here (the decode gate is the served path's).
-          const cap = mode === "served" ? { maxLines: remainingServedLines } : {};
+          const cap = mode !== "verbatim" ? { maxLines: remainingServedLines } : {};
           // WHY: an anchor window must resolve BEFORE the file is prepared (its offset is not known
           // WHY: yet), so the file is read once here and handed to the seam below — never twice.
-          const wantsAnchor = target.windows?.some((window) => window.kind === "anchor") === true;
+          const wantsAnchor =
+            outlineOffsets === undefined &&
+            target.windows?.some((window) => window.kind === "anchor") === true;
           let preloaded: LFile | undefined = wantsAnchor
             ? await loadFileKindAndText(toCwd(target.file, cwd), {
                 ...cap,
@@ -448,7 +511,24 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               store,
             };
           }
-          const plan = planWindows(target, resolver);
+          // WHY: an empty outline is the anchor-omitted precedent: the file still prepares (for its
+          // WHY: header counts) but serves no rows, naming the miss in one warning line.
+          const plan: WindowPlan =
+            outlineOffsets !== undefined
+              ? {
+                  windows: outlineOffsets.map(({ offset, limit }) => ({ offset, limit })),
+                  warnings: [
+                    // WHY: caller windows are ignored in outline mode — the mode defines the
+                    // WHY: coverage — so a non-empty caller list is named in one `[Window warning: ...]`
+                    // WHY: line, the anchor-miss shape, instead of dropping silently.
+                    ...(target.windows !== undefined && target.windows.length > 0
+                      ? [OUTLINE_IGNORED_WINDOWS_WARNING]
+                      : []),
+                    ...(outlineOffsets.length === 0 ? ["[No symbols found.]"] : []),
+                  ],
+                  omittedAll: outlineOffsets.length === 0,
+                }
+              : planWindows(target, resolver);
           // WHY: expansion is mode-independent (D11/D19): served adds leases, verbatim adds none;
           // WHY: the note is chrome, so its setting is resolved before the file is prepared, and
           // WHY: the lookup itself runs after preparation, where the served window and total are known.
@@ -463,8 +543,8 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: shape, a visible change for `files`-shaped singles that rendered the bounded-ask
           // WHY: sub-banner at base. Multi-window reads keep their per-section headers.
           const singlePage =
-            target.windows?.length === 1 && target.windows[0]?.kind === "offset"
-              ? { offset: target.windows[0].offset, limit: target.windows[0].limit }
+            requested?.length === 1 && requested[0]?.kind === "offset"
+              ? { offset: requested[0].offset, limit: requested[0].limit }
               : undefined;
           // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
           // WHY: `noPersist` defers the authoritative materialization until the served windows are
@@ -539,10 +619,13 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             ...(plan.windows !== undefined && plan.windows.length > 1 && note !== undefined
               ? { noteClauses: note.clauses }
               : {}),
-            ...(mode === "served" && store !== undefined ? { store } : {}),
+            ...(mode !== "verbatim" && store !== undefined ? { store } : {}),
             noPersist: true,
-            render: mode,
-            ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
+            // WHY: outline renders through the served anchor pipeline; only verbatim is hashless.
+            render: mode === "verbatim" ? "verbatim" : "served",
+            // WHY: outline windows are server-derived single-line rows, not caller fan-out, so the
+            // WHY: caller-window count cap does not apply (the shared byte/line budgets still do).
+            ...(outlineOffsets !== undefined ? { derivedWindows: true } : {}),
           });
           if (prepared.kind === "image") {
             // WHY: the interception point — the image never becomes a `results` entry, so no image
@@ -577,14 +660,14 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           // WHY: a served file draws the WHOLE file's line count off the call's budget, not its page —
           // WHY: the paged walk retained one anchor per hashed line, which is what the budget bounds.
           // WHY: A verbatim file takes no cap and so draws nothing.
-          if (mode === "served") remainingServedLines -= prepared.lineTotals.split;
+          if (mode !== "verbatim") remainingServedLines -= prepared.lineTotals.split;
         }
         const results: FileResult[] = ordered.flatMap((outcome) =>
           outcome.kind === "file" ? [outcome.entry] : [],
         );
         const preparedFiles = results.filter(isPrepared);
         for (const entry of preparedFiles) {
-          if (entry.mode !== "served" || entry.plan.omittedAll) continue;
+          if (entry.mode === "verbatim" || entry.plan.omittedAll) continue;
           const adopted = entry.prepared.statAdoption;
           if (adopted !== undefined) {
             // WHY: (ADR-0043) the epoch names the same bytes `fileSnap` would describe — the checksum
@@ -622,11 +705,28 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
         };
 
         const servedEntries = preparedFiles.filter(
-          (entry) => entry.mode === "served" && !entry.plan.omittedAll,
+          (entry) => entry.mode !== "verbatim" && !entry.plan.omittedAll,
         );
         // WHY: a verbatim-only call shares admission/normalization but must not touch served state —
         // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
         if (servedEntries.length === 0) {
+          // WHY: an empty outline serves no rows, so it records no folds — but it still clears folds a
+          // WHY: previous outline read left behind, or a stale record could fail a later span closed on
+          // WHY: coordinates from another snapshot. Best-effort like the materialization above: a missed
+          // WHY: clear degrades to the same fail-closed refusal the gate would give anyway.
+          const emptyOutline = preparedFiles.find(
+            (entry) => entry.mode === "outline" && entry.plan.omittedAll,
+          );
+          if (emptyOutline !== undefined) {
+            try {
+              await sessionFromContext(
+                sessionCtx,
+                emptyOutline.prepared.absolutePath,
+              ).recordOutlineFolds([]);
+            } catch (error) {
+              reportDiagnostic("read", "Failed to clear outline fold record:", error);
+            }
+          }
           return {
             content,
             details:
@@ -726,6 +826,18 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             isFullRead,
           });
           if (isFullRead) await session.clearDrift();
+          // WHY: outline mode serves only declaration lines, so the gaps between the served rows are
+          // WHY: unserved folds the edit seam must not silently erase (tranche 3 fold-gate). They are
+          // WHY: recorded here, beside the mirror write, in the read snapshot's coordinates; a later
+          // WHY: served read that fills the folded lines disarms the gate via the mirror-null check.
+          // WHY: A full (non-outline) read cannot reach this branch, and it clears the whole session-meta
+          // WHY: row through `clearDrift` above — folds never outlive a full re-read.
+          if (entry.mode === "outline") {
+            const servedLines = servedRowsOf(entry)
+              .map((row) => row.position + 1)
+              .sort((a, b) => a - b);
+            await session.recordOutlineFolds(outlineFoldRanges(servedLines));
+          }
           // WHY: fire-and-forget by design — the seam snapshots its observers and isolates each one, so
           // WHY: this read's return value and timing are unchanged whether or not an observer is attached.
           notifyServedSpans({

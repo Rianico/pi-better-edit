@@ -24,9 +24,8 @@ export const DEFAULT_WINDOW_LIMIT = 50;
 /** `radius` default for `around_anchor` (spec §4.1/§4.3). */
 export const DEFAULT_ANCHOR_RADIUS = 10;
 
-/** Render mode of one file: `served` (anchored rows) or `verbatim` (plain text, no leases). */
-export type RenderMode = "served" | "verbatim";
-
+/** Render mode of one file: `served` (anchored rows), `verbatim` (plain text, no leases), or `outline` (declaration lines only, served). */
+export type RenderMode = "served" | "verbatim" | "outline";
 /** A line window of one file, in the reader's 1-indexed terms (spec §4.1). */
 interface OffsetWindow {
   offset: number;
@@ -72,7 +71,7 @@ function positiveInt(value: unknown, name: string): number {
  */
 function admitMode(value: unknown): RenderMode | undefined {
   if (value === undefined) return undefined;
-  if (value === "served" || value === "verbatim") return value;
+  if (value === "served" || value === "verbatim" || value === "outline") return value;
   // WHY: `assertNever` carries the union's exhaustiveness to runtime and keeps the wording the
   // WHY: schema rejection uses for the same payload.
   return assertNever(value as never);
@@ -155,18 +154,29 @@ export function admitReadRequest(params: RawReadParams): AdmittedRequest {
     rawWindows === undefined || rawWindows.length === 0
       ? undefined
       : rawWindows.map((window, windowIndex) => admitWindow(window, `windows[${windowIndex}]`));
-  // WHY: the schema's `maxItems` and this guard enforce the same cap for validated and
-  // WHY: unvalidated callers alike — window count is what multiplies the auto-read budget.
-  if ((windows?.length ?? 0) > MAX_READ_WINDOWS) {
+  // WHY: the schema's per-variant `maxItems` and this guard enforce the same split for validated
+  // WHY: and unvalidated callers alike — window count is what multiplies the auto-read budget, but
+  // WHY: outline mode ignores caller windows (its coverage comes from the AST seam), so the cap
+  // WHY: binds every mode except outline. Narrowly outline-only: a 17-window served call still fails here.
+  if (mode !== "outline" && (windows?.length ?? 0) > MAX_READ_WINDOWS) {
     throw badPayload(MAX_READ_WINDOWS_MESSAGE);
   }
   return { file, ...(windows !== undefined ? { windows } : {}), mode };
 }
 
 /** The inline warning one unresolvable anchor window leaves behind (spec §4.3). */
+/** The inline warning one unresolvable anchor window leaves behind (spec §4.3). */
 function anchorWarning(anchor: string): string {
   return `[Window warning: Anchor '${anchor}' not found; window omitted]`;
 }
+
+/**
+ * The inline warning an outline read leaves when the caller also named windows: outline mode
+ * derives its own coverage from the AST seam, so caller windows are ignored — never applied,
+ * never refused. One line in the `[Window warning: ...]` shape of the anchor-miss warning.
+ */
+export const OUTLINE_IGNORED_WINDOWS_WARNING =
+  "[Window warning: caller windows ignored in outline mode]";
 
 /** What one file's requested windows became: the windows to walk, the warnings, and the flags. */
 export interface WindowPlan {

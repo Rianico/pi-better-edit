@@ -102,11 +102,23 @@ describe("read tool — TUI renderers for the {file} payload", () => {
     const tool = readTool();
     // WHY: the flat shape (ADR-0041 D1) carries its own `windows` description — the serve
     // WHY: claim lives on the call's windows array, not a nested file target.
-    const params = tool.parameters.properties as {
-      windows: { description: string };
-    };
-    const description = params.windows.description;
-    expect(description).toContain("in the default `served` mode every window's rows are served");
+    // WHY: outline mode lifts the window-count cap (it ignores caller windows), so the schema
+    // WHY: is one variant per mode family — the serve claim lives on the capped variant's array.
+    const variants = (
+      tool.parameters as unknown as {
+        anyOf: Array<{ properties: { windows: { description: string } } }>;
+      }
+    ).anyOf;
+    expect(variants).toHaveLength(2);
+    const descriptions = variants.map((variant) => variant.properties.windows.description);
+    expect(
+      descriptions.some((description) =>
+        description.includes("in the default `served` mode every window's rows are served"),
+      ),
+    ).toBe(true);
+    expect(
+      descriptions.some((description) => description.includes("ignored in outline mode")),
+    ).toBe(true);
   });
 
   it("keeps highlighting and call rendering for a legacy path payload (fix 4)", () => {

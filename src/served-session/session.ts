@@ -18,6 +18,7 @@ import { withStore, withBusyRetry, getCached, markRun, due } from "../store-kern
 // WHY: session module only asks for a pass at its deterministic boundary — the store open.
 import { vacuumSnapshots } from "../snapshot-store";
 import type { ServedRow } from "./serve-render.js";
+import type { OutlineFoldRange } from "../hashline/resolve.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
@@ -96,6 +97,16 @@ interface ServedStmts {
   ) => void;
   metaClearReported: (sessionKey: string, path: string) => void;
   metaDelete: (sessionKey: string, path: string) => void;
+  metaGetOutlineFolds: (
+    sessionKey: string,
+    path: string,
+  ) => { outline_folds: string | null } | undefined;
+  metaUpsertOutlineFolds: (
+    sessionKey: string,
+    path: string,
+    folds: string | null,
+    updatedAt: number,
+  ) => void;
   metaDeletePath: (path: string) => void;
   metaWipe: (sessionKey: string) => void;
 }
@@ -237,6 +248,26 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     }
     return stmt;
   };
+  // WHY: `node:sqlite` rows are untyped records; each page row is narrowed field-by-field instead of
+  // WHY: asserted, so a malformed lineage row grants no lease (fail-closed) rather than a wrong identity.
+  const lineagePageRows = (
+    snapshotId: number,
+    lineNumbers: readonly number[],
+  ): LeaseLineageRow[] => {
+    const rows: LeaseLineageRow[] = [];
+    for (const record of lineagePagesStmt(lineNumbers.length).all(snapshotId, ...lineNumbers)) {
+      const { anchor, line_id: lineId, canon_hash: canonHash } = record;
+      if (
+        typeof anchor !== "string" ||
+        typeof lineId !== "number" ||
+        typeof canonHash !== "string"
+      ) {
+        continue;
+      }
+      rows.push({ anchor, line_id: lineId, canon_hash: canonHash });
+    }
+    return rows;
+  };
   // WHY: canon evidence is derived here and nowhere else (#151): the lease for the anchor a served
   // WHY: mirror row names carries the digest the served line's canon produced, so no canon text is
   // WHY: stored and no process-wide hash->canon map exists (issue #149).
@@ -294,6 +325,17 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "DELETE FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
   const metaDeletePathStmt = db.prepare("DELETE FROM served_session_meta WHERE file_path = ?");
+  // WHY: outline fold ranges (tranche 3 fold-gate) share the session-meta row with the drift-notice
+  // WHY: dedup, so each upsert names only its own column and never clobbers the other.
+  const metaGetOutlineFoldsStmt = db.prepare(
+    "SELECT outline_folds FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+  );
+  const metaUpsertOutlineFoldsStmt = db.prepare(
+    "INSERT INTO served_session_meta (session_id, file_path, outline_folds, updated_at) " +
+      "VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(session_id, file_path) DO UPDATE SET " +
+      "outline_folds = excluded.outline_folds, updated_at = excluded.updated_at",
+  );
   const metaWipeStmt = db.prepare("DELETE FROM served_session_meta WHERE session_id = ?");
   return {
     servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
@@ -351,15 +393,11 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       const rows: LeaseLineageRow[] = [];
       for (let i = 0; i < lineNumbers.length; i += LINEAGE_PAGE_CHUNK) {
         const chunk = lineNumbers.slice(i, i + LINEAGE_PAGE_CHUNK);
-        rows.push(
-          ...(lineagePagesStmt(chunk.length).all(
-            snapshotId,
-            ...chunk,
-          ) as unknown as LeaseLineageRow[]),
-        );
+        rows.push(...lineagePageRows(snapshotId, chunk));
       }
       return rows;
     },
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageAnchorsOf: (...params) =>
       lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],
     leaseUpsertMany: (sessionKey, path, snapshotHash, updatedAt, grants) => {
@@ -434,6 +472,14 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     metaDeletePath: (path) => {
       withBusyRetry(() => {
         metaDeletePathStmt.run(path);
+      });
+    },
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `outline_folds`.
+    metaGetOutlineFolds: (...params) =>
+      metaGetOutlineFoldsStmt.get(...params) as { outline_folds: string | null } | undefined,
+    metaUpsertOutlineFolds: (sessionKey, path, folds, updatedAt) => {
+      withBusyRetry(() => {
+        metaUpsertOutlineFoldsStmt.run(sessionKey, path, folds, updatedAt);
       });
     },
     metaWipe: (sessionKey) => {
@@ -857,6 +903,83 @@ export function retireAbsentLeases(
   servedStmts(db).leaseRetireAbsent(now, filePath, snapshotId);
 }
 
+/** One validated outline fold range, or `undefined` when the stored row is not one. */
+function asOutlineFoldRange(item: unknown): OutlineFoldRange | undefined {
+  if (typeof item !== "object" || item === null) return undefined;
+  const { startLine, endLine } = item as { startLine?: unknown; endLine?: unknown };
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) return undefined;
+  const start = startLine as number;
+  const end = endLine as number;
+  if (start < 1 || end < start) return undefined;
+  return { startLine: start, endLine: end };
+}
+
+/**
+ * Outline fold ranges hiding unserved lines for this (session, path) (tranche 3 fold-gate).
+ * A missing row, a NULL column, or unparsable JSON reads as no folds, so the span gate stays
+ * inert (ADR-0024) instead of failing closed on a bookkeeping miss. Runs on the caller's store
+ * with no write, so the edit-path lease source can read it synchronously beside `loadLeases`.
+ */
+function getOutlineFoldsInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): OutlineFoldRange[] {
+  let raw: string | null;
+  try {
+    raw = servedStmts(store.db).metaGetOutlineFolds(sessionKey, path)?.outline_folds ?? null;
+  } catch {
+    // WHY: a store that predates the `outline_folds` column (or any failed read) carries no fold
+    // WHY: record — the gate stays inert and the next outline read re-records it.
+    return [];
+  }
+  if (typeof raw !== "string" || raw.length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const folds: OutlineFoldRange[] = [];
+  for (const item of parsed) {
+    const fold = asOutlineFoldRange(item);
+    if (fold !== undefined) folds.push(fold);
+  }
+  return folds;
+}
+
+/**
+ * Records this outline read's fold ranges, replacing the previous ones. An empty array clears the
+ * record (stored as NULL), so an outline that serves no folds leaves no stale refusal behind.
+ * The upsert names only `outline_folds`, never the drift-notice `reported` column.
+ */
+function setOutlineFoldsInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  folds: readonly OutlineFoldRange[],
+): void {
+  const valid: OutlineFoldRange[] = [];
+  for (const item of folds) {
+    const fold = asOutlineFoldRange(item);
+    if (fold !== undefined) valid.push(fold);
+  }
+  const value = valid.length > 0 ? JSON.stringify(valid) : null;
+  withStore(() => {
+    servedStmts(store.db).metaUpsertOutlineFolds(sessionKey, path, value, Date.now());
+  });
+}
+
+/** Outline fold ranges for (session, path) — the edit-path lease source reads them synchronously. */
+export function loadOutlineFolds(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): OutlineFoldRange[] {
+  return getOutlineFoldsInner(store, sessionKey, path);
+}
+
 /**
  * The in-transaction half of the serve-record write (CAND-3): the served mirror — optionally in
  * its truncated-serve shape — plus any explicitly displaced anchors added to the legacy retired
@@ -1200,6 +1323,14 @@ export function createSessionHandle(
     async markDriftReported(hashes: string[]): Promise<void> {
       const store = await resolveStore();
       addReportedInner(store, sessionKey, path, hashes);
+    },
+    async loadOutlineFolds(): Promise<readonly OutlineFoldRange[]> {
+      const store = await resolveStore();
+      return getOutlineFoldsInner(store, sessionKey, path);
+    },
+    async recordOutlineFolds(folds: readonly OutlineFoldRange[]): Promise<void> {
+      const store = await resolveStore();
+      setOutlineFoldsInner(store, sessionKey, path, folds);
     },
   };
 }
