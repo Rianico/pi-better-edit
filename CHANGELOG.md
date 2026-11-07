@@ -3,7 +3,7 @@
 ## [Unreleased]
 ### Features
 
-* **read:** add outline mode serving symbol declaration lines as single-line leased windows. Fold ranges record to the store and spanning edits refuse fail-closed; point edits still apply. ADR-0016.
+* **read:** add outline mode serving symbol declaration lines as single-line leased windows. Fold ranges record to the store and spanning edits refuse fail-closed; point edits still apply. ADR-0016. (#267)
 
 ## [2.17.0] - 2026-11-04
 
