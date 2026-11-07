@@ -49,7 +49,7 @@ interface LoggedWindow {
 /** One failed provider lookup: the file, the source, and the reason it could not answer. */
 export interface ProviderFailureLogEntry {
   readonly file: string;
-  readonly mode: "served" | "verbatim";
+  readonly mode: "served" | "verbatim" | "outline";
   readonly source: SpanSource;
   readonly reason: string;
   /** The window the lookup was asked about, when one is known. */

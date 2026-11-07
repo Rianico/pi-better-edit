@@ -39,7 +39,7 @@ import {
   type RangeCause,
   type ServedRow,
 } from "../domain-errors.js";
-import type { LeaseIdentityView } from "../hashline/resolve.js";
+import type { LeaseIdentityView, OutlineFoldRange } from "../hashline/resolve.js";
 
 // WHY: ---------------------------------------------------------------------------
 // WHY: Public contracts — mirrors served.ts so it can re-export without identity split
@@ -261,6 +261,9 @@ export function makeStaleAnchorRejection(opts: {
  *    plus the window-length check above. Only rows `0` and `servedLen - 1` — the anchors the model
  *    named — stay fail-closed on a `null`, because with no served row there is nothing to verify them
  *    against;
+ *  - a multi-line span whose strict interior covers a recorded outline fold line that is still
+ *    unserved in the mirror -> `E_STALE_RANGE` (tranche 3 fold-gate); single-line spans have no
+ *    interior and skip it, and a later served read that fills the folded lines disarms it;
  *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: "retirement"`, and
  *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code
  *    with `cause: "served-range staleness"` (Probes A/E/K: never apply at a coordinate whose
@@ -281,6 +284,7 @@ export function verifyRebasedSpan(args: {
   snapshot: FileSnapshotContext;
   leaseFor(anchor: string): LeaseIdentityView | undefined;
   rebasedLineOf(lineId: number): number | undefined;
+  outlineFolds?: readonly OutlineFoldRange[];
 }): void {
   const {
     served,
@@ -291,6 +295,7 @@ export function verifyRebasedSpan(args: {
     snapshot,
     leaseFor,
     rebasedLineOf,
+    outlineFolds,
   } = args;
   const where = snapshot.filePath ? ` in ${snapshot.filePath}` : "";
   const servedLen = servedEnd - servedStart + 1;
@@ -378,6 +383,44 @@ export function verifyRebasedSpan(args: {
         endLine: rebasedEnd,
         snapshot,
         firstOffendingLine: currentLine,
+        cause: "served-range staleness",
+      });
+    }
+  }
+  // WHY: outline fold-gate (tranche 3): a multi-line replacement whose strict interior covers a
+  // WHY: line an outline read hid (a recorded fold) is refused fail-closed with `E_STALE_RANGE` while
+  // WHY: that line is still unserved — the fold must never be silently erased. Single-line spans
+  // WHY: (replacement or point insertion on a declaration anchor) have no interior and skip this gate.
+  // WHY: The gate requires a mirror-null interior: a later served read that fills the folded lines
+  // WHY: disarms it, so only a shifting edit can misalign the recorded coordinates — and a misaligned
+  // WHY: range still fails closed, never erases. Absent or empty folds keep the gate inert (ADR-0024
+  // WHY: interior acceptance is unchanged for non-outline reads, which record no folds).
+  // WHY: `served-range staleness` is the diagnosis: the span no longer resolves against the served
+  // WHY: record the session holds, and a re-read revives it — never a retry mandate (issue #149).
+  if (outlineFolds !== undefined && outlineFolds.length > 0 && rebasedEnd > rebasedStart) {
+    for (const fold of outlineFolds) {
+      const startLine = fold.startLine;
+      const endLine = fold.endLine;
+      if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || endLine < startLine)
+        continue;
+      const overlapStart = Math.max(startLine, rebasedStart + 1);
+      const overlapEnd = Math.min(endLine, rebasedEnd - 1);
+      if (overlapStart > overlapEnd) continue;
+      let stillFolded = false;
+      for (let line = overlapStart; line <= overlapEnd; line++) {
+        if (served[line - 1] == null) {
+          stillFolded = true;
+          break;
+        }
+      }
+      if (!stillFolded) continue;
+      throw makeServedRejection({
+        code: "E_STALE_RANGE",
+        headline: `line ${overlapStart}${overlapEnd > overlapStart ? `-${overlapEnd}` : ""}${where} is hidden by an outline fold (unserved).`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: overlapStart,
         cause: "served-range staleness",
       });
     }

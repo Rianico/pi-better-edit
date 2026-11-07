@@ -241,8 +241,8 @@ export function resolveLeasedEdit(args: {
     snapshot,
     leaseFor: (anchor) => source.leaseFor(anchor),
     rebasedLineOf: (lineId) => source.rebasedLineOf(lineId),
+    ...(source.outlineFolds !== undefined ? { outlineFolds: source.outlineFolds } : {}),
   });
-
   // WHY: the fast path is exactly the spec's predicate (spec §3.5):
   // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
   // WHY: lease_from.served_snapshot_hash === lease_to.served_snapshot_hash`. Content coordinates

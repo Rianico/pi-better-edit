@@ -59,9 +59,11 @@ function normReqInt(value: unknown, name: string): number {
  * Validates a `windows` request. `undefined` and `[]` both mean "no windows": the caller falls back
  * to the single-window `offset`/`limit` contract, so an empty array stays backward compatible.
  */
-function normWindows(windows: ReadWindow[] | undefined): ReadWindow[] | undefined {
+function normWindows(windows: ReadWindow[] | undefined, derived = false): ReadWindow[] | undefined {
   if (windows === undefined || windows.length === 0) return undefined;
-  if (windows.length > MAX_READ_WINDOWS) {
+  // WHY: derived windows are server-computed single-line rows, not caller fan-out, so the count
+  // WHY: cap does not apply to them (the shared byte/line budgets still bound the page).
+  if (!derived && windows.length > MAX_READ_WINDOWS) {
     // WHY: the message is shared with admission (src/read.ts) — the same cap named one way.
     throw new DomainError("E_BAD_PAYLOAD", { message: MAX_READ_WINDOWS_MESSAGE });
   }
@@ -599,6 +601,7 @@ export async function fmtReadPreview(
     windows?: ReadWindow[];
     noteClauses?: readonly (string | undefined)[];
     render?: "served" | "verbatim";
+    derivedWindows?: boolean;
   },
   anchors?: RenderAnchors,
   path?: string,
@@ -642,7 +645,7 @@ export async function fmtReadPreview(
     );
   }
   const startLine = normPosInt(options.offset, "offset") ?? 1;
-  const windows = normWindows(options.windows);
+  const windows = normWindows(options.windows, options.derivedWindows === true);
   /**
    * WHY: one walk per page answers both of a read's questions: the lines to render, and (served) the
    * WHY: anchors to render them with. Without a plan the anchors keep their own whole-content call,

@@ -1,5 +1,9 @@
 /** The one provider the read tool receives: Markdown, paragraphs, data, shell or AST by path. */
-import { createAstSpanProvider, type AstSpanProviderOptions } from "./ast-provider.js";
+import {
+  createAstSpanProvider,
+  type AstSpanProviderOptions,
+  type OutlineSymbol,
+} from "./ast-provider.js";
 import { createBashSpanProvider, isShellPath } from "./bash-provider.js";
 import { grammarLanguageForFile } from "./grammar-manifest.js";
 import { createMarkdownSpanProvider, isMarkdownPath } from "./markdown-provider.js";
@@ -32,8 +36,15 @@ export interface ReadSpanProviderOptions extends AstSpanProviderOptions {
   qualifiedNameTimeoutMs?: number;
 }
 
+/** The read provider plus the tranche-1 outline seam (kept off the shared `SpanProvider` contract). */
+export interface OutlineCapableProvider extends SpanProvider {
+  outline(file: string): Promise<readonly OutlineSymbol[]>;
+}
+
 /** Compose the text-shaped and AST providers behind the existing read seam. */
-export function createReadSpanProvider(options: ReadSpanProviderOptions = {}): SpanProvider {
+export function createReadSpanProvider(
+  options: ReadSpanProviderOptions = {},
+): OutlineCapableProvider {
   const ast = createAstSpanProvider(options);
   const markdown = createMarkdownSpanProvider(
     options.readTextFile === undefined ? {} : { readTextFile: options.readTextFile },
@@ -59,9 +70,26 @@ export function createReadSpanProvider(options: ReadSpanProviderOptions = {}): S
       return ast.enclosingChain(file, window);
     },
   };
-  return withQualifiedNames(
+  const outline = (file: string): Promise<readonly OutlineSymbol[]> => ast.outline(file);
+  const wrapped = withQualifiedNames(
     base,
     options.qualifiedNameResolver,
     options.qualifiedNameTimeoutMs ?? DEFAULT_QUALIFIED_NAME_TIMEOUT_MS,
   );
+  if (wrapped === base) return Object.assign(base, { outline });
+  // WHY: the qualified-name wrapper rebuilds the provider object, so the outline seam is
+  // WHY: re-attached by delegation instead of spreading `wrapped` (which would freeze the live
+  // WHY: `runtimeAbsent` getter into one reading).
+  return {
+    get runtimeAbsent() {
+      return wrapped.runtimeAbsent === true;
+    },
+    prefetch(cwd?: string) {
+      return wrapped.prefetch?.(cwd);
+    },
+    enclosingChain(file, window) {
+      return wrapped.enclosingChain(file, window);
+    },
+    outline,
+  };
 }

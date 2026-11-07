@@ -15,6 +15,7 @@ import {
   createSessionHandle,
   loadAnchorHomes,
   loadLeases,
+  loadOutlineFolds,
   type ServedLease,
 } from "../served-session/session.js";
 import { snapshotHashFor, positionsByIdentity, isCurrentAnchorGeneration } from "../snapshot-store";
@@ -181,6 +182,10 @@ export function leaseSpanSource(input: {
   // WHY: the session-wide home lookup runs on the failure path only: the happy
   // WHY: path never calls it, so serving one more file costs nothing at edit time.
   const { store, sessionKey, absolutePath } = input;
+  // WHY: outline fold ranges recorded by the last outline read of this file (tranche 3 fold-gate).
+  // WHY: Absent or empty keeps the span gate inert (ADR-0024), so non-outline reads — which record
+  // WHY: no folds — resolve exactly as before.
+  const outlineFolds = loadOutlineFolds(store, sessionKey, absolutePath);
   return {
     currentSnapshotHash: snapshotHashFor(input.content),
     leaseFor: (anchor) => {
@@ -197,6 +202,7 @@ export function leaseSpanSource(input: {
     rebasedLineOf: (lineId) => positions.get(lineId),
     anchorHomes: (anchor) =>
       loadAnchorHomes(store, sessionKey, anchor).filter((home) => home !== absolutePath),
+    ...(outlineFolds.length > 0 ? { outlineFolds } : {}),
   };
 }
 

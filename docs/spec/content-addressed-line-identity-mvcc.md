@@ -829,3 +829,17 @@ ADR-0016's *Consequences* states that a retired anchor "is recoverable only by a
 ### 9.6 Acceptance
 
 The nine tests listed in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) must fail on `bd3a8f2` (and on `ba7c8d2`, where the defect is re-confirmed) and pass on the patched revision; the `lint`, `format`, `typecheck` and `test:coverage` gates are unchanged.
+
+---
+
+## 10. Outline Mode (`mode: "outline"`) and the Fold Gate
+
+Status: **Adopted & Normative** — implements [ADR-0016. Outline Mode Serves Declaration Lines as Leased Point Windows](../adr/0016-outline-mode-point-anchors.md) (the live record; §9.5's "ADR-0016" names the archived `docs/.archive_adrs/0016-content-addressed-line-identity-supersedes-healing.md` and is unaffected). Where this section contradicts earlier sections, this section is normative for outline reads only; non-outline reads are unchanged.
+
+- `read` with `mode: "outline"` is a declaration map: the coverage is one single-line leased window (`{ offset: line, limit: 1 }`) per outline symbol line, derived from `AstSpanProvider.outline` (`src/read-expansion/ast-provider.ts`), deduped and sorted. Caller windows are ignored with one `[Window warning: caller windows ignored in outline mode]` line, and the caller-window count cap does not apply (server-derived rows, not caller fan-out). The rows render through the standard served pipeline, so every outline row is a live point anchor under the [ADR-0004](../adr/0004-model-tool-boundary-and-error-protocol.md) edit contract.
+- The vocabulary is the tranche-1 ten-kind LSP subset (`class`, `interface`, `struct`, `enum`, `namespace`, `function`, `method`, `constructor`, `constant`, `typeParameter`); `module` is excluded because no tranche-1 table emits it. Each row maps to its scope node's own start row — the physical declaration line — so leading documentation and decorators never move the row, and each anchor derives from its line's raw bytes per [ADR-0013](../adr/0013-anchor-identity-derives-from-raw-bytes.md). The selection-range note is unchanged: it still names the one span enclosing the window's first line ([ADR-0014](../adr/0014-anchor-the-selection-range-note-on-a-point-not-a-range.md), [ADR-0015](../adr/0015-reject-naming-both-ends-of-a-straddle.md)).
+- The gaps between served declaration rows are recorded as `outline_folds` in `served_session_meta` (one upsert naming only its own column, beside the drift-notice dedup). An empty outline records none; a full non-outline read clears the row. The fold gate in `verifyRebasedSpan` refuses a multi-line replacement whose strict interior covers a recorded fold line that is still unserved (`served[line - 1] == null`) fail-closed with `[E_STALE_RANGE]` under `Current range (fresh read):` (`details.cause: "served-range staleness"`). Single-line replacements and `before`/`after` point insertions have no interior and skip the gate; a later served read that fills the folded lines disarms it. Absent or empty folds keep the gate inert, so non-outline interior acceptance is unchanged.
+
+| Failure condition | Seam | Code | Window | Hint | Leased |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Multi-line replacement whose strict interior covers a still-unserved outline fold line | `serve-render.ts` (`verifyRebasedSpan`, fold gate) | `[MODEL] [E_STALE_RANGE]` | Echoes current range under `Current range (fresh read):`; model decides from the rows | read and re-target | current range rows |
