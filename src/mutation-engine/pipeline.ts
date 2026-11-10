@@ -74,7 +74,12 @@ import { HASH_LEN } from "../hashline/alphabet.js";
 import { denseServeRows, type ResolvedRange } from "../served-session/serve-render.js";
 import { resolveLeasedEdit } from "../hashline/lease-resolve.js";
 import type { FileSnapshotContext } from "../served-session/serve-render.js";
-import { DomainError, formatWarning, type DomainErrorCode } from "../domain-errors.js";
+import {
+  DomainError,
+  formatWarning,
+  UNVERIFIED_HEADLINE,
+  type DomainErrorCode,
+} from "../domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
@@ -181,6 +186,13 @@ interface ApplyOneEditInput {
    * apart. Absent for preview, where no identity map is in flight.
    */
   currentIds?: (number | null)[];
+  /**
+   * Present once an earlier item of a live batch has changed the working buffer: maps a buffer line
+   * to its pre-batch line (`undefined` for a line the batch created). A rejection's rows then come
+   * from an uncommitted buffer and are not guaranteed current-file rows, so they are neither shown
+   * nor recorded as served.
+   */
+  baselineLineOf?: (bufferLine: number) => number | undefined;
   onRejected: (error: DomainError) => Promise<never>;
 }
 
@@ -237,6 +249,14 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     });
   } catch (error) {
     if (error instanceof DomainError) {
+      // WHY: rows rendered from a buffer earlier batch items already changed come from content this
+      // WHY: call has not committed as the current on-disk state, so they are not guaranteed
+      // WHY: current-file rows: recording them would patch the persistent mirror at the wrong
+      // WHY: positions (displacing the real served rows, so a later standalone edit of an already
+      // WHY: served span was refused).
+      if (input.baselineLineOf !== undefined && error.servedRows.length > 0) {
+        return input.onRejected(shiftedBufferRejection(error, input.baselineLineOf));
+      }
       await recordRejectionServe({
         error,
         sessionKey: input.sessionKey,
@@ -299,6 +319,58 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     mutationSpans: anchorResult.mutationSpans,
     mutationStats: anchorResult.mutationStats,
   };
+}
+
+/**
+ * A rejection raised inside a batch buffer that earlier items already changed, made served-or-absent
+ * (the foreign-rejection rule): its rows come from a buffer this call has not committed as the
+ * current on-disk state and are not guaranteed current-file rows, so they must not be shown as a
+ * fresh read or recorded as served, and grant no lease. The rows are dropped and the headline says
+ * so, stating which current-file lines an anchored read would serve (facts only, no retry
+ * directive). Code, cause and first offending line are preserved.
+ */
+function shiftedBufferRejection(
+  error: DomainError,
+  baselineLineOf: (bufferLine: number) => number | undefined,
+): DomainError {
+  const lines = error.servedRows
+    .map((row) => baselineLineOf(row.position + 1))
+    .filter((line): line is number => line !== undefined);
+  const read =
+    lines.length > 0
+      ? `An anchored read of current-file lines ${Math.min(...lines)}-${Math.max(...lines)} would serve that range.`
+      : "None of these rows exist in the current file.";
+  const note =
+    " An earlier item of this call had already changed the temporary batch buffer, so this " +
+    "rejection's rows come from an uncommitted buffer and are not guaranteed current-file rows: " +
+    `none are shown, none grant leases and none were recorded as served. ${read}`;
+  const rest = {
+    servedRows: [],
+    servedBlock: "",
+    ...(error.firstOffendingLine !== undefined
+      ? { firstOffendingLine: error.firstOffendingLine }
+      : {}),
+  };
+  // SAFETY: each `code` gate below selects the registry member whose shape `payload` holds.
+  if (error.code === "E_STALE_RANGE") {
+    const { headline, cause } = error.payload as DomainError<"E_STALE_RANGE">["payload"];
+    return new DomainError("E_STALE_RANGE", { ...rest, cause, headline: `${headline}${note}` });
+  }
+  if (error.code === "E_UNVERIFIED_RANGE") {
+    const { headline, cause } = error.payload as DomainError<"E_UNVERIFIED_RANGE">["payload"];
+    return new DomainError("E_UNVERIFIED_RANGE", {
+      ...rest,
+      cause,
+      headline: `${headline ?? UNVERIFIED_HEADLINE}${note}`,
+    });
+  }
+  if (error.code === "E_STALE_ANCHOR") {
+    const { headline, cause } = error.payload as DomainError<"E_STALE_ANCHOR">["payload"];
+    return new DomainError("E_STALE_ANCHOR", { ...rest, cause, headline: `${headline}${note}` });
+  }
+  // WHY: no other row-carrying code reaches the mutate loop's resolver; one that does keeps its
+  // WHY: rendering but is still never recorded at buffer coordinates by the caller.
+  return error;
 }
 
 /**
@@ -813,6 +885,16 @@ async function runMutations(
   let currentIds: (number | null)[] = isPreview
     ? []
     : workingBufferIds(hashStore, absolutePath, originalNormalized);
+  // WHY: pre-batch line of each identity, so a rejection inside a changed buffer can name the
+  // WHY: current-file lines an anchored read would serve (see `shiftedBufferRejection`).
+  const baselineLineById = new Map<number, number>();
+  currentIds.forEach((id, i) => {
+    if (id !== null) baselineLineById.set(id, i + 1);
+  });
+  const baselineLineOf = (bufferLine: number): number | undefined => {
+    const id = currentIds[bufferLine - 1];
+    return id === null || id === undefined ? undefined : baselineLineById.get(id);
+  };
   // WHY: the working buffer applies each edit to the previous edit's output, which is exactly the
   // WHY: preceding-delta rebase of spec §3.2.2: an anchor of edit k resolves in a buffer that only
   // WHY: edits with `s'_end,j < s'_start,k` have shifted, so `p_buffer = s'_k + Δ_k` falls out of the
@@ -897,6 +979,7 @@ async function runMutations(
       // WHY: (`null` lines are the batch's own creations) — a re-diff of it against S_latest cannot
       // WHY: tell which of two byte-identical lines carries a leased line_id.
       ...(isPreview ? {} : { currentIds }),
+      ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       onRejected: async (error) => {
         if (items.length === 1) throw error;
         throw batchAbortFor({ error, index, path });
