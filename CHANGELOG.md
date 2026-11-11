@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **edit:** walk the outline fold gate in served coordinates, so a body an anchored read has served stays editable after an earlier batch item changes the line count, and keep a rejection raised inside that changed batch buffer from recording its uncommitted-buffer rows as served. Such a rejection now shows no rows, says they grant no leases and names the current-file lines an anchored read would serve. Unread folded interiors are still refused. (#270)
+
 ## [2.18.0] - 2026-11-07
 
 ### Features

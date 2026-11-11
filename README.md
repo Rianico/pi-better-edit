@@ -47,7 +47,7 @@ Traditional agent editing tools violate this fundamental economic reality:
 `pi-better-edit` shifts the entire burden of verification, coordinate tracking, snapshotting, and alignment to the host runtime:
 - **$O(R)$ Edit Payloads**: The model emits only two 4-character hashes (`anchor_from`, `anchor_to`) plus the replacement text. It never regurgitates existing code.
 - **Zero-Token Auto-Rebase**: Harmless exterior file shifts (format-on-save passes like Prettier or Black, git checkouts, concurrent edits) rebase seamlessly locally using $O(m \log m)$ Patience LIS alignment with a bounded DP fallback — **0 tokens burned, 0 retries**.
-- **Fail-Closed Reject-and-Serve**: For same-file edits, contested spans fail closed without file corruption and immediately return current on-disk rows with fresh, valid leases in the error payload (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`), recovering in **exactly 1 turn** with no extra `read` call (`test/e2e/tool-battery.test.ts`).
+- **Fail-Closed Reject-and-Serve**: For same-file edits, contested spans fail closed without file corruption and immediately return current on-disk rows with fresh, valid leases in the error payload (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`), recovering in **exactly 1 turn** with no extra `read` call (`test/e2e/tool-battery.test.ts`). The one same-file exception is a refusal raised inside a batch after an earlier item of the call changed the temporary buffer (for example a later `text_ref` copy of lines that item rewrote): those rows are not guaranteed current-file rows, so the refusal shows and records none, grants no leases, keeps the prior served record and names the current-file lines an anchored read would serve.
 
 ---
 
