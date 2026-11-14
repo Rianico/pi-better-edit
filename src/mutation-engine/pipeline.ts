@@ -327,19 +327,30 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
  * current on-disk state and are not guaranteed current-file rows, so they must not be shown as a
  * fresh read or recorded as served, and grant no lease. The rows are dropped and the headline says
  * so, stating which current-file lines an anchored read would serve (facts only, no retry
- * directive). Code, cause and first offending line are preserved.
+ * directive). Code and cause are preserved; the headline and first offending line are re-anchored
+ * to current-file coordinates (a buffer line that has no baseline is omitted).
  */
 function shiftedBufferRejection(
   error: DomainError,
   baselineLineOf: (bufferLine: number) => number | undefined,
 ): DomainError {
+  // WHY: E_STALE_RANGE (and E_STALE_ANCHOR) producers name working-buffer coordinates; the
+  // WHY: E_UNVERIFIED_RANGE retirement window names served coordinates (lease.servedLineNumber),
+  // WHY: which are already current-file lines. Mapping a served coordinate through
+  // WHY: `baselineLineOf` (buffer → current-file) would double-map it, so the row frame is
+  // WHY: selected per code.
+  const rowsAreBufferCoordinates = error.code !== "E_UNVERIFIED_RANGE";
+  const toCurrentLine = (line: number): number | undefined =>
+    rowsAreBufferCoordinates ? baselineLineOf(line) : line;
   const lines = error.servedRows
-    .map((row) => baselineLineOf(row.position + 1))
+    .map((row) => toCurrentLine(row.position + 1))
     .filter((line): line is number => line !== undefined);
   const read =
     lines.length > 0
       ? `An anchored read of current-file lines ${Math.min(...lines)}-${Math.max(...lines)} would serve that range.`
       : "None of these rows exist in the current file.";
+  const firstOffendingLine =
+    error.firstOffendingLine === undefined ? undefined : toCurrentLine(error.firstOffendingLine);
   const note =
     " An earlier item of this call had already changed the temporary batch buffer, so this " +
     "rejection's rows come from an uncommitted buffer and are not guaranteed current-file rows: " +
@@ -347,14 +358,16 @@ function shiftedBufferRejection(
   const rest = {
     servedRows: [],
     servedBlock: "",
-    ...(error.firstOffendingLine !== undefined
-      ? { firstOffendingLine: error.firstOffendingLine }
-      : {}),
+    ...(firstOffendingLine !== undefined ? { firstOffendingLine } : {}),
   };
   // SAFETY: each `code` gate below selects the registry member whose shape `payload` holds.
   if (error.code === "E_STALE_RANGE") {
     const { headline, cause } = error.payload as DomainError<"E_STALE_RANGE">["payload"];
-    return new DomainError("E_STALE_RANGE", { ...rest, cause, headline: `${headline}${note}` });
+    return new DomainError("E_STALE_RANGE", {
+      ...rest,
+      cause,
+      headline: `${relabelHeadline(headline, error.firstOffendingLine, firstOffendingLine)}${note}`,
+    });
   }
   if (error.code === "E_UNVERIFIED_RANGE") {
     const { headline, cause } = error.payload as DomainError<"E_UNVERIFIED_RANGE">["payload"];
@@ -366,11 +379,30 @@ function shiftedBufferRejection(
   }
   if (error.code === "E_STALE_ANCHOR") {
     const { headline, cause } = error.payload as DomainError<"E_STALE_ANCHOR">["payload"];
-    return new DomainError("E_STALE_ANCHOR", { ...rest, cause, headline: `${headline}${note}` });
+    return new DomainError("E_STALE_ANCHOR", {
+      ...rest,
+      cause,
+      headline: `${relabelHeadline(headline, error.firstOffendingLine, firstOffendingLine)}${note}`,
+    });
   }
   // WHY: no other row-carrying code reaches the mutate loop's resolver; one that does keeps its
   // WHY: rendering but is still never recorded at buffer coordinates by the caller.
   return error;
+}
+
+/**
+ * Re-anchors a producer headline's working-buffer line number to the current-file line it maps to.
+ * WHY: a headline built inside the changed buffer names a buffer line that no longer exists in the
+ * current file; the rowless refusal must name current-file coordinates only. A headline with no
+ * such number, or an unmappable one, is returned unchanged.
+ */
+function relabelHeadline(
+  headline: string,
+  bufferLine: number | undefined,
+  currentFileLine: number | undefined,
+): string {
+  if (bufferLine === undefined || currentFileLine === undefined) return headline;
+  return headline.replace(new RegExp(`\\b${bufferLine}\\b`, "g"), String(currentFileLine));
 }
 
 /**

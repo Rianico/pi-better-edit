@@ -118,6 +118,10 @@ describe("rejection inside a changed batch buffer (served-or-absent)", () => {
       expect(message).toContain(
         "An anchored read of current-file lines 5-8 would serve that range.",
       );
+      // WHY: the refusal names current-file coordinates only — the injected headline's buffer line 9
+      // WHY: is re-anchored to the current-file line 5, so no buffer-coordinate line number leaks.
+      expect(message).not.toContain("line 9");
+      expect(message).toContain("line 5 injected refusal.");
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
 
       // WHY: the rejection left the served record untouched, so the standalone edit still applies.
