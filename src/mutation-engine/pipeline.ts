@@ -1054,6 +1054,9 @@ async function runMutations(
         lines: splitLines(currentContent),
         sessionKey,
         contentHash: snapshotHashFor(currentContent),
+        // WHY: pass the buffer→baseline mapping only once an earlier item changed the buffer, so the
+        // WHY: noop-loop reject path can apply the same rowless rule as the shifted-buffer rejections.
+        ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       });
       // WHY: a looping item of a multi-item call rejects through the same
       // WHY: batch envelope as every other rejection — the failing item, its

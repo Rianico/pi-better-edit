@@ -205,6 +205,8 @@ export interface ErrorPayloadMap {
     batch: boolean;
     servedRows: ServedRow[];
     servedBlock: string;
+    /** Rowless changed-buffer variant: names the withheld rows and the bounded current-file read. */
+    note?: string;
   };
   E_UNSUPPORTED_FILE: {
     path: string;
@@ -498,12 +500,14 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     // WHY: both arms state the refusal that happened; neither names an item because a wrapped
     // WHY: call already prefixes `edit[i] (path) failed:`.
-    format: ({ removeFrom, removeTo, count, batch, servedBlock }) =>
-      batch
-        ? `Identical edit (${removeFrom} → ${removeTo}) submitted ${count} times without change. ` +
-          `The range already has this text. Rejecting the batch. Current range:\n${servedBlock}`
-        : `Identical edit (${removeFrom} → ${removeTo}) submitted ${count} times without change. ` +
-          `The range already has this text. Rejected. Current range:\n${servedBlock}`,
+    format: ({ removeFrom, removeTo, count, batch, servedBlock, note }) => {
+      const verdict = batch ? "Rejecting the batch." : "Rejected.";
+      const base =
+        `Identical edit (${removeFrom} → ${removeTo}) submitted ${count} times without change. ` +
+        `The range already has this text. ${verdict}`;
+      if (note !== undefined && servedBlock === "") return `${base} ${note}`;
+      return `${base} Current range:\n${servedBlock}`;
+    },
   },
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",
