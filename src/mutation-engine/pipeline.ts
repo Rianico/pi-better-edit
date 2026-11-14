@@ -291,6 +291,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       cause: "never-served",
     });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
+  // SAFETY: the object below is cast via `unknown` to HashIdentity's internal parameter shape;
+  // SAFETY: every field in it is already typed, so the cast widens nothing.
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
     prior: { content: input.content, hashes: input.hashes, removedHashes },
@@ -301,8 +303,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: blockedHashes passed as ReadonlySet via unknown for HashIdentity compatibility — input.blockedHashes is already typed, cast preserves immutability
     blockedHashes: input.blockedHashes as unknown as ReadonlySet<string> | undefined,
-    // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
-    // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   } as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
   return {
     kind: "applied",
@@ -366,7 +366,7 @@ function shiftedBufferRejection(
     return new DomainError("E_STALE_RANGE", {
       ...rest,
       cause,
-      headline: `${relabelHeadline(headline, error.firstOffendingLine, firstOffendingLine)}${note}`,
+      headline: `${relabelHeadline(headline, toCurrentLine)}${note}`,
     });
   }
   if (error.code === "E_UNVERIFIED_RANGE") {
@@ -382,7 +382,7 @@ function shiftedBufferRejection(
     return new DomainError("E_STALE_ANCHOR", {
       ...rest,
       cause,
-      headline: `${relabelHeadline(headline, error.firstOffendingLine, firstOffendingLine)}${note}`,
+      headline: `${relabelHeadline(headline, toCurrentLine)}${note}`,
     });
   }
   // WHY: no other row-carrying code reaches the mutate loop's resolver; one that does keeps its
@@ -391,18 +391,24 @@ function shiftedBufferRejection(
 }
 
 /**
- * Re-anchors a producer headline's working-buffer line number to the current-file line it maps to.
- * WHY: a headline built inside the changed buffer names a buffer line that no longer exists in the
- * current file; the rowless refusal must name current-file coordinates only. A headline with no
- * such number, or an unmappable one, is returned unchanged.
+/**
+ * Re-anchors a producer headline's working-buffer line numbers to the current-file lines they map
+ * to. WHY: a headline built inside the changed buffer names buffer lines that no longer exist in the
+ * current file; the rowless refusal must name current-file coordinates only. Only the `line N` and
+ * `line N-M` forms the producers emit are rewritten; a line with no baseline keeps the original
+ * text, and a range whose end has no baseline drops the end (never a buffer number).
  */
 function relabelHeadline(
   headline: string,
-  bufferLine: number | undefined,
-  currentFileLine: number | undefined,
+  toCurrentLine: (bufferLine: number) => number | undefined,
 ): string {
-  if (bufferLine === undefined || currentFileLine === undefined) return headline;
-  return headline.replace(new RegExp(`\\b${bufferLine}\\b`, "g"), String(currentFileLine));
+  return headline.replace(/\bline (\d+)(?:-(\d+))?\b/g, (whole, start, end) => {
+    const mappedStart = toCurrentLine(Number(start));
+    if (mappedStart === undefined) return whole;
+    if (end === undefined) return `line ${mappedStart}`;
+    const mappedEnd = toCurrentLine(Number(end));
+    return mappedEnd === undefined ? `line ${mappedStart}` : `line ${mappedStart}-${mappedEnd}`;
+  });
 }
 
 /**
