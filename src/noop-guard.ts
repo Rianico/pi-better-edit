@@ -92,7 +92,6 @@ export interface NoopPolicyInput {
   lines: string[];
   sessionKey: string;
   /** Committed `file_snapshots.snapshot_hash` of the served content; binds the served leases. */
-  /** Committed `file_snapshots.snapshot_hash` of the served content; binds the served leases. */
   contentHash: string;
   /**
    * Present once an earlier item of a live batch has changed the working buffer: maps a buffer line
