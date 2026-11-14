@@ -129,6 +129,18 @@ describe("prompt guidelines", () => {
     expect(tool.promptGuidelines).toEqual(fileLines);
   });
 
+  it("the reject-and-serve guideline states the rowless changed-buffer exception", () => {
+    // WHY: (F1) the same-file reject-and-serve guarantee is scoped: a refusal raised after an
+    // WHY: earlier item of the call already changed the buffer serves no rows. The raw shipped
+    // WHY: file AND the served constant both carry the exception, so the model-facing surface
+    // WHY: never re-promises rows it withholds.
+    const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
+    expect(raw).toContain("serves no rows and names the current-file lines");
+    expect(
+      EDIT_GUIDELINES.some((g) => g.includes("serves no rows and names the current-file lines")),
+    ).toBe(true);
+  });
+
   it("the batch guideline states the pre-rename guarantee, not a whole-call atomicity the cut cannot honor (04b-rem P3-4)", () => {
     // WHY: the retired sentence claimed "the call is atomic (any failure writes nothing)" —
     // WHY: FALSE for a foreign cut whose rollback is defeated inside the two-rename window. The
