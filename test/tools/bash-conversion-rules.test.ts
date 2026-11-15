@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assertNever } from "../../src/utils.js";
 import type {
@@ -153,12 +154,27 @@ describe("bash conversion rule table (#151)", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
   it("documents every rule's authority", () => {
-    // WHY: each entry names an ADR, a commit/item gate, or its structural source — a rule with
-    // WHY: no authority is a rule nobody can review.
+    // WHY: each entry names a record PATH, a commit/item gate, or its structural source — a rule
+    // WHY: with no authority is a rule nobody can review. The bare `ADR-NNNN` alternative is gone
+    // WHY: on purpose: a number survives a record move silently, which is the rot this pin exists
+    // WHY: to catch, so the pin now demands the form a reader can follow.
     for (const rule of RULES) {
       expect(rule.why, `rule ${rule.id} lacks an authority citation`).toMatch(
-        /ADR-|commit |item |structural/,
+        /docs\/|commit |item |structural/,
       );
+    }
+  });
+
+  it("cites only record paths that exist", () => {
+    // WHY: the authority pin above checks the FORM of a citation; this one checks that the file is
+    // WHY: there. A path whose record was archived (or renamed) fails here instead of pointing a
+    // WHY: reviewer at nothing.
+    for (const rule of RULES) {
+      for (const [citation] of rule.why.matchAll(/docs\/[\w./-]+\.md/g)) {
+        expect(existsSync(citation), `rule ${rule.id} cites a missing record: ${citation}`).toBe(
+          true,
+        );
+      }
     }
   });
   it("pins the rule order (array order is precedence)", () => {

@@ -183,7 +183,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-statement",
-    why: "ADR-0033 D1/D9 as amended (source src/bash-classifier.ts:1105-1110 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1/D9 as amended (source src/bash-classifier.ts:1105-1110 pre-extraction)",
     phase: "pre",
     when: (ctx) =>
       ctx.statements.length !== 1 && !isSemicolonStatementChain(ctx.command, ctx.statements),
@@ -191,7 +191,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "background",
-    why: "ADR-0033 D1 (source src/bash-classifier.ts:1116 pre-extraction; a backgrounded statement is not the deterministic foreground shape)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 (source src/bash-classifier.ts:1116 pre-extraction; a backgrounded statement is not the deterministic foreground shape)",
     phase: "statement",
     when: (ctx) => {
       const statement = statementOf(ctx);
@@ -201,7 +201,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "non-and-chain",
-    why: "ADR-0033 D1 span-kind chain rule (source src/bash-classifier.ts:1125 pre-extraction; only `&&` sequences)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 span-kind chain rule (source src/bash-classifier.ts:1125 pre-extraction; only `&&` sequences)",
     phase: "statement",
     when: (ctx) => {
       const top = statementOf(ctx).command;
@@ -211,7 +211,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "compound-top",
-    why: "ADR-0033 D1 span-kind chain rule (source src/bash-classifier.ts:1133 pre-extraction; top must be AndOr/Command/Pipeline)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 span-kind chain rule (source src/bash-classifier.ts:1133 pre-extraction; top must be AndOr/Command/Pipeline)",
     phase: "statement",
     when: (ctx) => {
       const type = statementOf(ctx).command.type;
@@ -223,7 +223,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "compound-andor-operand",
     // WHY: `unbash` types AndOr.commands as Command[], but the parser puts ANY statement kind
     // WHY: there — `cd x && for …; do …; done` crashed the walk without this guard.
-    why: "ADR-0033 D1 span-kind chain rule (structural: AndOr operands must be Command/Pipeline)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 span-kind chain rule (structural: AndOr operands must be Command/Pipeline)",
     phase: "statement",
     when: (ctx) => {
       const top = statementOf(ctx).command;
@@ -253,7 +253,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "admit-glue",
-    why: "ADR-0039 D6 (source src/bash-classifier.ts:1165-1174 pre-extraction; glue admission)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D6 (source src/bash-classifier.ts:1165-1174 pre-extraction; glue admission)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -276,7 +276,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "inert-tail",
     // WHY: a raw tail carries no block, anchor or lease — only bytes bash already printed — and
     // WHY: tail mode keeps a lone `wc` on its exact legacy `unsafe` decline.
-    why: "ADR-0039 D10 (relaxation A; inert tail accumulation)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; inert tail accumulation)",
     phase: "segment",
     when: (ctx) => ctx.tailMode && isInertTailNode(segmentOf(ctx).node),
     run: pushRawTail,
@@ -285,7 +285,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "inert-count-tail",
     // WHY: a count tail is admitted only after the LAST verified block, so nothing later competes
     // WHY: for attribution; it pushes a raw segment, never a block, so D10's guard stays closed.
-    why: "ADR-0048 D4 (inert count tail after the last verified block)",
+    why: "docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D4 (inert count tail after the last verified block)",
     phase: "segment",
     when: (ctx) => {
       if (!ctx.hasGlue || admittedBlockCount(ctx) < 2) return false;
@@ -299,7 +299,7 @@ export const RULES: readonly ConversionRule[] = [
   {
     id: "unsafe",
     // WHY: (F2) with no block there is nothing to locate, so the segment keeps its own decline and its byte-identical reason.
-    why: "ADR-0039 D6/F2 (source src/bash-classifier.ts:1162 pre-extraction; dynamic segment reason)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D6/F2 (source src/bash-classifier.ts:1162 pre-extraction; dynamic segment reason)",
     phase: "segment",
     when: (ctx) => currentOf(ctx).kind === "unsafe",
     run: (ctx) => {
@@ -311,7 +311,7 @@ export const RULES: readonly ConversionRule[] = [
   {
     id: "skip-redundant-cd",
     // WHY: an inert `cd` must not consume the single-`cd` budget, which belongs to the move that sets the base.
-    why: "ADR-0039 D7/D9 (source src/bash-classifier.ts:1173 pre-extraction; redundancy skip)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D7/D9 (source src/bash-classifier.ts:1173 pre-extraction; redundancy skip)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -344,7 +344,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "post-view-cd",
     // WHY: bash resolves each `cd` against the directory in effect at that point, so only one
     // WHY: pre-view `cd` applied to `ctx.cwd` is sound; one issued later is too late and fails closed.
-    why: "ADR-0033 D1 (source src/bash-classifier.ts:1186 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 (source src/bash-classifier.ts:1186 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -360,7 +360,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "multi-cd",
     // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`), so applying one of them alone would
     // WHY: lease a path never viewed.
-    why: "ADR-0033 D1 (source src/bash-classifier.ts:1187 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 (source src/bash-classifier.ts:1187 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -370,7 +370,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "record-cd",
-    why: "ADR-0033 D1 single pre-view `cd` (source src/bash-classifier.ts:1188-1191 pre-extraction; accumulation: the resolution base for the winning shape)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 single pre-view `cd` (source src/bash-classifier.ts:1188-1191 pre-extraction; accumulation: the resolution base for the winning shape)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -396,7 +396,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "inert-tail-head",
     // WHY: relaxation A exists for the shape the prefix declines would reject — one leading block
     // WHY: with an inert tail; widening past that head would rob a glued chain of its legacy declines.
-    why: "ADR-0039 D10 (relaxation A; single leading block with inert tail)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; single leading block with inert tail)",
     phase: "segment",
     when: (ctx) => {
       if (ctx.segIndex !== 0 || ctx.hasGlue) return false;
@@ -421,7 +421,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "search-prefix",
     // WHY: a view or a search may ride only the terminal statement — a prefix one means a compound
     // WHY: chain the model did not ask about.
-    why: "ADR-0033 D1 as amended (source src/bash-classifier.ts:1197 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 as amended (source src/bash-classifier.ts:1197 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -431,7 +431,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "search-second",
-    why: "ADR-0033 D1 one view-or-search per command (source src/bash-classifier.ts:1198 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 one view-or-search per command (source src/bash-classifier.ts:1198 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
@@ -457,14 +457,14 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "view-prefix",
-    why: "ADR-0033 D1 as amended (source src/bash-classifier.ts:1223 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 as amended (source src/bash-classifier.ts:1223 pre-extraction)",
     phase: "segment",
     when: (ctx) => isViewTerminal(currentOf(ctx)) && segmentOf(ctx).prefixPosition && !ctx.hasGlue,
     run: () => ({ kind: "passThrough", reason: "multi-statement" }),
   },
   {
     id: "view-second",
-    why: "ADR-0033 D1 one view-or-search per command (source src/bash-classifier.ts:1225 pre-extraction)",
+    why: "docs/.archive_adrs/0033-bash-view-interception.md D1 one view-or-search per command (source src/bash-classifier.ts:1225 pre-extraction)",
     phase: "segment",
     when: (ctx) =>
       isViewTerminal(currentOf(ctx)) &&
@@ -494,14 +494,14 @@ export const RULES: readonly ConversionRule[] = [
     id: "multi-view-chain",
     // WHY: the multi-file shape is STANDALONE: glue or a second block proves more stream than the N
     // WHY: pages named, so it passes through as `multi-view` — the existing reason, not a new one.
-    why: "ADR-0049 M1 (standalone only; a chained multi-file view has no admitted envelope)",
+    why: "docs/.archive_adrs/0049-multi-file-bash-views.md M1 (standalone only; a chained multi-file view has no admitted envelope)",
     phase: "post",
     when: (ctx) => ctx.multiView !== undefined && (ctx.sawGlue || ctx.compoundSegs.length > 0),
     run: () => ({ kind: "passThrough", reason: "multi-view" }),
   },
   {
     id: "multi-view",
-    why: "ADR-0049 M1/M2 (single-base application for the standalone multi-file view)",
+    why: "docs/.archive_adrs/0049-multi-file-bash-views.md M1/M2 (single-base application for the standalone multi-file view)",
     phase: "post",
     when: (ctx) => ctx.multiView !== undefined,
     run: (ctx) => {
@@ -512,7 +512,7 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "display-compound",
-    why: "ADR-0048 D2 (display tails are standalone; a compound envelope has no transform attribution)",
+    why: "docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D2 (display tails are standalone; a compound envelope has no transform attribution)",
     phase: "post",
     when: (ctx) => ctx.view?.display !== undefined && (ctx.sawGlue || ctx.tailMode),
     run: () => ({ kind: "passThrough", reason: "unsupported-pipeline" }),
@@ -520,7 +520,7 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "compound",
-    why: "ADR-0039 D1/D2/D4 + F2 (source src/bash-classifier.ts:1233-1239 pre-extraction)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D1/D2/D4 + F2 (source src/bash-classifier.ts:1233-1239 pre-extraction)",
     phase: "post",
     when: (ctx) => ctx.sawGlue && (ctx.view !== undefined || ctx.searchSeg !== undefined),
     run: (ctx) => ({
@@ -533,7 +533,7 @@ export const RULES: readonly ConversionRule[] = [
     id: "inert-compound",
     // WHY: relaxation A's envelope is the leading block plus its raw tail, and it spreads no
     // WHY: `baseDir`: the head fires at segment zero, before any `cd` can record.
-    why: "ADR-0039 D10 (relaxation A; envelope for the leading block plus raw tail)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; envelope for the leading block plus raw tail)",
     phase: "post",
     when: (ctx) => ctx.tailMode && ctx.compoundSegs.length > 0,
     run: (ctx) => ({
@@ -554,7 +554,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "no-view",
-    why: "ADR-0039 F2-as-restated (source src/bash-classifier.ts:1241 pre-extraction; no admitted block — nothing to serve)",
+    why: "docs/.archive_adrs/0039-compound-bash-view-interception.md F2-as-restated (source src/bash-classifier.ts:1241 pre-extraction; no admitted block — nothing to serve)",
     phase: "post",
     when: (ctx) => ctx.view === undefined,
     run: () => ({ kind: "passThrough", reason: "no-view" }),
