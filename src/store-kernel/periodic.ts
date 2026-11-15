@@ -1,9 +1,6 @@
 /**
  * SAFETY: store-kernel/periodic — the per-open periodic-item gate: ask cheaply, record only on work.
  *
- * WHY: a due check is one indexed single-row read and therefore costs no write and no lock; the record is
- * WHY: written only by a run that actually did its work. TTL policy and the sweeps themselves stay with
- * WHY: their owners (`store-janitor`, the served session); this module owns only the cadence primitive.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { withBusyRetry } from "./busy.js";

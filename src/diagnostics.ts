@@ -94,9 +94,7 @@ function write(level: DiagnosticLevel, scope: string, args: readonly unknown[]):
     const record = buildRecord(level, scope, message === "" ? "reported" : message, error);
     const line = `${JSON.stringify(record)}\n`;
     appendRecord(line);
-  } catch {
-    // WHY: last resort — losing a diagnostic must never fail the caller (see the module WHY).
-  }
+  } catch {}
 }
 
 function buildRecord(
@@ -158,8 +156,6 @@ function stackFrames(error: Error): string[] {
 }
 
 function appendRecord(line: string): void {
-  // WHY: the retired log is adopted BEFORE the first record is written — afterwards the new file
-  // WHY: exists and the old one would be skipped forever, taking the pre-upgrade history with it.
   migrateLegacyState((message) => reportInfo("state-migration", message));
   const path = diagnosticsLogPath();
   mkdirSync(dirname(path), { recursive: true });
@@ -177,7 +173,6 @@ function rotateIfOversize(path: string, incomingBytes: number): void {
   try {
     current = statSync(path).size;
   } catch {
-    // WHY: an absent log is the first-run state, not a fault — there is nothing to rotate.
     return;
   }
   if (current + incomingBytes <= DIAGNOSTICS_LOG_MAX_BYTES) return;

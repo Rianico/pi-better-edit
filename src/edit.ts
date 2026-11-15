@@ -70,7 +70,6 @@ export function buildToolDef(
   const tool = createEditTool();
   const presenter = createTuiPresenter(
     (req, cwd) => {
-      // WHY: the fire-time read stays inside the call so the ctx names the session serving anchors now.
       const sessionManager = getSessionManager?.();
       return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
     },
@@ -83,8 +82,6 @@ export function buildToolDef(
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    // WHY: an admission refusal raised here carries no subject, so it must name the edit tool.
-    // WHY: Without the stamp the model reads the neutral wording — the analyzer names no caller.
     prepareArguments: (args: unknown) => {
       try {
         return prepareEditArguments(args);
@@ -93,7 +90,6 @@ export function buildToolDef(
       }
     },
     renderShell: "default",
-    // WHY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
@@ -119,11 +115,6 @@ export function buildToolDef(
 }
 
 export function regEdit(pi: ExtensionAPI): void {
-  // WHY: (#165) pi's ToolRenderContext carries no session, so the preview pane's session is
-  // WHY: captured from the session_start ctx; that event fires for startup/reload/new/resume/fork.
-  // WHY: (#168-class) a captured session is only safe if the *pending* compute re-checks it, so
-  // WHY: buildToolDef exposes getSessionId: DebouncedPreview binds it at arm time and drops a
-  // WHY: compute whose session changed before the timer fired — anchors are never verified against it.
   let sessionManager: { getSessionId(): string } | undefined;
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;

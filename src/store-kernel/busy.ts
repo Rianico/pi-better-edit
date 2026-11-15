@@ -1,10 +1,14 @@
 /**
  * SAFETY: store-kernel/busy — the store's contention budget: one retry loop, one deadline, one classifier.
  *
- * WHY: every store write funnels through `withBusyRetry` (the open, `withStore`, and the statement-level
- * WHY: retries in snapshot-store, undo-store and the served session), so the budget, the arithmetic that
- * WHY: models it and the busy classification live together and are changed together. The numbers are in
- * WHY: `./constants.ts`; this module is the policy that gives them meaning.
+ *
+ * Every store write funnels through `withBusyRetry`, so the budget, the arithmetic that models it
+ * and the busy classification live and change together. The numbers are in `./constants.ts`; the
+ * modelled episode they encode is 4300ms — 8 x 250ms of internal wait, 1950ms of capped backoff,
+ * 350ms of jitter — 21.5% of the harness `testTimeout`.
+ *
+ * The `timeout` constructor option IS SQLite's busy handler, and `PRAGMA busy_timeout` reports it
+ * back, so no pragma is set here: one would install a second, competing budget.
  */
 import {
   BUSY_BACKOFF_BASE_MS,
@@ -27,42 +31,6 @@ function sleepSync(ms: number): void {
   Atomics.wait(sab, 0, 0, ms);
 }
 
-// WHY: (#87b) the retry policy REFRAMES the defect, which was never a missing timeout: `node:sqlite`'s
-// WHY: `timeout` constructor option IS SQLite's busy handler — `PRAGMA busy_timeout` reports it back
-// WHY: verbatim ({ timeout: 250 } reads 250, probe-measured: no option at all reads 0) — so no pragma was
-// WHY: absent here and adding one would install a second, competing budget. The real defect was an
-// WHY: IMPLICIT, OVERSIZED, UNIFORM one: four attempts each allowed a silent blocked second, 100ms apart,
-// WHY: so writers that started together woke together, re-collided, and made a contended open read as a
-// WHY: hang. The replacement is EXPLICIT (these constants), BOUNDED (the deadline below) and DECORRELATED
-// WHY: (jittered exponential backoff instead of one fixed delay).
-// WHY: the model as arithmetic — attempts x internal wait + sleeps:
-// WHY:   internal wait  250ms x 8 attempts                     = 2000ms
-// WHY:   backoff sleeps 50+100+200+400+400+400+400 (cap 400)   = 1950ms
-// WHY:   jitter         7 sleeps x <= 50ms                     =  350ms
-// WHY:   ---------------------------------------------------------------
-// WHY:   modelled episode (busyBudgetMs)                       = 4300ms
-// WHY: the model is what the constants were chosen against, not what an attempt costs. SQLite returns
-// WHY: SQLITE_BUSY once the busy timeout elapses, so ONE attempt against a permanently held lock spends
-// WHY: its full 250ms internal wait plus a small constant overhead of connection-open and statement work.
-// WHY: That overhead varies with the harness — store opened per attempt or pre-built, how the rival takes
-// WHY: the lock, the host — so it carries no figure here, and neither does anything derived from it: a
-// WHY: millisecond band read off one harness is a fact about that harness, not about this code. A retry
-// WHY: pays it ONCE, because a contended attempt blocks at its FIRST lock-taking statement and does no
-// WHY: body work: a shape's real cost is attempts x (its own timeout + that overhead) plus its sleeps —
-// WHY: four overheads on the old 4 x 1000 + 300 shape, eight on the 8 x 250 + 2300 one, both totalling the
-// WHY: same 4300ms model. The tests separate the shapes by attempt count and per-attempt stall, the terms
-// WHY: they DO differ in. What the count adds over the model is that overhead times the count, less the
-// WHY: model's jitter over-charge (it charges every backoff its MAXIMUM draw while an episode pays some
-// WHY: fraction of one). Injected and uninjected runs are ONE quantity: a budget injected with exactly
-// WHY: these values resolves to the same model, which is why the contention test injects nothing — an
-// WHY: injected budget replaces every constant it would be guarding.
-// WHY: the bound is scoped to THESE constants: a budget carrying its own, larger model — maxAttempts 100
-// WHY: models 68.7s (code-derived: 100 x 250ms plus 43.7s of capped backoff and jitter) — bounds its own
-// WHY: episode, never 'one episode is capped at 4300ms'.
-// WHY: 4300ms is 21.5% of the harness `testTimeout` (20000ms) and 14% of `hookTimeout` (30000ms), so
-// WHY: contention surfaces as the busy error rather than as a killed test. The corrupt-store rebuild path
-// WHY: can spend three budgets (3 x 4300 = 12.9s), but only immediately after quarantine replaced the
-// WHY: file, when no rival can still hold the old inode.
 /**
  * The store's contention budget: how long one attempt may wait inside SQLite (`timeoutMs`, the
  * constructor option that `PRAGMA busy_timeout` reports) and how the retry loop spaces its attempts.
@@ -103,10 +71,6 @@ export interface BusyBudget {
 export function resolveBusyBudget(overrides?: BusyBudget): Required<BusyBudget> {
   return {
     timeoutMs: overrides?.timeoutMs ?? HASH_STORE_BUSY_TIMEOUT,
-    // WHY: DEFENSIVE, not the mechanism: the loop's own `attempt >= maxAttempts - 1` guard already
-    // WHY: throws after the first failed attempt for any maxAttempts <= 1, so the floor buys only a sane
-    // WHY: RESOLVED model — 0 and -1 both read as one attempt, hence a 250ms rather than a non-positive
-    // WHY: deadline.
     maxAttempts: Math.max(1, Math.trunc(overrides?.maxAttempts ?? BUSY_MAX_ATTEMPTS)),
     backoffBaseMs: overrides?.backoffBaseMs ?? BUSY_BACKOFF_BASE_MS,
     backoffCapMs: overrides?.backoffCapMs ?? BUSY_BACKOFF_CAP_MS,
@@ -158,11 +122,6 @@ export function busyBudgetMs(overrides?: BusyBudget): number {
  */
 export function withBusyRetry<T>(fn: () => T, overrides?: BusyBudget): T {
   const budget = resolveBusyBudget(overrides);
-  // WHY: a deadline, not only an attempt count: an attempt already inside SQLite cannot be interrupted,
-  // WHY: so the count alone would let one slow attempt extend the episode without bound. The check runs
-  // WHY: AFTER the failed attempt, so an episode ends between attempts — at most one capped sleep plus one
-  // WHY: already-running attempt past the deadline, which is why it can end BELOW `maxAttempts`: no caller
-  // WHY: may treat an exact count as guaranteed.
   const deadline = budget.now() + busyBudgetMs(budget);
   for (let attempt = 0; ; attempt++) {
     try {

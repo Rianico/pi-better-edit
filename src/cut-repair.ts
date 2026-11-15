@@ -31,8 +31,6 @@ type MemberState = "pre" | "post" | "other";
 
 const VALID_ENDINGS = new Set<string>(["\n", "\r\n", "\r"]);
 
-// WHY: the serialization every COMMIT uses, through `writeAtomic` — never a third path; and a
-// WHY: candidate for the comparison, never the comparison itself (see `candidateFor`).
 // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
 function serialized(row: MemberRow, which: "pre" | "post"): string | undefined {
   if (!VALID_ENDINGS.has(row.ending)) return undefined;
@@ -40,9 +38,6 @@ function serialized(row: MemberRow, which: "pre" | "post"): string | undefined {
   return row.bom + restoreEndings(text, row.ending as LineEnding);
 }
 
-// WHY: (04b-rem P2-2) the PRE candidate is the row's RAW pre image: the admission round-trip
-// WHY: guard proved decode/encode lossless, so those bytes are exactly what the file held before
-// WHY: the first rename. NULL rawPre is a pre-remediation row and falls back to `serialized`.
 function candidateFor(row: MemberRow, which: "pre" | "post"): Buffer | undefined {
   if (which === "pre" && row.rawPre !== null && row.rawPre !== undefined) {
     return Buffer.from(row.rawPre, "utf-8");
@@ -77,8 +72,6 @@ async function applyResolution(
   return withSortedMutationQueues(
     rows.map((row) => row.path),
     async () => {
-      // WHY: re-validate under the queues — between the scan and the lock an outside writer may
-      // WHY: have moved a member; a moved member means "other", which means touch nothing.
       for (const row of toWrite) {
         const now = await stateOf(row);
         const expected = which === "post" ? "pre" : "post";
@@ -103,8 +96,6 @@ async function repairOne(
 ): Promise<void> {
   const rows = getUndoTransaction(store, txnId);
   if (rows.length === 0) {
-    // WHY: no evidence to resolve from: the rows were consumed (undo ran) or never landed.
-    // WHY: Either way the intent can no longer describe a window — retire it.
     deleteCutIntent(store, txnId);
     return;
   }
@@ -117,8 +108,6 @@ async function repairOne(
   if (direction === "revert") {
     const toWrite = rows.filter((row) => states.get(row.path) === "post");
     if (toWrite.length === 0) {
-      // WHY: the revert landed on every member (or the crash hit after the last write), so the
-      // WHY: transaction is fully undone — a retry must read "No undo history", not a stale revert.
       deleteUndoTransaction(store, txnId);
       deleteCutIntent(store, txnId);
       return;
@@ -131,8 +120,6 @@ async function repairOne(
 
   const targetRow = rows.find((row) => row.path === targetPath);
   if (targetRow === undefined) {
-    // WHY: (04b-rem P3-5) the target's row was overwritten by a later edit, so the direction can no
-    // WHY: longer be decided and nothing here re-creates the evidence — mirrored: retire, write nothing.
     deleteCutIntent(store, txnId);
     return;
   }
@@ -161,8 +148,6 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
   try {
     intents = listCutIntents(resolved);
   } catch (error) {
-    // WHY: repair is best-effort durability cleanup — a store that will not answer the scan
-    // WHY: leaves every intent in place for the next run; the edit that triggered it proceeds.
     reportDiagnostic("cut-repair", "[cut-repair] failed to list cut intents:", error);
     return;
   }
@@ -170,7 +155,6 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
     try {
       await repairOne(resolved, intent.txnId, intent.targetPath, intent.direction);
     } catch (error) {
-      // WHY: one unresolvable intent must not abort the scan or the triggering edit; the intent stays, which is exactly the "keep the question open" resolution.
       reportDiagnostic("cut-repair", `[cut-repair] intent ${intent.txnId} left in place:`, error);
     }
   }

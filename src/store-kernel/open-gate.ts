@@ -1,10 +1,6 @@
 /**
  * SAFETY: store-kernel/open-gate — the one cached open handle and the transaction frame over it.
  *
- * WHY: the store's open gate is a single published handle: `loadHashStore` shares it, `withStore` frames
- * WHY: `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` on it, and the statement caches memoize against its identity
- * WHY: (`getCached`). Keeping the slot here — with an explicit publish/read pair — is what lets the
- * WHY: contention loop and the frame live beside the budget while the DDL and heal stay in `hash-store`.
  */
 import { DatabaseSync } from "node:sqlite";
 import { withBusyRetry } from "./busy.js";

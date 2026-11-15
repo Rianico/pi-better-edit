@@ -159,7 +159,6 @@ function buildStmts(db: DatabaseSync): UndoStmts {
   };
 }
 
-// WHY: the undo domain owns no DDL of its own — hash-store is the schema owner (spec §5.1).
 onStoreOpen((db) => {
   ensureFileUndoSchema(db);
 });
@@ -196,8 +195,6 @@ export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): v
     entry.snapshotHash ?? null,
     entry.transactionId ?? null,
     entry.rawPre ?? null,
-    // WHY: §4 of the record below (refuse, do not launder) — the stamp is the payload's, never
-    // WHY: hard-coded: a replay of a pre-generation row keeps its generation so the restore gate re-derives; an absent one is current.
     // Ref: docs/.archive_adrs/0031-file-scoped-anchors-residual-and-generation-discipline.md
     entry.anchorGeneration ?? ANCHOR_GENERATION,
     Date.now(),
@@ -285,8 +282,6 @@ export async function removeUndo(path: string): Promise<void> {
   deleteUndo(store, path);
 }
 
-// WHY: (ticket-04b) the cut transaction's rows live in the same global store the undo domain
-// WHY: already owns, so repair and the pipeline share one authority for intent and correlation.
 export async function saveCutIntent(
   txnId: string,
   targetPath: string,

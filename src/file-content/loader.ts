@@ -69,11 +69,7 @@ export async function fileSnap(
   preloadedStats?: FileStats,
 ): Promise<SnapInfo> {
   const canonicalPath = await resolveTarget(absolutePath);
-  // WHY: the load path stat'd this same canonical path already, so its `Stats` is authoritative for
-  // WHY: the id; a re-stat could only disagree with the bytes the caller has read and hashed.
   const stats: FileStats = preloadedStats ?? (await stat(canonicalPath));
-  // WHY: when present, the checksum strengthens the epoch — the id then covers the bytes, so a
-  // WHY: same-size whitespace change cannot pass as the same version. Optional for backward compatibility.
   // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
   const effectiveChecksum = checksum ?? undefined;
   return {
@@ -130,8 +126,6 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    // WHY: the count must be the NORMALIZED text's — `toLF` turns a lone `\r` into a line break, so a
-    // WHY: count taken earlier under-reads a CR-only file, which then dies in the anchor space instead.
     const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
@@ -163,21 +157,11 @@ export async function readNormFile(
     path: norm.absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
-    // WHY: this is the read-path materialization of the file's committed bytes (spec §3.1.3 / §3.1.3.3):
-    // WHY: it is the single authoritative source of line survival, so it is the only hashing call in
-    // WHY: the load path allowed to retire leases. In-memory working-buffer hashing stays non-authoritative.
     retireLeases: true,
   });
   return { ...norm, fileHashes };
 }
 
-/**
- * The served read's anchor plan: the walk assigns each line's anchor while the preview keeps the page.
- *
- * WHY: `readNormFile` finishes the whole anchor array before the caller knows which lines to show, so
- * WHY: the read path takes the assignment instead and runs it inside its own walk. `readNormFile` stays
- * WHY: for the callers that need the finished array (the edit pipeline) and pays a split for it.
- */
 export async function anchorWalkFor(
   normalized: string,
   absolutePath: string,

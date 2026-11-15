@@ -58,8 +58,7 @@ export interface PrepareResult {
   fileHashes: string[];
   /**
    * The counts the read's count-only walk produced, in both line stacks: `visLines(normalized).length`
-   * for the read's own line count, and `splitLines(normalized).length` for the snapshot's. WHY: a caller
-   * that split the text again for them would rebuild the line array this path exists to avoid.
+   * for the read's own line count, and `splitLines(normalized).length` for the snapshot's.
    */
   lineTotals: { visible: number; split: number };
   hadUtf8DecodeErrors: boolean;
@@ -71,8 +70,6 @@ export interface PrepareResult {
   shownRange?: ShownRange;
   description?: string;
   mimeType?: string;
-  // WHY: the loader already stat'd this path; the read path hands that `Stats` to `fileSnap`, so a
-  // WHY: read costs one `stat` per file instead of one per seam.
   stats?: FileStats;
   /**
    * The `stat(2)` identity this read observed. Materializations stamp it in the same
@@ -129,11 +126,6 @@ export async function prepareFile(
   await valAccess(absolutePath, path, options?.accessMode ?? constants.R_OK);
   abortIf(signal);
   const verbatim = options?.render === "verbatim";
-  // WHY: the served admission budget (`SERVED_MAX_LINES`) is an edit-domain limit independent of the
-  // WHY: anchor-space ceiling (`MAX_HASH_LINES`), so verbatim ignores a caller-supplied cap: a file too
-  // WHY: large to anchor is still a file worth reading. Only the 100MB `MAX_BYTES` guard in
-  // WHY: `loadFileKindAndText` bounds both modes, and it bounds BYTES READ: both page by walking lines,
-  // WHY: but served also retains one anchor per hashed line even for an unshown window (`src/constants.ts`).
   const maxLines = verbatim ? undefined : (options?.maxLines ?? SERVED_MAX_LINES);
   const file =
     options?.preloadedFile ??
@@ -184,8 +176,6 @@ export async function prepareFile(
     };
   }
 
-  // WHY: both modes decode and normalize through `decodeNormText`; only served then reaches the
-  // WHY: anchor store, because anchors and the anchor-space line cap are edit-domain concerns.
   const norm = await decodeNormText(path, cwd, {
     ...(signal !== undefined ? { signal } : {}),
     ...(options?.accessMode !== undefined ? { accessMode: options.accessMode } : {}),
@@ -202,10 +192,6 @@ export async function prepareFile(
   };
   const maxLineBytes = options?.maxLineBytes;
   const maxTruncLines = options?.maxTruncLines ?? AUTO_READ_MAX;
-  // WHY: a read that can name the file version starts from the committed snapshot that version
-  // WHY: produced. Only the served page's lineage is read — never every line's identity — and every
-  // WHY: line is re-verified against the canon it was committed under before its anchor is shown.
-  // WHY: Anything unproven falls through to the content-hash path below, which is authoritative.
   // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const statKey =
     !verbatim && options?.store !== undefined && file.stats !== undefined
@@ -235,16 +221,10 @@ export async function prepareFile(
         };
       } catch (error) {
         if (!(error instanceof StatIdentityMismatchError)) throw error;
-        // WHY: a stat identity that cannot be proven is a MISS, not a failure: the file may have been
-        // WHY: rewritten under a timestamp the filesystem did not advance. Re-derive identity from the
-        // WHY: bytes instead of serving a page the snapshot cannot back.
       }
     }
   }
   if (preview === undefined) {
-    // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
-    // WHY: assigned inside the same walk that keeps the page, so the page costs one pass and the anchors
-    // WHY: ride along in it. Verbatim passes none at all — no store, no snapshot, no hash of a line.
     const anchors = verbatim
       ? []
       : await anchorWalkFor(norm.normalized, norm.absolutePath, {
@@ -261,10 +241,7 @@ export async function prepareFile(
     );
   }
 
-  // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8", but
-  // WHY: admission's round-trip guard (E_LOSSY_TEXT) refuses that edit, so the tail names what happens.
-  // WHY: I2 (spec §6) — the bytes stay verbatim; the notices only name what the rows carry. A
-  // WHY: non-printable control character is disclosed, never escaped into a `\xNN` form.
+  // Ref: docs/spec/search-and-read-evolution.md
   const notices = [
     ...(norm.hadUtf8DecodeErrors
       ? [

@@ -1,9 +1,6 @@
 /**
  * Store janitor settings — the WRITE half of the `store.*` keys of the shared config file.
  *
- * WHY: the read/resolve ladder lives in `store-kernel/settings.ts` (the kernel owns the maintenance
- * WHY: policy the values feed); what belongs here is the config file's own shape and the atomic,
- * WHY: preserving write. `saveStoreJanitorConfig` is the only writer of these keys.
  */
 import { DomainError } from "./domain-errors.js";
 import {
@@ -62,7 +59,6 @@ export function saveStoreJanitorConfig(
     patch[STORE_JANITOR_KEY_NAMES.batchSize] = settings.batchSize;
 
   const path = configFilePath(scope, cwd);
-  // WHY: only the keys in `patch` are ours — every other `store.*` and top-level key belongs to the user.
   updateConfigFile(path, (existing) => ({
     ...existing,
     store: { ...(isRecord(existing.store) ? existing.store : {}), ...patch },

@@ -1,12 +1,6 @@
 /**
  * SAFETY: store-kernel/settings — the janitor settings ladder: read, resolve per key, name the rung.
  *
- * WHY: this lives in the kernel rather than beside the writer because the resolved settings are what the
- * WHY: maintenance pass runs on: cadence, batch width and enable/disable are open-gate policy, and a
- * WHY: resolver that drifts from the store's own knobs would throttle the wrong sweep. The file's shape
- * WHY: (keys, scopes, the atomic preserving write) stays in `store-config.ts`; this module only reads.
- * WHY: Precedence is PER KEY — env, then project file, then global file, then the default — and a file
- * WHY: that exists but cannot be used warns through `onWarn` while the values fall through.
  */
 import {
   isRecord,
@@ -70,7 +64,6 @@ export const STORE_JANITOR_DEFAULTS: StoreJanitorSettings = {
   batchSize: STORE_JANITOR_BATCH_DEFAULT,
 };
 
-// WHY: one key map, so the read and write paths cannot spell one setting two ways and drift apart.
 const STORE_JANITOR_KEYS = {
   mode: "janitor",
   intervalMs: "janitorIntervalMs",
@@ -140,7 +133,6 @@ function readScopeSettings(
   const mode = store[STORE_JANITOR_KEYS.mode];
   const intervalMs = store[STORE_JANITOR_KEYS.intervalMs];
   const batchSize = store[STORE_JANITOR_KEYS.batchSize];
-  // WHY: `exactOptionalPropertyTypes` omits an unusable key, so "scope said nothing" is one state, not two.
   return {
     ...(isStoreJanitorMode(mode) ? { mode } : {}),
     ...(isIntervalMs(intervalMs) ? { intervalMs } : {}),

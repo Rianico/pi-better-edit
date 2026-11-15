@@ -29,10 +29,6 @@ export type EditDetails = {
   contentHash?: string;
   warnings?: string[];
   driftNotice?: string;
-  /**
-   * WHY: I4 (spec §5) — the applied summary line the model-visible text leads with, ahead of the
-   * WHY: anchored diff. `diff` stays the bare collapsed projection for TUI presentation clients.
-   */
   summary?: string;
 };
 type TResult = {
@@ -278,11 +274,6 @@ export type BatchSection = {
   totalAddedLines: number;
   totalRemovedLines: number;
   literalDeclarations?: number;
-  /**
-   * WHY: the commit path (`apply`) already renders this section's diff to derive the mirror's
-   * WHY: `firstChangedLine`; carrying it here keeps genDiff at one render per commit — the
-   * WHY: model-visible text and `servedByPath.firstChangedLine` come from that same render.
-   */
   renderedDiff?: {
     diff: string;
     firstChangedLine: number | undefined;
@@ -339,8 +330,6 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       s.renderedDiff ??
       genDiff(s.originalNormalized, s.result, 1, s.resultHashes, s.originalHashes);
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
-    // WHY: dense rows for the batch serve record — position and hash only; canon evidence is
-    // WHY: derived from the leases the record grants (#151).
     const denseRows = denseServeRows(s.resultHashes);
     if (denseRows.length > 0) {
       servedByPath.push({
@@ -417,7 +406,7 @@ function innerDiagnostic(error: Error): string {
 }
 
 /**
- * Indent a rendered options block under the item it belongs to inside a batch bullet. WHY: a
+ * Indent a rendered options block under the item it belongs to inside a batch bullet. A
  * wrapper renders one line per failing item, so an unindented `Options:` line would read as a
  * third alternative between bullets.
  */
@@ -436,15 +425,10 @@ function indentOptions(message: string): string {
  */
 export function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
   const { error, index, path } = args;
-  // WHY: one serve block per rejection — the inner rejection already rendered its rows under
-  // WHY: `Current range:`, and an atomic batch abort that lost the block would owe a re-read (D2).
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
       BATCH_ATOMICITY_TRAILER,
   );
-  // WHY: the whole forwarded payload moves through the envelope reader/writer pair
-  // WHY: (src/error-envelope.ts) — the wrapper stamps exactly the validated slots the
-  // WHY: inner rejection carries: code, cause (with its `details` projection), rows, block.
   attachEnvelope(wrapped, readEnvelope(error) ?? {});
   return wrapped;
 }
@@ -471,9 +455,6 @@ export function batchAbortForMany(args: {
       BATCH_ATOMICITY_TRAILER,
   );
   const envelopes = failures.map((f) => readEnvelope(f.error) ?? {});
-  // WHY: promotion keys off the FIRST item's raw string code — registry member or not —
-  // WHY: so a non-registry head code suppresses the typed route instead of letting a
-  // WHY: later item's code promote (the aggregation rule `toFailure`'s routing depends on).
   const firstCode = failures.map((f) => rawCodeOf(f.error)).find((code) => code !== undefined);
   const envelope: ErrorEnvelope = {};
   if (firstCode !== undefined && isDomainErrorCode(firstCode)) {
@@ -510,8 +491,6 @@ export function wrapParseFailure(error: Error, index: number, path: string): Err
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n${BATCH_ATOMICITY_TRAILER}`,
   );
-  // WHY: a parse failure forwards only the two diagnostic slots — no rows or block exist to
-  // WHY: carry, and dropping the code would cost the model the one it can act on.
   const { code, cause } = readEnvelope(error) ?? {};
   attachEnvelope(wrapped, {
     ...(code !== undefined ? { code } : {}),

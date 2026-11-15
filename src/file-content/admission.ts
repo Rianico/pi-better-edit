@@ -1,14 +1,6 @@
 /**
  * SAFETY: admission — the read request's admission seam: payload → admitted request → window plan.
  *
- * WHY: this is validation and windowing, not orchestration. `read.ts` runs the tool (prepare → enroll
- * WHY: → recordServes); the rules that decide whether a payload is readable and which lines a file's
- * WHY: windows become belong beside the walker/preview that gives those windows their meaning. The
- * WHY: seam is one-way: the caller imports admission, admission never imports the tool.
- *
- * WHY: every rule here is fail-closed on the same payload error, because a tool call that bypasses the
- * WHY: schema (the exhaustiveness contract tests do) must reach identical wording and identical
- * WHY: refusals as a validated one.
  */
 // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE } from "../constants.js";
@@ -73,8 +65,6 @@ function positiveInt(value: unknown, name: string): number {
 function admitMode(value: unknown): RenderMode | undefined {
   if (value === undefined) return undefined;
   if (value === "served" || value === "verbatim" || value === "outline") return value;
-  // WHY: `assertNever` carries the union's exhaustiveness to runtime and keeps the wording the
-  // WHY: schema rejection uses for the same payload.
   return assertNever(value as never);
 }
 
@@ -94,7 +84,6 @@ function admitWindow(window: unknown, label: string): AdmittedWindow {
     return { kind: "anchor", anchor, radius: positiveInt(radius, `${label}.radius`) };
   }
   const offset = positiveInt(raw.offset, `${label}.offset`);
-  // WHY: an offset with no limit still names a window, so it takes the canonical default size
   const limit =
     raw.limit === undefined ? DEFAULT_WINDOW_LIMIT : positiveInt(raw.limit, `${label}.limit`);
   return { kind: "offset", offset, limit };
@@ -156,9 +145,6 @@ export function admitReadRequest(params: RawReadParams): AdmittedRequest {
     rawWindows === undefined || rawWindows.length === 0
       ? undefined
       : rawWindows.map((window, windowIndex) => admitWindow(window, `windows[${windowIndex}]`));
-  // WHY: window count multiplies the auto-read budget, so the cap binds every mode that applies caller
-  // WHY: windows; outline takes its coverage from the AST seam and ignores them. The schema's
-  // WHY: per-variant `maxItems` splits validated and unvalidated callers the same way.
   if (mode !== "outline" && (windows?.length ?? 0) > MAX_READ_WINDOWS) {
     throw badPayload(MAX_READ_WINDOWS_MESSAGE);
   }
@@ -214,8 +200,6 @@ function resolveAnchorWindow(
     content: resolver.normalized,
   });
   const lease = source.leaseFor(window.anchor);
-  // WHY: no lease for this file IS the warning (spec §4.3): unknown, other-file and foreign-generation
-  // WHY: anchors fail closed alike under one pinned wording, so no homes lookup is needed to say it.
   if (lease === undefined) return undefined;
   const decision = resolveLineIdentity(lease, source);
   if (decision.kind !== "line") return undefined;
@@ -240,7 +224,6 @@ export function planWindows(
       windows.push({ offset: window.offset, limit: window.limit });
       continue;
     }
-    // WHY: an anchor resolves only against served lineage, so a non-text load leaves the same "not found".
     const resolved = resolver === undefined ? undefined : resolveAnchorWindow(window, resolver);
     if (resolved === undefined) {
       warnings.push(anchorWarning(window.anchor));

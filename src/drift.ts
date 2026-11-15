@@ -50,8 +50,8 @@ export interface ComputeDriftInput {
   /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — see CAND-9 WHY above. */
   reported: Set<string>;
   cap?: number;
-  /** WHY: canon digests parallel to `served`, derived from the served rows' leases.
-   * Absent/empty preserves legacy hash-equality (existing tests, old DBs). */
+  /** Canon digests parallel to `served`, derived from the served rows' leases; absent or empty
+   * preserves legacy hash-equality. */
   servedCanonDigests?: (string | null)[];
 }
 
@@ -84,10 +84,6 @@ function resolveServedRange(input: ComputeDriftInput): {
     servedStartIdx = startPositions[0]!;
     servedEndIdx = endPositions[0]!;
   } else {
-    // WHY: position-fallback — an anchor is a spelling, not an identity. A served hash naming zero
-    // WHY: or several mirror positions has no unambiguous lookup, so the window degrades to the
-    // WHY: range's own line numbers: a judgment aid, not an identity claim — drift inside it is
-    // WHY: excluded, drift near a mis-located boundary may over- or under-report lines.
     // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
     servedStartIdx = range.startLine - 1;
     servedEndIdx = range.endLine - 1;
@@ -108,9 +104,6 @@ function resolveIntervals(
   }
   return intervals.map((r) => {
     if (r.startLine > r.endLine) {
-      // WHY: zero-width insertion interval (ticket-01): it edits no served line, so the interval
-      // WHY: stays empty rather than degrading to a width-1 window that would mask the untouched
-      // WHY: neighbour lines; `deltaBefore` still shifts every later served line by the insertion.
       return { from: r.startLine - 1, to: r.endLine - 1, delta: r.delta };
     }
     const startPositions = servedPositionsOf(input.served, r.startHash);
@@ -144,7 +137,6 @@ function deltaBefore(
 
 type RotatedSurvivorCheck = (servedHash: string, servedPos: number) => boolean;
 
-/** WHY: edited served intervals mapped to current-file spans (result coordinates). */
 function currentEditedSpans(
   intervals: Array<{ from: number; to: number; delta: number }>,
 ): Array<{ from: number; to: number }> {
@@ -165,13 +157,6 @@ function isInSpans(p: number, spans: Array<{ from: number; to: number }>): boole
   return false;
 }
 
-/**
- * WHY: #68 hash-rotation vs content loss. Probing + blocked-hashes growth reassign
- * distinct hashes to identical duplicate lines across sequential edits, so a
- * served hash missing from the result set may still survive under a fresh hash.
- * Suppress those (consume one matching canon digest outside the edited spans); report
- * only canon deficit. Absent/empty `servedCanonDigests` keeps legacy hash-equality.
- */
 function buildRotatedSurvivorCheck(
   input: ComputeDriftInput,
   intervals: Array<{ from: number; to: number; delta: number }>,
@@ -186,9 +171,6 @@ function buildRotatedSurvivorCheck(
     remaining.set(c, (remaining.get(c) ?? 0) + 1);
   }
   return (_servedHash, servedPos) => {
-    // WHY: only the file-scoped canon digest the lease recorded at the served position counts. A
-    // WHY: hash->canon fallback is file-blind and an anchor collision would silently suppress real
-    // WHY: drift (#149); the digest is derived, never persisted (#151).
     const c = digests[servedPos] ?? null;
     if (c === null) return false;
     const left = remaining.get(c) ?? 0;

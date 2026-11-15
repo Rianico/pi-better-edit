@@ -153,8 +153,6 @@ function adoptRetiredConfig(
   for (const source of sources) {
     const retired = readConfigObject(source);
     if (retired === undefined) continue;
-    // WHY: the project skip is silent by design — a warning here would restore the per-session
-    // WHY: noise it removes; the global scope keeps attempt-and-report, a refused write losing settings.
     if (scope === "project" && !isWritable(dirname(newPath))) return retired;
     adoptSettings(newPath, retired, source, sources);
     return retired;
@@ -170,8 +168,6 @@ function adoptSettings(
 ): void {
   try {
     updateConfigFile(newPath, () => settings);
-    // WHY: the re-read gates the rename — the rename is irreversible for the retired source, so a
-    // WHY: file that does not parse must not be marked as adopted.
     if (readConfigObject(newPath) === undefined) {
       throw new Error(`the adopted file does not parse: ${newPath}`);
     }
@@ -227,7 +223,6 @@ function readConfigObject(
   try {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
-    // WHY: a hand-edited file can be caught unparseable mid-write — transient, not a reason to throw.
     onWarn?.(`cannot parse config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -270,7 +265,6 @@ export function updateConfigFile(
 
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  // WHY: the pid suffix keeps concurrent writers from clobbering each other's staging file.
   const tempPath = `${path}.tmp-${process.pid}`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
@@ -278,9 +272,7 @@ export function updateConfigFile(
   } catch (error: unknown) {
     try {
       unlinkSync(tempPath);
-    } catch {
-      // WHY: the orphaned .tmp-<pid> is inert and the write error is the actionable one.
-    }
+    } catch {}
     throw error;
   }
 }

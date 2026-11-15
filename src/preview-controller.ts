@@ -32,9 +32,6 @@ export class DebouncedPreview {
     state.argsKey = argsKey;
     const previewGeneration = (state.previewGeneration ?? 0) + 1;
     state.previewGeneration = previewGeneration;
-    // WHY: (#168-class) the compute's session is bound at arm time — if the serving session changed
-    // WHY: before the timer fires, verifying against the new one mints a false E_UNKNOWN_ANCHOR, so
-    // WHY: the stale compute is cancelled and the next renderCall re-arms against the real session.
     const armedSessionId = this.getSessionId?.();
     state.previewTimer = setTimeout(() => {
       delete state.previewTimer;

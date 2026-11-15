@@ -4,10 +4,10 @@
  * WHY a seam: the mutated set is known deep in the mutation paths while the consumer is an
  * optional outer integration that may be absent (the mutation bridge), so inverting the dependency
  * keeps every producer free of integration imports and no observer means unchanged behavior.
- * Invariant: an empty `ranges` list means the WHOLE file changed (whole-file authorship, an undo
+ * An empty `ranges` list means the WHOLE file changed (whole-file authorship, an undo
  * that re-serves, a producer that knows no line detail) — never "nothing happened", so every
  * notification is delivered. `src/served-spans.ts` picks the opposite: empty `spans` means nothing
- * was served, and is dropped. Invariant: no path handling lives here (`filePath` is the absolute
+ * was served, and is dropped. No path handling lives here (`filePath` is the absolute
  * normalized path the caller holds); ranges are 1-indexed, expected ascending, non-overlapping, non-adjacent.
  */
 import type { ServedSpan } from "./served-spans.js";
@@ -49,14 +49,11 @@ export function addMutatedFileObserver(observer: MutatedFileObserver): () => voi
  * already landed.
  */
 export function notifyMutatedFile(notification: MutatedFileNotification): void {
-  // WHY: a snapshot — an observer subscribing or unsubscribing mid-pass must not change the recipients.
   const snapshot = observers.slice();
   for (const observer of snapshot) {
     try {
       observer(notification);
-    } catch {
-      // WHY: swallowed by contract — isolation clause in `notifyMutatedFile`'s docblock above.
-    }
+    } catch {}
   }
 }
 

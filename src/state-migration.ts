@@ -54,16 +54,10 @@ export function migrateLegacyState(report: (message: string) => void): void {
   running = true;
   try {
     const root = stateRoot();
-    // WHY: the marker, not a module flag — a re-pointed override (tests do this) must migrate its own
-    // WHY: root, and the marker is what makes "already done" a fact about the DIRECTORY.
     if (existsSync(join(root, STATE_MIGRATION_MARKER))) return;
-    // WHY: the root is created here, not by the caller, because the artifacts below have to land
-    // WHY: inside it; a failure surfaces later as the store open's own [E_ACCESS] refusal.
     mkdirSync(root, { recursive: true });
     const outcome: MigrationOutcome = { moveFailed: false };
     adoptArtifacts(root, report, outcome);
-    // WHY: a failed move keeps the marker unwritten so the next session retries; a completed
-    // WHY: cross-device copy counts as moved, and a failed deletion is only reported.
     if (!outcome.moveFailed) {
       writeFileSync(join(root, STATE_MIGRATION_MARKER), `${new Date().toISOString()}\n`, "utf-8");
     }
@@ -154,7 +148,6 @@ function copyAcrossDevices(
   try {
     unlinkSync(from);
   } catch (error: unknown) {
-    // WHY: the destination holds the bytes, so the stale source is inert history it wins over.
     report(`copied ${from} → ${to} but left the original in place: ${reasonOf(error)}`);
     return;
   }
@@ -166,7 +159,6 @@ function deleteCorruptDumps(retired: string, report: (message: string) => void):
   try {
     entries = readdirSync(retired);
   } catch {
-    // WHY: an absent retired directory is the ordinary state of a fresh install.
     return;
   }
   for (const name of entries) {

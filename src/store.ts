@@ -15,7 +15,6 @@ interface SnapshotStore {
   allPaths(): Array<{ path: string }>;
 }
 
-// WHY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class SQLiteSnapshotStore implements SnapshotStore {
   constructor(private readonly db: DatabaseSync) {}
 

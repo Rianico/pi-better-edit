@@ -5,7 +5,7 @@
  * registered observers. WHY a seam: the served set is known deep in the read and
  * reject-and-serve paths while the consumer is an optional outer integration that may be
  * absent, so inverting the dependency keeps every producer free of integration imports and no
- * observer means unchanged behavior. Invariant: no path handling lives here (`filePath` is the
+ * observer means unchanged behavior. No path handling lives here (`filePath` is the
  * absolute normalized path the caller holds). Spans are 1-indexed because served rows are
  * 0-indexed internally while every consumer-facing surface counts lines from 1.
  */
@@ -59,8 +59,6 @@ export function servedRowsToSpans(rows: readonly ServedRow[]): ServedSpan[] {
   let runStart: number | undefined;
   let runCount = 0;
   for (const position of [...positions].sort((left, right) => left - right)) {
-    // WHY: an open run covers the half-open range [runStart, runStart + runCount - 1]; the
-    // WHY: next contiguous position in that run is therefore exactly runStart + runCount.
     if (runStart !== undefined && position === runStart + runCount) {
       runCount += 1;
       continue;
@@ -96,14 +94,11 @@ export function addServedSpanObserver(observer: ServedSpanObserver): () => void 
  */
 export function notifyServedSpans(notification: ServedSpanNotification): void {
   if (notification.spans.length === 0) return;
-  // WHY: a snapshot — an observer subscribing or unsubscribing mid-pass must not change the recipients.
   const snapshot = observers.slice();
   for (const observer of snapshot) {
     try {
       observer(notification);
-    } catch {
-      // WHY: swallowed by contract — isolation clause in `notifyServedSpans`'s docblock above.
-    }
+    } catch {}
   }
 }
 

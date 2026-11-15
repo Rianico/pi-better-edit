@@ -1,12 +1,6 @@
 /**
  * SAFETY: edit-diff - row-intrinsic invisible-code-point annotation (issue #231).
  *
- * WHY: in-scope code points are a vanishingly small share of real-corpus characters, so fatigue is
- * WHY: not the risk; a missed disclosure is a silent byte change. So the annotation sits on the diff
- * WHY: rows instead of in a sentence: each row lists its own code points on one sub-row after it, and
- * WHY: there is no cross-row pairing and no aggregation - block rewrites annotate both sides
- * WHY: independently - while context rows get none. The sub-row carries no file-line slot: adjacency
- * WHY: to its diff row, whose anchors map to the file line, carries the line.
  */
 import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
@@ -55,11 +49,6 @@ function entryToken(codePoint: number): string {
   return name === undefined ? hexToken(codePoint) : `${hexToken(codePoint)} ${name}`;
 }
 
-/**
- * WHY: the caret points at the first entry's column; past the byte cap the caret and its
- * WHY: padding are dropped rather than pointed at nothing, while every entry keeps its
- * WHY: column and full name.
- */
 function subRowForLine(line: string, direction: "removed" | "added"): string | undefined {
   const found = scanInvisibleLine(line);
   if (found.length === 0) return undefined;
@@ -120,8 +109,6 @@ function pushRemovedLines(
   }
   const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
   for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
-  // WHY: the model sees the deletion's head, tail, and exact size (#169's counted `lines deleted`);
-  // WHY: the hidden rows still advance the cursor, so every later row keeps its old number and hash.
   // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
   output.push(` - ... [${omitted} lines deleted] ...`);
   oldLineNum.value += omitted;
@@ -140,14 +127,10 @@ function contextLinesToShow(
     skipStart = Math.max(0, displayLines.length - contextLines);
     linesToShow = displayLines.slice(skipStart);
   } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
-    // WHY: #170 — slice(-0) returns the whole array, so at context 0 the tail is taken
-    // WHY: explicitly; the gap then renders marker-only with the count covering the full span.
     const tail = contextLines === 0 ? [] : displayLines.slice(-contextLines);
     linesToShow = [...displayLines.slice(0, contextLines), UNTOUCHED_MARKER, ...tail];
     skipMiddle = displayLines.length - contextLines * 2;
   } else if (!nextPartIsChange && linesToShow.length > contextLines) {
-    // WHY: #166 — only trailing gaps may be sliced away silently; a middle gap renders whole
-    // WHY: below 2×context, otherwise hidden rows would desync the anchors that follow it.
     linesToShow = linesToShow.slice(0, contextLines);
   }
   return { linesToShow, skipStart, skipMiddle };
@@ -170,8 +153,6 @@ export function genDiff(
   contextLines = 2,
   newContentHashes?: string[],
   oldContentHashes?: string[],
-  // WHY: required only when the caller omits precomputed hashes — the diff
-  // WHY: renderer must never derive content-only anchors for a file.
   filePath?: string,
 ): {
   diff: string;
@@ -217,8 +198,6 @@ export function genDiff(
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
       }
-      // WHY: an added part can push nothing, so its `lastChangedLine` lands below the first — the clamp
-      // WHY: holds `last >= first` for every consumer that pairs them.
       if (lastChangedLine < (firstChangedLine ?? lastChangedLine)) {
         lastChangedLine = firstChangedLine;
       }
@@ -242,8 +221,6 @@ export function genDiff(
       }
       for (const line of linesToShow) {
         if (isUntouchedMarker(line)) {
-          // WHY: #169 — a hidden middle span is a counted `lines untouched` marker; both cursors
-          // WHY: advance past the exact hidden count, so anchors after it stay aligned.
           output.push(` ... [${skipMiddle} lines untouched] ...`);
           newLineNum += skipMiddle;
           oldLineNum += skipMiddle;

@@ -21,7 +21,6 @@ export async function resolveTarget(path: string): Promise<string> {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: "Path contains null byte.",
     });
-  // WHY: any absolute path is in scope by design — OS permissions are the boundary (valAccess), not this module.
   const absolutePath = resolve(path);
   const { root } = parse(absolutePath);
   const parts = absolutePath
@@ -36,7 +35,6 @@ export async function resolveTarget(path: string): Promise<string> {
     }
 
     const [nextPart, ...tail] = remainingParts;
-    // WHY: both halves come from the resolved absolute path — normalized, non-empty segments, never raw input.
     const candidatePath = join(currentPath, nextPart);
 
     try {
@@ -54,7 +52,6 @@ export async function resolveTarget(path: string): Promise<string> {
       }
       visitedSymlinks.add(candidatePath);
 
-      // WHY: the symlink target is filesystem-supplied, and it is resolved to absolute form before recursing.
       const linkTargetPath = resolve(dirname(candidatePath), await readlink(candidatePath));
       const targetParts = linkTargetPath
         .slice(parse(linkTargetPath).root.length)
@@ -92,7 +89,6 @@ async function sweepStaleTemps(dir: string): Promise<void> {
           await rm(tempPath, { force: true });
         }
       } catch (error: unknown) {
-        // WHY: no caller depends on removal — a UUID temp is single-writer and the next sweep retries it.
         reportDiagnostic("fs-write", "[fs-write] failed to inspect stale temp", error);
       }
     }
@@ -111,7 +107,6 @@ async function syncDir(dir: string): Promise<void> {
       await handle.close();
     }
   } catch (error: unknown) {
-    // WHY: the rename has already published the file; a failed sync costs durability, never content.
     reportDiagnostic("fs-write", "[fs-write] failed to sync directory", error);
   }
 }
@@ -128,15 +123,9 @@ export async function readBytes(path: string): Promise<Buffer> {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: "Path contains null byte.",
     });
-  // WHY: one read boundary — every file-layer read resolves symlinks here and nowhere else.
   return readFile(await resolveTarget(path));
 }
 
-/**
- * WHY: (04b-rem P2-3) `content` widens to `Buffer` for the rollback/restore arms that must land
- * WHY: EXACTLY the captured bytes: same temp+rename machinery, same durability, no third
- * WHY: serializer — a `Buffer` bypasses the utf-8 encoding step instead of adding a write path.
- */
 export async function writeAtomic(path: string, content: string | Buffer): Promise<void> {
   if (path.includes("\0"))
     throw new DomainError("E_INTERNAL_INVARIANT", {

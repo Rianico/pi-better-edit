@@ -1,11 +1,6 @@
 /**
  * Walking a file's lines, one page at a time.
  *
- * WHY: `split("\n")` buys line addressing with one heap string per line — measured by this repo's own
- * WHY: probe at ~50 B per line (47.2 MB of heap for a 29.9 MB text; `pnpm run eval:heap`) — which a read
- * WHY: that keeps a page of rows never needs. `walkLines` yields the same lines as `splitLines` — same
- * WHY: lines, same order, same total — while retaining only the ranges the caller asked for.
- *
  * The walk is mode-agnostic by construction: text in, lines out. It knows nothing about render
  * modes, anchors, or served state, so every caller can adopt it without teaching it their language.
  */
@@ -41,11 +36,6 @@ export interface LineWalk {
  * `visit` receives every line in order with its index — how a caller assigns per-line state (the
  * served read's anchors) inside the same walk that selects the page, instead of splitting the text
  * again for it. Lines outside every range are still visited; they are only never retained.
- *
- * WHY: the sequence stops before the terminal newline's empty entry, because that entry is this
- * codebase's sentinel and not a line — `splitLines` counts it away, `visLines` never shows it, and
- * the anchors the served path assigns are per `splitLines` line. The walk visits exactly the lines
- * its callers count, so one line space stays one line space.
  */
 export function walkLines(
   text: string,
@@ -83,9 +73,6 @@ export function walkLines(
 
 /**
  * The number of lines a read can address — `visLines(text).length` — from the walk's total.
- *
- * WHY: `visLines` and `splitLines` differ in exactly one case: the empty text is one `splitLines`
- * entry and no lines at all. Everything else the sentinel rule already settled in the walk.
  */
 export function visibleLineTotal(text: string, total: number): number {
   return text === "" ? 0 : total;
@@ -94,9 +81,6 @@ export function visibleLineTotal(text: string, total: number): number {
 /**
  * Merges overlapping or contiguous ranges into disjoint, ascending ranges.
  *
- * WHY: a multi-window request is several asks over one line space, and asks can overlap or abut
- * (a shared line, `1-3` next to `4-6`). Retention is the walk's only per-range cost, so a caller
- * that merged first walks the union once and re-slices it per requested window afterwards.
  * Empty ranges carry nothing and are dropped; a negative start reads like 0 (see `LineRange`).
  */
 export function mergeRanges(ranges: readonly LineRange[]): LineRange[] {

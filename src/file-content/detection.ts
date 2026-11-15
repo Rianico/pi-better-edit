@@ -53,7 +53,6 @@ function mimeToLFile(mime: string | undefined): LFile | undefined {
   return { kind: "binary", description: mime };
 }
 
-// WHY: a plain shape keeps `node:fs` out of the domain types — callers pass an object, not a `Stats`.
 /** Snapshot identity and size: the only `fs.Stats` fields this codebase reads. */
 export interface FileStats {
   ino: number;
@@ -65,7 +64,6 @@ export interface FileStats {
 interface LFileText {
   kind: "text";
   text: string;
-  // WHY: the load path already stat'd this path; passing the result on keeps the read at one `stat` per file.
   stats?: FileStats;
   hadUtf8DecodeErrors?: true;
 }
@@ -125,9 +123,6 @@ export async function loadFileKindAndText(
     let utf8Suspect = false;
     let newlineCount = 0;
     const parts: string[] = [];
-    // WHY: (04b-rem P2-3) a non-fatal decoder emits U+FFFD for every invalid sequence, so no U+FFFD
-    // WHY: proves the round-trip lossless, while U+FFFD proves nothing — the file may legitimately
-    // WHY: contain it. Suspicion decides what to CHECK; the byte comparison below decides what to REPORT.
     function noteUtf8(decoded: string): void {
       if (!utf8Suspect && decoded.includes("\uFFFD")) utf8Suspect = true;
     }
@@ -165,10 +160,6 @@ export async function loadFileKindAndText(
     parts.push(decodeChunk(new Uint8Array(0), false));
 
     const text = parts.join("");
-    // WHY: the text is line-addressable without loss exactly when re-encoding equals the file's bytes,
-    // WHY: so the oracle runs only on suspicion — cheaper than a raw copy for every clean file.
-    // WHY: (04b-rem2 suggestion 1) the decoder ignored the BOM rather than stripping it, so the
-    // WHY: WHOLE byte image is compared — through the same `readBytes` every restore site reads.
     let hadUtf8DecodeErrors = false;
     if (utf8Suspect) {
       const rawBytes = await readBytes(filePath);
@@ -192,7 +183,7 @@ export async function loadFileKindAndText(
  * code points that reach the model invisibly, so a verbatim read names them instead of escaping
  * them — see docs/spec/search-and-read-evolution.md §6.
  */
-// eslint-disable-next-line no-control-regex -- WHY: these code points ARE the notice's subject.
+// eslint-disable-next-line no-control-regex -- HACK: these code points ARE the notice's subject.
 const NON_PRINTABLE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 
 export interface ControlCharReport {

@@ -61,8 +61,6 @@ export async function servedHashEchoDenial(
   const reproduction = findServedHashEcho(lines, served, canonDigests, 1);
   if (!reproduction) return undefined;
   const offendingLine = lines[reproduction.k - 1] ?? "";
-  // WHY: the refusal only tallies — it runs pre-dispatch, so no bytes move and no clear is due; the
-  // WHY: clear belongs to the committed write that re-serves the file (post-write), never this gate.
   const count = trackServedWriteRefusal(sessionKey, absolutePath, offendingLine);
   return buildServedWriteMessage({
     path: rawPath,
@@ -85,9 +83,6 @@ export function registerWriteHook(pi: ExtensionAPI): void {
     const rawPath = input?.path as unknown;
     const content = input?.content as unknown;
     if (typeof rawPath !== "string" || typeof content !== "string") return;
-    // WHY: pi's builtin `write` schema tolerates the extra top-level `mode` (verified with TypeBox
-    // WHY: `Compile`: the additional property passes `additionalProperties` handling), so the literal
-    // WHY: declaration rides the same input object with no schema change.
     const modeValue = (input as Record<string, unknown>)?.mode;
     const mode: "general" | "literal" = modeValue === "literal" ? "literal" : "general";
 

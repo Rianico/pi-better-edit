@@ -22,12 +22,8 @@ export function registerSearchHook(pi: ExtensionAPI): void {
       const command = input.command;
       if (typeof command !== "string" || command.trim() === "") return;
       const rewritten = withSearchLineNumbers(command);
-      // WHY: a command with nothing to rewrite must reach bash byte-identical — the only mutation
-      // WHY: this hook can make is the documented line-number splice (see `withSearchLineNumbers`).
       if (rewritten === command) return;
       input.command = rewritten;
-    } catch {
-      // WHY: interception is an optimisation, never a gate — a classifier fault must not cost the call.
-    }
+    } catch {}
   });
 }
