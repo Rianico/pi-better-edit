@@ -646,11 +646,9 @@ export async function fmtReadPreview(
   }
   const startLine = normPosInt(options.offset, "offset") ?? 1;
   const windows = normWindows(options.windows, options.derivedWindows === true);
-  /**
-   * WHY: one walk per page answers both of a read's questions: the lines to render, and (served) the
-   * WHY: anchors to render them with. Without a plan the anchors keep their own whole-content call,
-   * WHY: and verbatim never makes one — the render mode is the hashless authority.
-   */
+  // WHY: one walk per page answers both of a read's questions: the lines to render, and (served) the
+  // WHY: anchors to render them with. Without a plan the anchors keep their own whole-content call,
+  // WHY: and verbatim never makes one — the render mode is the hashless authority.
   const pageFor = async (
     ranges: LineRange[],
   ): Promise<{ ranges: string[][]; hashes: string[] }> => {

@@ -456,21 +456,15 @@ export function batchAbortFor(args: { error: Error; index: number; path: string 
   return wrapped;
 }
 /**
- * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`:
- * one aggregated rejection with one bullet per failing item (`- edit[1]: …`) so a single
- * resubmission can fix them all instead of burning one turn per failure. The batch is still
- * all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic
- * (and code) inline, so the model can act on every failure without a re-read.
- *
- * Field aggregation (spec D2 — the envelope must stay actionable):
- * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
- *   first item's domain code so `toFailure` still routes the typed path (and keeps this full
- *   message) instead of rewriting it as `E_UNKNOWN`.
- * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed
- *   batch states each cause inline instead of promoting one.
- * - `servedRows`: the union of every failing item's rows (each item's retry leases were already
- *   recorded on its own rejection path).
- * - `servedBlock`: every failing item's block, in item order.
+ * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`: one aggregated rejection with one
+ * bullet per failing item (`- edit[1]: …`) so a single resubmission can fix them all instead of burning a turn per failure. The batch
+ * is still all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic and code inline, so the model
+ * can act on every failure without a re-read.
+ * Field aggregation (spec D2 — the envelope must stay actionable): `code` — every item keeps its own `[E_*]` inline in the message,
+ * and the envelope carries the first item's domain code so `toFailure` still routes the typed path (keeping this full message)
+ * instead of rewriting it as `E_UNKNOWN`; `details`/`cause` — carried only when every failing item agrees on one diagnosis, a mixed
+ * batch stating each cause inline instead of promoting one; `servedRows` — the union of every failing item's rows (each item's retry
+ * leases were already recorded on its own rejection path); `servedBlock` — every failing item's block, in item order.
  */
 export function batchAbortForMany(args: {
   failures: { error: Error; index: number }[];

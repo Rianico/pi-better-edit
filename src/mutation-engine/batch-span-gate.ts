@@ -120,18 +120,15 @@ export interface BaselineSpanContext {
 }
 
 /**
- * Resolves one edit's baseline span (`s'_start .. s'_end`) in the pre-batch snapshot through the same
- * seam the apply path resolves it with (spec §3.2.1): every edit goes through `resolveLeasedEdit`, so
- * its span is the `line_lineage(S_curr)` window of its leased `line_id`s — a duplicate canon resolves
- * through the leased identity, never through the first content occurrence. An anchor this seam cannot
- * place has no comparable baseline coordinate, and the sequential apply rejects that edit anyway, so
- * the batch aborts with that same diagnostic (`[E_STALE_ANCHOR]`, `[E_STALE_RANGE]`) instead of
- * silently dropping the span (a dropped span blinds the overlap gate for every other item in the
- * call).
+ * Resolves one edit's baseline span (`s'_start .. s'_end`) in the pre-batch snapshot through the same seam the apply path resolves it
+ * with (spec §3.2.1): every edit goes through `resolveLeasedEdit`, so its span is the `line_lineage(S_curr)` window of its leased
+ * `line_id`s — a duplicate canon resolves through the leased identity, never through the first content occurrence. An anchor this seam
+ * cannot place has no comparable baseline coordinate, and the sequential apply rejects that edit anyway, so the batch aborts with that
+ * same diagnostic (`[E_STALE_ANCHOR]`, `[E_STALE_RANGE]`) instead of silently dropping the span (a dropped span blinds the overlap gate
+ * for every other item in the call).
  *
- * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines
- * are mutated state the overlap gate must see (invariant 5). A copy's source is read, not mutated,
- * so it adds no span.
+ * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines are mutated state the overlap gate
+ * must see (invariant 5). A copy's source is read, not mutated, so it adds no span.
  */
 async function resolveBaselineSpans(
   edit: HEdit,

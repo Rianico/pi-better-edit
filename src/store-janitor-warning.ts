@@ -1,25 +1,14 @@
 /**
  * #197 — the STORE JANITOR's user-visible warning: a pure rendering of one `JanitorOutcome`.
- *
- * WHY the trigger lives in the formatter rather than in a caller: "did anything observable happen"
- * is a property of the outcome, and a caller that re-derived it would be a second owner of the same
- * rule (three counts, the compaction, the deep check, the rebuild). Returning `null` here makes the
- * quiet case unrepresentable downstream, so #198's wiring has one decision — render what it is given
- * — and a run that removed nothing can never become a warning by accident.
- *
- * WHY two levels and not three (#199): the operator's question is "does this need my attention".
- * A routine cleanup and a DEFERRED compaction both answer no (`info`); damage and a compaction that
- * FAILED answer yes (`warn`). The outcome already carries that answer, so the wiring never decides a
- * severity and every surface publishes the same level for the same run.
- *
- * WHY nothing here performs I/O: the only dependency is the log's PATH (`diagnosticsLogPath`, a
- * computation over the state root), never the file. A formatter that opened the log would fail on the
- * failure path it exists to describe, and a test could no longer assert the text without a store.
- *
- * WHY one em-dash clause and no emoji: this text is rendered inside Pi's differential renderer, where
- * width changes are expensive and emoji width is not stable. The bracket prefix is the greppable
- * handle (`grep -F '[pi-better-edit store-janitor]'`), so every line carries it — including the
- * multi-line damaged-store shape, whose lines are read out of order in a log.
+ * WHY the trigger lives in the formatter, not a caller: "did anything observable happen" is a
+ * property of the outcome, and re-deriving it would be a second owner of the same rule (three
+ * counts, the compaction, the deep check, the rebuild); returning `null` makes the quiet case
+ * unrepresentable downstream, so #198's wiring has one decision.
+ * WHY two levels and not three (#199): the operator's question is "does this need my attention" —
+ * a routine cleanup and a DEFERRED compaction answer no (`info`), damage and a FAILED compaction
+ * answer yes (`warn`), and the outcome carries that answer.
+ * WHY nothing here performs I/O: the only dependency is the log's PATH (`diagnosticsLogPath`),
+ * never the file — a formatter that opened the log would fail on the failure path it describes.
  */
 import { diagnosticsLogPath } from "./diagnostics.js";
 import type { JanitorOutcome } from "./store-janitor.js";

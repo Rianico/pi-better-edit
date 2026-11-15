@@ -30,7 +30,7 @@ import {
  * and the baseline itself is at or under the ceiling (a bloated file cannot hide behind a
  * count that happens to match).
  */
-const EXPECTED_MAX_LEGACY_COMMENTS = 324;
+const EXPECTED_MAX_LEGACY_COMMENTS = 242;
 
 type Shape = {
   shape: string;
@@ -381,10 +381,20 @@ describe("comment gate ratchet", () => {
     expect(entriesOf(root)).toEqual([]);
   });
 
-  it("refuses an update that reuses an already-recorded comment text", () => {
+  it("reports growth instead of blocking it, so the ceiling literal stays the only ratchet", () => {
     const root = makeRoot({ "src/a.ts": "// shared text\nconst a = 1;\n" });
     quietly(() => main(["--update"], root));
     writeFileSync(join(root, "src/a.ts"), "// shared text\n// shared text\nconst a = 1;\n");
-    expect(quietly(() => main(["--update"], root))).toBe(1);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(main(["--update"], root)).toBe(0);
+      const announced = error.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(announced).toContain("EXPECTED_MAX_LEGACY_COMMENTS");
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+    expect(entriesOf(root)).toHaveLength(2);
   });
 });

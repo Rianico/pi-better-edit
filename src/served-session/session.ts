@@ -544,20 +544,16 @@ export function ensureServedSchema(db: DatabaseSync): void {
 const SERVED_PRUNE_META_KEY = "served_prune_at";
 
 /**
- * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one. Both the
- * delete and its run stamp are writes, and a `DELETE` takes the store's write lock even when its
- * predicate matches no row, so a healthy stamp-matching open that took no lock before would otherwise
- * contend for one here. The item is therefore asked only when it is due, and it deletes only when
- * there is something to delete.
+ * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one: a `DELETE` takes the store's write
+ * lock even when its predicate matches no row, so a healthy stamp-matching open would contend for one here. The item is asked only
+ * when due, and it deletes only when there is something to delete.
  *
- * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so
- * an expired row can live `SERVED_TTL_MS` plus that interval. The timer earns its place because the
- * guard it skips scans the mirror whenever nothing is expired (no index covers `updated_at`); the
- * measured medians and the sizing argument are in that constant's WHY block.
+ * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so an expired row can live
+ * `SERVED_TTL_MS` plus that interval. The timer earns its place because the guard it skips scans the mirror whenever nothing is
+ * expired (no index covers `updated_at`); the measured medians and the sizing argument are in that constant's WHY block.
  *
- * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now -
- * SERVED_TTL_MS`) is asked as an existence question before it is asked as a delete, the same rows are
- * removed, and the run stamp is written only by a run that removed some.
+ * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now - SERVED_TTL_MS`) is asked as an existence
+ * question before it is asked as a delete, the same rows are removed, and the run stamp is written only by a run that removed some.
  */
 function pruneExpiredMirrorRows(db: DatabaseSync): void {
   const now = Date.now();
@@ -831,22 +827,16 @@ function grantLeasesForRows(
 }
 
 /**
- * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never
- * invented here: it is read from the committed snapshot whose content was actually served, so the
- * edit path can resolve the anchor's identity later. Anchors without committed lineage (e.g. a
- * preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay
- * fail-closed.
+ * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never invented here: it is read from the
+ * committed snapshot whose content was actually served, so the edit path can resolve the anchor's identity later. Anchors without
+ * committed lineage (e.g. a preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay fail-closed.
  *
- * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the
- * served content (`recordEpoch` full reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`,
- * `recordLeases`). There is deliberately NO fallback to the newest materialization: after content
- * reverts to an earlier committed snapshot a re-serve of the reverted content would bind anchors
- * that both snapshots share to the OTHER version's `line_id` — the silent-miswrite class §3.1.2
- * exists to prevent. An unknown hash therefore grants nothing and the next edit fails closed.
- *
- * This is the in-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and
- * deliberately propagates instead of swallowing, so a failed re-serve rolls back the adoption and
- * retirement it shares a transaction with (the undo restore is one transaction, not three).
+ * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the served content (`recordEpoch` full
+ * reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`, `recordLeases`). There is deliberately NO fallback to the newest
+ * materialization: after content reverts, a re-serve would bind anchors both snapshots share to the OTHER version's `line_id` — the
+ * silent-miswrite class §3.1.2 exists to prevent — so an unknown hash grants nothing and the next edit fails closed.
+ * In-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and deliberately propagates instead of swallowing, so
+ * a failed re-serve rolls back the adoption and retirement it shares a transaction with (the undo restore is one transaction).
  */
 export function grantLeasesInTransaction(
   db: DatabaseSync,
@@ -1008,7 +998,7 @@ export function recordServedMirrorInTransaction(
     addRetiredAnchors(store, sessionKey, path, options.retireAnchors);
   }
   // WHY: `recordDiff`/`recordTruncated` early-return on an empty serve, skipping the mirror write
-  // AND its displaced retirement — mirrored here.
+  // WHY: its displaced retirement is skipped too — the same early return, mirrored here.
   if (rows.length === 0) return;
   writeServeMirrorInner(store, sessionKey, path, rows, options?.shape);
 }

@@ -761,23 +761,19 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return { content };
   }
 
-  /**
-  /**
-   * WHY deferred module load: `bash-classifier` statically pulls `unbash`, which must
-   * WHY: never join the extension entry graph — entry import cost is budgeted
-   * WHY: (`measure-import --max-ratio 0.75`). The handler therefore reaches the
-   * WHY: classifier only through a dynamic `import()` on the first bash result.
-   * WHY:
-   * WHY: Load-shape record (ADR-0033): esbuild bundles the relative specifier into
-   * WHY: the entry and hoists the external `unbash` import to a top-level static
-   * WHY: import in the shipped artifact, so the artifact is NOT lazy — only the
-   * WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,
-  * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
-  * WHY: of the lazily imported classifier still fails closed via the catch below,
-  * WHY: which passes the original output through untouched (in the shipped artifact
-  * WHY: the hoisted top-level import is instead fatal at entry — same class as the
-  * WHY: other entry imports).
-   */
+  // WHY: deferred module load — `bash-classifier` statically pulls `unbash`, which must
+  // WHY: never join the extension entry graph — entry import cost is budgeted
+  // WHY: (`measure-import --max-ratio 0.75`). The handler therefore reaches the
+  // WHY: classifier only through a dynamic `import()` on the first bash result.
+  // WHY: Load-shape record (ADR-0033): esbuild bundles the relative specifier into
+  // WHY: the entry and hoists the external `unbash` import to a top-level static
+  // WHY: import in the shipped artifact, so the artifact is NOT lazy — only the
+  // WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,
+  // WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
+  // WHY: of the lazily imported classifier still fails closed via the catch below,
+  // WHY: which passes the original output through untouched (in the shipped artifact
+  // WHY: the hoisted top-level import is instead fatal at entry — same class as the
+  // WHY: other entry imports).
   async function handleBash(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -810,13 +806,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       const { classifyBashCommand, applySliceOps, isContentOp, isSliceOp } =
         await import("../bash-classifier.js");
       const conversion: Decision = classifyBashCommand(command);
-      /**
-       * WHY (#151): the single decision switch — every conversion shape routes by
-       * WHY: `decision.kind`; no shape-sniffing, no stringified reasons downstream (the
-       * WHY: debug seam below records the reason in the diagnostics file, never in the model's
-       * WHY: text (ADR-0033 D6: observability is never model-visible). Banners and headers stay
-       * WHY: in the shape seams this calls; this is where the routing decision lands.
-       */
+      // WHY: (#151) the single decision switch — every conversion shape routes by
+      // WHY: `decision.kind`; no shape-sniffing, no stringified reasons downstream (the
+      // WHY: debug seam below records the reason in the diagnostics file, never in the model's
+      // WHY: text (ADR-0033 D6: observability is never model-visible). Banners and headers stay
+      // WHY: in the shape seams this calls; this is where the routing decision lands.
       async function renderDecision(
         decision: Decision,
       ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
@@ -853,19 +847,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           }
           return undefined;
         }
-        /**
-         * WHY: shared view serving (single views call it with whole stdout; the envelope calls it
-         * WHY: per verified slice). Pure relocation of the branch body — `event`, `deps` and helpers
-         * WHY: resolve via closure. Throws propagate to the caller SAFETY catch.
-         */
-        /**
-         * WHY: (ADR-0039 D1/D2/D4) sequential peeling + hybrid envelope. Each segment's expected raw
-         * WHY: bytes come from re-read disk (never observed stdout); the peel consumes exact prefixes
-         * WHY: left-to-right and halts at the first mismatch, keeping verified prefix rendering and
-         * WHY: leases with the rest raw. Glue contributes verified bytes verbatim; views/searches
-         * WHY: render anchored blocks via the shared paths on verified slices. Zero blocks, nothing
-         * WHY: verified, or a trailing remainder beyond lone-newline leniency returns undefined (F2).
-         */
+        // WHY: shared view serving (single views call it with whole stdout; the envelope calls it
+        // WHY: per verified slice). Pure relocation of the branch body — `event`, `deps` and helpers
+        // WHY: resolve via closure. Throws propagate to the caller SAFETY catch.
+        // WHY: (ADR-0039 D1/D2/D4) sequential peeling + hybrid envelope. Each segment's expected raw
+        // WHY: bytes come from re-read disk (never observed stdout); the peel consumes exact prefixes
+        // WHY: left-to-right and halts at the first mismatch, keeping verified prefix rendering and
+        // WHY: leases with the rest raw. Glue contributes verified bytes verbatim; views/searches
+        // WHY: render anchored blocks via the shared paths on verified slices. Zero blocks, nothing
+        // WHY: verified, or a trailing remainder beyond lone-newline leniency returns undefined (F2).
         async function handleBashCompound(
           event: ToolResultEvent,
           ctx: ToolContext,
@@ -940,13 +930,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
             content: [{ type: "text", text: parts.join("") + (rest === "\n" ? "\n" : "") }],
           };
         }
-        /**
-         * WHY: (ADR-0039 D2/D4) render one verified envelope block (single trailing newline; glue
-         * WHY: stays byte-exact). Views/searches render through the shared serving paths on their
-         * WHY: verified slice (their internal gates re-verify defensively); multi/recursive/file-list
-         * WHY: searches never reach here (no expected variants — the peel halts first). An empty
-         * WHY: search renders its banner with zero rows and zero leases rather than halting the rest.
-         */
+        // WHY: (ADR-0039 D2/D4) render one verified envelope block (single trailing newline; glue
+        // WHY: stays byte-exact). Views/searches render through the shared serving paths on their
+        // WHY: verified slice (their internal gates re-verify defensively); multi/recursive/file-list
+        // WHY: searches never reach here (no expected variants — the peel halts first). An empty
+        // WHY: search renders its banner with zero rows and zero leases rather than halting the rest.
         async function renderVerifiedBlock(
           segment: CompoundSegment,
           slice: string,
@@ -977,17 +965,16 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           if (typeof text !== "string") return undefined;
           return text.endsWith("\n") ? text : `${text}\n`;
         }
-        /**
-         * WHY (ADR-0049 M2/M3): a served multi-file view is ONE result with ONE page section per file,
-         * in operand order, under the existing page header grammar — no new root
-         * banner and no second chrome dialect. Every page's rows come from its own re-read file and are
-         * leased under the existing `(session, path, anchor)` identity: no anchor is ever shared between files.
-         *
-         * WHY the whole-command gate (M8): boundaries are line counts, so the observed STREAM must
-         * equal the render built from the re-read files before the first lease — one bad file, page,
-         * transform or cap passes the entire command through raw with zero leases. The zero-row page
-         * (M4) has a zero-length observed interval, which is why it cannot weaken that proof.
-         */
+        // WHY: (ADR-0049 M2/M3) a served multi-file view is ONE result with ONE page section
+        // WHY: per file, in operand order, under the existing page header grammar — no new root
+        // WHY: banner and no second chrome dialect. Every page's rows come from its own re-read
+        // WHY: file and are leased under the existing `(session, path, anchor)` identity: no anchor
+        // WHY: is ever shared between files.
+        // WHY: the whole-command gate (M8) — boundaries are line counts, so the observed STREAM
+        // WHY: must equal the render built from the re-read files before the first lease — one bad
+        // WHY: file, page, transform or cap passes the entire command through raw with zero leases.
+        // WHY: The zero-row page (M4) has a zero-length observed interval, which is why it cannot
+        // WHY: weaken that proof.
         async function handleBashMultiView(
           event: ToolResultEvent,
           ctx: ToolContext,
@@ -1306,11 +1293,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
   }
 
-  /**
-   * WHY: (item 10) resolve + read one candidate file for a triple serve. The classifier is pure
-   * WHY: and zero-fs, so the file kind is re-checked here: anything that is not decodable text
-   * WHY: fails the WHOLE serve closed rather than being silently skipped.
-   */
+  // WHY: (item 10) resolve + read one candidate file for a triple serve. The classifier is pure
+  // WHY: and zero-fs, so the file kind is re-checked here: anything that is not decodable text
+  // WHY: fails the WHOLE serve closed rather than being silently skipped.
   async function loadTextTarget(
     displayPath: string,
     effCwd: string,
@@ -1332,26 +1317,24 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return { absolutePath, normalized, fileHashes, allLines: deps.visLines(normalized) };
   }
 
-  /**
-   * WHY: (ADR-0048 D1 — bash serve admission) never content matching, no
-   * WHY: other-file anchor bleed. The triple regex splits `FILE:LINE:content` non-greedily, so
-   * WHY: when two splits of one observed row both resolve into the admitted set, the row is
-   * WHY: served under a coordinate bash never printed. Concrete twin: file `a` line 1 ==
-   * WHY: `b.txt:3:x` and file `a:1:b.txt` line 3 == `x` produce the identical stdout row
-   * WHY: `a:1:b.txt:3:x`. Enumerate EVERY split whose suffix is itself a line-number shape
-   * WHY: (`^\d+:` with a safe integer >= 1, the parser's own line rule) and resolve the prefix —
-   * WHY: candidates are resolved, never display-matched, because `admitted` displays are
-   * WHY: `path.join`-normalized (`sub/a`) while bash prints the operand spelling (`./sub/a`
-   * WHY: for a `.` root). A prefix that fails to resolve is not a file and is skipped, never a
-   * WHY: refusal: matched content beginning `digits:` yields phantom candidates (e.g.
-   * WHY: `sub/ok.txt:2:5:foo` yields `sub/ok.txt:2`), and refusing on throw would make the
-   * WHY: common content-with-colons case unservable. More than one distinct resolved path
-   * WHY: fails the WHOLE serve closed before the first lease — several display aliases of one
-   * WHY: resolved path are not ambiguous. Residual, still fail-closed: `resolveTarget` catches
-   * WHY: ENOENT and resolves a deleted admitted file lexically, so deletion cannot blind this
-   * WHY: guard — the serve then fails at `valAccess` (`E_NOT_FOUND`) in `loadTextTarget` before
-   * WHY: the first lease, and the outer `handleBash` catch passes the command through raw.
-   */
+  // WHY: (ADR-0048 D1 — bash serve admission) never content matching, no
+  // WHY: other-file anchor bleed. The triple regex splits `FILE:LINE:content` non-greedily, so
+  // WHY: when two splits of one observed row both resolve into the admitted set, the row is
+  // WHY: served under a coordinate bash never printed. Concrete twin: file `a` line 1 ==
+  // WHY: `b.txt:3:x` and file `a:1:b.txt` line 3 == `x` produce the identical stdout row
+  // WHY: `a:1:b.txt:3:x`. Enumerate EVERY split whose suffix is itself a line-number shape
+  // WHY: (`^\d+:` with a safe integer >= 1, the parser's own line rule) and resolve the prefix —
+  // WHY: candidates are resolved, never display-matched, because `admitted` displays are
+  // WHY: `path.join`-normalized (`sub/a`) while bash prints the operand spelling (`./sub/a`
+  // WHY: for a `.` root). A prefix that fails to resolve is not a file and is skipped, never a
+  // WHY: refusal: matched content beginning `digits:` yields phantom candidates (e.g.
+  // WHY: `sub/ok.txt:2:5:foo` yields `sub/ok.txt:2`), and refusing on throw would make the
+  // WHY: common content-with-colons case unservable. More than one distinct resolved path
+  // WHY: fails the WHOLE serve closed before the first lease — several display aliases of one
+  // WHY: resolved path are not ambiguous. Residual, still fail-closed: `resolveTarget` catches
+  // WHY: ENOENT and resolves a deleted admitted file lexically, so deletion cannot blind this
+  // WHY: guard — the serve then fails at `valAccess` (`E_NOT_FOUND`) in `loadTextTarget` before
+  // WHY: the first lease, and the outer `handleBash` catch passes the command through raw.
   async function tripleSplitAmbiguous(
     rawLines: readonly string[],
     effCwd: string,
@@ -1384,15 +1367,13 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return false;
   }
 
-  /**
-   * WHY: (item 10) the shared multi-file / recursive serve seam. Every named file must resolve
-   * INTO the admitted set (explicit operands or the walked set), every row's bytes must equal
-   * the disk line at that number, and the total row count must fit `SEARCH_MAX_MATCHES` — all
-   * verified BEFORE the first lease, so a refusal grants nothing (invariant 2) and an over-cap
-   * search passes through raw instead of truncating (invariant 3). Sections render in operand /
-   * first-seen order under the admitted display (which differs from bash's spelling for a `.`
-   * root: `sub/a` renders where bash printed `./sub/a`), so coordinates are stable.
-   */
+  // WHY: (item 10) the shared multi-file / recursive serve seam. Every named file must resolve
+  // WHY: INTO the admitted set (explicit operands or the walked set), every row's bytes must equal
+  // WHY: the disk line at that number, and the total row count must fit `SEARCH_MAX_MATCHES` — all
+  // WHY: verified BEFORE the first lease, so a refusal grants nothing (invariant 2) and an over-cap
+  // WHY: search passes through raw instead of truncating (invariant 3). Sections render in operand /
+  // WHY: first-seen order under the admitted display (which differs from bash's spelling for a `.`
+  // WHY: root: `sub/a` renders where bash printed `./sub/a`), so coordinates are stable.
   async function serveMatchTriples(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -1487,12 +1468,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     };
   }
 
-  /**
-   * WHY: (item 10) the walk behind a recursive search and `rg --files`: breadth-first, hidden and
-   * `node_modules` directories never descended into, symlinks never followed (a `Dirent`'s
-   * `isFile()` does not follow one), and the visit count bounded — past
-   * `BASH_SEARCH_WALK_MAX_FILES` the WHOLE command passes through raw.
-   */
+  // WHY: (item 10) the walk behind a recursive search and `rg --files`: breadth-first, hidden
+  // WHY: and `node_modules` directories never descended into, symlinks never followed (a
+  // WHY: `Dirent`'s `isFile()` does not follow one), and the visit count bounded — past
+  // WHY: `BASH_SEARCH_WALK_MAX_FILES` the WHOLE command passes through raw.
   async function walkSearchFiles(
     rootAbsolute: string,
     rootDisplay: string,
@@ -1545,11 +1524,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return found;
   }
 
-  /**
-   * WHY: (item 10) the multi-file seam. Triples require a numbered spelling, and the `tool_call`
-   * rewrite supplies it; a command that somehow reaches here without it fails closed instead of
-   * serving an unverifiable geometry.
-   */
+  // WHY: (item 10) the multi-file seam. Triples require a numbered spelling, and the `tool_call`
+  // WHY: rewrite supplies it; a command that somehow reaches here without it fails closed instead of
+  // WHY: serving an unverifiable geometry.
   async function handleBashMultiSearch(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -1564,11 +1541,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return await serveMatchTriples(event, ctx, { effCwd, admitted });
   }
 
-  /**
-   * WHY: (item 10) the recursive seam over one explicit root (`grep -r PATTERN DIR`, and an `rg`
-   * directory operand). Only files the walk actually visited can be leased, so the exclusion list
-   * is what keeps `node_modules`/`.git`/hidden subtrees out of the anchor budget.
-   */
+  // WHY: (item 10) the recursive seam over one explicit root (`grep -r PATTERN DIR`, and an `rg`
+  // WHY: directory operand). Only files the walk actually visited can be leased, so the exclusion list
+  // WHY: is what keeps `node_modules`/`.git`/hidden subtrees out of the anchor budget.
   async function handleBashRecursiveSearch(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -1582,11 +1557,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return await serveMatchTriples(event, ctx, { effCwd, admitted: walked });
   }
 
-  /**
-   * WHY: (item 10) `rg --files`: every entry is existence-checked against the walk (invariant 2)
-   * inside the same count cap, and NOTHING is leased — a path list has no lines to anchor, so
-   * listing grants no edit rights.
-   */
+  // WHY: (item 10) `rg --files`: every entry is existence-checked against the walk (invariant 2)
+  // WHY: inside the same count cap, and NOTHING is leased — a path list has no lines to anchor, so
+  // WHY: listing grants no edit rights.
   async function handleBashFilesList(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -1618,20 +1591,17 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     };
   }
 
-  /**
-   * WHY: (item 9) the content stage's serve seam. A filter's survivors are sparse, so they are
-   * WHY: leased row by row exactly like a search's matches — the same `fmtServedRows` renderer
-   * WHY: and `SEARCH_MAX_MATCHES` bound — rather than borrowing the read tool's window budget,
-   * WHY: which would pass a realistic sparse filter through raw. The whole-stdout byte gate is
-   * WHY: the witness: a literal fold that diverges from what bash printed (a regex pattern, an
-   * WHY: `-i` spelling) fails closed here instead of being served as if it were the command's
-   * WHY: output. Empty survivors pass through, so a filter that matched nothing leases nothing.
-   *
-   * WHY: (item 11) the same seam serves the line-SET consumers. `sort -u`/`uniq` reorder the
-   * WHY: rows, so the header names the order while every lease keeps the true file coordinate;
-   * WHY: `wc -l` is terminal and takes the count gate instead of the byte gate, leasing EVERY
-   * WHY: counted row in file order so the number it printed is checkable by editing a row.
-   */
+  // WHY: (item 9) the content stage's serve seam. A filter's survivors are sparse, so they are
+  // WHY: leased row by row exactly like a search's matches — the same `fmtServedRows` renderer
+  // WHY: and `SEARCH_MAX_MATCHES` bound — rather than borrowing the read tool's window budget,
+  // WHY: which would pass a realistic sparse filter through raw. The whole-stdout byte gate is
+  // WHY: the witness: a literal fold that diverges from what bash printed (a regex pattern, an
+  // WHY: `-i` spelling) fails closed here instead of being served as if it were the command's
+  // WHY: output. Empty survivors pass through, so a filter that matched nothing leases nothing.
+  // WHY: (item 11) the same seam serves the line-SET consumers. `sort -u`/`uniq` reorder the
+  // WHY: rows, so the header names the order while every lease keeps the true file coordinate;
+  // WHY: `wc -l` is terminal and takes the count gate instead of the byte gate, leasing EVERY
+  // WHY: counted row in file order so the number it printed is checkable by editing a row.
   async function serveContentView(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -1705,28 +1675,24 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     };
   }
 
-  /**
-   * [spec §3.4] The `tool_result` half of search interception: parse the `LINE:content` stdout of an
-   * already-rewritten search, verify every match against the disk bytes (D9), then swap the raw
-   * match list for anchored rows and synchronously enroll their leases.
-   *
-   * WHY the stdout is normalized rather than rejected: `grep` emits the disk bytes, so a CRLF file
-   * yields `5:line5\r` while `readNormFile` — and the anchors served here — describe LF/no-BOM text.
-   * `toLF(stripBOM(...))` is exactly the D9 normalization `handleBash` applies to a view, which
-   * keeps both seams consistent on the files the model inspects through bash.
-   *
-   * Every gate fails closed to `undefined` (raw bash output untouched): a non-zero exit or zero
-   * matches, an unparsable row, more than `SEARCH_MAX_MATCHES` rows, a byte mismatch on any line, or
-   * a line the hash array does not cover. Truncating or partially leasing would serve anchors for
-   * lines the model never saw.
-   */
-  /**
-   * WHY: (ADR-0039 D1) expected raw bytes for one envelope segment, computed from re-read disk
-   * WHY: content (never from observed stdout). Each entry is an exact byte candidate, longest
-   * WHY: first: glue is a single predicted literal; views cover the two D9-accepted trailing
-   * WHY: forms; searches cover theirs. A candidate that matches as a prefix is consumed; if none
-   * WHY: matches, peeling halts. No candidate invents bytes — mismatch fails closed, never leases.
-   */
+  // WHY: [spec §3.4] the `tool_result` half of search interception: parse the
+  // WHY: `LINE:content` stdout of an already-rewritten search, verify every match against the
+  // WHY: disk bytes (D9), then swap the raw match list for anchored rows and synchronously
+  // WHY: enroll their leases.
+  // WHY: the stdout is normalized rather than rejected — `grep` emits the disk bytes, so a
+  // WHY: CRLF file yields `5:line5\r` while `readNormFile` — and the anchors served here —
+  // WHY: describe LF/no-BOM text. `toLF(stripBOM(...))` is exactly the D9 normalization
+  // WHY: `handleBash` applies to a view, which keeps both seams consistent on the files the
+  // WHY: model inspects through bash.
+  // Invariant: every gate fails closed to `undefined` (raw bash output untouched) — a non-zero
+  // Invariant: exit or zero matches, an unparsable row, more than `SEARCH_MAX_MATCHES` rows, a
+  // Invariant: byte mismatch on any line, or a line the hash array does not cover. Truncating or
+  // Invariant: partially leasing would serve anchors for lines the model never saw.
+  // WHY: (ADR-0039 D1) expected raw bytes for one envelope segment, computed from re-read disk
+  // WHY: content (never from observed stdout). Each entry is an exact byte candidate, longest
+  // WHY: first: glue is a single predicted literal; views cover the two D9-accepted trailing
+  // WHY: forms; searches cover theirs. A candidate that matches as a prefix is consumed; if none
+  // WHY: matches, peeling halts. No candidate invents bytes — mismatch fails closed, never leases.
   async function segmentExpectedVariants(
     segment: CompoundSegment,
     effCwd: string,
@@ -1910,12 +1876,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     };
   }
 
-  /**
-   * WHY: [ADR-0039 D3] positional fold over resolved search rows. `first`/`last` (and their
-   * WHY: `from`/`dropLast`/`range` siblings, kept total so a new kind breaks typecheck here)
-   * WHY: select by stream position; each row already carries its original file line, so surviving
-   * WHY: rows keep original numbers by construction. Uses `slice`, never a line split.
-   */
+  // WHY: [ADR-0039 D3] positional fold over resolved search rows. `first`/`last` (and their
+  // WHY: `from`/`dropLast`/`range` siblings, kept total so a new kind breaks typecheck here)
+  // WHY: select by stream position; each row already carries its original file line, so surviving
+  // WHY: rows keep original numbers by construction. Uses `slice`, never a line split.
   function applySliceToServedRows(rows: ServedRow[], ops: SliceOp[]): ServedRow[] {
     let shown = rows;
     for (const op of ops) {

@@ -1,28 +1,14 @@
 /**
  * Unified I/O bridge adapter — the only place that records to pi-lens v2.
- *
- * WHY one module for both seams: a v2 `record` entry carries at most one facet
- * of each kind, and the two domain-neutral seams (`src/served-spans.ts`,
- * `src/mutated-files.ts`) already separate reads from mutations, so each
- * notification maps to single-facet `record` calls. Edit-plus-preview pairs
- * therefore travel as two back-to-back calls in producer order, never as one
- * atomic compound.
- *
- * Read evidence: a notification that carries verbatim `content` is recorded span
- * by span, each span in its own single-range call with its slice (`content` is
- * valid only for a single contiguous range, and slicing keeps multi-span
- * notifications honest). A span whose slice fails is dropped, never sent short.
- * A notification without `content` — diff previews and reject-and-serve rows,
- * where no raw text is at hand — is recorded as ONE call carrying every range
- * with `evidence: "disk"`, the v1-equivalent behavior. `lineHashes` are never
- * sent: they would need the bridge's hash algorithm, while `content` lets the
- * bridge hash in memory with its own.
- *
- * Silence is the contract: these observers run inside core tool execution, so
- * nothing here logs and nothing throws — a broken bridge degrades to "no I/O
- * mirrored", never to a failed read, edit or write. Drops are counted instead,
- * for tests only. An explicit `off` mode is a configuration choice, not a failed
- * mirror, so it is never a drop.
+ * WHY one module for both seams: a v2 `record` entry carries at most one facet of each kind, so the two
+ * domain-neutral seams (`src/served-spans.ts`, `src/mutated-files.ts`) each map to single-facet calls,
+ * and an edit-plus-preview pair travels as two back-to-back calls in producer order, never one compound.
+ * Read evidence: verbatim `content` is recorded span by span, one single-range call each with its slice,
+ * and a failed slice drops the span rather than sending it short; `content` is valid only for one
+ * contiguous range. Without it, ONE call carries every range with `evidence: "disk"`; `lineHashes` are never sent.
+ * Silence is the contract: these observers run inside core tool execution, so nothing here logs and
+ * nothing throws — a broken bridge degrades to "no I/O mirrored", never a failed read, edit or write.
+ * Drops are counted instead, for tests only; an explicit `off` mode is never a drop.
  */
 import { isAbsolute } from "node:path";
 import { addMutatedFileObserver, type MutatedFileNotification } from "../../mutated-files.js";

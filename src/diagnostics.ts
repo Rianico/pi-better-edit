@@ -1,33 +1,14 @@
 /**
- * The extension's ONLY diagnostic sink.
- *
- * WHY this exists at all: the extension runs inside Pi's process, and that process owns the
- * terminal through a differential renderer (`pi-tui` main screen): it tracks the hardware cursor
- * row and the lines it last painted, and repaints only what it believes changed. A write to
- * stdout/stderr therefore lands at whatever cursor position the frame happens to occupy — the text
- * is splatted across unrelated rows, interleaved with the UI, and erased by the next paint. It is
- * also uncopyable: by the time a selection starts, the renderer has rewritten the cells. That is
- * exactly how `console.error("Bash view interception failed:", error)` surfaced: a stack trace
- * smeared over the view, gone when you tried to select it.
- *
- * WHY the file lives in `stateRoot()` and nowhere else: the log is STATE — machine-written,
- * disposable, rotated by size — and the state root is the one base directory this extension writes
- * at runtime (the store, its WAL, the janitor's bookkeeping and the pre-SQLite JSON store). ONE
- * rule: `<stateRoot>/diagnostics.log`, rotated to `<stateRoot>/diagnostics.log.1`. The operator's
- * `PI_BETTER_EDIT_CONFIG_DIR` still moves it, through `<override>/state/`; settings deliberately do
- * NOT share this directory, so clearing state never deletes configuration.
- *
- * WHY JSONL and not prose: the records carry stack traces, and a stack trace in prose needs either
- * multi-line records (unparseable) or escaped newlines (unreadable). One JSON object per line is
- * both — `jq -r '.error.stack[]'` prints a normal trace, `grep` still finds a line by message.
- *
- * WHY synchronous appends: a record is written at most once per failure, and a synchronous append
- * keeps records ordered and never floats a promise that an exit could drop. The cost is paid on
- * failure paths only, never on the happy path.
- *
- * WHY nothing here may throw: this is the last resort of a best-effort hook. A diagnostic sink that
- * can fail its caller turns "the view passed through" into "the tool call errored" — the very
- * failure it exists to make visible. Every entry point swallows its own I/O errors.
+ * The extension's ONLY diagnostic sink. WHY not stdout/stderr: Pi's differential renderer owns the
+ * terminal, repaints only what it believes changed, so a write lands at the frame's cursor row and
+ * is erased by the next paint.
+ * WHY `<stateRoot>/diagnostics.log`, rotated to `.1`: the log is STATE, machine-written and
+ * size-rotated; `PI_BETTER_EDIT_CONFIG_DIR` still moves it via `<override>/state/`, and settings
+ * do NOT share that directory, so clearing state never deletes configuration.
+ * WHY synchronous appends: a record is written at most once per failure, and order is kept
+ * without floating a promise an exit could drop.
+ * WHY nothing may throw: a sink that can fail its caller turns "the view passed through" into
+ * "the tool call errored", so every entry point swallows its own I/O errors.
  */
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";

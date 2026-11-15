@@ -780,20 +780,15 @@ function buildStore(db: DatabaseSync): boolean {
 }
 
 /**
- * The SQLite database header — the 100-byte prefix of every database file, described by the file
- * format spec (`fileformat2.html` §1.3, "The Database Header"). Every field below is read from
- * those bytes directly, which is what makes the smoke check cheap: no page cache, no statement, no
- * lock — one read of the file's first page.
- *
- * WHAT EACH FIELD CARRIES, and the range this check holds it to:
+ * The SQLite database header — the 100-byte prefix of every database file (`fileformat2.html`
+ * §1.3, "The Database Header"), read from those bytes directly: no page cache, no statement, no lock.
  * - bytes 0-15: the magic string `SQLite format 3\000`. A file without it is not a database.
- * - bytes 16-17: the page size, big-endian, a power of two from 512 to 32768 inclusive — or the
+ * - bytes 16-17: the page size, big-endian, a power of two from 512 to 32768 inclusive, or the
  *   literal value 1, the format's encoding of 65536.
- * - bytes 28-31: the database size in pages, big-endian. The main file's page count only: WAL
- *   frames live outside it (measured — the field equals the file's own page count both while a WAL
- *   is pending and after a checkpoint, on the same store). Zero means "size unknown" to SQLite,
- *   which then derives the size from the file; no open of this store writes zero, so this check
- *   reads it as damage instead of guessing.
+ * - bytes 28-31: the database size in pages, big-endian, main file only — WAL frames live outside
+ *   it (measured: the field equals the file's own page count with a WAL pending and after a
+ *   checkpoint). Zero means "size unknown" to SQLite; no open of this store writes zero, so this
+ *   check reads it as damage instead of guessing.
  * - the file's length must then be exactly page size x page count.
  */
 const SQLITE_MAGIC = "SQLite format 3\0";
@@ -809,21 +804,13 @@ const SQLITE_MAX_PAGE_SIZE_ENCODING = 1;
 /**
  * The FAST path's integrity check (#87c): does this store FILE still look like one SQLite file?
  *
- * WHY a header read replaces the full `PRAGMA quick_check` here: the stamp gate removed the sweep,
- * so the integrity sweep became the dominant remaining cost of a stamp-matching open — it walks
- * every page of the store — and what it buys is EARLIER notice, not prevention. The remedy for a
- * damaged store is `quarantineStore` plus a rebuild from empty, because this store is a
- * disposable CACHE: the served mirror, the snapshots and their lineage are all re-derived from the
- * files on disk on the next read. Paying the dominant share of every process's open latency, on
- * every open, to move that notice a few statements earlier was the bad trade.
- *
- * WHAT IS DELIBERATELY NOT CHECKED, and where the check MOVES to instead: page-level damage inside
- * an otherwise well-formed file — a torn b-tree page, a freelist that disagrees with itself — is
- * not visible from the header. Such corruption surfaces LATER, at the statement that first touches
- * the damaged page, as its own error (`database disk image is malformed`, SQLITE_CORRUPT), never
- * as a silently wrong result: every honoring path re-derives from the bytes it is about (see the
- * trap-(c) block above). Issue #90 INHERITS the throttled deep check: its janitor sweep runs the
- * store's own maintenance off the tool-call path, so the deep pass is MOVED rather than lost.
+ * WHY a header read replaces the full `PRAGMA quick_check`: the sweep walked every page and bought
+ * only EARLIER notice, not prevention — the remedy is `quarantineStore` plus a rebuild from empty,
+ * because this store is a disposable CACHE whose rows are re-derived from the files on disk. Page
+ * damage inside a well-formed file is NOT checked here; it surfaces LATER, at the first statement
+ * that touches it, as `database disk image is malformed` (SQLITE_CORRUPT) and never as a silently
+ * wrong result. Issue #90 INHERITS the deep check: its janitor sweep MOVES the pass off the
+ * tool-call path rather than losing it.
  */
 function smokeCheckStoreFile(storePath: string): boolean {
   let fd: number | undefined;
@@ -880,18 +867,13 @@ function smokeCheckStoreFile(storePath: string): boolean {
 /**
  * The SLOW path's integrity check: SQLite's own full pass over the store, unchanged. Runs when
  * there is no stamp to trust — a fresh store, a stamp mismatch, `existed === false`, or the open
- * that follows a quarantine — where the open is already building or rebuilding from empty, so a
- * pass over every page is not the latency being avoided.
+ * after a quarantine — where the open is already rebuilding from empty.
  *
- * WHY it is ALSO the periodic deep check, and which half of #100 that is: the fast path stopped
- * running this pass when it took the header smoke check instead, so page-level damage inside an
- * otherwise well-formed file had no detector left at open. `src/store-janitor.ts` runs this same
- * function on `session_start` and `session_shutdown`, off the tool-call hot path, and that run IS
- * the periodic half of issue #100: it closes "not detected at open" (this call finds the damage)
- * and "not healed on reopen" (its failure routes into `healUnhealthyStore`, which quarantines and
- * rebuilds through the one `quarantineStore` primitive), and it deliberately leaves "not quarantined
- * at use" — the FIRST FAILING STATEMENT as the trigger — to #100, which owns the use-time clause.
- * See the janitor's header for the full boundary statement.
+ * WHY it is ALSO the periodic deep check, half of #100: `src/store-janitor.ts` runs this function
+ * on `session_start` and `session_shutdown`, off the tool-call hot path. That closes "not detected
+ * at open" and "not healed on reopen" (a failure routes into `healUnhealthyStore`, the one
+ * `quarantineStore` primitive) and leaves "not quarantined at use" — the FIRST FAILING STATEMENT
+ * as the trigger — to #100. See the janitor's header for the full boundary statement.
  */
 export function isHealthy(db: DatabaseSync): boolean {
   try {
@@ -945,34 +927,16 @@ function shutdownDb(db: DatabaseSync): void {
 }
 
 /**
- * The HEAL half of the janitor's periodic deep check: when the open store fails `isHealthy`, quarantine
- * and rebuild as the open path's own recovery does — through the one `quarantineStore`, then
- * `openStore` — and report whether that happened. Called only by the store janitor
- * (`src/store-janitor.ts`), off the tool-call path.
- *
- * WHY it re-checks instead of trusting its caller's verdict: this is then safe to call from
- * anywhere and can never quarantine a healthy store, which is the property the open path's own
- * recovery has too (`if (... !isHealthy(db))`). The cost is one extra `PRAGMA quick_check` on a
- * store already known to be damaged.
- *
- * WHY it is HONEST on a LIVE store: the sequence it runs is its OWN, quoted here as it is —
- * `shutdownHashStore`, then `quarantineStore`, then `openStore` — and every piece of state it drops
- * is re-derivable, because the store is a disposable cache: the served mirror, the snapshots and
- * their lineage are all rebuilt from the files on disk. What it does NOT
- * do is reach a second QUARANTINE implementation: there is ONE (`quarantineStore`), with THREE
- * orchestrations calling it — this heal, the open path's own recovery, and the use-time trigger
- * (`triggerUseTimeHeal`), which skips the health re-check because the failing statement already
- * proved the damage — and it
- * does NOT touch a store that is currently inside a transaction of its own: the janitor runs at a
- * lifecycle boundary, where no tool call of this session is in flight, and any statement prepared on
- * the closed connection afterwards fails closed on the reopened one's absence rather than silently
- * reading a dead handle.
- *
- * WHAT IT LEAVES BEHIND, stated rather than implied: because the rebuild goes through `openStore`
- * and not around it, the store comes back COMPLETE — hooks run, the stamp written after them — so the
- * next open of that path takes the fast path over a store that really is current. The one handle this
- * leaves stale is the caller's own `db` argument, which the recovery closes: a caller must re-read the
- * store (`loadHashStore`) rather than reuse the connection it passed in.
+ * The HEAL half of the janitor's deep check: when the open store fails `isHealthy`, quarantine and
+ * rebuild through the one `quarantineStore`, then `openStore`. Called only by `src/store-janitor.ts`,
+ * off the tool-call path, where no tool call is in flight — so it never touches a store inside a
+ * transaction of its own, and a statement prepared on the closed connection fails closed. It
+ * re-checks rather than trusting its caller, so it can never quarantine a healthy store.
+ * The sequence is its OWN — `shutdownHashStore`, `quarantineStore`, `openStore` — never a second
+ * quarantine implementation: ONE `quarantineStore`, THREE orchestrations (this heal, the open path's
+ * recovery, `triggerUseTimeHeal`, which skips the re-check because the failing statement proved the
+ * damage). The rebuild runs through `openStore`, so the store comes back COMPLETE (hooks run, stamp
+ * written after them) and the caller's `db` is stale: re-read with `loadHashStore`, never reuse it.
  */
 export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> {
   const current = cachedOpenStore();
@@ -993,12 +957,10 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
 
 /**
  * The use-time quarantine's SEAM (#100): the single wrap point for the single cached handle.
- * `openStore` publishes the proxy into `cachedDb` and returns it, so both statement paths share
- * it with zero call-site changes — `loadHashStore` hands out `cachedDb.db`, and `withStore`
- * frames `BEGIN`/`COMMIT`/`ROLLBACK` on `cachedDb.db` directly while `fn`'s statements come from
- * a closure over a `loadHashStore` handle (`snapshotStmts(store.db)` inside `withStore(...)` in
- * snapshot-store and served-session). Guarding only `loadHashStore`'s return would leave the
- * framing statements unguarded; wrapping once here covers both.
+ * `openStore` publishes the proxy into `cachedDb` and returns it, so both statement paths share it:
+ * `loadHashStore` hands out `cachedDb.db`, and `withStore` frames `BEGIN`/`COMMIT`/`ROLLBACK` on
+ * `cachedDb.db` directly while `fn`'s statements come from a closure over a `loadHashStore` handle.
+ * Guarding only `loadHashStore`'s return would leave the framing statements unguarded.
  *
  * WHY a proxy: the handle must stay ONE object — `openStamp`, the hook phase and the `WeakMap`
  * statement caches all key on its identity — and `DatabaseSync` is a native class. Members outside

@@ -16,14 +16,13 @@ const DRIFT_NOTICE_HEADING = "[USER] drift:";
  * WHY (CAND-9, ADR-0023): the drift-notice episode identity is the drifted line's rebased
  * position in the CURRENT file — not its anchor string. An anchor is a spelling, not an
  * identity: one reported entry for a hash shared by two distinct lines silenced both
- * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an
- * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing
- * strings (schema unchanged); this base-62 encoding of the position at the configured width is the KEY VALUE.
- * Positions are bounded by `SERVED_MAX_LINES` (the served admission budget), which
- * already sits below the anchor-space ceiling, so the encoding is injective over
- * every reachable position.
- * An out-of-file position (never shown, never marked) keys on "" — not a valid stored entry, always
- * "not yet reported", matching the legacy behavior for unshown drift.
+ * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an already-
+ * reported line, spuriously re-noticing it. The session's reported-set keeps storing strings
+ * (schema unchanged); this base-62 encoding of the position at the configured width is the
+ * KEY VALUE. Positions are bounded by `SERVED_MAX_LINES` (the served admission budget), which
+ * already sits below the anchor-space ceiling, so the encoding is injective over every
+ * reachable position. An out-of-file position (never shown, never marked) keys on "" — not a
+ * valid stored entry, always "not yet reported", matching the legacy behavior for unshown drift.
  */
 export function driftEpisodeKey(position: number): string {
   const space = ALPHA.length ** HASH_LEN;

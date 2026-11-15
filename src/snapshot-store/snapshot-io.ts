@@ -2,14 +2,13 @@
  * SAFETY: snapshot-io — the persistence seam between a hash identity and the snapshot store.
  *
  * WHY: `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a two-method interface
- * WHY: (`get` / `upsert`). That seam belongs to the store: the store owns the rows, the cache key and
- * WHY: the transaction, and identity stays free of store shape. The adapter here is the whole wiring —
- * WHY: a caller names the store it materializes into and gets an IO bound to it.
+ * WHY: (`get` / `upsert`). That seam belongs to the store: it owns the rows, the cache key and the
+ * WHY: transaction, and identity stays free of store shape — a caller names its store, gets an IO.
  *
  * WHY: explicit parameter over an ambient default. ADR-0002's import-time install let a bare
  * WHY: `lineHashes(content, path)` choose whichever store happened to be open in the process, so a
  * WHY: call that never named a store still persisted into one. Callers now pass `snapshotIOFor(store)`
- * WHY: (or `persist: false` when they only derive anchors), and nothing installs a process-wide IO.
+ * WHY: (or `persist: false` when they only derive anchors); nothing installs a process-wide IO.
  */
 import type { HashStore } from "../hash-store.js";
 import { cacheKey, getSnapshot, upsertSnapshot } from "./index.js";

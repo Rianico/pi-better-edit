@@ -182,17 +182,14 @@ function toMember(row: UndoRecord & { path: string }, displayPath: string): Undo
 }
 
 /**
- * (ticket-04b section 4, remediated by 04b-rem P2-1) Undo of one correlated cut transaction is a
- * DURABLE TRANSACTION, mirroring the forward cut: freshness of all members is validated FIRST by
- * BYTES; a `revert`-direction intent record lands BEFORE the first write; the undo rows are
- * cleared ONCE after the last write; and a write that fails partway COMPLETES the revert over the
- * remaining members instead of escaping raw. A completion that is itself defeated refuses with the
- * typed `E_UNDO_REVERT_FAILED` (MODEL audience, remedy names the repair) and clears NOTHING — the
- * intent plus the intact rows let the next run's `repairCutIntents` finish the revert. A stale or
- * deleted member fails the whole undo closed with `E_UNDO_STALE` naming THAT member, before the
- * intent exists, and no undo row of the transaction is cleared: clearing one row of a correlated
- * set would silently degrade a future undo into a partial revert. Reverts run under the same
- * sorted multi-path queues the cut transaction itself used.
+ * (ticket-04b section 4, remediated by 04b-rem P2-1) Undo of one correlated cut transaction is a DURABLE TRANSACTION, mirroring the
+ * forward cut: freshness of all members is validated FIRST by BYTES; a `revert`-direction intent record lands BEFORE the first write;
+ * the undo rows are cleared ONCE after the last write; and a write that fails partway COMPLETES the revert over the remaining members
+ * instead of escaping raw. A completion that is itself defeated refuses with the typed `E_UNDO_REVERT_FAILED` (MODEL audience, remedy
+ * names the repair) and clears NOTHING — the intent plus the intact rows let the next run's `repairCutIntents` finish the revert. A
+ * stale or deleted member fails the whole undo closed with `E_UNDO_STALE` naming THAT member, before the intent exists, and no undo row
+ * is cleared: clearing one row of a correlated set would silently degrade a future undo into a partial revert. Reverts run under the
+ * same sorted multi-path queues the cut transaction itself used.
  */
 async function undoCorrelatedTransaction(
   txnId: string,

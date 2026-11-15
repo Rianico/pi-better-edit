@@ -1,23 +1,14 @@
 /**
- * Bash conversion as data (ADR: #151): the `classifyBash` guard chain, transcribed rule by rule
- * into one ordered table instead of an inline `if` ladder.
- *
- * WHY a table: array order is precedence — a new rule is inserted at its altitude and every guard
- * it can shadow is visible above it, which is exactly what the inline chain made expensive
- * (the #135 gate and the declined compounds both turned on shadowing). Each rule cites the source
- * line it was transcribed from (pre-extraction `src/bash-classifier.ts`) and the ADR it implements.
- *
- * WHY the phases: the chain has loop-carried state (statements feed segments feed blocks), so a
- * flat pass cannot express it. `decide` runs each phase's entries in array order — pre, then one
- * statement walk (guards plus the structural segment push), then the chain ceiling, then one
- * segment walk, then the conversion tail. Inside a walk, `run` returns `ADVANCE` to move to the
- * next statement/segment (the transcribed `continue`) or a `Decision` to stop; `undefined` from
- * `fireRule` means no rule fired. Accumulation (glue admission, `cd` recording, block recording)
- * lives inside the entries because the source interleaves it with the guards.
- *
- * Scope note: `Decision` mirrors the established `BashClass` union (including the `passThrough`
- * kind spelling) rather than inventing new block types — S1 is zero behaviour change, and the
- * serve seams already switch on those kinds.
+ * Bash conversion as data (ADR: #151): the `classifyBash` guard chain, transcribed rule by rule into
+ * one ordered table. WHY a table: array order is precedence — a rule sits at its altitude with every
+ * guard it can shadow visible above it, the cost the inline chain paid (the #135 gate turned on
+ * shadowing); each entry cites the source line in pre-extraction `src/bash-classifier.ts` and the
+ * ADR it implements. WHY phases: statements feed segments feed blocks, so a flat pass cannot carry
+ * that state — `decide` runs pre, statement walk, chain ceiling, segment walk and conversion tail
+ * in array order; `run` returns `ADVANCE` (the transcribed `continue`) or a `Decision`, `undefined`
+ * from `fireRule` means no rule fired, and accumulation (glue admission, `cd` recording, block
+ * recording) lives inside the entries. Scope: `Decision` mirrors the `BashClass` union (including
+ * `passThrough`) rather than new block types — S1 is zero behaviour change.
  */
 import { parse } from "unbash";
 import type { AndOr, Command, ParsedScript, Pipeline, Statement } from "unbash";

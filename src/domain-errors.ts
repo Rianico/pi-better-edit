@@ -1,31 +1,14 @@
 /**
- * Domain error registry — the closed, type-safe contract for every
- * negative-path rejection (spec docs/spec/unified-error-and-warning-contract.md
- * section 4, D1). Its only import is the dependency-free alphabet leaf
- * (`./hashline/alphabet.js`, which itself imports nothing), so any seam can
- * still throw without wiring a store, session, or hasher.
- *
- * INVARIANT (the point of this module): a code is never declared without a
- * producer. Every `DomainErrorCode` member must have at least one
- * `new DomainError(code, payload)` site in src/, and every code passed at a
- * throw site must be a union member. Asserted BOTH directions in
- * test/arch/domain-error-registry.test.ts. This is what makes the registry a
- * contract instead of a list.
- *
- * WHY: payload text reports facts. A served `Options:` section may appear only
- * when it is neutral, unharmful and fail-closed, AND the evidence pins a single
- * cause. Neutral means an explicit list of admissible next moves that keeps the
- * model's choice — never one directive, because a biased suggestion steers the
- * model's next action. A code with no neutral option declares none and renders
- * facts only.
- *
- * WHY: options live on the refusal, never in a prompt or on a success path. They
- * render only for `MODEL` audience. `E_LARGE_FILE` stays fact-only until its
- * payload can name the invoking tool, because read and edit need different
- * options. `E_SUSPICIOUS_TEXT` is the reference: two options, and the payload
- * arm selects text vs content.
- *
- * See ADR-0047.
+ * Domain error registry — the closed, type-safe contract for every negative-path rejection (spec
+ * docs/spec/unified-error-and-warning-contract.md section 4, D1). Its only import is the leaf
+ * `./hashline/alphabet.js` (imports nothing), so a seam throws with no store, session or hasher.
+ * INVARIANT: a code is never declared without a producer — every `DomainErrorCode` member has a
+ * `new DomainError(code, payload)` site in src/, and every throw-site code is a union member;
+ * asserted BOTH directions in test/arch/domain-error-registry.test.ts.
+ * WHY: payload text reports facts. `Options:` renders only for `MODEL`, only on the refusal (never
+ * in a prompt or a success path), and only when the moves are neutral, unharmful and fail-closed
+ * with the evidence pinning one cause: an explicit list, never one directive; no neutral option,
+ * no `Options:` (ADR-0047).
  */
 
 import { HASH_LEN } from "./hashline/alphabet.js";

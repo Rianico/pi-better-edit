@@ -1,37 +1,14 @@
 /**
- * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5).
+ * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5). Two lease paths, chosen by ONE predicate
+ * (`isUniformLeaseFastPath`) and verified by ONE gate: the **fast path** (`S_from === C ∧ S_to === C ∧ S_from === S_to`) applies at the
+ * served coordinates; the **dynamic rebase path** resolves each leased `line_id` in `line_lineage(C)` (on-demand `pairSnapshots`) and
+ * applies at the rebased coordinate. Both run `verifyRebasedSpan` over the whole served window (#151, spec §3.5).
  *
- * Two lease paths, chosen by ONE predicate, verified by ONE gate:
- *
- *  - **Fast path** (`S_from === C ∧ S_to === C ∧ S_from === S_to`): the anchors were leased from
- *    the content now on disk, so the caller keeps applying at the served coordinates.
- *  - **Dynamic rebase path**: the caller resolved each leased `line_id` in `line_lineage(C)` (an
- *    on-demand materialization through `pairSnapshots`) and applies at the rebased coordinate.
- *
- * Both paths run `verifyRebasedSpan` over the whole served window (#151, spec §3.5): the fast path
- * is the rigid remap whose rebased coordinates happen to equal the served ones, so per-line lease
- * identity and retirement are checked identically either way.
- *
- * Resolution is strictly READ-ONLY on `served_leases`: it never re-stamps `line_id` and never
- * writes `retired_at`. The authoritative retirement update belongs to materialization.
- *
- * Fail-closed semantics (never weakened): an unleased anchor, a retired/absent leased `line_id`, a
- * coordinate that no longer carries the leased identity, or an external insert/delete strictly
- * inside the span all reject before any write, so a rejection leaves the file byte-identical.
- * A retired identity whose named window collapses or misses the file rejects with no rows;
- * the surviving-bound-live-and-unshifted case serves the named window as a fresh read
- * (no retry hint) with the rows leased as today; any other retired identity with an
- * identifiable window rejects with that window served for a retry.
- *
- * INVARIANT (spec §3.1.1, §5.3, ADR-0016) — a served anchor is never resolved by content. `apply.ts`
- * routes EVERY edit that has a lease source here, so a boundary anchor either has a live lease or its
- * identity is lost: a missing lease is an unknown or foreign anchor (the session-wide lookup
- * decides which), a retired identity with no live unshifted survivor and no identifiable window
- * carries no rows, and the one-bound-retired survivor-live-and-unshifted case serves a fresh
- * read to decide from, never a content question.
- * An unread (never-served) interior line strictly between the anchors is accepted (ADR-0024): it
- * carries no identity to verify, and the boundary leases plus the window-length gate pin the span;
- * a never-served BOUNDARY row keeps the fail-closed diagnosis (`[E_STALE_RANGE]`, spec §5.3).
+ * Fail-closed (never weakened): an unleased anchor, a retired/absent leased `line_id`, a coordinate that no longer carries the leased
+ * identity, or an external insert/delete strictly inside the span all reject before any write, so a rejection leaves the file byte-identical.
+ * INVARIANT (spec §3.1.1, §5.3, ADR-0016): a served anchor is never resolved by content; `apply.ts` routes EVERY edit with a lease
+ * source here, so an unread interior line is accepted (ADR-0024) but a never-served BOUNDARY row stays fail-closed (`[E_STALE_RANGE]`).
+ * OWNERSHIP: resolution is strictly READ-ONLY on `served_leases` (never re-stamps `line_id`, never writes `retired_at`); the authoritative retirement update belongs to materialization.
  */
 import {
   isUniformLeaseFastPath,

@@ -1,45 +1,14 @@
 /**
- * The store janitor — the store's PERIODIC maintenance item, wired to the lifecycle events that are
- * OFF the tool-call hot path. Ticket #90; the open-time half is `src/hash-store.ts`'s stamp-gated
- * sweep, which this module REUSES rather than restates (see the exported `*_SQL` predicates there).
- *
- * WHAT ONE RUN DOES, in order, and why that order:
- * 1. THROTTLE — `due(db, JANITOR_META_KEY, intervalMs, now)`, the primitives the served-mirror
- *    prune already uses (#87c). Not due means the run ends here, having issued no DELETE and no
- *    `PRAGMA quick_check`. The interval is resolved from the shared config ladder
- *    (`src/store-config.ts`), defaulting to a day.
- * 2. GC — foreign-generation, dangling and expired rows, deleted in statements of at most
- *    `batchSize` rows. Expiry covers BOTH terminal states (ADR-0045): a retired lease past its
- *    1-hour grace and an ACTIVE lease past the 7-day session TTL.
- *    Batching is about HOLD TIME, not statement count: one unbounded DELETE scans and holds the write
- *    lock for its whole scan, so a rival writer waits on a maintenance pass; a loop of bounded
- *    statements releases the lock between batches and lets a rival interleave. The batch width
- *    defaults to 64, the width the snapshot store already deletes in (`STAT_BATCH`).
- * 3. MARK — `markRun` records the run, and it is written BEFORE the deep check because a
- *    detected failure may close this connection (step 4).
- * 4. DEEP CHECK — the open path's own `PRAGMA quick_check` (`isHealthy`, never reimplemented), on a
- *    store the fast path no longer checks (PR #101 replaced it there with the header smoke check).
- *    A failing check routes into `healUnhealthyStore`, the janitor's orchestration over the one
- *    `quarantineStore` primitive; the open path's own recovery is its other caller.
- *
- * NO CHECKPOINT HERE, deliberately: `shutdownDb` owns `PRAGMA wal_checkpoint(TRUNCATE)`, registered
- * once by `openStore` on `exit`, `SIGINT` and `SIGTERM`. The janitor therefore adds no second
- * checkpoint site and no second owner of the same WAL; its writes ride the WAL and are truncated by
- * the close path that already truncates it, and `wal_checkpoint(TRUNCATE)` on an already-truncated
- * WAL is a no-op. One writer, one checkpoint, measured on close — see the report for the WAL numbers.
- *
- * THE #90 / #100 BOUNDARY, stated here in this module's own header. Issue #100's three clauses, its
- * own words: "not detected at open, not quarantined at use, not healed on reopen."
- * - CLOSED HERE: "not detected at open" — the fast path stopped running `PRAGMA quick_check` (#87c),
- *   so page-level damage was detected by nothing at all; this janitor detects it periodically, on a
- *   store the fast path accepts.
- * - CLOSED HERE: "not healed on reopen" — a detected failure routes into the SAME quarantine-and-
- *   rebuild the open path performs (`healUnhealthyStore`), so the store is rebuilt rather than left
- *   damaged until someone deletes it by hand.
- * - LEFT TO #100: "not quarantined at use" — nothing triggers on the FIRST FAILING STATEMENT. A
- *   statement that hits a damaged page still surfaces its own error and leaves the file damaged until
- *   the next janitor run. That is a USE-TIME trigger, #100's own scope; this module must not grow a
- *   half-implemented one, and it does not.
+ * The store janitor — the store's PERIODIC maintenance item on lifecycle events that are OFF the
+ * tool-call hot path (ticket #90); its open-time half is `src/hash-store.ts`'s stamp-gated sweep, REUSED.
+ * ONE RUN, in order: THROTTLE (`due`, #87c — not due ends it: no DELETE, no `quick_check`);
+ * GC of foreign-generation, dangling and expired rows in batches of at most `batchSize` — batching is
+ * HOLD TIME, not statement count, since one unbounded DELETE holds the write lock for its whole scan —
+ * expiry covering BOTH terminal states (ADR-0045); MARK (`markRun`, before the deep check, which may
+ * close this connection); DEEP CHECK (`isHealthy`, never reimplemented, on a store the fast path stops
+ * checking — PR #101), a failure routing into `healUnhealthyStore` over the one `quarantineStore`.
+ * NO checkpoint here: `shutdownDb` owns the only `wal_checkpoint(TRUNCATE)` (archived ADR-0037 holds the model).
+ * #90 / #100: "not detected at open" and "not healed on reopen" CLOSE HERE; "not quarantined at use" — the FIRST FAILING STATEMENT — is LEFT TO #100.
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -74,17 +43,13 @@ export const JANITOR_META_KEY = "janitor_at";
 
 /**
  * The lifecycle events the janitor is wired to: the two that are OFF the tool-call hot path.
- * `session_shutdown` (reason quit|reload|new|resume|fork) had no consumer in this repo before this
- * module, so it is wired deliberately: it is the one event that fires while a session's work is
- * finished and before the runtime is torn down, which is where a maintenance pass belongs.
- *
- * NEVER SUBSCRIBE THIS JANITOR TO — the hot path, where a janitor run would be paid by every tool
- * call of the session and could hold the write lock a call is waiting on:
- *   `tool_call`, `tool_result`, `tool_execution_start`, `tool_execution_update`,
- *   `tool_execution_end`, `context`, `before_provider_request`.
- * These are forbidden, not merely unused: a run there is the latency regression #90 exists to avoid,
- * so a future reader adding one must see that it is prohibited rather than think it is untried.
- * A background timer is not an option either: the extension API exposes no idle timer and no
+ * `session_shutdown` (reason quit|reload|new|resume|fork) is wired deliberately: it is the one event
+ * that fires while a session's work is finished and before the runtime is torn down.
+ * NEVER SUBSCRIBE THIS JANITOR TO the hot path — `tool_call`, `tool_result`,
+ * `tool_execution_start`, `tool_execution_update`, `tool_execution_end`, `context`,
+ * `before_provider_request` — where a run would be paid by every tool call and could hold the write
+ * lock a call is waiting on. These are forbidden, not merely unused: the latency regression #90
+ * exists to avoid. A timer is not an option either: the extension API exposes no idle timer and no
  * `deactivate` event, so a timer-based trigger is impossible rather than unimplemented.
  */
 export const JANITOR_EVENTS = ["session_start", "session_shutdown"] as const;
@@ -162,12 +127,10 @@ function skipped(reason: "off" | "throttled"): JanitorOutcome {
  * the store's own busy budget (`withBusyRetry`) rather than the janitor inventing a retry.
  *
  * WHY `rowid IN (SELECT rowid ... LIMIT ?)`: `DELETE ... LIMIT` needs a SQLite build option this
- * runtime does not guarantee, while every table here is an ordinary rowid table, so the bounded
- * delete is spelled with a subquery instead. `table` admits only `JanitorTable` members, so the
- * two interpolated table slots cannot name a table no call site passes (#105 rider).
- *
- * A short final batch ends the loop: no statement re-reads rows it could have deleted twice, because
- * nothing in this store re-creates foreign-generation or expired rows while a janitor run is open.
+ * runtime does not guarantee, while every table here is an ordinary rowid table. `table` admits only
+ * `JanitorTable` members, so the two interpolated table slots cannot name a table no call site
+ * passes (#105 rider). A short final batch ends the loop: it does not re-read rows it could have
+ * deleted twice, because nothing re-creates foreign-generation or expired rows during a run.
  */
 /** The only tables the janitor's batched deletes may name (#105 rider). */
 type JanitorTable = "file_snapshots" | "line_lineage" | "served_leases";
@@ -324,16 +287,13 @@ function pragmaNumber(db: DatabaseSync, sql: string): number {
  * Reclaim free pages into the file after a maintenance sweep (ADR-0046).
  *
  * One `VACUUM` in autocommit, gated on the reclaimable share, with a SHORT busy budget for STARTING
- * it: if a rival writer holds the store the pass returns `busy` and the next maintenance pass
- * retries. The VACUUM itself is not interruptible once started (SQLite owns it); the janitor never
- * runs on the tool path, so a tool call never triggers this rewrite, and the store's existing busy
- * budget covers a concurrent writer for the duration. Any failure is reported through the OUTCOME
- * and never thrown out of a lifecycle hook.
+ * it: if a rival writer holds the store the pass returns `busy` and the next pass retries. The
+ * VACUUM itself is not interruptible once started (SQLite owns it). Any failure is reported through
+ * the OUTCOME and never thrown out of a lifecycle hook.
  *
- * WHY this function writes NOTHING itself — neither console nor log: a console call here cannot see
- * the per-event surface map, so it would print on `session_shutdown` too, where the console is
- * already torn down (#199). The warning pipeline renders this outcome on the surface its event owns,
- * and the record it writes carries the reason and the error text.
+ * WHY this function writes NOTHING itself — neither console nor log: a console call cannot see the
+ * per-event surface map, so it would print on `session_shutdown` too, where the console is already
+ * torn down (#199). The warning pipeline renders this outcome on the surface its event owns.
  */
 function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome {
   // WHY: VACUUM cannot run inside a transaction. The janitor runs in autocommit, so this is a
@@ -447,13 +407,12 @@ const WARNING_SURFACE_BY_EVENT: Record<(typeof JANITOR_EVENTS)[number], JanitorW
  * formatter owns "did anything observable happen" (#197), so `null` is the only decision left — and
  * it means write nothing, on either surface.
  *
- * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and a
- * module that read the state root itself could not be tested without one. Resolving it at the call
- * site also means the damaged-store shape points at the file this process is actually writing.
+ * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and
+ * resolving it here keeps the damaged-store shape pointed at the file this process is writing.
  *
  * WHY the level picks the sink helper (`reportInfo` / `reportWarning`) rather than `reportDiagnostic`:
  * that one writes level `error`, and a routine cleanup filed as an error would make the log's
- * severity column lie about the run it describes.
+ * severity column lie.
  */
 function publishJanitorWarning(outcome: JanitorOutcome, surface: JanitorWarningSurface): void {
   const warning = formatJanitorWarning(outcome, { logPath: diagnosticsLogPath() });

@@ -1,16 +1,14 @@
 /**
  * AST-guarded classification of bash commands into slice-accurate file views.
  *
- * WHY a pure module: the chain rule, the slice algebra, and every adversarial
- * guard (ADR-0033 D1/D2/D5) are pure AST predicates — unit-testable without
- * fixtures, stores, or the pi runtime. The lifecycle layer applies the result
- * to the disk re-read; this module never touches the filesystem.
+ * WHY pure: the chain rule, the slice algebra, and every adversarial guard (ADR-0033 D1/D2/D5)
+ * are AST predicates — unit-testable without fixtures or the pi runtime; the lifecycle layer
+ * applies the result to the disk re-read. This module never touches the filesystem.
  *
- * WHY unbash instead of regex: a regex cannot tell `cat f > g` (mutation)
- * from `cat f` (view), nor `cat $F` (expansion) from `cat f` (literal). The
- * typed AST makes every dangerous shape structural: redirects, heredocs,
- * substitutions, and expansions are nodes, so fail-closed is the absence of
- * a proof rather than the presence of a pattern.
+ * WHY unbash over regex: no pattern tells `cat f > g` (mutation) from `cat f` (view), nor
+ * `cat $F` (expansion) from `cat f` (literal). Redirects, heredocs, substitutions and
+ * expansions are AST nodes, so fail-closed is the absence of a proof rather than the
+ * presence of a pattern.
  */
 import type { Command, Pipeline, Statement, Word } from "unbash";
 import { BASH_SEARCH_MAX_FILES } from "./constants.js";
@@ -36,20 +34,16 @@ export type SliceOp =
   | { kind: "range"; from: number; to: number };
 
 /**
- * WHY: (item 9) a content filter cannot fold over `LineInterval[]` — that algebra is
- * WHY: count-based over a line count, so a keep/drop stage needs the line bytes. These ops
- * WHY: carry the filter through the ordered stage array; the lifecycle layer folds them over
- * WHY: `(true line, stream text)` pairs left to right and byte-gates the recomputed output
- * WHY: against the observed stdout. Matching is literal substring, so a regex-looking
- * WHY: pattern simply fails that gate and passes through raw.
- *
- * WHY: (item 11) `sortUnique`, `uniq` and `count` are the line-SET consumers. `sortUnique`
- * WHY: (`sort -u`) dedupes by text keeping the FIRST occurrence's true line, then orders by
- * WHY: raw bytes; `uniq` collapses ADJACENT equal runs keeping each run head; `count`
- * WHY: (`wc -l`) is terminal — it consumes the whole stream and emits its length, so
- * WHY: `parseViewSegment` refuses any stage after it. The first two reorder the stream, which
- * WHY: is why the render states the order in its header while every lease keeps the true file
- * WHY: coordinate it was folded from.
+ * WHY: (item 9) a content filter cannot fold over `LineInterval[]` — that algebra is count-
+ * based, so keep/drop needs the line bytes. These ops carry the filter through the ordered
+ * stage array; the lifecycle layer folds them over `(true line, stream text)` pairs and
+ * byte-gates the recomputed output against observed stdout. Matching is literal substring,
+ * so a regex-looking pattern fails that gate and passes through raw.
+ * WHY: (item 11) `sortUnique`, `uniq` and `count` are the line-SET consumers: `sortUnique`
+ * dedupes by text keeping the FIRST occurrence's true line, then orders by raw bytes; `uniq`
+ * collapses ADJACENT equal runs keeping each run head; `count` consumes the whole stream,
+ * emits its length, and is terminal — `parseViewSegment` refuses any stage after it. The
+ * first two reorder the stream, so the render states the order and every lease keeps its true line.
  */
 type ContentOp =
   | { kind: "keep"; pattern: string }
@@ -593,33 +587,15 @@ function parseFilesListStage(stage: StageShape): BashFilesList | undefined {
 
 /**
  * `grep`/`rg` single-file search selector (spec §3.2). Strict default-deny: only the
- * allowlisted flags above survive and the shape must be exactly
- * `[flags] PATTERN [flags] FILE [flags]`. Flags are admitted at any position before `--` —
- * before the pattern, between pattern and file, and after the file — because GNU grep/rg
- * accept post-operand options and the benchmark issues them (`grep pat -i f`). A bundled
- * single-dash cluster (`-in`, `-wF`) is decomposed and EVERY letter must be admitted; the
- * value-taking `m` may only close it (`-nm 3`). The explicit-pattern `-e` is admitted in
- * three spellings — separate (`-e PAT`), attached (`-ePAT`, handled before cluster
- * decomposition since `PAT` letters are not admitted), and cluster-close (`-ine PAT`,
- * mirroring `m`: must close, consumes the next argument) — exactly once; its value becomes
- * THE pattern so the operands must then be exactly `[FILE]`. `--` ends flag parsing, so
- * `grep pat -- -n` names the file `-n`. Fail closed: attached short values (`-m3`, `-nm3`),
- * any digit in a cluster (`-n5`), an unknown letter (`-inQ`), every `=`-long form but
- * `--max-count=N` (`--line-number=x`, `--color=always`), a value that is not a strictly
- * positive integer or not exactly `never`, `-f` (stays denied: file-input patterns break
- * the single-`PATTERN FILE` geometry), `-e` with no value, `-e` twice, a pattern both via
- * `-e` and positionally, a `-`-leading pattern with no `--` (unless given via `-e`), zero
- * operands (stdin), and more than `BASH_SEARCH_MAX_FILES` file operands.
- * Globs, tildes and expansions never reach here because `stageShape`/`literalValue` reject
- * them first.
- * WHY: (item 10) the operand arity now spans four shapes — `[PATTERN FILE]` (single-file),
- * WHY: `[PATTERN FILE...]` (multi-file), `grep -r PATTERN DIR` (recursive walk) and
- * WHY: `rg --files [DIR]` (anchorless list). Their stdout geometries differ (`LINE:content`,
- * WHY: `FILE:LINE:content`, a path list), so the family is returned as a tagged union rather
- * WHY: than one widened interface. Directory operands are still NOT detected here: this module
- * WHY: is pure and zero-fs, so the lifecycle layer re-checks the resolved file kind — and
- * WHY: upgrades an `rg` directory operand (rg recurses by default) while a `grep` directory
- * WHY: operand stays raw (native grep errors without `-r`).
+ * allowlisted flags above survive, in the exact shape `[flags] PATTERN [flags] FILE [flags]`,
+ * admitted anywhere before `--`. A bundled cluster is decomposed and EVERY letter must be
+ * admitted; `m` may only close it. `-e` has three spellings — separate, attached and
+ * cluster-close — exactly once, its value becoming THE pattern, so operands are exactly
+ * `[FILE]`; `--` ends flag parsing. Fail closed: attached short values, any digit in a cluster,
+ * an unknown letter, every `=`-long form but `--max-count=N`, a value not a strictly positive
+ * integer or not exactly `never`, `-f` (file-pattern input), `-e` with no value or twice, a
+ * pattern both ways, a `-`-leading pattern with no `--`, zero operands, over `BASH_SEARCH_MAX_FILES`;
+ * globs, tildes and expansions never reach here (`stageShape`/`literalValue` reject them).
  */
 function parseSearchStage(stage: StageShape): SearchFamily | undefined {
   const filesList = parseFilesListStage(stage);
@@ -1015,18 +991,16 @@ export type Segment =
   | { kind: "unsafe"; reason: string };
 
 /**
- * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed
- * silent set (R3). A `-`-leading operand is an option, not a directory: bash
- * consumes `cd --`/`cd -P`/`cd -L` and, with no operand left, cds to `$HOME`, so
- * taking the flag as the target would resolve a path the model never viewed.
+ * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed silent set (R3).
+ * A `-`-leading operand is an option, not a directory: bash consumes `cd --`/`cd -P`/`cd -L` and,
+ * with no operand left, cds to `$HOME` — taking the flag as the target resolves a path never
+ * viewed.
  *
- * WHY `prefixPosition`: every statement before the terminal view of a `;` chain
- * must be silent, and the field writes that prefix `pwd` as often as `cd`.
- * `pwd` prints the working directory, so it is admitted *only* there: the
- * position proves the sequencing is deterministic, and D9 still byte-checks
- * stdout, which carries the directory line and therefore never matches the
- * slice — the lease is refused at serve time. Outside a prefix position (an
- * `&&` chain) the set stays exactly the three commands above.
+ * WHY `prefixPosition`: every statement before the terminal view of a `;` chain must be silent,
+ * and the field writes that prefix `pwd` as often as `cd`. `pwd` prints the working directory, so
+ * it is admitted *only* there: the position proves the sequencing is deterministic, and D9 still
+ * byte-checks stdout, which carries the directory line and never matches the slice — the lease is
+ * refused at serve time. Outside a prefix position (an `&&` chain) the set stays exactly the three above.
  */
 function parseSilent(stage: StageShape, prefixPosition = false): SilentSeg | undefined {
   if (prefixPosition && stage.name === "pwd" && stage.args.length === 0) {

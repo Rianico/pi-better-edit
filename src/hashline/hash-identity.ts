@@ -112,21 +112,16 @@ export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 export const CANON_VERSION = 3;
 
 /**
- * ANCHOR_GENERATION 2 (issue #230, ADR-0013): the file-scoped anchor-derivation generation.
- * It covers exactly: (1) the width (`HASH_LEN`, `ALPHA`, `HASH_SPACE`/`USABLE_HASH_SPACE`);
- * (2) the (path, content) seeding (`fileBaseIndex` seeds xxh32 with the canonical absolute path,
- * `contentBaseIndex` is the explicit content-only fallback) — generation 2 seeds on the line's RAW
- * bytes, where generation 1 seeded on the canonicalised line, because identity and alignment are
- * different questions: `canon` folds 28 whitespace code points, so a canon-seeded identity cannot
- * tell `const s = "a`+NBSP+`b";` from `const s = "a b";` and falls back to its positional probe;
- * (3) the all-digit reservation
- * (`DIGIT_CHARS`/`RESERVED_HASH_SPELLINGS`/`RESERVED_BITS` pre-marked in allocation); (4) the probe
- * stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
+ * ANCHOR_GENERATION 2 (issue #230, ADR-0013): the file-scoped anchor-derivation generation. It covers exactly: (1) the width
+ * (`HASH_LEN`, `ALPHA`, `HASH_SPACE`/`USABLE_HASH_SPACE`); (2) the (path, content) seeding (`fileBaseIndex` seeds xxh32 with the
+ * canonical absolute path, `contentBaseIndex` the content-only fallback) — generation 2 seeds on RAW line bytes, generation 1 on the
+ * canonicalised line, because `canon` folds 28 whitespace code points and a canon-seeded identity cannot tell `const s = "a`+NBSP+`b";`
+ * from `const s = "a b";`; (3) the all-digit reservation (`DIGIT_CHARS`/`RESERVED_HASH_SPELLINGS`/`RESERVED_BITS`, pre-marked in
+ * allocation); (4) the probe stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
  *
- * WHY: single owner of the anchor-generation literal — anchor-bearing artifacts (the undo/snapshot
- * generation gate and the open-time sweep) read this axis only, never `CANON_VERSION`; the snapshot
- * cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a canon-only change
- * misses the cache without invalidating anchor state while a generation change invalidates both.
+ * WHY: single owner of the literal — anchor-bearing artifacts (the undo/snapshot generation gate and the open-time sweep) read this
+ * axis only, never `CANON_VERSION`; the snapshot cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a
+ * canon-only change misses the cache without invalidating anchor state while a generation change invalidates both.
  */
 export const ANCHOR_GENERATION = 2;
 

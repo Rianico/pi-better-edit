@@ -2,16 +2,12 @@
  * Served-span observer seam — the domain-neutral notification of which lines this tool just
  * served. Producers (read, reject-and-serve, auto-read, diff) hand over 0-based rows; this
  * module run-length encodes them into 1-indexed maximal contiguous spans and fans them out to
- * registered observers.
- *
- * WHY a seam: the served set is known deep in the read and reject-and-serve paths, while the
- * consumer is an optional outer integration that may be absent entirely. Inverting the
- * dependency here keeps every producer free of integration imports, and with no observer
- * registered the behavior of the tool is unchanged.
- *
- * Invariant: no path handling lives here — `filePath` is the absolute normalized path the caller
- * already holds. Spans are 1-indexed because served rows are 0-indexed internally while every
- * consumer-facing surface counts lines from 1.
+ * registered observers. WHY a seam: the served set is known deep in the read and
+ * reject-and-serve paths while the consumer is an optional outer integration that may be
+ * absent, so inverting the dependency keeps every producer free of integration imports and no
+ * observer means unchanged behavior. Invariant: no path handling lives here (`filePath` is the
+ * absolute normalized path the caller holds). Spans are 1-indexed because served rows are
+ * 0-indexed internally while every consumer-facing surface counts lines from 1.
  */
 import type { ServedRow } from "./domain-errors.js";
 

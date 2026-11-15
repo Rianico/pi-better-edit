@@ -1,25 +1,14 @@
 /**
  * The selection-range note seam — one module decides whether a note is due and renders it.
- *
- * WHY its own module: a provider answers "what encloses this window's first line" and nothing else —
- * innermost first — the header formatter only places a finished clause, and the read path never
- * formats note text. This module is the one place those three meet, so the note cannot scatter
- *
- * One decision, two placements: the seam returns one clause per served window, keyed by chain (a chain
- * is named once, on the first window served from it). A single-window page places its clause on the
- * page header; a multi-window page places each clause on the section that serves it. Neither the
- * read path nor the header formatter decides which windows get a note.
- *
- * The note is silent in four distinct situations, and only one of them is a fault:
- * - the window equals its innermost span (nothing to add);
- * - nothing encloses the window's first line (the provider declines or answers an empty chain);
- * - the pre-lookup gate declined it (no registered provider, a window that covers its file);
- * - the lookup failed (threw, timed out, or answered something invalid) — the only case that logs.
- *
- * A window that straddles two siblings is not silence: the chain anchors on the window's first
- * line, so the innermost span names the sibling the window starts in.
- * The gate runs before any parser work. The note is chrome: it changes no served line, holds no
- * lease, and carries no anchor.
+ * WHY its own module: a provider answers what encloses, the header formatter only places a finished
+ * clause, and the read path never formats note text — this is the one place the three meet.
+ * One decision, two placements: one clause per chain, on the first window served from it — the page
+ * header for a single-window page, the serving section for a multi-window one.
+ * Silent in four situations, only one a fault: window equals its innermost span; nothing encloses the
+ * first line; the pre-lookup gate declined it (no provider, window covers the file); the lookup failed
+ * (threw, timed out, invalid) — only that case logs. A window straddling siblings is not silence: the
+ * chain anchors on its first line, so the innermost span names the sibling the window starts in.
+ * The gate runs before parser work. The note is chrome: no served line changes, no lease, no anchor.
  */
 import {
   REFUSAL_REASONS,

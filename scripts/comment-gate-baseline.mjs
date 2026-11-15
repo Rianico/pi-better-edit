@@ -214,20 +214,6 @@ function readBaseline(root) {
 }
 
 /**
- * Per-`(path, text)` violation counts, the dimension `--update` ratchets on: an entry may only
- * leave the baseline because that text stopped violating there.
- * @param {ReadonlyArray<{ path: string, text: string, occurrence: number }>} entries
- */
-function countByPathAndText(entries) {
-  const counts = new Map();
-  for (const { path, text } of entries) {
-    const key = `${path}\u0000${text}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/**
  * `--check`: the tree must not hold a violation the baseline does not record, and the baseline
  * must not hold an entry the tree no longer produces.
  * @param {string} root
@@ -270,10 +256,11 @@ function check(root, current) {
 }
 
 /**
- * `--update`: rewrite the entries from source. Refuses when a `(path, text)` pair grows, which is
- * the non-vacuous form of "a dropped entry must no longer classify as a violation": an entry can
- * only be dropped when its text stopped violating, never displaced by a new comment that reuses it.
- * Total growth is not refused here — the ceiling literal in the arch suite owns that, by design.
+ * `--update`: rewrite the entries from source and report the delta. It does not refuse growth:
+ * a rewrite replaces texts, so a refusal on new texts would block every legitimate conversion —
+ * the counterexample that retired the first version of this check. The ratchet is the ceiling
+ * literal in the arch suite, which this file cannot read; a rise is announced here and then
+ * fails there until someone edits that literal, visibly, in review.
  * @param {string} root
  * @param {ReadonlyArray<{ path: string, text: string, occurrence: number, rule: string, line: number }>} current
  */
@@ -288,26 +275,6 @@ function update(root, current) {
     previous = parsed.entries;
   }
 
-  const before = countByPathAndText(previous);
-  const after = countByPathAndText(current);
-  // WHY: first creation has no previous baseline to ratchet from, so every entry is new by
-  // definition and the growth check would refuse the very file it exists to create.
-  const grown =
-    raw === null ? [] : [...after].filter(([key, count]) => count > (before.get(key) ?? 0));
-  if (grown.length > 0) {
-    console.error(
-      `comment-gate-baseline: $(path, text) grew in ${grown.length} place(s), refusing --update:`,
-    );
-    for (const [key, count] of grown.slice(0, 20)) {
-      const [path, text] = key.split("\u0000");
-      console.error(
-        `  ${describe(path ?? "", 0, text ?? "")} (${before.get(key) ?? 0} -> ${count})`,
-      );
-    }
-    console.error("  a legacy comment may only leave the baseline by stopping its violation");
-    return 1;
-  }
-
   writeFileSync(join(root, BASELINE_PATH), serializeBaseline(current));
   const byRule = new Map();
   for (const item of current) byRule.set(item.rule, (byRule.get(item.rule) ?? 0) + 1);
@@ -316,6 +283,18 @@ function update(root, current) {
     .map(([rule, count]) => `${rule} ${count}`)
     .join(", ");
   console.log(`comment-gate-baseline: wrote ${current.length} entries (${detail})`);
+  if (raw !== null) {
+    const delta = current.length - previous.length;
+    console.log(
+      `comment-gate-baseline: ${previous.length} -> ${current.length} (${delta >= 0 ? "+" : ""}${delta})`,
+    );
+    if (delta > 0) {
+      const ceiling = join("test", "arch", "comment-gate.test.ts");
+      console.error(
+        `comment-gate-baseline: the baseline grew by ${delta}; ${ceiling} still pins the ceiling, so raise EXPECTED_MAX_LEGACY_COMMENTS there or fix the new comment`,
+      );
+    }
+  }
   return 0;
 }
 

@@ -1,27 +1,14 @@
 /**
  * SAFETY: single owner of the rejection envelope. The five forwarded fields are `code`,
- * `details.cause`, `servedRows`, `servedBlock`, and `payloadMessage`. Every rejection carries
- * them from its producer to the engine's reader. Before this module each site
- * hand-copied them through `as { code?: string }` casts (batch-abort wrappers,
- * the tool-seam throw, `toFailure`'s sniff), so adding a field meant five edits.
- *
- * Design (chosen over an Error subclass): the wire shape stays plain properties
- * on the caught `Error`, and this module owns BOTH ends — `attachEnvelope` (the
- * only writer) and `readEnvelope` (the only reader/validation seam). A subclass
- * would force `DomainError` — whose public surface the registry tests pin — or
- * the batch wrappers onto a new hierarchy without deepening anything: the
- * wrappers must stay `instanceof Error`-plain while a caught `DomainError` is
- * still routed by class identity in `toFailure`. Adding a sixth envelope field
- * `readEnvelope` — never a call-site change.
- *
- * Honesty rule: the read validates, it does not trust. Only a registry member
- * survives in `code` and only a `RangeCause` member in `cause` — errno-style
- * pass-through is not a legitimate use: `toFailure` already routes non-registry
- * codes to `E_UNKNOWN`, so a dropped field changes no routing decision. The
- * writer keeps the `details: { code?, cause }` projection in lockstep with the
- * top-level `cause`, preserving the engine's failure shape; registry-typed
- * fields are forwarded unchanged, while untyped extras on `details` are no
- * longer carried (no in-repo consumer reads them).
+ * `details.cause`, `servedRows`, `servedBlock` and `payloadMessage`: every rejection carries them
+ * from its producer to the engine's reader, where each site once hand-copied them through casts.
+ * Design (chosen over an Error subclass): the wire shape stays plain properties on the caught
+ * `Error`, and this module owns BOTH ends — `attachEnvelope` (only writer) and `readEnvelope`
+ * (only reader and validation seam); adding a sixth field touches `readEnvelope`, never a site.
+ * Honesty rule: the read validates, it does not trust — only a registry member survives in `code`
+ * and only a `RangeCause` in `cause`, since `toFailure` already routes non-registry codes to
+ * `E_UNKNOWN` and a dropped field changes no routing decision. The writer keeps the
+ * `details: { code?, cause }` projection in lockstep with the top-level `cause`.
  */
 
 import {

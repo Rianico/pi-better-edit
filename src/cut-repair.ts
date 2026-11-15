@@ -14,36 +14,16 @@ import {
 import { reportDiagnostic } from "./diagnostics.js";
 
 /**
- * (ticket-04b section 2) Next-run repair for the foreign-cut transaction. NO filesystem atomicity
- * is claimed: the two renames leave a real window, and a crash inside it is resolved here — on
- * the NEXT run, from the durable intent record plus the correlated undo rows — with no content
- * lost in either resolution:
- *
- * FORWARD intent (a cut that crashed between its renames):
- *  - target at POST  → the crash landed the insert but not the destructive retirement: COMPLETE
- *    the cut by writing each still-PRE member its undo row's post bytes.
- *  - target at PRE   → the insert never committed: RESTORE by writing each POST member its undo
- *    row's pre bytes (the target at PRE is the undo already; the inverse ordering is
- *    unreachable by construction and collapses to a no-op here).
- *  - every member PRE or POST with a definitive state → that state decides (all-POST merely
- *    drops the intent — the crash hit the final intent-delete).
- *  - ANY member outside both (modified or missing) → touch nothing, keep the intent: repairing
- *    over an outside write would destroy content, and the intent keeps the question open.
- *
- * REVERT intent (04b-rem P2-1: a correlated UNDO whose writes failed partway):
- *  - members at POST are not yet reverted → complete the revert by writing them their pre
- *    bytes; members already at PRE stay.
- *  - every member at PRE → the revert landed: clear the transaction's undo rows and the intent.
- *  - ANY member outside both → touch nothing, keep both: same fail-closed rule as forward.
- *
- * (04b-rem P2-2) The state oracle compares BYTES, never decoded text: the abort/rollback arms
- * rest members at their RAW pre-images (never canonically folded), so a mixed-line-ending
- * member must be recognized from its raw bytes — a text oracle would read it as "other" and
- * the intent would leak forever. The rows carry the raw pre image precisely for this reason.
- *
- * Store materialization is deliberately byte-only: the next read re-materializes snapshots and
- * leases from the committed bytes (the repo's deferred-sync semantics), so repair can never
- * half-write the store.
+ * (ticket-04b section 2) Next-run repair for the foreign-cut transaction. NO filesystem atomicity is
+ * claimed: the two renames leave a window, and a crash in it is resolved on the NEXT run from the
+ * durable intent plus the correlated undo rows. FORWARD: target at POST → COMPLETE (still-PRE members
+ * get post bytes); at PRE → RESTORE (POST members get pre bytes; the inverse ordering is unreachable).
+ * All members PRE or POST → that state decides (all-POST drops the intent). ANY member outside both
+ * (modified or missing) → touch nothing, keep the intent: an outside write must not be destroyed.
+ * REVERT (04b-rem P2-1): POST members get pre bytes; all at PRE → clear the undo rows and the intent;
+ * ANY outside both → touch nothing, keep both. (04b-rem P2-2) The oracle compares BYTES, never decoded
+ * text: RAW pre-images are what abort/rollback arms rest, so a text oracle would read a mixed-ending
+ * member as "other" and leak the intent; repair stays byte-only and never half-writes the store.
  */
 
 type MemberRow = UndoRecord & { path: string };

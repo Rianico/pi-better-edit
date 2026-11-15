@@ -1,17 +1,13 @@
 /**
  * The provider contract — every interface a boundary provider must satisfy.
- *
- * WHY its own module: the providers outlive the expansion decision layer. The decision module is
- * due for deletion, and a provider that imported its shapes from there would stop compiling the
- * day it goes. This module is the one definition site for the enclosing-chain answer, the decline,
- * the window, and the line range, so it survives that removal unchanged.
- *
- * A provider answers "what encloses this window's first line" and nothing else — innermost
- * first. It does not render chrome, and it does not know what the answer is used for.
- * WHY `EnclosingSpan` stays internal: it is an answer detail, not part of what a provider
- * author implements — `SpanProvider` is. Exporting it would let callers depend on a shape
- * the seam must stay free to reshape. `EnclosingChain` is the exported answer: the chain
- * of spans from innermost to outermost.
+ * WHY its own module: the providers outlive the expansion decision layer, which is due for deletion, so
+ * a provider importing its shapes from there would stop compiling the day it goes. This module is the
+ * one definition site for the enclosing-chain answer, the decline, the window, and the line range.
+ * A provider answers "what encloses this window's first line" and nothing else — innermost first. It
+ * does not render chrome, and it does not know what the answer is used for.
+ * WHY `EnclosingSpan` stays internal: it is an answer detail, not part of what a provider author
+ * implements — `SpanProvider` is. Exporting it would let callers depend on a shape the seam must stay
+ * free to reshape. `EnclosingChain` is the exported answer: the chain of spans, innermost first.
  */
 import type { SpanKind } from "./span-kind.js";
 

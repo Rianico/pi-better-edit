@@ -1,24 +1,14 @@
 /**
- * Scaled recursive patience pairing (spec §5.2): aligns a previous snapshot's lines to the
- * current snapshot's lines so `line_id`s survive reorders, inserts, and deletes.
- *
- * The engine has four phases, all fail-closed: an ambiguous interval pairs nothing rather
- * than guessing coordinates.
- *
- *   1. Locally unique canon anchors become candidate pins (`findUniquePins`).
- *   2. The candidate pins' minimal-displacement LIS backbone is their unconditional
- *      intersection across every maximum-length, minimum-Δ subsequence
- *      (`findStablePinBackbone`, two-pass DP over patience-sorted ranks).
- *   3. Pinless rigid runs with identical canon sequences zip pairwise (Probe N).
- *   4. Bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when
- *      it lies on every maximal traceback path, so an interval with several optimal pairings
- *      stays UNPAIRED / RETIRED.
- *
- * When the backbone is empty the interval falls straight through to leaf handling: the
- * engine never recurses on identical bounds, so alignment cannot starve the scan budget.
- *
- * Invariant: `prevLines` and `currLines` are contiguous ascending 1-based line numbers
- * (spec §5.2 descriptor shape), so a descriptor's index + 1 is its line number.
+ * Scaled recursive patience pairing (spec §5.2). Four phases, all fail-closed — an ambiguous interval
+ * pairs nothing rather than guessing coordinates:
+ *   1. locally unique canon anchors become candidate pins (`findUniquePins`);
+ *   2. their minimal-displacement LIS backbone (`findStablePinBackbone`, two-pass DP over patience-sorted
+ *      ranks) is the unconditional intersection of every maximum-length, minimum-Δ subsequence;
+ *   3. pinless rigid runs with identical canon sequences zip pairwise (Probe N);
+ *   4. bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when it
+ *      lies on every maximal traceback path, so several optimal pairings stay UNPAIRED / RETIRED.
+ * Invariant: `prevLines`/`currLines` are contiguous ascending 1-based (spec §5.2), so index + 1 = line; an empty backbone
+ * falls through to leaves and no bound recurses on itself, so the scan budget cannot starve.
  */
 
 export interface LineDescriptor {
@@ -320,24 +310,14 @@ export function findStablePinBackbone(pins: AnchorPin[]): AnchorPin[] {
 }
 
 /**
- * Bounded leaf alignment (spec §3.4.4). Uniqueness is **embedding-level**: a pairing survives
- * only when it lies on every maximal traceback path, and an interval with more than one maximum
- * pairing pairs nothing (its lines stay UNPAIRED / RETIRED).
+ * Bounded leaf alignment (spec §3.4.4). Uniqueness is **embedding-level**: a pairing survives only
+ * when it lies on every maximal traceback path; an interval with more than one maximum pairing
+ * pairs nothing (its lines stay UNPAIRED / RETIRED).
  *
  * `pairingCount` is the exact number of maximum pairings (embeddings) of the optimal LCS in the
- * sub-interval, capped at 2 so the decision stays polynomial. It deliberately counts neither
- * distinct canon strings nor DP orderings:
- * - A repeated canon that can be matched in two places counts twice, although the LCS string is
- *   the same: `[A, A, A]` vs `[A, A]` counts 3, not 1.
- * - Two orderings of down/right skips around the same matched lines count once, because they are
- *   the same embedding: `[A, X, B]` vs `[A, Y, B]` counts 1, not 2.
- *
- * The recurrence is a first-pair decomposition. For the region starting at `(i, j)` with optimal
- * length `target`, every maximum pairing either matches `i` with `j` (only possible when the
- * canons agree, and then it extends a maximum pairing of `(i + 1, j + 1)`), or leaves at least
- * one of the two lines unmatched, which is a maximum pairing of `(i + 1, j)` and/or `(i, j + 1)`
- * at the same length. The overlap of those two jump regions is subtracted, so each pairing is
- * counted exactly once. The cap is applied after the inclusion-exclusion subtraction, and because
+ * sub-interval, capped at 2 so the decision stays polynomial; it counts neither distinct canon
+ * strings nor DP orderings. The recurrence is a first-pair decomposition whose overlap is
+ * subtracted so each pairing counts once; the cap is applied after that subtraction, and since
  * `|A ∪ B| == 1` forces `A` and `B` to be the same singleton, the `=== 1` test that drives
  * `isUnique` stays exact under the cap.
  */

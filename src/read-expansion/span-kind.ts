@@ -1,16 +1,13 @@
 /**
  * The closed vocabulary of note labels.
- *
  * The base is LSP 3.17 `SymbolKind`: every lowercase member below names one protocol kind, and
- * `SPAN_KIND_TO_LSP` carries the canonical PascalCase name next to it. Six extensions cover
- * concepts the protocol cannot express honestly: `arrow` (an anonymous function assigned to a
- * name), `typeAlias`, `impl` and `trait` (Rust items; mapping them to `Object` would be a lie),
- * and the non-AST prose units `section` and `paragraph`.
- *
+ * `SPAN_KIND_TO_LSP` carries the canonical PascalCase name next to it. Six extensions cover concepts
+ * the protocol cannot express honestly: `arrow`, `typeAlias`, `impl` and `trait` (Rust items; mapping
+ * them to `Object` would be a lie), and the non-AST prose units `section` and `paragraph`.
  * Display stays lowercase because the note is model-facing prose, not a protocol symbol. The two
  * camel-case members `enumMember` and `typeParameter` are rendered as `enum member` and
- * `type parameter`. `typeAlias` is an extension and keeps its camel-case label. A raw grammar node
- * type is never a member: an unmatched node declines.
+ * `type parameter`. `typeAlias` is an extension and keeps its camel-case label.
+ * A raw grammar node type is never a member: an unmatched node declines.
  */
 export const LSP_SYMBOL_KINDS = [
   "File",

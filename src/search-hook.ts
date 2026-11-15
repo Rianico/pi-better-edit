@@ -1,19 +1,14 @@
 /**
  * SAFETY: Pre-execution bash rewrite for intercepted search commands (spec §3.1/§3.3, I1a).
- *
- * WHY a `tool_call` hook and not `tool_result`: native `grep`/`rg` only print `LINE:content`
- * rows when asked for line numbers, and patching the command before dispatch is the only seam
- * that makes the real binary emit them — no shell re-run, no duplicated regex engine (JS
- * `RegExp` and BRE/ERE/Rust regex diverge, so the system binary must execute natively).
- *
- * WHY no shared state with the `tool_result` side: the rewrite is a pure function of the
- * command text, and `handleBash` re-parses the mutated `event.input.command` on its own. A
- * session- or call-keyed map would leak across concurrent bash calls and could pin a lease to
- * a command some other call rewrote.
- *
- * The hook fails open by construction: it returns without touching `input` unless the pure
- * rewrite actually changed the command, and every throw is swallowed so interception can never
- * break a bash call.
+ * WHY a `tool_call` hook and not `tool_result`: native `grep`/`rg` print `LINE:content` rows only
+ * when asked for line numbers, and patching the command before dispatch is the only seam that
+ * makes the real binary emit them — no shell re-run, no duplicated regex engine (JS `RegExp` and
+ * BRE/ERE/Rust regex diverge, so the system binary must execute natively).
+ * WHY no shared state with the `tool_result` side: the rewrite is a pure function of the command
+ * text, and `handleBash` re-parses the mutated `event.input.command` on its own; a session- or
+ * call-keyed map would leak across concurrent bash calls and could pin a lease to a command some
+ * other call rewrote. The hook fails open: it returns without touching `input` unless the rewrite
+ * changed the command, and every throw is swallowed, so interception can never break a bash call.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withSearchLineNumbers } from "./bash-classifier.js";

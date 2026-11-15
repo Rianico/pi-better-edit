@@ -205,17 +205,12 @@ function statusText(cwd: string): string {
 /**
  * The store's half of the status output, in the lens block's own layout: the settings, then the
  * override, then a precedence line.
- *
- * WHY each key carries its rung: the ladder resolves PER KEY, so "the project file is set" says
- * nothing about which value the store will actually use, and the rung is what says which file to
- * edit next.
- *
+ * WHY each key carries its rung: the ladder resolves PER KEY, so "the project file is set" says nothing
+ * about the value the store will use; the rung names the file to edit next.
  * WHY the store path is printed with its override: `PI_BETTER_EDIT_CONFIG_DIR` is the ONLY thing that
- * can move the store, and no config file key can (there is deliberately no `store.dir`), which is
- * worth saying where a reader is looking for the setting that moved it.
- *
+ * can move the store and no config file key can (there is deliberately no `store.dir`).
  * WHY a warning is repeated here: an unusable config file degrades to the defaults, and a display
- * that showed those defaults with no reason would be the silent drop this ladder refuses to make.
+ * showing those defaults with no reason would be the silent drop this ladder refuses to make.
  */
 function storeStatusText(cwd: string): string {
   const warnings: string[] = [];

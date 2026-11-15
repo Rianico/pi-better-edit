@@ -167,28 +167,14 @@ export function busyBudgetMs(overrides?: BusyBudget): number {
 /**
  * Run `fn` under the store's contention budget. EVERY store write funnels through here — the open
  * (via `openDbWithBusyRetry`), `withStore`, and the statement-level retries in snapshot-store,
- * undo-store and the served session — so this budget and its deadline apply to all of them, not just
- * to the open. On exhaustion the ORIGINAL error is rethrown unchanged, so every caller keeps
- * classifying busy against corrupt exactly as it did before.
- * A retried open re-enters the WHOLE `buildStore` sequence from the top, because the open is not one
- * transaction: `buildStore` is many independent statement sites — the PRAGMAs, the `CREATE
- * TABLE/INDEX IF NOT EXISTS` set, the conditional DROP of the pre-session-keyed served shell, the meta
- * version INSERT, the `addColumnIfMissing` and rename helpers and the two `ensure*` helpers (one of
- * which owns the generation sweep) — every one autocommit, so partial progress survives a failed
- * attempt and the only transaction on the OPEN path is the sweep's own `BEGIN IMMEDIATE`. A retried
- * write re-enters the WHOLE caller body for the same reason, because this budget wraps `withStore`'s
- * `BEGIN IMMEDIATE ... COMMIT` too, and that transaction cannot serve the open instead: the open hooks
- * run before the store handle is published and `withStore` refuses without it, so the open path has
- * one transaction while the write path retries its whole body.
- * The ceiling on re-entry is therefore `maxAttempts` and not one attempt — 4 -> 8 (2x) on an
- * idempotent, lock-serialized path, at the SAME 4300ms TOTAL model either way: the internal waiting
- * moved with the shape, 8 x 250ms = 2000ms here against 4 x 1000ms = 4000ms there, while the model
- * that replaced it holds the TOTAL at 4300ms. That is a WASH under sustained contention, because a
- * contended attempt blocks at its FIRST lock-taking statement — one full busy timeout plus the same
- * connection and statement overhead in either shape, an overhead these constants do not model and a
- * comment cannot derive, so it carries no figure here — and does no body work; the attempts each
- * shape spends are its own `maxAttempts`, 4 there against 8 here. The INTERLEAVED case, a rival
- * taking the lock BETWEEN statements, can reach that ceiling and is BOUNDED BUT UNMEASURED.
+ * undo-store and the served session. On exhaustion the ORIGINAL error is rethrown unchanged, so
+ * every caller keeps classifying busy against corrupt exactly as it did before.
+ * A retried open re-enters the WHOLE `buildStore` from the top — many independent autocommit
+ * statement sites, not one transaction — and a retried write re-enters the WHOLE caller body,
+ * because this budget wraps `withStore`'s `BEGIN IMMEDIATE ... COMMIT` too.
+ * The ceiling on re-entry is therefore `maxAttempts`: 4 -> 8 (2x) at the SAME 4300ms TOTAL model
+ * either way, 8 x 250ms = 2000ms here against 4 x 1000ms = 4000ms there — a WASH under sustained
+ * contention; the INTERLEAVED case is BOUNDED BUT UNMEASURED.
  */
 export function withBusyRetry<T>(fn: () => T, overrides?: BusyBudget): T {
   const budget = resolveBusyBudget(overrides);

@@ -1,30 +1,14 @@
 /**
  * The note's failure sink — the trajectory record for provider lookups that failed.
- *
- * WHY its own file beside `diagnostics.log`: a failed span lookup is an expected event, not a
- * diagnostic failure, and a queryable "which lookup failed, on what, and why" belongs in its own
- * JSONL stream. The placement and rotation policy are deliberately the diagnostics one:
- * `<stateRoot>/selection-range.log` with one rotated generation, so an operator can attach the pair
- * whole.
- *
- * WHY the retired name is ADOPTED rather than left behind: this sink was `read-expansion.log` before
- * the read-expansion retirement, and the log that explains a bug an operator is reporting is exactly
- * the file a rename must not orphan. The first write moves the old pair onto the new names, each
- * generation only while its new path is absent — the rule `MOVED_ARTIFACTS` applies to a state-root
- * move, and for the same reason: a log already written under the new name is this install's own
- * record and wins over the history beside it.
- *
- * WHY failures only: an ordinary read — note-free, gated out, or served with a note — writes no row,
- * so the file stays proportional to the defects worth fixing instead of every tool call.
- *
- * WHY the first record of a session carries `rung`: recording the resolved ladder source once per
- * session makes the effective policy visible without repeating it on every line. Later records omit
- * it. The rung is required, so a new caller cannot silently stamp the wrong value.
- *
- * The refusal vocabulary lives in `docs/agents/selection-note-replay.md#refusal-vocabulary`.
- *
- * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read
- * that already served its rows into a failed call.
+ * WHY its own file beside `diagnostics.log`: placement and rotation are that sink's policy —
+ * `<stateRoot>/selection-range.log`, one rotated generation — because a failed lookup is an expected
+ * event, not a diagnostic failure, and it deserves its own queryable JSONL stream.
+ * WHY the retired `read-expansion.log` name is ADOPTED: a rename must not orphan the log that explains
+ * a reported bug, so each generation moves only while its new path is absent (`MOVED_ARTIFACTS`).
+ * WHY failures only: an ordinary read writes no row, so the file tracks defects, not every call.
+ * WHY `rung` on a session's first record only: it is required, so no caller can stamp it wrong.
+ * The refusal vocabulary: `docs/agents/selection-note-replay.md#refusal-vocabulary`.
+ * WHY nothing here may throw: a sink failure must never turn a served read into a failed call.
  */
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";

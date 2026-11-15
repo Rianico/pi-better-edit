@@ -542,18 +542,15 @@ const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
 ]);
 
 /**
- * A foreign-source rejection never renders unleased rows: the rows a leased-range rejection names
- * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write
- * (`loadForeignServedView` is the read-only authority). Rows are therefore SERVED or ABSENT —
- * the leased codes are re-wrapped HERE with their rows dropped and `refFile` named, except
- * `E_TARGET_LOST`, whose format already names the file and carries no rows, so it passes through.
- * §0's never-served pass-through below stays (its exact-code pins ride it); the length guard in
- * it is SHADOWED by the code-set check and is NOT the enforcement point.
- * WHY: (B6, ISSUE-6 repo half — second recurrence) a never-served foreign anchor is ticketed to
- * WHY: the `W_NEVER_SERVED_SHAPE` soft hint, but it surfaces as a hard rejection here, and that
- * WHY: deviation is structural: `[W_*]` codes are the APPLIED tier — `warnBlock` renders them only
- * WHY: on a result that mutated — and a foreign failure aborts before any apply, so the channel
- * WHY: that would carry the hint never exists for this call.
+ * A foreign-source rejection never renders unleased rows: the rows a leased-range rejection names belong to the FOREIGN file's
+ * mirror, and this call must not lease anything it did not write (`loadForeignServedView` is the read-only authority). Rows are
+ * therefore SERVED or ABSENT — the leased codes are re-wrapped HERE with their rows dropped and `refFile` named, except
+ * `E_TARGET_LOST`, whose format already names the file and carries no rows, so it passes through. §0's never-served pass-through
+ * below stays (its exact-code pins ride it); the length guard in it is SHADOWED by the code-set check and is NOT the enforcement point.
+ * WHY: (B6, ISSUE-6 repo half — second recurrence) a never-served foreign anchor is ticketed to the `W_NEVER_SERVED_SHAPE` soft
+ * WHY: hint, but it surfaces as a hard rejection here, and that deviation is structural: `[W_*]` codes are the APPLIED tier —
+ * WHY: `warnBlock` renders them only on a result that mutated — and a foreign failure aborts before any apply, so the channel that
+ * WHY: would carry the hint never exists for this call.
  */
 function foreignRejection(error: unknown, refFile: string): DomainError {
   if (error instanceof DomainError) {
@@ -630,24 +627,16 @@ function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
 }
 
 /**
- * Foreign-source copy (ticket-04 §3.3) and the cut record (ticket-04b): a `text_ref` naming
- * another served file is read from that file's CURRENT content through the READ-ONLY half of the
- * lease seam and collapsed to a `literal` payload BEFORE the mutate loop, so a foreign resolution
- * failure aborts the whole call atomically (nothing has been mutated yet) and every downstream
- * gate runs on the bytes that will be written. The read+load+lease assembly is
- * `loadForeignServedView` (edit-source.ts) — one entry, memoized per resolved path by
- * `materializeForeignReferences`.
+ * Foreign-source copy (ticket-04 §3.3) and the cut record (ticket-04b): a `text_ref` naming another served file is read from that
+ * file's CURRENT content through the READ-ONLY half of the lease seam and collapsed to a `literal` payload BEFORE the mutate loop,
+ * so a foreign resolution failure aborts the whole call atomically (nothing has been mutated yet) and every downstream gate runs on
+ * the bytes that will be written. The assembly is `loadForeignServedView` (edit-source.ts), memoized by `materializeForeignReferences`.
  *
- * SAFETY: the pre-pass read is read-only by construction, not by convention:
- *  - `loadForeignServedView` is built on `readNormFile(..., { noPersist: true })` — the loader
- *    gates every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
- *  - `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes` — resolution never
- *    re-stamps a lease and never writes `retired_at`;
- *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path.
- * For `mode: "copy"` that is the whole story: the foreign path is never written. For
- * `mode: "cut"` (ticket-04b) the file is instead edited LATER as a first-class transaction
- * member — its own `runMutations` load, verification, undo row, and store commit — under
- * `runCutTransaction`; this pre-pass itself still persists nothing.
+ * SAFETY: the pre-pass read is read-only by construction, not by convention: `loadForeignServedView` is built on
+ * `readNormFile(..., { noPersist: true })`, which gates every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
+ * `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes`, so resolution never re-stamps a lease and never writes
+ * `retired_at`; the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path, which `mode: "copy"`
+ * never writes, and `mode: "cut"` (ticket-04b) edits LATER under `runCutTransaction` as a first-class transaction member.
  */
 async function materializeForeignItem(
   item: NormalizedEditItem,
@@ -1270,24 +1259,16 @@ async function finishCommittedFile(
 }
 
 /**
- * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (ADR-0028). NO
- * FILESYSTEM ATOMICITY IS CLAIMED: `writeAtomic` is per-path, so two files mean two renames
- * with a real crash window between them. The honest guarantee is three-part:
- *
- *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source
- *     retirement. A crash between the renames leaves the copy at the target and the span still
- *     at the source — duplication, recoverable; the inverse ordering would be data loss. This
- *     ordering is the spine of the design.
- *  2. DURABLE INTENT — every file's undo row carries the transaction id and a `cut_intent` row
- *     names the transaction before the first rename, so a half-applied transaction is
- *     detectable on the next run.
- *  3. REPAIR — `repairCutIntents` (src/cut-repair.ts, run on every live apply) resolves an
- *     orphaned intent to complete-the-cut OR restore-both-files from the rows' pre/post bytes,
- *     losing no content in either resolution.
- *
- * Every failure before the first rename leaves every file untouched (the plans run in-memory
- * first and any throw aborts the call); failures inside the window roll back the written files
- * best-effort, and a rollback that does not hold LEAVES THE INTENT ROW for repair.
+ * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (ADR-0028). NO FILESYSTEM ATOMICITY IS CLAIMED:
+ * `writeAtomic` is per-path, so two files mean two renames with a real crash window between them. The guarantee is three-part:
+ *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source retirement. A crash between the renames
+ *     leaves the copy at the target and the span still at the source — duplication, recoverable; the inverse ordering would be data loss.
+ *  2. DURABLE INTENT — every file's undo row carries the transaction id and a `cut_intent` row names the transaction before the first
+ *     rename, so a half-applied transaction is detectable on the next run.
+ *  3. REPAIR — `repairCutIntents` (src/cut-repair.ts, run on every live apply) resolves an orphaned intent to complete-the-cut OR
+ *     restore-both-files from the rows' pre/post bytes, losing no content in either resolution.
+ * Every failure before the first rename leaves every file untouched (the plans run in-memory first; any throw aborts the call); failures
+ * inside the window roll back the written files best-effort, and a rollback that does not hold LEAVES THE INTENT ROW for repair.
  */
 async function runCutTransaction(
   file: ProcessedEditFile,

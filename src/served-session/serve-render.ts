@@ -1,32 +1,14 @@
 /**
- * SAFETY: serve-render — deep module owning the shared serve-row/rejection/verification surface.
- *
- * It is the serve→mirror→lease→retire machine's pure render adapter: it builds the rows a serve
- * shows (`buildRangeServeRows`/`denseServeRows`/`fmtServedRows`) and the rows a rejection shows
- * (`makeServedRejection`/`makeStaleAnchorRejection`/`makeTargetLostRejection`), and it verifies the
- * served rows themselves (the served hash echo and prefix-mismatch evidence gates, the never-served
- * shape scan, the rejection bookkeeping, and the lease seam's `verifyRebasedSpan`). It owns no
- * session state: every input arrives as an argument, and the session module is the only writer.
- *
- * This module absorbs the served-range verification sprawl previously in served.ts:
- *  - served span position lookup (servedPositionsOf)
- *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
- *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)
- *  - the dense serve-row projection (denseServeRows) — the single owner of the serve-record row shape
- *  - the reject-and-serve rejection builders (makeServedRejection / makeTargetLostRejection /
- *    makeStaleAnchorRejection)
+ * SAFETY: serve-render — deep module owning the shared serve-row/rejection/verification surface:
+ * the serve→mirror→lease→retire machine's pure render adapter. It builds the rows a serve shows
+ * and the rows a rejection shows, and it verifies the served rows themselves (served hash echo and
+ * prefix-mismatch gates, never-served shape scan, rejection bookkeeping, `verifyRebasedSpan`). It
+ * owns no session state: every input arrives as an argument, and the session module is the only writer.
  *
  * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
- * fail-closed with E_STALE_RANGE. Coordinate realignment is owned exclusively by MVCC
- * `pairSnapshots` + `line_lineage` upstream in the edit path.
- *
- * The lease seam owns verification for every edit it resolves (#151): `verifyRebasedSpan` checks the
- * whole served window by lease identity. The module's former mirror-vs-mirror decision table
- * (`ServedVerification`, `verifyServedRange`) served only the library-level seam — a caller with a
- * served mirror and no lease source — and had no live caller, so it is retired (#10).
- *
- * GLOSSARY.md terms preserved: serve, served state, served span, served-range
- * staleness, never-served, reject-and-serve, drift.
+ * fail-closed with E_STALE_RANGE; realignment belongs exclusively to MVCC `pairSnapshots` +
+ * `line_lineage` upstream. The lease seam verifies every edit by lease identity (#151); the former
+ * mirror-vs-mirror table (`ServedVerification`, `verifyServedRange`) had no live caller, retired (#10).
  */
 import { HASH_LEN, HASH_RE } from "../hashline/alphabet.js";
 import { HASH_SEP } from "../hashline/hash-identity.js";
@@ -246,34 +228,16 @@ export function makeStaleAnchorRejection(opts: {
 }
 
 /**
- * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J). The caller resolved
- * each end anchor's leased `line_id`; this verifies the whole served window remapped onto
- * `rebasedStart..rebasedEnd` — the dynamic rebase path's rigid remap, and the fast path's identity
- * remap (`rebasedStart === servedStart ∧ rebasedEnd === servedEnd`), which is why both paths reach
- * the same verdicts (#151):
- *
- *  - a different window length means an external insert/delete landed strictly inside the range
- *    (Probe J) -> `E_STALE_RANGE`;
- *  - a served line whose mirror row was truncated away, or an anchor holding no lease -> `E_STALE_RANGE`
- *    (the diagnosis separates the two: the served record cannot be reconciled, and no served identity);
- *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity
- *    to verify, and the span's extent is already pinned by the two boundary leases this gate verifies
- *    plus the window-length check above. Only rows `0` and `servedLen - 1` — the anchors the model
- *    named — stay fail-closed on a `null`, because with no served row there is nothing to verify them
- *    against;
- *  - a multi-line span whose strict interior covers a recorded outline fold line that is still
- *    unserved in the mirror -> `E_STALE_RANGE` (tranche 3 fold-gate); single-line spans have no
- *    interior and skip it, and a later served read that fills the folded lines disarms it;
- *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: "retirement"`, and
- *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code
- *    with `cause: "served-range staleness"` (Probes A/E/K: never apply at a coordinate whose
- *    immutable `line_id` is not the one leased).
- *
- * No canon data is consulted: identity comes from the mirror row's lease, so a same-anchor collision
- * between an old served line and unrelated current content cannot satisfy the gate (issue #151).
- * Identity — not anchor spelling — is authoritative: a surviving line may legitimately present a
- * different (content-derived) anchor in the new snapshot, so a string mismatch is not by itself a
- * failure. Throwing happens before any write, so a rejection leaves the file byte-identical.
+ * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J): the caller resolved each end anchor's leased
+ * `line_id`, and this verifies the whole served window remapped onto `rebasedStart..rebasedEnd`, so the dynamic rebase path's
+ * rigid remap and the fast path's identity remap reach the same verdicts (#151).
+ *  - window length differs (external insert/delete strictly inside, Probe J), a truncated mirror row, an anchor holding no lease -> `E_STALE_RANGE`;
+ *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity, and the two boundary
+ *    leases plus the length check pin the extent; rows `0` and `servedLen - 1` stay fail-closed on a `null`;
+ *  - a strict interior covering a still-unserved recorded outline fold line -> `E_STALE_RANGE` (tranche 3 fold-gate);
+ *  - a retired lease -> `E_STALE_RANGE` with `details.cause: "retirement"`, a displaced live `line_id` ->
+ *    `cause: "served-range staleness"` (Probes A/E/K). Identity — not anchor spelling — is authoritative (#151): no canon data
+ *    is consulted, and throwing happens before any write, so a rejection leaves the file byte-identical.
  */
 export function verifyRebasedSpan(args: {
   served: readonly (string | null)[];
@@ -449,17 +413,14 @@ export interface ResolvedRange {
 /**
  * SAFETY: ServedHashEcho — one evidence predicate for the served hash echo condition.
  *
- * WHY: this section lives here (with the serve-row builders) rather than beside the edit path: the
- * WHY: evidence it judges is a served row, so the module that renders served rows also owns the
- * WHY: gates that read them. Callers keep passing every input explicitly (no session handle).
- *
- * GLOSSARY.md served hash echo: a candidate line
- * triggers only with evidence — it begins (after one optional leading `+`,
- * `-`, or space diff marker) with an anchor served for this session and path
- * at any position, AND the remainder reproduces the served content for that
- * anchor (`canonDigest(remainder) === served_leases.canon_hash`). One
- * such row suffices. No canon data means no evidence, so the candidate stays
- * silent — the tool never gates on the shape of a line.
+ * WHY: it lives with the serve-row builders because the evidence it judges is a served row, so the
+ * WHY: module that renders served rows also owns the gates that read them; callers pass every input
+ * WHY: explicitly (no session handle).
+ * GLOSSARY.md served hash echo: a candidate line triggers only with evidence — after one optional
+ * leading `+`, `-` or space diff marker it begins with an anchor served for this session and path
+ * at any position, and the remainder reproduces the served content (`canonDigest(remainder) ===
+ * served_leases.canon_hash`). One such row suffices. No canon data means no evidence, so the
+ * candidate stays silent — the tool never gates on the shape of a line.
  */
 export interface ServedHashEchoMatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -588,15 +549,13 @@ export interface ServedPrefixMismatch {
 /**
  * SAFETY: Served prefix mismatch — the middle tier beside the served hash echo gate.
  *
- * A candidate reports here when it opens with an anchor served for this session
- * and file, yet its remainder canon digest matches none of the digests the
- * leases recorded for that anchor's served line. Position-agnostic like the
- * gate: `start` only shifts the reported `line` and never narrows matching.
- * Empty or all-null `canonDigests` means no
- * served content to compare against, so the result stays empty — never a
- * shape-only report. Exact reproductions are excluded (the gate owns them),
- * so callers scan for this tier only after the gate stays silent.
- * Pure with no retained state: fires per occurrence, never suppressed.
+ * A candidate reports here when it opens with an anchor served for this session and file, yet its
+ * remainder canon digest matches none of the digests the leases recorded for that anchor's served
+ * line. Position-agnostic like the gate: `start` only shifts the reported `line` and never narrows
+ * matching. Empty or all-null `canonDigests` means no served content to compare against, so the
+ * result stays empty — never a shape-only report. Exact reproductions are excluded (the gate owns
+ * them), so callers scan for this tier only after the gate stays silent. Pure with no retained
+ * state: fires per occurrence, never suppressed.
  */
 export function findServedPrefixMismatches(
   lines: readonly string[],
@@ -710,16 +669,15 @@ export function findNeverServedAnchorShapes(
 
 /**
  * SAFETY: Soft hint for an applied edit carrying never-served anchor-shaped lines.
- * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
- * no rewrite. Once per `edit` call however many offending lines it holds — `count`
- * states how many replacement lines match the tool's own row shape with anchors
- * never served for this session and file. The trailing conditional clause is deliberate:
- * gated on `if ... unintended`, it names the affordance that exists in that case
- * (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
+ * Applied-only, bytes untouched, never blocks: the bytes were written as-is with no rewrite. Once per
+ * `edit` call however many offending lines it holds — `count` states how many replacement lines match
+ * the tool's own row shape with anchors never served for this session and file. The trailing
+ * conditional clause is deliberate: gated on `if ... unintended`, it names the affordance that exists
+ * in that case (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
  * order, carrying no run prefix. Both applied-hint builders (this one and
  * `buildServedEditPrefixNote`) carry the clause byte-identically, pinned by
- * test/core/served-prefix-note.test.ts.
- * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
+ * test/core/served-prefix-note.test.ts. Surfaced through the warnings seam (rendered by warnBlock)
+ * on the model-visible channel.
  */
 export function buildNeverServedEditHint(args: { count: number }): string {
   return `${formatWarning("W_NEVER_SERVED_SHAPE", { count: args.count })} ${ANCHOR_PREFIX_REMEDY}`;
