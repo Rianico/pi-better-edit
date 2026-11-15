@@ -346,38 +346,15 @@ describe("comment gate parser parity", () => {
 });
 
 /**
- * The t15 wave, counted: retiring `WHY:`/`Invariant:` reclassified this many comments at once, and
- * the migration tickets delete or convert them until the count is 0 again.
- *
- * While it is above 0 the four tree-scoped assertions below can only fail — they assert a clean
- * tree — so `itTree` skips them. This constant is NOT the ceiling and NOT a baseline entry: the
- * ceiling literal stays 0, the suppression file stays empty, and `--check` still exits 1 with the
- * backlog. What it does is stop the wave from GROWING while the ratchet sleeps: the first
- * assertion runs always, so a comment added to the backlog breaks the suite immediately. Each
- * migration commit lowers the literal; at 0 the four assertions re-arm by themselves, so the fix
- * for a red count is migration progress, never a bigger number here.
+ * The migration window is closed: the drain reached zero, so the four assertions below run again
+ * and the t15 countdown is gone. A new violation now fails on the commit that introduces it, with
+ * no ledger to lower and no dormant arm to wake.
  */
-const AWAITING_MIGRATION_BACKLOG: number = 1914;
-
 describe("comment gate baseline", () => {
   const current = collectCurrentViolations();
   const raw = readFileSync(join(REPO_ROOT, BASELINE_PATH), "utf-8");
 
-  /** Plain `it` once the wave is drained; a skip before that, never a weaker assertion. */
-  function itTree(name: string, body: () => void): void {
-    if (AWAITING_MIGRATION_BACKLOG === 0) it(name, body);
-    else it.skip(name, body);
-  }
-
-  it("holds the migration backlog at or under the enumerated count", () => {
-    // WHY: this is the assertion that keeps the dormant ratchet honest — the migration lowers the
-    // tree's count without touching this file, so the bound is "at or under"; a comment that JOINS
-    // the wave raises the count and fails here first. The constant is lowered by the ticket that
-    // closes the drain, and at 0 it re-arms the four assertions above.
-    expect(current.length).toBeLessThanOrEqual(AWAITING_MIGRATION_BACKLOG);
-  });
-
-  itTree("records every current violation in the baseline", () => {
+  it("records every current violation in the baseline", () => {
     const parsed = parseBaselineEntries(raw);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -391,7 +368,7 @@ describe("comment gate baseline", () => {
     expect(unrecorded).toEqual([]);
   });
 
-  itTree("keeps the current violation count at or under the ceiling", () => {
+  it("keeps the current violation count at or under the ceiling", () => {
     expect(current.length).toBeLessThanOrEqual(EXPECTED_MAX_LEGACY_COMMENTS);
   });
 
@@ -402,7 +379,7 @@ describe("comment gate baseline", () => {
     expect(parsed.entries.length).toBeLessThanOrEqual(EXPECTED_MAX_LEGACY_COMMENTS);
   });
 
-  itTree("writes exactly the bytes the committed file holds", () => {
+  it("writes exactly the bytes the committed file holds", () => {
     expect(serializeBaseline(current)).toBe(raw);
   });
 
@@ -416,7 +393,7 @@ describe("comment gate baseline", () => {
     );
   });
 
-  itTree("passes --check on the committed tree", () => {
+  it("passes --check on the committed tree", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {

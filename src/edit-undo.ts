@@ -33,7 +33,7 @@ import { ANCHOR_GENERATION, lineHashes } from "./hashline/hash-identity.js";
 /**
  * Derives a row's anchors and persists the snapshot through the named store (arch-03).
  *
- * WHY: the store is passed in rather than resolved through the retired process-global IO, so the
+ * The store is passed in rather than resolved through the retired process-global IO, so the
  * restore write is visible at the call site and still lands where the default resolves.
  */
 async function restoreHashes(content: string, path: string): Promise<string[]> {
@@ -83,13 +83,9 @@ export async function saveUndo(
       ending: entry.originalEnding,
       hashes: entry.hashes,
       resultContent: entry.resultContent,
-      // WHY: pinning the canonical hash of the read-path's pre-edit bytes lets the revert adopt that
-      // WHY: snapshot verbatim — zero counter ids — and keeps the target pinned against vacuum (spec §3.6.1).
       snapshotHash: entry.snapshotHash ?? snapshotHashFor(entry.content),
       transactionId: entry.transactionId ?? null,
       rawPre: entry.rawPre ?? null,
-      // WHY: forwarding the payload generation lets the store stamp (upsertUndo) preserve it on
-      // WHY: replay; absent (ordinary edit) defaults to ANCHOR_GENERATION there.
       // Ref: docs/.archive_adrs/0031-file-scoped-anchors-residual-and-generation-discipline.md
       anchorGeneration: entry.anchorGeneration ?? ANCHOR_GENERATION,
     });
@@ -143,8 +139,10 @@ export async function clearUndo(path: string): Promise<void> {
   }
 }
 
-// WHY: `content` is the pre bytes (`resultContent` the post), and the row keeps `bom` and
-// WHY: `ending` apart so a revert rebuilds bytes through the same fold as every other write.
+/**
+ * `content` is the pre bytes (`resultContent` the post), and the row keeps `bom` and `ending`
+ * apart so a revert rebuilds bytes through the same fold as every other write.
+ */
 interface UndoMember {
   absolutePath: string;
   displayPath: string;
@@ -197,7 +195,6 @@ async function undoCorrelatedTransaction(
   for (const row of rows) {
     const display = row.path === requestedAbsolutePath ? requestedDisplayPath : row.path;
     const member = toMember(row, display);
-    // WHY: a corrupt-ending row poisons the whole set: fail closed naming it, revert nothing.
     if (!member) {
       return {
         content: [
@@ -236,8 +233,6 @@ async function undoCorrelatedTransaction(
   return withSortedMutationQueues(
     members.map((m) => m.absolutePath),
     async () => {
-      // WHY: compare bytes, not decoded text — the post image on disk is exactly what the commit
-      // WHY: wrote, and a decode-lenient string comparison could call different bytes equal.
       const currents: { member: UndoMember; raw: string }[] = [];
       for (const member of members) {
         let bytes: Buffer | undefined;
@@ -280,9 +275,6 @@ async function undoCorrelatedTransaction(
         currents.push({ member, raw: bytes.toString("utf-8") });
       }
 
-      // WHY: the plan loop is read-only, so a throw here leaves every file untouched and the intent
-      // WHY: below is never recorded — the "any failure BEFORE the first write writes nothing" half
-      // WHY: of the durable-revert contract.
       const plans: {
         member: UndoMember;
         restoreBytes: Buffer;
@@ -299,8 +291,6 @@ async function undoCorrelatedTransaction(
       for (const { member, raw } of currents) {
         const { text: currentStripped } = stripBOM(raw);
         const currentNormalized = toLF(currentStripped);
-        // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
-        // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
         const storedIsCurrentGeneration = member.anchorGeneration === ANCHOR_GENERATION;
         const restoredContentHash = storedIsCurrentGeneration
           ? (member.snapshotHash ?? snapshotHashFor(member.content))
@@ -314,8 +304,6 @@ async function undoCorrelatedTransaction(
               ? member.hashes
               : await restoreHashes(member.content, member.absolutePath));
         } catch (error) {
-          // WHY: best-effort anchor recovery — a failed pinned-snapshot lookup falls back to the
-          // WHY: stored current-generation hashes or a fresh derivation, so the restore and diff stand.
           reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
           restoredHashes = storedIsCurrentGeneration
             ? member.hashes
@@ -346,8 +334,6 @@ async function undoCorrelatedTransaction(
         const curSet = new Set(currentHashes);
         const restoredSet = new Set(restoredHashes);
         const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
-        // WHY: (04b-rem P2-2) a revert is not a re-serialization: when the row carries the RAW pre
-        // WHY: image the cut captured, those exact bytes go back; the canonical fold serves rows without one.
         const restoreBytes =
           member.rawPre !== null && member.rawPre !== undefined
             ? Buffer.from(member.rawPre, "utf-8")
@@ -367,28 +353,17 @@ async function undoCorrelatedTransaction(
         });
       }
 
-      // WHY: durable revert, STEP 1: the intent record lands BEFORE the first revert write, so a
-      // WHY: crash between the writes is detectable — `repairCutIntents` completes the revert
-      // WHY: from the same rows on the next run (04b-rem P2-1: durability, not reordering).
       await saveCutIntent(txnId, requestedAbsolutePath, "revert");
 
-      // WHY: test-only observation seam (04b-rem2 R2), the revert-side mirror of
-      // WHY: `onBeforeFirstCutWrite`: it fires BEFORE the first revert write, while every member
-      // WHY: still sits at the cut's post bytes, so the write-ahead ordering is observable here too.
       const undoCtx = ctx as { onBeforeUndoWrites?: () => void | Promise<void> };
       if (undoCtx?.onBeforeUndoWrites) await undoCtx.onBeforeUndoWrites();
 
-      // WHY: durable revert, STEP 2: this call owns the window it opens — a failed write first
-      // WHY: COMPLETES the revert inline over the remaining members. Only a completion that is
-      // WHY: itself defeated refuses: rows and intent stay intact for the next-run repair.
       const reverted = new Set<string>();
       let defeated: UndoMember | undefined;
       for (const plan of plans) {
         try {
           await writeAtomic(plan.member.absolutePath, plan.restoreBytes);
           reverted.add(plan.member.absolutePath);
-          // WHY: test-only fault-injection seam, the undo-side mirror of `onCutBetweenWrites`:
-          // WHY: it fires INSIDE the revert window, after each member write is durable.
           const seam = (
             ctx as { onUndoBetweenWrites?: (writtenAbsolutePath: string) => void | Promise<void> }
           )?.onUndoBetweenWrites;
@@ -426,10 +401,6 @@ async function undoCorrelatedTransaction(
         };
       }
 
-      // WHY: durable revert, STEP 3: every byte landed. The store commit per member keeps the same
-      // WHY: single-transaction shape and the same non-fatal deferred-sync semantics; then ONE clear
-      // WHY: retires the whole transaction's rows — never member by member, which is what degraded
-      // WHY: the retry into "No undo history".
       const sections: {
         member: UndoMember;
         diff: string;
@@ -464,8 +435,7 @@ async function undoCorrelatedTransaction(
             },
           );
         } catch (error) {
-          // WHY: section 3.6.2 post-write semantics — the bytes are back on disk, so the member
-          // WHY: is never rolled forward again; the store re-materializes on the next read.
+          // Ref: docs/spec/content-addressed-line-identity-mvcc.md
           reportDiagnostic("edit-undo", "Failed to commit the undo restore transaction:", error);
           deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
         }
@@ -488,8 +458,6 @@ async function undoCorrelatedTransaction(
       try {
         await dropCutIntent(txnId);
       } catch (error) {
-        // WHY: every byte and both row clears committed — an orphan revert intent resolves to
-        // WHY: "every member at pre" on the next run and retires itself; the undo stands.
         reportDiagnostic("edit-undo", "Failed to clear the revert intent after commit:", error);
       }
 
@@ -512,7 +480,6 @@ async function undoCorrelatedTransaction(
       const totalAdded = sections.reduce((sum, s) => sum + s.addedByEdit, 0);
       const totalRemoved = sections.reduce((sum, s) => sum + s.removedByEdit, 0);
       const details: EditDetails = {
-        // WHY: the same `--- path ---` sections the edit response uses for multi-file batches, so a revert reads like a cut.
         diff: sections.map((s) => `--- ${s.member.displayPath} ---\n${s.diff}`).join("\n"),
         ...(requestedRange?.firstChangedLine !== undefined
           ? { firstChangedLine: requestedRange.firstChangedLine }
@@ -589,13 +556,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
               ctx,
             );
           } catch (error) {
-            // WHY: an unexpected failure must never escape the tool as a raw non-[MODEL] throw — the
-            // WHY: registry's E_UNKNOWN envelope is what renders an audience and a code.
-            // WHY: The diagnostic precedes BOTH exits — the payload-shaped refusal returns early — so
-            // WHY: an operator still sees the failure that produced it.
             reportDiagnostic("edit-undo", "Unexpected failure in correlated undo:", error);
-            // WHY: the subject must be stamped BEFORE the E_UNKNOWN envelope below, or that
-            // WHY: conversion would replace the tool's own name and hide which call to repair.
             const stamped = withPayloadSubject(error, "undo_last_edit");
             if (stamped instanceof DomainError && stamped.code === "E_BAD_PAYLOAD") {
               return {
@@ -622,8 +583,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
         }
 
         return withFileMutationQueue(mutationTargetPath, async () => {
-          // WHY: a stale file is different BYTES, not different decoded text — the comparison reads
-          // WHY: through the file layer's primitive exactly as the correlated arm does.
           const currentBytes = await readBytes(mutationTargetPath).catch((error: unknown) => {
             if (errCode(error) === "ENOENT") return undefined;
             throw error;
@@ -666,26 +625,16 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
           const { text: currentStripped } = stripBOM(currentRaw);
           const currentNormalized = toLF(currentStripped);
-          // WHY: undo_last_edit is one of the five universal serve hooks (spec §6), so its served
-          // WHY: state must use the SAME session key as `read`/`edit`; a literal fallback wrote leases
-          // WHY: under a different session id and forced the model into a fail-closed retry loop.
           const sessionKeyForUndo = sessionKeyFor(
             // SAFETY: the pi context is typed for the extension host, which exposes `sessionManager`
             // SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.
             ctx as unknown as { sessionManager?: { getSessionId(): string } },
           );
-          // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
-          // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
           const storedIsCurrentGeneration = (undo.anchorGeneration ?? 0) === ANCHOR_GENERATION;
           const restoredContentHash = storedIsCurrentGeneration
             ? (undo.snapshotHash ?? snapshotHashFor(undo.content))
             : snapshotHashFor(undo.content);
           const restoredLineCount = splitLines(undo.content).length;
-          // WHY: the pinned snapshot is the authority for the restored rows (spec §3.1.4 step 4:
-          // WHY: presentation anchors are never re-derived). The retired blocked-hashes path minted
-          // WHY: fresh anchors for lines the edit had displaced — anchors absent from the adopted
-          // WHY: lineage, so no `served_leases` row could ever reference them and the model was
-          // WHY: forced into a `read` before it could edit again (Probe §7.2.9).
           // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
           let restoredHashes: string[];
           try {
@@ -695,18 +644,12 @@ export function regEditUndo(pi: ExtensionAPI): void {
                 ? undo.hashes
                 : await restoreHashes(undo.content, mutationTargetPath));
           } catch (error) {
-            // WHY: best-effort anchor recovery — a failed pinned-snapshot lookup falls back to the
-            // WHY: stored current-generation hashes or a fresh derivation, so the restore and diff stand.
             reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
             restoredHashes = storedIsCurrentGeneration
               ? undo.hashes
               : await restoreHashes(undo.content, mutationTargetPath);
           }
           const currentHashes = await restoreHashes(currentNormalized, mutationTargetPath);
-          // WHY: #173 — the counts come from the source line multisets, never from the rendered
-          // WHY: projection: a deleted run past DIFF_REMOVED_CAP collapses behind a marker row at
-          // WHY: context 0, so counting `-` rows underreported the restored lines (#169). Added is a
-          // WHY: line present in the file beyond its count in `undo.content`; removed is the converse.
           const remainingUndoCounts = new Map<string, number>();
           for (const line of visLines(undo.content)) {
             remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
@@ -729,9 +672,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
           );
           const undoDiff = undoDiffResult.diff;
           const undoDenseRows = denseServeRows(restoredHashes);
-          // WHY: CAND-3 (#117 discipline): displaced-anchor retirement is a store mutation, so it must
-          // WHY: not run before `writeAtomic` — a restore that never committed bytes must retire
-          // WHY: nothing; the set difference is pure, and the retirement rides the transaction.
           const curSet = new Set(currentHashes);
           const restoredSet = new Set(restoredHashes);
           const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
@@ -744,11 +684,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
           );
 
           try {
-            // WHY: the undo revert is ONE store transaction (spec §3.1.2, CAND-3): the pinned-snapshot
-            // WHY: adopt, the authoritative `served_leases.retired_at` writer (spec §3.1.3), the lease
-            // WHY: upsert, the served mirror write and the displaced-anchor retire share a single
-            // WHY: `BEGIN IMMEDIATE` / `withBusyRetry`. Splitting them left lease-without-mirror or
-            // WHY: mirror-without-lease states whenever a later step failed; one failure is one rollback.
             await adoptPinnedSnapshotFor(
               {
                 path: mutationTargetPath,
@@ -759,11 +694,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
               },
               {
                 retireLeases: true,
-                // WHY: the restored rows are the serve this hook owes the model (spec §6 path 5): the
-                // WHY: leases bind to the snapshot actually served, so the pin is named, not `S_latest`.
                 leases: { sessionKey: sessionKeyForUndo, rows: undoDenseRows },
-                // WHY: the served mirror is (re-)written here because it is the record the reject
-                // WHY: paths serve rows from; its shape reproduces `recordTruncated(rows, lineCount, 0)`.
                 servedMirror: {
                   sessionKey: sessionKeyForUndo,
                   rows: undoDenseRows,
@@ -773,9 +704,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
               },
             );
           } catch (error) {
-            // WHY: §3.6.2 post-write semantics — the restore transaction failed AFTER `writeAtomic`
-            // WHY: put the bytes back, so the file is never rolled back. The result still reports
-            // WHY: success and names the deferred synchronization; the next call re-materializes.
             reportDiagnostic("edit-undo", "Failed to commit the undo restore transaction:", error);
             deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
           }
@@ -788,8 +716,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
               `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
             );
           }
-          // WHY: CAND-3 truthful degradation: the success claim is byte-identical, but the diff rows
-          // WHY: were NOT served, so the message names the warning instead of overstating fresh anchors.
           parts.push(
             deferredSyncWarnings.length > 0
               ? "File reverted; store synchronization is deferred (see the warning below), so the diff rows are not anchored for follow-up edits until the next read."
@@ -797,7 +723,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
           );
           parts.push(...deferredSyncWarnings);
 
-          // WHY: the restored range is authoritative; the rendered diff is the fallback, and either may be absent.
           const firstChangedLine =
             restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine;
           const lastChangedLine = restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine;

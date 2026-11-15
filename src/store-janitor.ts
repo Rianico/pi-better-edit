@@ -174,27 +174,15 @@ export function runJanitor(input: {
   if (!due(db, JANITOR_META_KEY, settings.intervalMs, now)) return skipped("throttled");
 
   const batchSize = settings.batchSize;
-  // WHY: the generation family, in the sweep's own order: leases are swept before the snapshots they
-  // WHY: name (a lease whose snapshot a later batch removes is swept as dangling), and lineage after
-  // WHY: the snapshots that cascade it. All four predicates are the sweep's, imported — not restated.
   const deletions = collectGarbage(db, now, batchSize);
-  // WHY: a GC pass leaves free pages in the file; compaction is the only step that gives them back
-  // WHY: to the filesystem. It runs after the sweep, in autocommit, on this maintenance boundary —
-  // WHY: never inside a read/edit transaction — and defers rather than waits when a rival writer
-  // WHY: holds the store. A failed sweep skips it: a damaged store is the deep check's business.
   // Ref: docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md
   const compacted =
     deletions === undefined
       ? NOTHING_COMPACTED
       : compactStore(db, input.compactMinFreeBytes ?? STORE_COMPACT_MIN_FREE_BYTES);
 
-  // WHY: the mark belongs only to a run whose GC COMPLETED — the primitives' contract is that "ran"
-  // WHY: means "did something", so a sweep that threw stays due and retries at the next lifecycle
-  // WHY: event instead of hiding for an interval. It precedes the deep check, which may close this db.
   if (deletions !== undefined) markRun(db, JANITOR_META_KEY, now);
 
-  // WHY: the deep check runs even when the GC threw (#100): damaged pages are exactly why the GC may
-  // WHY: fail, so detection must not depend on the cleanup it exists to trigger a heal for.
   return {
     ran: true,
     deleted: deletions ?? NOTHING_DELETED,
@@ -232,9 +220,6 @@ function collectGarbage(
     );
     const lineage = deleteInBatches(db, "line_lineage", ORPHAN_LINEAGE_SQL, [], batchSize);
     const dangling = deleteInBatches(db, "served_leases", DANGLING_LEASE_SQL, [], batchSize);
-    // WHY: an ACTIVE lease past the session TTL is a dead row under hard expiry — no resolution
-    // WHY: authority and no pin authority — yet it inflated every lease index and the vacuum's per-
-    // WHY: EXISTS probe. Deleted AFTER the dangling sweep, so a swept dead lease is not revisited.
     // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
     const expiredActive = deleteInBatches(
       db,
@@ -257,7 +242,6 @@ function collectGarbage(
       expiredLeases: expiredActive + expiredRetired,
     };
   } catch (error) {
-    // WHY: a failed sweep removes nothing and stays due for the next run; the deep check decides whether this store needs the open path's recovery instead.
     reportDiagnostic("store-janitor", "[store-janitor] GC pass failed:", error);
     return undefined;
   }
@@ -293,8 +277,6 @@ function pragmaNumber(db: DatabaseSync, sql: string): number {
  * torn down (#199). The warning pipeline renders this outcome on the surface its event owns.
  */
 function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome {
-  // WHY: VACUUM cannot run inside a transaction. The janitor runs in autocommit, so this is a
-  // WHY: defensive deferral for a caller that hands in a transaction, not an expected path.
   // SAFETY: node:sqlite exposes `isTransaction` at runtime although DatabaseSync's public type omits it;
   // SAFETY: a missing flag reads as autocommit, which is the janitor's own normal state.
   const inTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
@@ -335,9 +317,6 @@ function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome
     try {
       db.exec(`PRAGMA busy_timeout = ${previousTimeout}`);
     } catch (error) {
-      // WHY: best-effort restore — the compaction outcome is authoritative, and the next open
-      // WHY: re-applies the store's own busy timeout. Log-only, never the console: this catch is
-      // WHY: reachable from the shutdown surface, where the console is already torn down (#199).
       reportDiagnostic("store-janitor", "[store-janitor] failed to restore busy timeout:", error);
     }
   }
@@ -368,8 +347,6 @@ export interface JanitorPassOptions {
 export async function janitorPass(options: JanitorPassOptions = {}): Promise<JanitorOutcome> {
   const settings =
     options.settings ?? resolveStoreJanitorSettings(options.cwd ?? process.cwd(), options.onWarn);
-  // WHY: the early return: mode `off` means "leave this store untouched", so it must not even OPEN
-  // WHY: the store — an open is the store's own maintenance boundary (sweep, TTL prune, vacuum).
   if (settings.mode === "off") return skipped("off");
 
   const db = options.db ?? (await loadHashStore()).db;
@@ -416,8 +393,6 @@ function publishJanitorWarning(outcome: JanitorOutcome, surface: JanitorWarningS
   if (warning === null) return;
   if (surface === "console") printJanitorWarning(warning);
   const report = warning.level === "info" ? reportInfo : reportWarning;
-  // WHY: one record joined by newlines — the damaged-store lines stay separate so a reader can quote
-  // WHY: one alone, and a JSONL record escapes the breaks while keeping every line intact.
   report("store-janitor", recordBody(outcome, warning));
 }
 
@@ -449,9 +424,7 @@ function printJanitorWarning(warning: JanitorWarning): void {
       if (warning.level === "info") console.info(line);
       else console.error(line);
     }
-  } catch {
-    // WHY: best-effort notice — the diagnostics record written next is the surface that survives.
-  }
+  } catch {}
 }
 
 /**
@@ -476,9 +449,6 @@ export function registerJanitorHooks(
     try {
       publishJanitorWarning(await deps.runJanitor(), surface);
     } catch (error) {
-      // WHY: best-effort maintenance — a failed run leaves the store exactly as it was (every step is
-      // WHY: idempotent and carries its own throttle record), so the session continues and the next
-      // WHY: lifecycle event retries; the publish cannot throw, so this catch stays the pass's alone.
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };

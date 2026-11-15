@@ -14,18 +14,9 @@ import { configDefaults, defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    // WHY: (#89) pin the hash store into a per-worker temp dir BEFORE any test module is imported, so
-    // WHY: no test can open the developer's real ~/.local/state/pi-better-edit/hash-store.sqlite,
-    // WHY: and none can rename a real ~/.pi/agents settings file during adoption (#190).
-    // WHY: test/support/isolate-store.ts records why this is a worker-level seam.
     setupFiles: ["./test/support/isolate-store.ts"],
     testTimeout: 20_000,
     hookTimeout: 30_000,
-    // WHY: (#87) a scratch *.test.ts under a tmp/ or temp/ anywhere — root or nested — joined the suite
-    // WHY: and failed the gate on a clean tree. Spread the defaults, never hand-roll: an upgrade cannot
-    // WHY: silently drop one. This exclude is PROTECTIVE (`**/`), deliberately broader than the
-    // WHY: CONSERVATIVE root-anchored `/tmp/` in .gitignore: its narrow form must not hide a
-    // WHY: legitimately-named nested tmp/ inside a source tree.
     exclude: [...configDefaults.exclude, "**/tmp/**", "**/temp/**"],
   },
 });

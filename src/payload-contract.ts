@@ -139,16 +139,14 @@ export const editModeSchema = Type.Union([Type.Literal("general"), Type.Literal(
     'How to treat bytes reproducing served rows: "general" refuses them, "literal" declares them as intended file content',
 });
 
-// WHY: permissive-but-typed (ticket-04): exactly-one-payload and the finite key sets belong to the
-// WHY: admission analyzer, not the schema — which still refuses unknown keys at the pi seam.
+/**
+ * Permissive-but-typed (ticket-04): exactly-one-payload and the finite key sets belong to the
+ * admission analyzer, not the schema — which still refuses unknown keys at the pi seam.
+ */
 export const editItemSchema = Type.Object(
   {
     anchor_from: anchorFromSchema,
     anchor_to: anchorToSchema,
-    // WHY: (binary-selection-remediation Option C) every optional property is NULLABLE so the served
-    // WHY: schema agrees with admission: `null` reads as absent (`foldAbsentSlots`), in TypeBox's
-    // WHY: `anyOf: [<schema>, {"type":"null"}]` spelling — the one pi's strict compiler emits
-    // WHY: (`makeJsonSchemaNodeStrict`). Required properties stay non-nullable on purpose.
     // Ref: docs/.archive_adrs/0036-optional-wire-fields-declared-nullable.md
     at: Type.Optional(Type.Union([editAtSchema, Type.Null()])),
     text: Type.Optional(
@@ -160,7 +158,6 @@ export const editItemSchema = Type.Object(
     text_ref: Type.Optional(Type.Union([textRefSchema, Type.Null()])),
   },
   {
-    // WHY: (ticket-67, CORRECTION-1) no oneOf/anyOf union here by trade-off: available today, but it would foreclose a future strict constrained-decoding opt-in; admission-time XOR already enforces the rule.
     additionalProperties: false,
     description:
       'Exactly one payload per item: supply "text" or "text_ref", never both (a null in an optional field reads as absent; every anchor and "text_ref.mode" are required).',
@@ -240,8 +237,6 @@ function quoted(keys: string[]): string {
 function sanitizePath(value: unknown): string | null {
   if (typeof value !== "string") return null;
   let s = value.trim();
-  // WHY: Gemma 4 bleed: the model may wrap the path in <|>, │, |, quotes or backticks (│ confusion,
-  // WHY: issue #55), and may re-wrap after one strip — so the strip repeats until stable.
   let changed = true;
   while (changed) {
     changed = false;
@@ -277,8 +272,10 @@ function sanitizePath(value: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
-// WHY: (ticket-04 §3) an item is legal only on set EQUALITY with one of the four shapes below,
-// WHY: never a superset — a legacy key, an `op` field, both payloads or neither all refuse.
+/**
+ * An item is legal only on set EQUALITY with one of the four shapes below, never a superset — a
+ * legacy key, an `op` field, both payloads or neither all refuse.
+ */
 const ITEM_KEY_SETS: readonly (readonly string[])[] = [
   ["anchor_from", "anchor_to", "text"],
   ["anchor_from", "anchor_to", "at", "text"],
@@ -295,21 +292,17 @@ function isLegalItemKeySet(keys: Set<string>): boolean {
   return ITEM_KEY_SETS.some((shape) => keySetEquals(keys, shape));
 }
 
-// WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
 const AT_SPELLINGS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
 
-// WHY: (ticket-67) strict structured-output harnesses spell "absent" as an explicit `null` (every
-// WHY: property required), so key existence alone lies: `{ text: "…", text_ref: null }` was refused
-// WHY: as carrying both. `null`/`undefined` therefore reads as ABSENT in all four optional slots —
-// WHY: one predicate, so gate, validators and normalizers cannot disagree. (ticket-75) the nested
-// WHY: `text_ref.file` is that slot one level down: an emitted `"file": null` refused a call no
-// WHY: retry could satisfy — the #67 class, one object deeper.
+// Ref: docs/.archive_adrs/0036-optional-wire-fields-declared-nullable.md
 function isAbsentValue(value: unknown): value is null | undefined {
   return value === null || value === undefined;
 }
 
-// WHY: (ticket-75) ONE fold site for the declaration and the stored item: the optional slots and
-// WHY: the nested `file` fold together, so no second fold site can store what the gate did not read.
+/**
+ * ONE fold site for the declaration and the stored item: the optional slots and the nested
+ * `file` fold together, so no second fold site can store what the gate did not read.
+ */
 function foldAbsentSlots(item: Record<string, unknown>): Record<string, unknown> {
   const folded: Record<string, unknown> = { ...item };
   for (const key of ["text", "text_ref", "at"] as const) {
@@ -337,8 +330,6 @@ function analyzeItem(value: unknown, index: number): string | undefined {
         `Choice B (copy/cut served span): keep "text_ref" and delete "text" from the JSON object.`
       );
     }
-    // WHY: (§9.3) an illegal key set is often also MISSING a required key; the unsupported-field
-    // WHY: list alone renders blank there, so the refusal must name the missing keys too.
     const payloadKeys = new Set(["anchor_from", "anchor_to", "at", "text", "text_ref"]);
     const offending = [...keys].filter((key) => !payloadKeys.has(key));
     const missing = ["anchor_from", "anchor_to"].filter((key) => !keys.has(key));
@@ -392,8 +383,6 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   if ("file" in text_ref && typeof refFile !== "string") {
     return `edit[${index}] "text_ref" "file" must be a string naming the served file to read from — omit "file" to reference this file.`;
   }
-  // WHY: (§9.2) an empty "file" was admitted and only failed deep in the loader as
-  // WHY: `[E_UNSUPPORTED_FILE] Path is a directory: .` — the field-level refusal belongs here.
   if (refFile === "") {
     return `edit[${index}] "text_ref" "file" must name a served file to read from — an empty string is not a path (omit "file" to reference this file).`;
   }
@@ -403,11 +392,6 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   return undefined;
 }
 
-// WHY: (remediation-2 B3 → ticket-04b) a second, LEXICAL "same file" test here used to refuse
-// WHY: foreign `mode: "cut"` at admission. One definition owns the question — the engine's realpath
-// WHY: classification (`sameResolvedPath`) — so admission stays a pure shape check and admits a
-// WHY: foreign cut as one correlated transaction (`runCutTransaction`), witnessed by
-// WHY: `edit.wire-contract.test.ts` and `edit.foreign-cut.test.ts`.
 // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
 /**
  * The single admission analyzer shared by `editRequestFrom` (normReq), `prepareEditArguments` and
@@ -466,7 +450,6 @@ function analyzeRequest(input: unknown): Admission {
   const failures: string[] = [];
   const edited: EditItem[] = [];
   for (let index = 0; index < items.length; index++) {
-    // WHY: (ticket-75) fold BEFORE validation, so the item the gate reads is the item stored.
     const raw = items[index];
     const item = isRec(raw) ? foldAbsentSlots(raw) : raw;
     const refusal = analyzeItem(item, index);
@@ -567,8 +550,6 @@ function isNormalizedEditItem(value: unknown): value is NormalizedEditItem {
 
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
-    // WHY: a raw (un-normalized) request reaching assertReq must hit the SAME finite key-set gate
-    // WHY: as `prepareEditArguments` — one analyzer, one refusal message, both entry points.
     const admitted = analyzeRequest(request);
     if (!admitted.ok) {
       throw new DomainError("E_BAD_PAYLOAD", { message: admitted.message });
@@ -596,7 +577,6 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     });
   }
 
-  // WHY: `file` was answered at admission (`analyzeRequest`); re-checking it would duplicate the rule.
   if (!Array.isArray(request.edits) || request.edits.length === 0) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: 'Edit request requires a non-empty "edits" array.',
@@ -610,10 +590,6 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
         message: `Edit request edits[${index}] must be { target, at, payload } with exactly one payload: text content, a served-span reference with mode "copy" or "cut", or a deletion (no content).`,
       });
     }
-    // WHY: (ticket-04 item (i), remediation-2 B4) the wire folds `"text": ""` into the deletion
-    // WHY: payload, so this guard defends direct `assertReq` callers only — the engine seam's
-    // WHY: enforcement point is `parseEdits` in `mutation-engine/pipeline.ts`, which `execute()`
-    // WHY: cannot bypass; the message names the wire field `"text"` to stay model-actionable.
     if (item.payload.kind === "literal" && item.payload.text === "") {
       throw new DomainError("E_BAD_PAYLOAD", {
         message: `Edit request edits[${index}] "text" must carry at least one line; "text": "" is the deletion payload. Nothing was written.`,

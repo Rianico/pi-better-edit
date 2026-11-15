@@ -142,7 +142,6 @@ export function saveBashViewConfig(
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `bash.view` is ours — the existing `$schema` and every other key belong to the user.
   updateConfigFile(path, (existing) => ({
     ...existing,
     bash: { ...(isRecord(existing.bash) ? existing.bash : {}), [BASH_VIEW_KEY]: mode },

@@ -1,14 +1,10 @@
 /**
  * AST-guarded classification of bash commands into slice-accurate file views.
  *
- * WHY pure: the chain rule, the slice algebra, and every adversarial guard are AST predicates
- * (docs/.archive_adrs/0033-bash-view-interception.md D1/D2/D5) — unit-testable without fixtures or
- * the pi runtime; the lifecycle layer applies the result to the disk re-read, never the filesystem.
- *
- * WHY unbash over regex: no pattern tells `cat f > g` (mutation) from `cat f` (view), nor
- * `cat $F` (expansion) from `cat f` (literal). Redirects, heredocs, substitutions and
- * expansions are AST nodes, so fail-closed is the absence of a proof rather than the
- * presence of a pattern.
+ * Every guard here is an AST predicate (docs/.archive_adrs/0033-bash-view-interception.md D1/D2/D5),
+ * which keeps the module pure: unit-testable without fixtures or the pi runtime, with the lifecycle
+ * layer applying the result to the disk re-read rather than to the filesystem. Because the parse is
+ * the oracle, fail-closed is the absence of a proof rather than the absence of a pattern that matched.
  */
 import type { Command, Pipeline, Statement, Word } from "unbash";
 import { BASH_SEARCH_MAX_FILES } from "./constants.js";
@@ -34,16 +30,16 @@ export type SliceOp =
   | { kind: "range"; from: number; to: number };
 
 /**
- * WHY: (item 9) a content filter cannot fold over `LineInterval[]` — that algebra is count-
- * based, so keep/drop needs the line bytes. These ops carry the filter through the ordered
- * stage array; the lifecycle layer folds them over `(true line, stream text)` pairs and
- * byte-gates the recomputed output against observed stdout. Matching is literal substring,
- * so a regex-looking pattern fails that gate and passes through raw.
- * WHY: (item 11) `sortUnique`, `uniq` and `count` are the line-SET consumers: `sortUnique`
- * dedupes by text keeping the FIRST occurrence's true line, then orders by raw bytes; `uniq`
- * collapses ADJACENT equal runs keeping each run head; `count` consumes the whole stream,
- * emits its length, and is terminal — `parseViewSegment` refuses any stage after it. The
- * first two reorder the stream, so the render states the order and every lease keeps its true line.
+ * A content filter cannot fold over `LineInterval[]` — that algebra is count-based, so keep/drop
+ * needs the line bytes. These ops carry the filter through the ordered stage array; the lifecycle
+ * layer folds them over `(true line, stream text)` pairs and byte-gates the recomputed output against
+ * observed stdout. Matching is literal substring, so a regex-looking pattern fails that gate and
+ * passes through raw.
+ *
+ * `sortUnique`, `uniq` and `count` are the line-SET consumers: `sortUnique` dedupes by text keeping
+ * the FIRST occurrence's true line, then orders by raw bytes; `uniq` collapses ADJACENT equal runs
+ * keeping each run head; `count` consumes the whole stream, emits its length, and is terminal —
+ * `parseViewSegment` refuses any stage after it; both reordering ops keep every lease on its true line.
  */
 type ContentOp =
   | { kind: "keep"; pattern: string }
@@ -53,16 +49,15 @@ type ContentOp =
   | { kind: "count" };
 
 /**
- * WHY: (item 9) one ordered pipeline stage. A single fold-left array keeps `grep|head` and
- * WHY: `head|grep` distinguishable by position; `SliceOp` is a structural subset, so every
- * WHY: Tier-1/2 `toEqual` literal still matches.
+ * One ordered pipeline stage: the fold is left over this array, which is what keeps `grep|head` and
+ * `head|grep` distinguishable by position. `SliceOp` is a structural subset of this union.
  */
 export type ViewOp = SliceOp | ContentOp;
 
 /**
- * WHY: (item 11) the union split is a total function, not a hand-rolled predicate: every arm is
- * WHY: named here, so a new `ViewOp` kind fails `pnpm run typecheck` at this switch instead of
- * WHY: being classified as a slice and folded through the interval algebra by accident.
+ * A total split, not a hand-rolled predicate: every arm is named here, so a new `ViewOp` kind fails
+ * `pnpm run typecheck` at this switch instead of being classified as a slice and folded through the
+ * interval algebra by accident.
  */
 export function isContentOp(viewOp: ViewOp): viewOp is ContentOp {
   switch (viewOp.kind) {
@@ -95,11 +90,11 @@ export interface LineInterval {
 }
 
 /**
- * WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D2) the closed
- * display-transform set. The transform is never served: the lifecycle re-runs it over the re-read
- * raw slice to prove the observed stdout, then serves the raw rows and leases only those rows.
- * `cat -vet` is the BSD/GNU-portable spelling of `cat -A`; both are admitted because the oracle
- * compares the actual transform bytes.
+ * The closed display-transform set (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md
+ * D2). The transform is never served: the lifecycle re-runs it over the re-read raw slice to prove
+ * the observed stdout, then serves the raw rows and leases only those rows. `cat -vet` is the
+ * BSD/GNU-portable spelling of `cat -A`; both are admitted because the oracle compares the actual
+ * transform bytes.
  */
 type DisplayTransformKind = "cat-A" | "cat-vet" | "od-c" | "xxd" | "hexdump-C";
 export interface DisplayTransform {
@@ -124,8 +119,8 @@ export interface BashView {
 }
 
 /**
- * WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3 — context
- * searches) the window one search asked `grep`/`rg` to print around every match: `-B` /
+ * The window one search asked `grep`/`rg` to print around every match
+ * (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3): `-B` /
  * `--before-context` lines before it, `-A` / `--after-context` after it, `-C` / `--context` both.
  * The seam carries the window, not just "context was requested", because every served context row
  * must fall inside SOME match's window — that membership check is the search's own prediction half
@@ -156,9 +151,9 @@ export interface BashSearch {
   /** Resolution base for a single pre-view literal `cd` — the view rule verbatim (docs/.archive_adrs/0033-bash-view-interception.md D1). */
   baseDir?: string;
   /**
-   * WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) present
-   * only when the search asked for a context window. Absent keeps every Tier-1 `toEqual` literal
-   * byte-identical and the admitted stdout geometry strictly `LINE:content`.
+   * Present only when the search asked for a context window
+   * (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3). Absent keeps
+   * every Tier-1 `toEqual` literal byte-identical and the stdout geometry strictly `LINE:content`.
    */
   context?: BashSearchContext;
 }
@@ -167,9 +162,9 @@ export interface BashSearch {
 export type SearchProgram = "grep" | "rg";
 
 /**
- * WHY: (item 10) `grep`/`rg PATTERN FILE...` — two or more explicit files, no recursion flag.
- * WHY: Every operand is a FILE, so the stdout geometry is the `FILE:LINE:content` triple that
- * WHY: its own serve seam parses; the single-file `BashSearch` above is left byte-identical.
+ * `grep`/`rg PATTERN FILE...` — two or more explicit files, no recursion flag. Every operand is a
+ * FILE, so the stdout geometry is the `FILE:LINE:content` triple its own serve seam parses; the
+ * single-file `BashSearch` above is left byte-identical.
  */
 export interface BashMultiSearch {
   program: SearchProgram;
@@ -181,7 +176,7 @@ export interface BashMultiSearch {
   baseDir?: string;
 }
 
-/** WHY: (item 10) `grep -r PATTERN DIR` — exactly one explicit dir (or file) operand. */
+/** `grep -r PATTERN DIR` — exactly one explicit dir (or file) operand. */
 export interface BashRecursiveSearch {
   program: SearchProgram;
   pattern: string;
@@ -191,7 +186,7 @@ export interface BashRecursiveSearch {
   baseDir?: string;
 }
 
-/** WHY: (item 10) `rg --files [DIR]` — an anchorless, existence-checked path list. */
+/** `rg --files [DIR]` — an anchorless, existence-checked path list. */
 export interface BashFilesList {
   program: "rg";
   /** Optional explicit list root exactly as written; absent means the effective cwd. */
@@ -200,15 +195,15 @@ export interface BashFilesList {
 }
 
 /**
- * WHY: (docs/.archive_adrs/0049-multi-file-bash-views.md M1) a standalone multi-file view:
- * `cat FILE...`, `cat -n FILE...`, `nl -ba FILE...`, or `sed -n RANGE FILE...` over two or more
- * newline-terminated text files. Operands stay exactly as written (one page each, in operand
- * order) so the lifecycle layer resolves the same paths bash opened; `lineNumbered` names the
- * folded over the STREAM (files laid end to end) — how a `sed -n` range spanning files needs no byte path.
+ * A standalone multi-file view (docs/.archive_adrs/0049-multi-file-bash-views.md M1): `cat FILE...`,
+ * `cat -n FILE...`, `nl -ba FILE...`, or `sed -n RANGE FILE...` over two or more newline-terminated
+ * text files. Operands stay exactly as written (one page each, in operand order) so the lifecycle
+ * layer resolves the same paths bash opened; `lineNumbered` names the numbering transform and `ops`
+ * fold over the STREAM (files laid end to end) — how a `sed -n` range spanning files needs no byte path.
  *
- * WHY its own tag rather than a widened `BashView`: one `filePath` cannot describe N pages, and
- * the serve seam that proves line-count boundaries is a different seam; the single-file shape
- * keeps its exact `toEqual` contract.
+ * Its own tag rather than a widened `BashView`: one `filePath` cannot describe N pages, and the
+ * serve seam that proves line-count boundaries is a different seam; the single-file shape keeps
+ * its exact `toEqual` contract.
  */
 export interface BashMultiView {
   /** The program exactly as written (`cat`, `nl`, or `sed`). */
@@ -225,9 +220,9 @@ export interface BashMultiView {
 }
 
 /**
- * WHY: (item 10) the admitted search family, tagged by stdout geometry so each shape gets its
- * WHY: own serve seam. `pureSearch` is the Tier-1/2 single-file shape and keeps its exact
- * WHY: `toEqual` contract; the three new tags never reshape it.
+ * The admitted search family, tagged by stdout geometry so each shape gets its own serve seam.
+ * `pureSearch` is the Tier-1/2 single-file shape and keeps its exact `toEqual` contract; the
+ * three multi/recursive/files tags never reshape it.
  */
 export type SearchFamily =
   | { kind: "pureSearch"; search: BashSearch }
@@ -296,7 +291,6 @@ const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
   "--word-regexp",
   "-x",
   "--line-regexp",
-  // WHY: only the `never` value is admitted — `--color`, `--color=auto` and `--color=always` all change or fail to change the row geometry unpredictably.
   "--color=never",
   "--colour=never",
 ]);
@@ -312,20 +306,23 @@ const SEARCH_SHORT_LETTERS: ReadonlySet<string> = new Set(["n", "i", "F", "E", "
 /** The context options' value kind: `-B` prints before a match, `-A` after it, `-C` both. */
 type SearchContextKind = "before" | "after" | "both";
 
-/** WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) the short
- * context letters and what each selects. They are NOT in `SEARCH_SHORT_LETTERS`: each takes a
- * value from the NEXT argument, exactly like `m`/`e`, and the cluster loop special-cases them
- * below. D3 names `grep -A/-B/-C` and `rg -C` only, so rg's equally valid `-A`/`-B` stay denied. */
+/**
+ * The short context letters and what each selects
+ * (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3). They are NOT in
+ * `SEARCH_SHORT_LETTERS`: each takes a value from the NEXT argument, exactly like `m`/`e`, and the
+ * cluster loop special-cases them below. D3 names `grep -A/-B/-C` and `rg -C` only, so rg's equally
+ * valid `-A`/`-B` stay denied. */
 const SEARCH_CONTEXT_SHORT_LETTERS: ReadonlyMap<string, SearchContextKind> = new Map([
   ["A", "after"],
   ["B", "before"],
   ["C", "both"],
 ]);
 
-/** WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3)
- * `--after-context`, `--before-context`, `--context` — the long context spellings, granted to
- * `grep` alone because D3 states them inside the `grep` clause and grants `rg` only `-C`. Both
- * value spellings (`--context 3` and `--context=3`) are the same option, so both are admitted. */
+/**
+ * `--after-context`, `--before-context`, `--context` — the long context spellings, granted to `grep`
+ * alone because docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3 states
+ * them inside the `grep` clause and grants `rg` only `-C`. Both value spellings (`--context 3` and
+ * `--context=3`) are the same option, so both are admitted. */
 const SEARCH_CONTEXT_LONG_FLAGS: ReadonlyMap<string, SearchContextKind> = new Map([
   ["--after-context", "after"],
   ["--before-context", "before"],
@@ -394,7 +391,6 @@ function isPositiveCount(value: string | undefined): boolean {
  */
 function literalValue(word: Word | undefined): string | undefined {
   if (!word) return undefined;
-  // WHY: `parts` is a lazy prototype getter (R5): read it directly once, never spread or `Object.keys`.
   const parts = word.parts;
   if (parts === undefined) {
     if (UNQUOTED_GLOB.test(word.value)) return undefined;
@@ -535,22 +531,15 @@ interface SourceStage {
 
 /** Stages that consume the source file: `cat FILE`, or a file-direct filter. */
 function parseSourceStage(shape: StageShape): SourceStage | undefined {
-  // WHY: the `rtk` unwrap lives here (and only here) so every source position — bare commands,
-  // WHY: `&&` segments, pipeline stage zero — accepts it uniformly, while filter stages and
-  // WHY: silent commands never do.
   const stage = unwrapViewWrapper(shape);
   if (!stage) return undefined;
   if (stage.name === "cat") {
-    // WHY: (item 8) the numbered spelling is exactly `cat -n FILE`; a second flag, `--number`, `-nFILE` or a `-`-leading file stays raw.
     if (stage.args.length === 2 && stage.args[0] === "-n" && !stage.args[1].startsWith("-")) {
       return { filePath: stage.args[1], ops: [], lineNumbered: true };
     }
     if (stage.args.length !== 1 || stage.args[0].startsWith("-")) return undefined;
     return { filePath: stage.args[0], ops: [] };
   }
-  // WHY: (item 8) `nl -ba FILE` is the only admitted `nl` spelling — number all lines, the
-  // WHY: `cat -n` geometry — so `-b a`, `--body-numbering=a`, `-bn`, `-v`/`-i`/`-s`/`-w`/`-n*`
-  // WHY: and any extra operand stay raw.
   if (stage.name === "nl") {
     if (stage.args.length !== 2 || stage.args[0] !== "-ba" || stage.args[1].startsWith("-")) {
       return undefined;
@@ -571,9 +560,9 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
 }
 
 /**
- * WHY: (item 10) `rg --files [DIR]` — the anchorless path list. The shape is exactly the flag
- * WHY: plus zero or one non-`-` root; any other token (a pattern, another flag) fails closed,
- * WHY: because this shape has no match rows and therefore no `LINE:content` geometry at all.
+ * `rg --files [DIR]` — the anchorless path list. The shape is exactly the flag plus zero or one
+ * non-`-` root; any other token (a pattern, another flag) fails closed, because this shape has no
+ * match rows and therefore no `LINE:content` geometry at all.
  */
 function parseFilesListStage(stage: StageShape): BashFilesList | undefined {
   if (stage.name !== "rg") return undefined;
@@ -622,19 +611,14 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
       }
       const attachedMaxCount = SEARCH_MAX_COUNT_LONG.exec(arg);
       if (attachedMaxCount !== null) {
-        // WHY: `--max-count=N` is the only admitted `=`-long form; N must be a strictly positive integer literal.
         if (!isPositiveCount(attachedMaxCount[1])) return undefined;
         continue;
       }
-      // WHY: (item 10) grep's long recursion markers; rg's `--files` was handled whole above,
-      // WHY: so it can only reach here in a shape that fails the list gate and must stay denied.
       if (isGrep && SEARCH_GREP_RECURSIVE_FLAGS.has(arg)) {
         recursive = true;
         continue;
       }
-      // WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3 —
-      // WHY: context searches) the grep long context spellings, attached (`--context=3`) or
-      // WHY: separate (`--context 3`); D3 puts them in the `grep` clause, so other long options stay raw.
+      // Ref: docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3
       if (arg.startsWith("--")) {
         if (!isGrep) return undefined;
         const attached = SEARCH_CONTEXT_LONG_ATTACHED.exec(arg);
@@ -658,8 +642,6 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
         }
         return undefined;
       }
-      // WHY: explicit `-e` takes its pattern separately (`-e PAT`) exactly once; that value becomes
-      // WHY: THE pattern, so operands are then `[FILE]` — and a `-`-leading value is the point of `-e`.
       if (arg === "-e") {
         if (explicitPattern !== undefined) return undefined;
         const value = args.at(index + 1);
@@ -668,8 +650,6 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
         index += 1;
         continue;
       }
-      // WHY: attached `-ePAT` is handled BEFORE letter decomposition: `PAT` letters are not admitted
-      // WHY: flags, so decomposing would misread the pattern as a cluster (`-efoo` is `foo`, not `e f o o`).
       if (arg.startsWith("-e")) {
         if (explicitPattern !== undefined) return undefined;
         explicitPattern = arg.slice(2);
@@ -679,20 +659,13 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
       if (cluster.length === 0) return undefined;
       for (let position = 0; position < cluster.length; position++) {
         const letter = cluster[position];
-        // WHY: (item 10) `r`/`R` are grep's recursion markers and may sit anywhere in a cluster
-        // WHY: (`-rn`); for rg the same letters are `--replace` and stay denied.
         if (letter === "r" || letter === "R") {
           if (!isGrep) return undefined;
           recursive = true;
           continue;
         }
-        // WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) `-A`/
-        // WHY: `-B`/`-C` consume the NEXT argument exactly like `m`, so each must close the cluster
-        // WHY: (`-nC 2` admitted, `-C2` not — an attached value would read digits there, the same
-        // WHY: rule that keeps `-n5` out). `-A`/`-B` compose; `-C` sets both and never composes.
         const contextKind = SEARCH_CONTEXT_SHORT_LETTERS.get(letter);
         if (contextKind !== undefined) {
-          // WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) rg is granted `-C` only, so its `-A`/`-B` stay raw.
           if (!isGrep && contextKind !== "both") return undefined;
           if (position !== cluster.length - 1) return undefined;
           const parsed = mergeContext(context, contextKind, args.at(index + 1));
@@ -722,24 +695,17 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
     }
     operands.push(arg);
   }
-  // WHY: (item 10) operand arity: without `-e` the first operand is the PATTERN and the rest are
-  // WHY: FILES, while with `-e` EVERY operand is a file. Counts beyond `BASH_SEARCH_MAX_FILES` fail
-  // WHY: closed HERE (never silent-truncate, invariant 3); the matched-line budget is a serve-time gate.
   const fileOperands = explicitPattern === undefined ? operands.slice(1) : [...operands];
   const pattern = explicitPattern ?? operands[0];
   if (pattern === undefined) return undefined;
   if (recursive) {
-    // WHY: grep's recursion marker takes exactly one operand — the dir (or file) to walk.
-    // WHY: Recursion and multi-file never mix (`grep -r pat a b` fails the whole stage closed).
     if (fileOperands.length !== 1) return undefined;
-    // WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) recursive
-    // WHY: context is refused: directory order is implementation-defined, so no re-read predicts it.
+    // Ref: docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3
     if (context !== undefined) return undefined;
     const dirPath = fileOperands[0];
     if (dirPath === undefined) return undefined;
     return { kind: "pureRecursiveSearch", search: { program, pattern, dirPath, lineNumbered } };
   }
-  // WHY: zero file operands is a stdin search (`grep pat`) — still denied, unchanged.
   if (fileOperands.length === 0 || fileOperands.length > BASH_SEARCH_MAX_FILES) return undefined;
   if (fileOperands.length === 1) {
     const filePath = fileOperands[0];
@@ -755,9 +721,7 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
       },
     };
   }
-  // WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3) multi-file
-  // WHY: context is refused: D3's geometry is the single-file row, while a multi-file run prints
-  // WHY: `FILE-LINE-content` — a split-ambiguity surface the decision never specifies.
+  // Ref: docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D3
   if (context !== undefined) return undefined;
 
   return {
@@ -790,13 +754,12 @@ function parseFilterStage(shape: StageShape): ViewOp[] | undefined {
 }
 
 /**
- * WHY: (item 9) stdin content filters — `grep PATTERN` keeps, `grep -v PATTERN` drops,
- * WHY: `rg -N PATTERN` keeps. Exact shapes only: no other flag, exactly one positional
- * WHY: pattern, and a `-`-leading pattern fails closed (there is no `--` separator
- * WHY: downstream). Patterns arrive through `stageShape`/`literalValue`, so quoting and
- * WHY: expansion rules match search patterns. `-v`/`-N` are admitted HERE ONLY —
- * WHY: `parseSearchStage` and `SEARCH_ALLOWED_FLAGS` are untouched, so `grep -v pat f` and
- * WHY: `rg -N pat f` stay `unsupported-command:*` at source position.
+ * stdin content filters: `grep PATTERN` keeps, `grep -v PATTERN` drops, `rg -N PATTERN` keeps.
+ * Exact shapes only: no other flag, exactly one positional pattern, and a `-`-leading pattern fails
+ * closed (there is no `--` separator downstream). Patterns arrive through
+ * `stageShape`/`literalValue`, so quoting and expansion rules match search patterns. `-v`/`-N` are
+ * admitted HERE ONLY — `parseSearchStage` and `SEARCH_ALLOWED_FLAGS` are untouched, so
+ * `grep -v pat f` and `rg -N pat f` stay `unsupported-command:*` at source position.
  */
 function parseContentFilter(stage: StageShape): ViewOp[] | undefined {
   if (stage.name === "grep") {
@@ -811,7 +774,6 @@ function parseContentFilter(stage: StageShape): ViewOp[] | undefined {
     }
     return undefined;
   }
-  // WHY: `rg -N` is the one spelling that pins the no-number geometry; a bare `rg PAT` keeps numbering this classifier will not guess.
   if (stage.name === "rg") {
     const [first, second] = stage.args;
     if (stage.args.length === 2 && first === "-N") {
@@ -820,10 +782,6 @@ function parseContentFilter(stage: StageShape): ViewOp[] | undefined {
     }
     return undefined;
   }
-  // WHY: (item 11) the three line-set consumers, each admitted in exactly ONE spelling: `sort
-  // WHY: -u` is the dedupe (bare `sort`, `-n`, `-r`, `-o FILE`, a file operand and every
-  // WHY: combined flag fail closed), `uniq` takes no flag or operand (adjacent-only, literal),
-  // WHY: and `wc -l` is the count (bare `wc`, `-c`, `-w` and any operand fail closed).
   if (stage.name === "sort") {
     return stage.args.length === 1 && stage.args[0] === "-u" ? [{ kind: "sortUnique" }] : undefined;
   }
@@ -859,7 +817,7 @@ function mergeRangeOps(ranges: ReadonlyArray<{ from: number; to: number }>): Sli
 /**
  * The numeric-print spec of a `sed` stage, with EVERY trailing file operand (docs/.archive_adrs/0049-multi-file-bash-views.md M1/M5).
  *
- * WHY one grammar for both shapes: a multi-file `sed -n '2,4p' a b` and the settled single-file
+ * One grammar for both shapes: a multi-file `sed -n '2,4p' a b` and the settled single-file
  * `sed -n '2,4p' a` must admit the same program text or the two would drift — so the range grammar
  * lives here once and the single-file arity rule stays in `parseSedArgs` (its exact contract).
  */
@@ -870,7 +828,7 @@ function parseSedPrintSpec(args: string[]): { ops: SliceOp[]; files: string[] } 
     if (!printed) return undefined;
     const from = Number(printed[1]);
     const to = printed[3] === undefined ? from : Number(printed[3]);
-    if (to < from) return undefined; // WHY: reversed `10,1p` fails closed (strict-print spirit)
+    if (to < from) return undefined;
     return { ops: [{ kind: "range", from, to }], files: args.slice(2) };
   }
   const ranges: Array<{ from: number; to: number }> = [];
@@ -880,7 +838,7 @@ function parseSedPrintSpec(args: string[]): { ops: SliceOp[]; files: string[] } 
     const prog = args[index + 1];
     if (prog === undefined) return undefined;
     const printed = SED_NUMERIC_PRINT.exec(prog);
-    if (!printed) return undefined; // WHY: ANY unparseable spec fails the WHOLE stage
+    if (!printed) return undefined;
     const from = Number(printed[1]);
     const to = printed[3] === undefined ? from : Number(printed[3]);
     if (to < from) return undefined;
@@ -892,15 +850,15 @@ function parseSedPrintSpec(args: string[]): { ops: SliceOp[]; files: string[] } 
 }
 
 /**
- * WHY: (docs/.archive_adrs/0049-multi-file-bash-views.md M1) the admitted multi-file view shapes,
- * and nothing else: `head`/`tail` are excluded because their `==> FILE <==` headers are not file
- * bytes, stdin (`-`), redirects, prefixes, display transforms and pipelines never reach here, and a
- * `-`-leading operand fails closed because option parsing is over.
+ * The admitted multi-file view shapes and nothing else (docs/.archive_adrs/0049-multi-file-bash-views.md
+ * M1): `head`/`tail` are excluded because their `==> FILE <==` headers are not file bytes; stdin
+ * (`-`), redirects, prefixes, display transforms and pipelines never reach here; and a `-`-leading
+ * operand fails closed because option parsing is over.
  *
- * WHY the operand count is NOT capped here: the classifier is pure and zero-fs, so the file cap is
- * operator policy resolved at the serve seam (M6); this gate only requires the shape.
- * WHY the `rtk` unwrap applies: docs/.archive_adrs/0033-bash-view-interception.md D8 makes it a
- * transparent view wrapper and the D9 stdout gate verifies the claim per call — same view either way.
+ * The operand count is NOT capped here: the classifier is pure and zero-fs, so the file cap is
+ * operator policy resolved at the serve seam (M6); this gate only requires the shape. The `rtk`
+ * unwrap applies because docs/.archive_adrs/0033-bash-view-interception.md D8 makes it a transparent
+ * view wrapper and the D9 stdout gate verifies that claim per call — same view either way.
  */
 function parseMultiViewStage(shape: StageShape): BashMultiView | undefined {
   const stage = unwrapViewWrapper(shape);
@@ -920,7 +878,6 @@ function parseMultiViewStage(shape: StageShape): BashMultiView | undefined {
     return filePaths === undefined ? undefined : { program: "cat", filePaths, ops: [] };
   }
   if (stage.name === "nl") {
-    // WHY: (item 8) the multi-file spelling keeps the same `nl -ba FILE...` rule as the single-file path.
     if (stage.args[0] !== "-ba") return undefined;
     const filePaths = files(stage.args.slice(1));
     if (filePaths === undefined) return undefined;
@@ -939,8 +896,6 @@ function parseMultiViewStage(shape: StageShape): BashMultiView | undefined {
 function parseSedArgs(args: string[]): { ops: SliceOp[]; file?: string } | undefined {
   const spec = parseSedPrintSpec(args);
   if (spec === undefined) return undefined;
-  // WHY: (docs/.archive_adrs/0049-multi-file-bash-views.md M1) the settled single-file arity:
-  // WHY: exactly `-n PROG [FILE]`, so a SECOND operand belongs to the multi-file shape instead.
   if (args[1] !== "-e" && args.length !== 2 && args.length !== 3) return undefined;
   const [file] = spec.files;
   if (file === undefined) return spec.files.length === 0 ? { ops: spec.ops } : undefined;
@@ -960,7 +915,7 @@ export interface ViewSeg {
   display?: DisplayTransform;
 }
 
-/** WHY: (docs/.archive_adrs/0049-multi-file-bash-views.md M1) a multi-file view segment. It is
+/** A multi-file view segment (docs/.archive_adrs/0049-multi-file-bash-views.md M1). It is
  * deliberately NOT a `ViewSeg`: the compound chain does not compose multi-file views (M1), and the
  * serve seam proves N pages from line counts. */
 interface MultiViewSeg {
@@ -986,11 +941,11 @@ export type Segment =
  * with no operand left, cds to `$HOME` — taking the flag as the target resolves a path never
  * viewed.
  *
- * WHY `prefixPosition`: every statement before the terminal view of a `;` chain must be silent,
- * and the field writes that prefix `pwd` as often as `cd`. `pwd` prints the working directory, so
- * it is admitted *only* there: the position proves the sequencing is deterministic, and D9 still
+ * `prefixPosition`: every statement before the terminal view of a `;` chain must be silent, and the
+ * field writes that prefix `pwd` as often as `cd`. `pwd` prints the working directory, so it is
+ * admitted *only* there: the position proves the sequencing is deterministic, and D9 still
  * byte-checks stdout, which carries the directory line and never matches the slice — the lease is
- * refused at serve time. Outside a prefix position (an `&&` chain) the set stays exactly the three above.
+ * refused at serve time. Outside a prefix position (an `&&` chain) the set stays the three above.
  */
 function parseSilent(stage: StageShape, prefixPosition = false): SilentSeg | undefined {
   if (prefixPosition && stage.name === "pwd" && stage.args.length === 0) {
@@ -1025,13 +980,13 @@ function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
 /** Programs admitted as static glue (exact standalone quoted literals; see the synonym gate). */
 
 /**
- * WHY: (docs/.archive_adrs/0039-compound-bash-view-interception.md D10) the inert tail of a relaxation-A compound: a byte-count-style summary
- * WHY: that cannot transform the block, redirect output, or reach the network. Only `wc` with
- * WHY: counting flags and at least one file operand qualifies — no stdin reads (a bare `wc`
- * WHY: counts the harness stdin, which misattributes), no `--` escape hatches, no file operands
- * WHY: starting with `-`. `stageShape` already rejects prefixes, redirects, and non-literal
- * WHY: words, so what remains is a fixed program with fixed counting semantics. Extending this
- * WHY: set is a follow-up with its own safety case — add a name here, not a new rule.
+ * The inert tail of a relaxation-A compound (docs/.archive_adrs/0039-compound-bash-view-interception.md
+ * D10): a byte-count-style summary that cannot transform the block, redirect output, or reach the
+ * network. Only `wc` with counting flags and at least one file operand qualifies — no stdin reads (a
+ * bare `wc` counts the harness stdin, which misattributes), no `--` escape hatches, no file operands
+ * starting with `-`. `stageShape` already rejects prefixes, redirects and non-literal words, so what
+ * remains is a fixed program with fixed counting semantics. Extending this set is a follow-up with
+ * its own safety case — add a name here, not a new rule.
  */
 export function parseInertTail(
   node: Command | Pipeline,
@@ -1053,10 +1008,10 @@ export function parseInertTail(
 
 const LITERAL_PRINT_PROGRAMS = new Set(["echo", "printf"]);
 /**
- * WHY: (docs/.archive_adrs/0039-compound-bash-view-interception.md D6) static glue for compounds: literal prints without dynamic expansions, plus
- * WHY: silent env commands. Expected content and byte length are computed at parse time and
- * WHY: verified during peeling; any form whose bytes cannot be predicted with certainty fails
- * WHY: closed here, because a wrong prediction must never produce a lease.
+ * Static glue for compounds (docs/.archive_adrs/0039-compound-bash-view-interception.md D6): literal
+ * prints without dynamic expansions, plus silent env commands. Expected content and byte length are
+ * computed at parse time and verified during peeling; any form whose bytes cannot be predicted with
+ * certainty fails closed here, because a wrong prediction must never produce a lease.
  */
 export function parseGlueSegment(node: Command | Pipeline): GlueSegment | undefined {
   if (node.type !== "Command") return undefined;
@@ -1076,8 +1031,6 @@ function parsePrintGlue(stage: { name: string; args: string[] }): GlueSegment | 
   const arg = stage.args[0];
   if (arg === undefined || arg.startsWith("-")) return undefined;
   if (stage.name === "echo") {
-    // WHY: the print builtin's backslash handling varies by shell; only backslash-free literals
-    // WHY: have certain bytes. Escaped content belongs to `printf` (below), which owns escapes.
     if (arg.includes("\\")) return undefined;
     return makeGlue("echo", `${arg}\n`);
   }
@@ -1139,10 +1092,11 @@ function makeGlue(
   return { program, expectedText, expectedBytes: Buffer.byteLength(expectedText, "utf-8") };
 }
 /**
- * WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D2) a terminal display-only stage. The stage has no operand and no redirect
- * (`stageShape` already rejected those); it is the LAST pipeline stage, so nothing can consume
- * its transformed bytes. `rtk cat -A` is deliberately not admitted: the wrapper is a different
- * command, and the bare transform is the only spelling whose bytes this oracle can reproduce.
+ * A terminal display-only stage (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md
+ * D2). The stage has no operand and no redirect (`stageShape` already rejected those); it is the LAST
+ * pipeline stage, so nothing can consume its transformed bytes. `rtk cat -A` is deliberately not
+ * admitted: the wrapper is a different command, and the bare transform is the only spelling whose
+ * bytes this oracle can reproduce.
  */
 function parseDisplayTransform(stage: StageShape): DisplayTransform | undefined {
   switch (stage.name) {
@@ -1179,8 +1133,6 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
       ...(source.lineNumbered === true ? { lineNumbered: true } : {}),
     };
   }
-  // WHY: the signature says Command | Pipeline, but `unbash` puts every statement kind in AndOr.commands;
-  // WHY: a compound operand has neither field, so it fails closed here, not out of the tool_result hook.
   const pipelineShape = node as { operators?: unknown; commands?: unknown };
   if (!Array.isArray(pipelineShape.operators) || !Array.isArray(pipelineShape.commands)) {
     return undefined;
@@ -1202,38 +1154,24 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
   let filePath: string | undefined;
   for (let index = 0; index < headEnd; index++) {
     const child = node.commands[index];
-    // WHY: every stage must prove itself — a skipped failure here would serve leases for lines the
-    // WHY: model never saw (a `grep` stage silently dropped misattributes filtered output to a slice).
     if (child === undefined || child.type !== "Command") return undefined;
     const stage = stageShape(child);
     if (!stage) return undefined;
     if (index === 0) {
       const source = parseSourceStage(stage);
       if (source) {
-        // WHY: (item 8) the numbered geometry is full-file display only; a downstream filter would
-        // WHY: silently drop numbered rows while claiming full-file leases. (item 9) does not lift it.
         if (source.lineNumbered === true) return undefined;
         filePath = source.filePath;
         ops.push(...source.ops);
         continue;
       }
-      // WHY: (item 9) stage 0 may be a search (`grep pat f | head -5`). An UNNUMBERED search proves
-      // WHY: exactly what a `keep` filter proves — the file's lines matching the pattern — so it is
-      // WHY: translated into one and the content seam byte-gates the fold against the observed stdout.
-      // WHY: A NUMBERED single-file search piped into `head`/`tail` is admitted as `pureSearch` with
-      // WHY: the slice ops attached (docs/.archive_adrs/0039-compound-bash-view-interception.md D3,
-      // WHY: superseding the numbered-search decline): the slice is a pure line-count truncation over
-      // WHY: already-resolved rows, so line numbers stay identifiers and leases cover only the survivors.
-      // WHY: Any other downstream stage (sort, uniq, count, keep, sed ranges) still fails closed.
       const searchSource = parseSearchStage(stage);
-      // WHY: (item 10) only the SINGLE-file, unnumbered shape has bare-content stdout one `keep` can
-      // WHY: model; multi-file and recursive stdout carry `FILE:LINE:` prefixes and `rg --files` paths.
       if (searchSource?.kind !== "pureSearch") {
         return undefined;
       }
       if (searchSource.search.lineNumbered) {
         if (display !== undefined) return undefined;
-        // WHY: (D3) collect the trailing head/tail slices; anything else fails closed.
+        // Ref: docs/.archive_adrs/0039-compound-bash-view-interception.md D3
         const sliceOps: SliceOp[] = [];
         for (let s = 1; s < node.commands.length; s++) {
           const downstream = node.commands[s];
@@ -1264,8 +1202,6 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
     if (!filter) return undefined;
     ops.push(...filter);
   }
-  // WHY: (item 11) `wc -l` is TERMINAL: nothing may consume the rows after it (`... | wc -l | head -2`
-  // WHY: would head a number), so the whole pipeline is refused, not an order the fold cannot model.
   const countAt = ops.findIndex((op) => op.kind === "count");
   if (countAt !== -1 && countAt !== ops.length - 1) return undefined;
   if (filePath === undefined) return undefined;
@@ -1283,8 +1219,6 @@ export function classifySegment(node: Command | Pipeline, prefixPosition = false
     if (!stage) return { kind: "unsafe", reason: "non-literal-command" };
     const silent = parseSilent(stage, prefixPosition);
     if (silent) return silent;
-    // WHY: (docs/.archive_adrs/0049-multi-file-bash-views.md M1) multi-file views are a STANDALONE
-    // WHY: shape, so they are admitted here — the segment dispatch — never in the pipeline path.
     const multiView = parseMultiViewStage(stage);
     if (multiView) return { kind: "multiView", view: multiView };
     const source = parseSourceStage(stage);
@@ -1308,11 +1242,10 @@ export function classifySegment(node: Command | Pipeline, prefixPosition = false
  * [docs/.archive_adrs/0033-bash-view-interception.md D1, amended] A `;`-separated statement chain is admitted only when
  * every boundary between adjacent statements is an unconditional `;`.
  *
- * WHY the separator text decides: `unbash` reports a `;` and a newline as the
- * same statement boundary, so the parse alone cannot tell the sanctioned
- * `cd dir; cat file` shape from a newline-separated script. Only the `;` form is
- * the deterministic prefix shape this decision authorises; the newline form
- * stays pass-through rather than riding in on the same parse shape.
+ * The separator text decides: `unbash` reports a `;` and a newline as the same statement boundary,
+ * so the parse alone cannot tell the sanctioned `cd dir; cat file` shape from a newline-separated
+ * script. Only the `;` form is the deterministic prefix shape this decision authorises; the newline
+ * form stays pass-through rather than riding in on the same parse shape.
  */
 export function isSemicolonStatementChain(
   command: string,
@@ -1329,22 +1262,11 @@ export function isSemicolonStatementChain(
 }
 
 /**
- * Span-kind chain rule (docs/.archive_adrs/0033-bash-view-interception.md D1, amended): `&&`-only within a statement,
- * exactly one `view`, all others `silent`, undetermined is `unsafe`. Returns the
- * view with its resolution base (the single pre-view literal `cd`, if any;
- * multi-`cd` and post-view-`cd` chains are `passThrough`).
- *
- * A `;`-separated statement chain is admitted under the same rule with one
- * addition: every statement before the terminal one must itself be a silent
- * prefix, so the view is the last statement and the sequencing before it is
- * deterministic (see `isSemicolonStatementChain`).
- */
-/**
- * WHY: (docs/.archive_adrs/0039-compound-bash-view-interception.md D7/D9) redundancy without a known cwd. Dot-forms (relative, no `..`,
- * WHY: normalizing to self) resolve to the base for EVERY base, so they need no tracked state.
- * WHY: An absolute target matches only a known-absolute tracked dir exactly (D9 lexical; the
- * WHY: `realpath` fallback belongs to the lifecycle, which has fs access). Everything else counts
- * WHY: normally — sound because an unproven `cd` is treated as a real change, never a no-op.
+ * Redundancy without a known cwd (docs/.archive_adrs/0039-compound-bash-view-interception.md D7/D9).
+ * Dot-forms (relative, no `..`, normalizing to self) resolve to the base for EVERY base, so they
+ * need no tracked state. An absolute target matches only a known-absolute tracked dir exactly (D9
+ * lexical; the `realpath` fallback belongs to the lifecycle, which has fs access). Everything else
+ * counts normally — sound because an unproven `cd` is treated as a real change, never a no-op.
  */
 export function isRedundantCd(target: string, effCwd: string | undefined): boolean {
   if (!target.startsWith("/") && target.split("/").every((part) => part === "" || part === ".")) {
@@ -1359,11 +1281,6 @@ export function classifyBashCommand(command: string): Decision {
   return decide(command, {});
 }
 
-/**
- * WHY the chain lives in `src/bash-conversion/decide.ts` (#151): the guards are data there
- * WHY: (RULES in array order = precedence). This keeps its name and out-param contract for the
- * WHY: line-number splice (`withSearchLineNumbers` below passes a live box); the table owns the walk.
- */
 function classifyBash(
   command: string,
   located: {
@@ -1402,7 +1319,6 @@ function takeLast(list: LineInterval[], n: number): LineInterval[] {
 
 function selectRange(list: LineInterval[], from: number, to: number): LineInterval[] {
   if (to < 1 || from < 1 || to < from) return [];
-  // WHY: stream positions are the concatenation of the intervals — walk once, positional clamping automatic.
   const out: LineInterval[] = [];
   let pos = 0;
   for (const iv of list) {
@@ -1460,15 +1376,14 @@ export interface ContentLine {
 }
 
 /**
- * WHY: (item 9) content-aware fold over `(line, text)` pairs, left in stage order. Slice
- * WHY: stages reuse the interval algebra over stream positions, mapped back to entries so a
- * WHY: multi-interval `sed -n -e` stage keeps its exact shape; `keep`/`drop` narrow by
- * WHY: literal substring. Total and pure — an empty result means the caller passes through
- * WHY: with zero leases, the same contract `applySliceOps` has.
+ * Content-aware fold over `(line, text)` pairs, left in stage order. Slice stages reuse the interval
+ * algebra over stream positions, mapped back to entries so a multi-interval `sed -n -e` stage keeps
+ * its exact shape; `keep`/`drop` narrow by literal substring. Total and pure — an empty result means
+ * the caller passes through with zero leases, the same contract `applySliceOps` has.
  *
- * WHY: (item 11) the fold is a `switch` over the whole union with no fall-through slice arm, so
- * WHY: the three line-set consumers are handled where they are declared and an unknown kind is
- * WHY: refused (`assertNever`) instead of silently degrading to a slice.
+ * The fold is a `switch` over the whole union with no fall-through slice arm, so the three line-set
+ * consumers are handled where they are declared and an unknown kind is refused (`assertNever`)
+ * instead of silently degrading to a slice.
  */
 export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine[]): ContentLine[] {
   let stream = [...lines];
@@ -1487,8 +1402,6 @@ export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine
         stream = collapseAdjacentRuns(stream);
         break;
       case "count":
-        // WHY: (item 11) `wc -l` is terminal: the stream IS the counted set and its length is the number,
-        // WHY: so the rows stay for the lifecycle layer to lease — no op folds after it.
         break;
       case "first":
       case "last":
@@ -1502,7 +1415,6 @@ export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine
         break;
       }
       default:
-        // WHY: (item 11) an unknown op kind must never become a slice; `assertNever` fails typecheck instead.
         return assertNever(op);
     }
     if (stream.length === 0) return [];
@@ -1511,11 +1423,11 @@ export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine
 }
 
 /**
- * WHY: (item 11) `sort -u` dedupes by text keeping the FIRST occurrence's true line — the
- * WHY: anchor that travels with the row is a real file coordinate, never a renumbered one —
- * WHY: then orders by raw bytes — the C/POSIX collation `sort` uses under `LC_ALL=C`. A host
- * WHY: whose locale collation reorders the set (case-folding, accents) folds differently, fails
- * WHY: the whole-stdout byte gate and passes through raw, never a wrong order.
+ * `sort -u` dedupes by text keeping the FIRST occurrence's true line — the anchor that travels with
+ * the row is a real file coordinate, never a renumbered one — then orders by raw bytes, the C/POSIX
+ * collation `sort` uses under `LC_ALL=C`. A host whose locale collation reorders the set
+ * (case-folding, accents) folds differently, fails the whole-stdout byte gate and passes through
+ * raw, never a wrong order.
  */
 function sortUniqueLines(stream: ContentLine[]): ContentLine[] {
   const firstByText = new Map<string, ContentLine>();
@@ -1528,9 +1440,9 @@ function sortUniqueLines(stream: ContentLine[]): ContentLine[] {
 }
 
 /**
- * WHY: (item 11) `uniq` is ADJACENT-only and literal: each run of equal text collapses to its
- * WHY: head, so the same text may survive at two non-adjacent positions, each keeping its own
- * WHY: true line. Sorting is never part of it.
+ * `uniq` is ADJACENT-only and literal: each run of equal text collapses to its head, so the same
+ * text may survive at two non-adjacent positions, each keeping its own true line. Sorting is never
+ * part of it.
  */
 function collapseAdjacentRuns(stream: ContentLine[]): ContentLine[] {
   const out: ContentLine[] = [];
@@ -1557,8 +1469,6 @@ export function withSearchLineNumbers(command: string): string {
     searchNameEnds?: Array<{ end: number; program: SearchProgram; lineNumbered: boolean }>;
   } = {};
   const classification = classifyBash(command, located);
-  // WHY: (item 10 + docs/.archive_adrs/0039-compound-bash-view-interception.md D5) only search families
-  // WHY: (bare or compound) splice; unnumbered offsets splice right-to-left so all stay valid.
   if (
     classification.kind !== "pureSearch" &&
     classification.kind !== "pureMultiSearch" &&
