@@ -167,10 +167,10 @@ type ReadRenderArgs = {
   path?: string;
   windows?: ReadonlyArray<ReadRenderWindowTarget>;
   mode?: string;
-  /** Retired outer shape (ADR-0040): history tolerance only, never produced anymore. */
+  /** Retired outer shape (docs/.archive_adrs/0040-read-payload-single-shape.md): history tolerance only, never produced anymore. */
   files?: ReadonlyArray<{ file?: string }>;
 };
-/** Project the flat single-file payload onto the builtin renderer's keys (ADR-0041 D4/D5).
+/** Project the flat single-file payload onto the builtin renderer's keys (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D4/D5).
  * Path is the call's own `file`, falling back through recorded-history shapes for rendering
  * only. A range is derived only from exactly one simple `{ offset, limit }` window; anything
  * else (multi-window, `around_anchor`) leaves the range absent rather than fabricating one.
@@ -312,7 +312,7 @@ function servedRowsOf(entry: PreparedTarget): ServedRow[] {
 }
 
 /**
- * The whole file's anchors for a content-hash materialization (ADR-0043).
+ * The whole file's anchors for a content-hash materialization (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md).
  *
  * A stat-adopted page resolved only the anchors it served, so an entry that must fall back to content
  * hashing re-derives the rest through the usual cache path. That is the rare race — its snapshot lost
@@ -388,7 +388,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     renderResult: (result, options, theme, context) => {
       // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
       // SAFETY: carry a retired shape that `Static<TParams>` does not model; the projection keys on
-      // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (ADR-0041 D5).
+      // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D5).
       const args = context.args as ReadRenderArgs;
       return builtinRenderResult(result, options, theme, {
         ...context,
@@ -433,7 +433,8 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           abortIf(signal);
           const mode = request.mode;
           // WHY: outline mode derives its own window set from the tranche-1 AST seam — one single-line
-          // WHY: window per declaration line — so the serve seam below leases declaration lines only (ADR-0004).
+          // WHY: window per declaration line — so the serve seam below leases declaration lines only.
+          // Ref: docs/adr/0016-outline-mode-point-anchors.md
           let outlineOffsets: Array<{ kind: "offset"; offset: number; limit: number }> | undefined;
           if (mode === "outline") {
             const outlineOf = (

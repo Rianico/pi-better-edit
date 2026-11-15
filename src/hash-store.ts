@@ -386,7 +386,7 @@ export const DANGLING_LEASE_SQL =
 // WHY: an expired active lease is never judged by that grace.
 // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
 
-/** The instant before which an un-retired lease has lost resolution authority (ADR-0045). */
+/** The instant before which an un-retired lease has lost resolution authority (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md). */
 export function servedLeaseExpiryCutoff(now: number): number {
   return now - SERVED_TTL_MS;
 }
@@ -409,7 +409,7 @@ export const RESOLVABLE_LEASE_SQL =
 
 /**
  * The JS form of the same predicate, for the in-memory grant path (`leaseSpanSource`). The grant
- * path used to trust any un-retired lease regardless of age; hard expiry (ADR-0045) makes the age
+ * path used to trust any un-retired lease regardless of age; hard expiry (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md) makes the age
  * part of the authority, so an expired row is dropped before a lease identity can be returned.
  */
 export function isExpiredActiveLease(
