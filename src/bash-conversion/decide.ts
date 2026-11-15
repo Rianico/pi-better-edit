@@ -139,10 +139,7 @@ function isViewTerminal(segment: Segment): boolean {
   return segment.kind !== "unsafe" && segment.kind !== "silent" && segment.kind !== "search";
 }
 
-/**
- * WHY: (item 10) one application point — a search family added later cannot ship without the
- * resolution base it must carry.
- */
+/** One application point (item 10): a search family added later cannot ship without the resolution base it must carry. */
 function applyBaseDir(family: SearchFamily, baseDir: string | undefined): Decision {
   if (baseDir === undefined) return family;
   switch (family.kind) {
@@ -157,10 +154,7 @@ function applyBaseDir(family: SearchFamily, baseDir: string | undefined): Decisi
   }
 }
 
-/**
- * WHY: a multi-file view keeps the chain's single pre-view `cd` — bash resolved its operands under
- * it — so the base rides the same field.
- */
+/** A multi-file view keeps the chain's single pre-view `cd` — bash resolved its operands under it — so the base rides the same field. */
 function applyMultiViewBaseDir(view: BashMultiView, baseDir: string | undefined): Decision {
   return { kind: "pureMultiView", view: baseDir === undefined ? view : { ...view, baseDir } };
 }
@@ -221,13 +215,12 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "compound-andor-operand",
-    // WHY: `unbash` types AndOr.commands as Command[], but the parser puts ANY statement kind
-    // WHY: there — `cd x && for …; do …; done` crashed the walk without this guard.
     why: "docs/.archive_adrs/0033-bash-view-interception.md D1 span-kind chain rule (structural: AndOr operands must be Command/Pipeline)",
     phase: "statement",
     when: (ctx) => {
       const top = statementOf(ctx).command;
       if (top.type !== "AndOr") return false;
+      // SAFETY: `unbash` types AndOr.commands as Command[], but the parser puts ANY statement kind there — `cd x && for …; do …; done` crashed the walk without this guard.
       return (top as AndOr).commands.some(
         (node) => node.type !== "Command" && node.type !== "Pipeline",
       );
@@ -274,8 +267,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-tail",
-    // WHY: a raw tail carries no block, anchor or lease — only bytes bash already printed — and
-    // WHY: tail mode keeps a lone `wc` on its exact legacy `unsafe` decline.
     why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; inert tail accumulation)",
     phase: "segment",
     when: (ctx) => ctx.tailMode && isInertTailNode(segmentOf(ctx).node),
@@ -283,8 +274,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-count-tail",
-    // WHY: a count tail is admitted only after the LAST verified block, so nothing later competes
-    // WHY: for attribution; it pushes a raw segment, never a block, so D10's guard stays closed.
     why: "docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D4 (inert count tail after the last verified block)",
     phase: "segment",
     when: (ctx) => {
@@ -298,7 +287,6 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "unsafe",
-    // WHY: (F2) with no block there is nothing to locate, so the segment keeps its own decline and its byte-identical reason.
     why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D6/F2 (source src/bash-classifier.ts:1162 pre-extraction; dynamic segment reason)",
     phase: "segment",
     when: (ctx) => currentOf(ctx).kind === "unsafe",
@@ -310,7 +298,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "skip-redundant-cd",
-    // WHY: an inert `cd` must not consume the single-`cd` budget, which belongs to the move that sets the base.
     why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D7/D9 (source src/bash-classifier.ts:1173 pre-extraction; redundancy skip)",
     phase: "segment",
     when: (ctx) => {
@@ -325,8 +312,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "post-block-cd",
-    // WHY: the base attaches to the blocks recorded after it, so a `cd` behind an admitted block
-    // WHY: would misresolve that block — fail closed.
     why: "commit 4 post-block gate (source src/bash-classifier.ts:1184 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -342,8 +327,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "post-view-cd",
-    // WHY: bash resolves each `cd` against the directory in effect at that point, so only one
-    // WHY: pre-view `cd` applied to `ctx.cwd` is sound; one issued later is too late and fails closed.
     why: "docs/.archive_adrs/0033-bash-view-interception.md D1 (source src/bash-classifier.ts:1186 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -358,8 +341,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-cd",
-    // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`), so applying one of them alone would
-    // WHY: lease a path never viewed.
     why: "docs/.archive_adrs/0033-bash-view-interception.md D1 (source src/bash-classifier.ts:1187 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -394,8 +375,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-tail-head",
-    // WHY: relaxation A exists for the shape the prefix declines would reject — one leading block
-    // WHY: with an inert tail; widening past that head would rob a glued chain of its legacy declines.
     why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; single leading block with inert tail)",
     phase: "segment",
     when: (ctx) => {
@@ -419,8 +398,6 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "search-prefix",
-    // WHY: a view or a search may ride only the terminal statement — a prefix one means a compound
-    // WHY: chain the model did not ask about.
     why: "docs/.archive_adrs/0033-bash-view-interception.md D1 as amended (source src/bash-classifier.ts:1197 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -492,8 +469,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-view-chain",
-    // WHY: the multi-file shape is STANDALONE: glue or a second block proves more stream than the N
-    // WHY: pages named, so it passes through as `multi-view` — the existing reason, not a new one.
     why: "docs/.archive_adrs/0049-multi-file-bash-views.md M1 (standalone only; a chained multi-file view has no admitted envelope)",
     phase: "post",
     when: (ctx) => ctx.multiView !== undefined && (ctx.sawGlue || ctx.compoundSegs.length > 0),
@@ -531,8 +506,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-compound",
-    // WHY: relaxation A's envelope is the leading block plus its raw tail, and it spreads no
-    // WHY: `baseDir`: the head fires at segment zero, before any `cd` can record.
     why: "docs/.archive_adrs/0039-compound-bash-view-interception.md D10 (relaxation A; envelope for the leading block plus raw tail)",
     phase: "post",
     when: (ctx) => ctx.tailMode && ctx.compoundSegs.length > 0,
@@ -595,8 +568,8 @@ function fireRule(rule: ConversionRule, ctx: RuleContext): Decision | typeof ADV
 }
 
 /**
- * WHY: the line-number injection needs the search program token's source offset.
- * Shared by the plain and relaxation-A recording paths so both splices see one offset.
+ * The line-number injection needs the search program token's source offset, shared by the plain and
+ * relaxation-A recording paths so both splices see one offset.
  */
 function recordSearchBlock(ctx: RuleContext, current: SearchSeg): void {
   ctx.searchSeg = current.family;
@@ -630,7 +603,7 @@ function isInertTailNode(node: Command | Pipeline): boolean {
 }
 
 /**
- * WHY: the count-tail closed set is narrower than D10's inert set — `wc -l`/`-c` only, so `-w`/`-m`
+ * The count-tail closed set is narrower than D10's inert set — `wc -l`/`-c` only, so `-w`/`-m`
  * stay out on this seam, and every other exclusion (stdin, `--` escapes, dash-led operands,
  * redirects, prefixes) is `parseInertTail`'s. Declining is fail-closed: widen this set here, not
  * with a new rule.
@@ -650,7 +623,7 @@ function admittedBlockCount(ctx: RuleContext): number {
 }
 
 /**
- * WHY: both inert-tail rules accumulate identically — the tail's own source bytes become a `raw`
+ * Both inert-tail rules accumulate identically: the tail's own source bytes become a `raw`
  * segment, which the peel passes through as already-observed output (never a block, anchor, or lease).
  */
 function pushRawTail(ctx: RuleContext): typeof ADVANCE {
@@ -666,6 +639,8 @@ function failUndecided(where: string): never {
 /**
  * WHY the out-param box: callers that splice line numbers (`withSearchLineNumbers`) need the
  * terminal search's program offset, which only exists mid-walk. Same contract as the chain.
+ * The statement push below has no fallback arm: the statement guards declined every other kind, so one
+ * would be dead code.
  */
 export function decide(command: string, located: LocatedBox = {}): Decision {
   let script: ParsedScript | undefined;
@@ -713,8 +688,6 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
         return out;
       }
     }
-    // WHY: no unpushable statement can reach this push — the statement guards above declined every
-    // WHY: other kind, so a fallback arm would be dead code.
     const statement = statementOf(ctx);
     const prefixPosition = index < ctx.statements.length - 1;
     const top = statement.command;
@@ -734,7 +707,6 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
       return out;
     }
   }
-  // WHY: every relaxation keys on glue anywhere in the chain, so one hoisted boolean replaces the per-segment decision.
   ctx.hasGlue = ctx.segments.some(
     (segment) => segment.node.type === "Command" && parseGlueSegment(segment.node) !== undefined,
   );

@@ -164,8 +164,6 @@ function notify(
     ctx.ui.notify(message, type);
     return;
   }
-  // WHY: the only legitimate stdout write left in the extension — with `hasUI === false` no renderer
-  // WHY: owns the terminal, so stdout is the only channel that reaches the caller.
   console.log(message);
 }
 
@@ -184,8 +182,6 @@ function statusText(cwd: string): string {
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > auto",
   ];
-  // WHY: one blank line between the five subjects — bridge, store, bash view, its caps, and the
-  // WHY: diagnostics log — keeps each block's shape legible against the others.
   return [
     lensLines.join("\n"),
     "",
@@ -208,12 +204,12 @@ function statusText(cwd: string): string {
  * can move the store and no config file key can (there is deliberately no `store.dir`).
  * WHY a warning is repeated here: an unusable config file degrades to the defaults, and a display
  * showing those defaults with no reason would be the silent drop this ladder refuses to make.
+ * The override is printed verbatim: the store opens exactly that string, so a trimmed
+ * display would name a directory the store never opens.
  */
 function storeStatusText(cwd: string): string {
   const warnings: string[] = [];
   const settings = resolveStoreJanitorSettingsWithSources(cwd, (reason) => warnings.push(reason));
-  // WHY: verbatim and never trimmed — the store USES this value, so a trimmed display would name a
-  // WHY: directory the store never opens.
   const override = configDirOverride();
   return [
     `${COMMAND_NAME} store`,
@@ -322,8 +318,6 @@ function applyMode(mode: LensBridgeMode, scope: LensBridgeScope, cwd: string): s
 async function pickInteractively(ctx: ExtensionCommandContext): Promise<void> {
   const labels = LENS_PICKER_CHOICES.map((choice) => choice.label);
   const picked = await ctx.ui.select(`${COMMAND_NAME} lens bridge`, labels);
-  // WHY: an undefined result is the user cancelling the dialog, so nothing is written and no
-  // WHY: confirmation is printed — silence is the correct response to Esc.
   if (picked === undefined) return;
   const choice = LENS_PICKER_CHOICES.find((candidate) => candidate.label === picked);
   if (choice === undefined) {
@@ -456,12 +450,12 @@ function handleMultiFile(tokens: string[], ctx: ExtensionCommandContext): void {
   const path = saveBashMultiFileConfig(patch, scope, ctx.cwd).path;
   notify(ctx, `${COMMAND_NAME} bash multi-file ${key} set to ${value} (${scope}) — ${path}`);
 }
+/** Routing: the multi-file surface takes four tokens, so it is routed before the 3-token ceiling. */
 async function handleBashView(args: string, ctx: ExtensionCommandContext): Promise<void> {
   const tokens = args
     .trim()
     .split(/\s+/)
     .filter((token) => token.length > 0);
-  // WHY: the multi-file surface takes four tokens, so it is routed before the 3-token ceiling.
   if (tokens[1] === "multi-file") {
     handleMultiFile(tokens.slice(1), ctx);
     return;
@@ -557,12 +551,8 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           await handleLens(args, ctx);
         }
       } catch (error: unknown) {
-        // WHY: a command handler must never reject into the host's event loop — the failure is
-        // WHY: reported to the user and the command ends.
         if (error instanceof DomainError) {
-          // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope for the model, not a
-          // WHY: sentence for the operator, so it goes to the log and the user gets a plain notice; a
-          // WHY: failure that is not a DomainError keeps its own text, which is user-actionable.
+          // Ref: docs/spec/unified-error-and-warning-contract.md
           reportDiagnostic("lens-command", `${COMMAND_NAME}: ${errorText(error)}`, error);
           notify(ctx, `${COMMAND_NAME}: the command failed unexpectedly.`, "error");
         } else {

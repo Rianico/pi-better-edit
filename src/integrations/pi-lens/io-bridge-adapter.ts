@@ -155,7 +155,8 @@ function recordServedSpans(bridge: IOBridge, notification: ServedSpanNotificatio
  * `getCwd` is injectable because the observer path has no command context:
  * `process.cwd()` stands in for the session cwd (pi launches in it), while the
  * `/pi-better-edit` command resolves the exact `ctx.cwd`. The mode is re-read per
- * notification, so a mode change takes effect immediately.
+ * notification, so a mode change takes effect immediately. A cwd that cannot be
+ * resolved mirrors nothing and counts no drop, like an explicit `off`.
  */
 export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () => void {
   const getCwd = options?.getCwd ?? ((): string => process.cwd());
@@ -163,8 +164,6 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       return resolveEffectiveLensMode(getCwd());
     } catch {
-      // WHY: an unusable cwd means the mode cannot be resolved, so nothing is mirrored and no drop
-      // WHY: is counted for a config read.
       return undefined;
     }
   };
@@ -172,17 +171,13 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       const mode = resolveMode();
       if (mode === undefined || mode === "off") return;
-      // WHY: `auto` treats an absent bridge as disabled and `on` cannot conjure one, so both modes
-      // WHY: collapse here — an absent bridge is still a dropped mirror.
       const bridge = getIOBridge();
       if (bridge === undefined) {
         dropCount += 1;
         return;
       }
       recordMutated(bridge, notification);
-    } catch {
-      // WHY: advisory-only (module header): a throw here would fail the edit that is already committed.
-    }
+    } catch {}
   });
   const detachServed = addServedSpanObserver((notification: ServedSpanNotification): void => {
     try {
@@ -195,9 +190,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
         return;
       }
       recordServedSpans(bridge, notification);
-    } catch {
-      // WHY: advisory-only (module header): a throw here would fail the read that already served its rows.
-    }
+    } catch {}
   });
   return () => {
     detachMutated();

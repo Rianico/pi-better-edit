@@ -39,13 +39,17 @@ function failureFromEnvelope(args: {
   };
 }
 
+/**
+ * Route one error to a typed `MutationResult`. A registry `DomainError` supplies its own code, rows,
+ * block and diagnosis as fields — the code is read, never scraped, so a `[MODEL]`-only message can
+ * never surface as `code: "MODEL"`. A rendered refusal cannot be re-attributed at the tool seam, and
+ * the raw payload message travels beside it. A batch-abort wrapper keeps the failing item's code as
+ * a plain field, so the envelope reader routes a registry member and its own validation turns a
+ * non-registry code (ENOENT, an unexpected throw) into `E_UNKNOWN`, whose message is the first line
+ * only. Exported so the envelope test drives this routing seam without running a pipeline.
+ */
 function toFailure(error: unknown): MutationResult {
-  // WHY: registry errors carry their code, rows, block, and diagnosis as typed
-  // WHY: fields — the code is read, never scraped from the message, so a
-  // WHY: `[MODEL]`-only message can never surface as `code: "MODEL"`.
   if (error instanceof DomainError) {
-    // WHY: a rendered refusal cannot be re-attributed at the tool seam.
-    // WHY: The RAW payload message travels beside it, undefined for every other code.
     const payloadMessage = badPayloadMessageOf(error);
     return failureFromEnvelope({
       code: error.code,
@@ -55,16 +59,10 @@ function toFailure(error: unknown): MutationResult {
     });
   }
   const message = error instanceof Error ? error.message : String(error);
-  // WHY: the batch-abort wrapper preserves the failing item's own code as a plain field — a registry
-  // WHY: member routes the typed path; errno-style codes (ENOENT) and unexpected throws fall through
-  // WHY: to `E_UNKNOWN` instead of leaking a scraped token. The envelope reader owns that validation:
-  // WHY: a non-registry code reads back as no code, which is the fall-through condition.
   const env = readEnvelope(error);
   if (env !== undefined && env.code !== undefined) {
     return failureFromEnvelope({ code: env.code, message, env });
   }
-  // WHY: unexpected errors emit `E_UNKNOWN` through the registry: the first
-  // WHY: message line only, never the verbatim `String(error)` dump.
   const unknown = new DomainError("E_UNKNOWN", {
     errorName: error instanceof Error ? error.name : typeof error,
     message,
@@ -113,7 +111,9 @@ export async function execute(
 /**
  * SAFETY: Preview a mutation without persisting (noPersist). Same seam as `execute`,
  * same `MutationResult` — one interface, N call sites (preview + apply share
- * the internal path via `runMutations` with `noPersist:true`).
+ * the internal path via `runMutations` with `noPersist:true`). The preview diff is the `genDiff`
+ * projection, built here with the preview pane's context (`DIFF_PREVIEW_CONTEXT`), so the display
+ * path consumes it and never re-projects it (#174).
  */
 export async function preview(
   request: NormalizedEditRequest,
@@ -122,9 +122,6 @@ export async function preview(
 ): Promise<MutationResult> {
   try {
     const file = await pipelinePreview(request, cwd, options);
-    // WHY: #174 single-projection contract — the preview diff IS the `genDiff` projection, produced
-    // WHY: here with the preview pane's context (`DIFF_PREVIEW_CONTEXT`), so the display path
-    // WHY: (`edit-tool preview` → preview-controller → edit-render) consumes it and never re-projects.
     const diff = genDiff(
       file.originalNormalized,
       file.result,
@@ -162,5 +159,4 @@ export async function preview(
   }
 }
 
-// WHY: exported so the envelope test drives the routing seam without running a pipeline.
 export { toFailure };

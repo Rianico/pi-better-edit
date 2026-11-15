@@ -105,9 +105,8 @@ export interface BaselineSpanContext {
   originalHashes: string[];
   originalNormalized: string;
   /**
-   * WHY: the pipeline owns the store seam a rejection serve records through, so the gate
-   * WHY: receives the recorder instead of importing it — the pre-mutation gate and the
-   * WHY: sequential mutate loop keep sharing one recorder.
+   * Injected rather than imported: the pipeline owns the store seam a rejection serve records
+   * through, so the pre-mutation gate and the sequential mutate loop share one recorder.
    */
   recordRejectionServe: (args: {
     error: DomainError;
@@ -129,6 +128,7 @@ export interface BaselineSpanContext {
  *
  * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines are mutated state the overlap gate
  * must see (invariant 5). A copy's source is read, not mutated, so it adds no span.
+ * Rejections aggregate in `assertBatchSpansDisjoint`, so this seam records the rows each failing edit owes and rethrows the raw diagnostic — the `edit[i] (path) failed:` envelope lands once, at aggregation.
  */
 async function resolveBaselineSpans(
   edit: HEdit,
@@ -137,9 +137,6 @@ async function resolveBaselineSpans(
 ): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
-  // WHY: rejections are aggregated in `assertBatchSpansDisjoint`, so this seam records the rows
-  // WHY: each failing edit owes and rethrows the RAW diagnostic — the `edit[i] (path) failed:`
-  // WHY: envelope lands once at aggregation, and a non-domain throw aborts immediately.
   const abort = async (error: unknown): Promise<never> => {
     if (error instanceof DomainError) {
       await ctx.recordRejectionServe({
@@ -158,9 +155,7 @@ async function resolveBaselineSpans(
     const to = leased.resolved.hash_bounds[1].line;
     return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
   };
-  // WHY: follow-up — this pre-heal is dead since `resolveLeasedEdit` heals a reversed pair itself
-  // WHY: (`[W_REVERSED_ANCHORS]`) and the span below is order-proof via `Math.min`/`Math.max`
-  // WHY: anyway. Kept, not deleted, pending the cleanup pass that covers the heal path.
+  // HACK: dead pre-heal — `resolveLeasedEdit` heals a reversed pair itself and the span below is order-proof via `Math.min`/`Math.max`, so this survives only until the heal-path cleanup pass.
   const fixed = swapReversedRanges(edit, fileHashes, []);
   let leased: LeasedEditResolution;
   try {
@@ -194,8 +189,15 @@ async function resolveBaselineSpans(
 
 /**
  * Overlapping or nested spans in one `edits[]` array reject the entire batch before the first
- * mutation (spec §3.2.3). The preceding-delta working buffer is only well-defined for spans that are
+ * mutation (spec §3.2.3): the preceding-delta working buffer is only well-defined for spans that are
  * strictly ordered, so a batch that would edit one line twice is a model error, not a merge.
+ *
+ * Validation aggregates instead of failing fast, since every item resolves against the same pure
+ * pre-batch snapshot: one failing edit cannot mask another, and invalid anchors leave no coordinates
+ * to compare, so validation rejections throw before the overlap scan. A move's target and its retired
+ * source are one item, never a batch conflict — `applyEdit` refuses that overlap itself
+ * (`E_BAD_PAYLOAD`) and the four touching spellings stay legal noops (ticket-02b P1-B) — and the
+ * abort still serves the rejected rows, like the sequential abort, so a retry needs no re-read.
  */
 export async function assertBatchSpansDisjoint(
   edits: HEdit[],
@@ -203,9 +205,6 @@ export async function assertBatchSpansDisjoint(
 ): Promise<void> {
   if (edits.length < 2) return;
   const spans: BaselineSpan[] = [];
-  // WHY: validation aggregates instead of failing fast: every item resolves against the same pure
-  // WHY: pre-batch snapshot, so one failing edit cannot mask another and the model fixes all of
-  // WHY: them in one resubmission.
   const failures: { error: DomainError; index: number }[] = [];
   for (let index = 0; index < edits.length; index++) {
     try {
@@ -215,8 +214,6 @@ export async function assertBatchSpansDisjoint(
       failures.push({ error, index });
     }
   }
-  // WHY: anchor failures mask overlap reporting — without valid anchors there are no coordinates
-  // WHY: to compare, so validation rejections throw before the overlap scan below.
   if (failures.length === 1) {
     const only = failures[0]!;
     throw batchAbortFor({ error: only.error, index: only.index, path: ctx.path });
@@ -228,14 +225,8 @@ export async function assertBatchSpansDisjoint(
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
-      // WHY: a move's target and its own retired source are one item, never a batch conflict —
-      // WHY: `applyEdit` rejects that overlap with `E_BAD_PAYLOAD`: a replacement's spans must not
-      // WHY: intersect; an insertion overlaps only a point strictly inside the retired lines, so
-      // WHY: the four touching spellings stay legal noops (ticket-02b P1-B).
       if (a.index === b.index) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
-        // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
-        // WHY: served like the sequential abort, so a retry never needs a re-read.
         const originalLines = splitLines(ctx.originalNormalized);
         const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
         throw new DomainError("E_BATCH_ABORT", {

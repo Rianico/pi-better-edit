@@ -62,6 +62,7 @@ import {
 
 export type { PipelineOptions, ProcessedEditFile };
 
+/** A move's retired source joins the union whatever the placement; a copy retires nothing. */
 function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string> {
   const removedHashes = new Set<string>();
   const addSpan = (startHash: string, endHash: string): void => {
@@ -76,7 +77,6 @@ function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string
   if (edit.placement !== "before" && edit.placement !== "after") {
     addSpan(edit.hash_bounds[0].hash, edit.hash_bounds[1].hash);
   }
-  // WHY: (ticket-02, invariant 7) a move's retired source joins the union whatever the placement; a copy retires nothing.
   if (edit.source?.retire) {
     addSpan(edit.source.bounds[0].hash, edit.source.bounds[1].hash);
   }
@@ -161,6 +161,12 @@ type ApplyOneEditOutcome =
       neverServedCount: number;
     };
 
+/**
+ * Apply one edit to the working buffer. `filePath` and `absolutePath` carry the same canonical path,
+ * because the hash re-read below and the write must agree. A rejection standing at buffer coordinates
+ * is never recorded as served: those rows would patch the mirror at the wrong positions and refuse a
+ * later standalone edit of a served span.
+ */
 async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutcome> {
   abortIf(input.signal);
 
@@ -175,7 +181,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   let anchorResult: ReturnType<typeof applyEdit>;
   try {
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
-      // WHY: read/write agreement — both fields must be the canonical absolute path `hashesFor` re-reads below.
       filePath: input.absolutePath,
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
@@ -186,8 +191,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     });
   } catch (error) {
     if (error instanceof DomainError) {
-      // WHY: recording these rows would patch the persistent mirror at the wrong positions,
-      // WHY: displacing the real served rows so a later standalone edit of a served span was refused.
       if (input.baselineLineOf !== undefined && error.servedRows.length > 0) {
         return input.onRejected(shiftedBufferRejection(error, input.baselineLineOf));
       }
@@ -260,14 +263,14 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
  * so, stating which current-file lines an anchored read would serve (facts only, no retry
  * directive). Code and cause are preserved; the headline and first offending line are re-anchored
  * to current-file coordinates (a buffer line that has no baseline is omitted).
+ * The row frame is per code: `E_STALE_RANGE`/`E_STALE_ANCHOR` producers name working-buffer coordinates,
+ * while the `E_UNVERIFIED_RANGE` window already names current-file lines. No other row-carrying code
+ * reaches here today; one that does keeps its rendering but is still never recorded by the caller.
  */
 function shiftedBufferRejection(
   error: DomainError,
   baselineLineOf: (bufferLine: number) => number | undefined,
 ): DomainError {
-  // WHY: E_STALE_RANGE/E_STALE_ANCHOR producers name working-buffer coordinates; the E_UNVERIFIED_RANGE
-  // WHY: retirement window names served (already current-file) lines, so mapping those through
-  // WHY: `baselineLineOf` would double-map them — the row frame is selected per code.
   const rowsAreBufferCoordinates = error.code !== "E_UNVERIFIED_RANGE";
   const toCurrentLine = (line: number): number | undefined =>
     rowsAreBufferCoordinates ? baselineLineOf(line) : line;
@@ -313,14 +316,12 @@ function shiftedBufferRejection(
       headline: `${relabelHeadline(headline, toCurrentLine)}${note}`,
     });
   }
-  // WHY: no other row-carrying code reaches the mutate loop's resolver; one that does keeps its
-  // WHY: rendering but is still never recorded at buffer coordinates by the caller.
   return error;
 }
 
 /**
  * Re-anchors a producer headline's working-buffer line numbers to the current-file lines they map
- * to. WHY: a headline built inside the changed buffer names buffer lines that no longer exist in the
+ * to. A headline built inside the changed buffer names buffer lines that no longer exist in the
  * current file; the rowless refusal must name current-file coordinates only. Only the `line N` and
  * `line N-M` forms the producers emit are rewritten; a line with no baseline keeps the original
  * text, and a range whose end has no baseline drops the end (never a buffer number).
@@ -342,6 +343,10 @@ function relabelHeadline(
  * Records the reject-and-serve rows a rejected edit owes the model, so the anchors it serves are
  * usable without a re-read (README reject-and-serve contract). The pre-mutation span gate and the
  * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
+ * A rowless rejection (a target-lost refusal, pinned by the seam oracle) returns before anything leases:
+ * there is nothing to serve, and every window that identifies the model's range still leases through the
+ * rows below. A preview is a containment boundary — mirroring its rows would let an edit that was never
+ * applied satisfy the read guard.
  */
 async function recordRejectionServe(args: {
   error: DomainError;
@@ -351,11 +356,7 @@ async function recordRejectionServe(args: {
   lineCount: number;
   contentHash: string | undefined;
 }): Promise<void> {
-  // WHY: a target-lost rejection carries no rows (the seam oracle pins `servedRows: []`), so there is
-  // WHY: nothing to lease and an accidental retry cannot write; every window that identifies the model's
-  // WHY: range still leases through the rows below, so the length check alone owns the skip.
   if (args.error.servedRows.length === 0) return;
-  // WHY: a preview is a containment boundary — mirroring its rows would let an edit that was never applied satisfy the read guard.
   if (!args.isPreview) {
     notifyServedSpans({
       filePath: args.absolutePath,
@@ -372,12 +373,11 @@ async function recordRejectionServe(args: {
 }
 
 /**
- * WHY: (ticket-01 hardening, ticket-04 rename) the single exhaustive view of the payload union for
- * WHY: text consumers — the noop-loop tracker discriminates its noop episodes with this. A new
- * WHY: union arm must add a case here or `assertNever` fails `pnpm run typecheck`. The `reference`
- * WHY: arm renders as its span's anchors with the mode word, never a placeholder empty text: the
- * WHY: copied content is not known here, and collapsing every non-literal arm to "" would fuse
- * WHY: distinct noop episodes into one count.
+ * The one exhaustive view of the payload union for text consumers: the noop-loop tracker discriminates
+ * its noop episodes with this, so a new union arm must add a case here or `assertNever` fails typecheck.
+ * The `reference` arm renders as its span's anchors with the mode word, never a placeholder empty text —
+ * the copied content is not known here, and collapsing every non-literal arm to "" would fuse distinct
+ * noop episodes into one count.
  */
 function replacementTextForPayload(payload: DesiredContent): string {
   switch (payload.kind) {
@@ -393,17 +393,23 @@ function replacementTextForPayload(payload: DesiredContent): string {
 }
 
 /**
- * WHY: (ticket-04 §3.6) an `empty` payload with `"before"`/`"after"` parses to a NO-OP marker, not
- * WHY: to an HEdit: the mutate loop counts the item as a noop and warns the model channel; it
- * WHY: never reaches `applyEdit` and never consults the noop-loop tracker (no bytes are rewritten,
- * WHY: so there is no repeated-content episode to count).
+ * An `empty` payload with `"before"`/`"after"` parses to a NO-OP marker, not an `HEdit`: the mutate loop
+ * counts the item as a noop and warns, so it never reaches `applyEdit` and never consults the noop-loop
+ * tracker — no bytes are rewritten, so there is no repeated-content episode to count.
  */
 type ParsedItem = { edit: HEdit } | { noopInsert: true };
 
+/**
+ * Parse aggregates like the span gate: one malformed item must not mask another, so the model fixes every
+ * malformed item in one resubmission. Parsing is pure, so atomicity is trivial here.
+ *
+ * The empty-`literal` guard lives at this seam because `execute()` never runs `assertReq`: a directly
+ * constructed `{ kind: "literal", text: "" }` would otherwise delete the span and report success. The
+ * mode travels twice (`payload.mode` and `span.mode`) and only the top-level one is consumed; a
+ * disagreement is refused rather than silently resolved, because admission folds the wire `text_ref`.
+ */
 function parseEdits(items: NormalizedEditRequest["edits"], path: string): ParsedItem[] {
   const parsed: ParsedItem[] = [];
-  // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another, so
-  // WHY: the model fixes every malformed item in one resubmission; parsing is pure, so atomicity is trivial.
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
@@ -413,10 +419,6 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "literal":
-          // WHY: (remediation-2 B4) the guard sits where the destruction is reachable: `execute()` never
-          // WHY: calls `assertReq`, and a directly-constructed `{kind:"literal", text:""}` used to delete the
-          // WHY: span and report success (the wire folds `"text": ""` into the deletion payload, so only
-          // WHY: engine-seam construction can produce it). Mirror item (iv): refuse LOUD, naming the wire field.
           if (payload.text === "") {
             throw new DomainError("E_INTERNAL_INVARIANT", {
               message:
@@ -427,18 +429,12 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
           text = payload.text;
           break;
         case "reference":
-          // WHY: (keel F3) the mode travels twice — `payload.mode` and `span.mode` — and only the
-          // WHY: top-level one is consumed: a disagreement is refused, never silently resolved, because
-          // WHY: admission folds the wire `text_ref` verbatim, so this fires only on a constructed payload.
           if (payload.span.mode !== payload.mode) {
             throw new DomainError("E_INTERNAL_INVARIANT", {
               message:
                 'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
             });
           }
-          // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes them
-          // WHY: from the resolved source span before any gate or splice runs, so no placeholder text
-          // WHY: reaches the wire. A foreign span is already a `literal` here, so this span names THIS file.
           source = {
             anchor_from: payload.span.anchor_from,
             anchor_to: payload.span.anchor_to,
@@ -480,8 +476,10 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
   return parsed;
 }
 
-// WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a RESOLVED-PATH question, not a spelling one:
-// WHY: `./target.txt` and `target.txt` name one file, so a same-file `cut` takes the intra-file path.
+/**
+ * Foreign-vs-same-file is a resolved-path question, not a spelling one: `./target.txt` and `target.txt`
+ * name one file, so a same-file `cut` takes the intra-file path.
+ */
 async function sameResolvedPath(a: string, b: string, cwd: string): Promise<boolean> {
   const [resolvedA, resolvedB] = await Promise.all([
     resolveTarget(toCwd(a, cwd)),
@@ -501,16 +499,16 @@ async function foreignRefFileOf(
     : payload.span.file;
 }
 
-// WHY: (item (ii)) the three never-served codes pass through UNCHANGED however many rows a producer
-// WHY: attaches: §0's length proxy holds only because no producer carries rows there — a code set is honest.
+/** The three never-served codes pass through UNCHANGED however many rows a producer attaches: §0's
+ * length proxy holds only because no producer carries rows there, so a code set is honest. */
 const NEVER_SERVED_FOREIGN_CODES: ReadonlySet<DomainErrorCode> = new Set([
   "E_UNKNOWN_ANCHOR",
   "E_FOREIGN_ANCHOR",
   "E_STALE_ANCHOR",
 ]);
 
-// WHY: (item (ii)) these codes HOLD a lease — retirement or drift must surface with the code that
-// WHY: means it; an E_STALE_ANCHOR rewrite would name the wrong cause and serve no rows this call holds.
+/** These codes hold a lease, so retirement or drift must surface with the code that means it: an
+ * `E_STALE_ANCHOR` rewrite would name the wrong cause and serve no rows this call holds. */
 const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
   "E_UNVERIFIED_RANGE",
   "E_STALE_RANGE",
@@ -523,15 +521,14 @@ const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
  * therefore SERVED or ABSENT — the leased codes are re-wrapped HERE with their rows dropped and `refFile` named, except
  * `E_TARGET_LOST`, whose format already names the file and carries no rows, so it passes through. §0's never-served pass-through
  * below stays (its exact-code pins ride it); the length guard in it is SHADOWED by the code-set check and is NOT the enforcement point.
- * WHY: (B6, ISSUE-6 repo half — second recurrence) a never-served foreign anchor is ticketed to the `W_NEVER_SERVED_SHAPE` soft
- * WHY: hint, but it surfaces as a hard rejection here, and that deviation is structural: `[W_*]` codes are the APPLIED tier —
- * WHY: `warnBlock` renders them only on a result that mutated — and a foreign failure aborts before any apply, so the channel that
- * WHY: would carry the hint never exists for this call.
+ * A never-served foreign anchor is ticketed to the `W_NEVER_SERVED_SHAPE` soft hint but surfaces as a hard
+ * rejection here, and that deviation is structural: `[W_*]` codes are the APPLIED tier — `warnBlock` renders
+ * them only on a result that mutated — and a foreign failure aborts before any apply, so the channel that
+ * would carry the hint never exists for this call. The fallback's `cause` prefers the inner typed cause,
+ * so a retirement or drift shape never reports `"never-served"` dishonestly.
  */
 function foreignRejection(error: unknown, refFile: string): DomainError {
   if (error instanceof DomainError) {
-    // WHY: (§0) kept per §0, but FULLY SHADOWED by the code-set check below (mutation M9 → 0 red): every
-    // WHY: code it matches is already in `NEVER_SERVED_FOREIGN_CODES` — not the enforcement point.
     if (
       (error.code === "E_UNKNOWN_ANCHOR" ||
         error.code === "E_FOREIGN_ANCHOR" ||
@@ -542,13 +539,9 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     }
     if (NEVER_SERVED_FOREIGN_CODES.has(error.code)) return error;
     if (LEASED_FOREIGN_PASSTHROUGH_CODES.has(error.code)) {
-      // WHY: (item A) `E_TARGET_LOST` already satisfies served-or-absent: its format names the file and renders no rows.
       if (error.code === "E_TARGET_LOST") return error;
       return foreignLeasedWrap(error, refFile);
     }
-    // WHY: (§9.9) the fallback claims `cause: "never-served"`, honest only for failures with no lease
-    // WHY: behind them: derive the inner typed cause when there is one, so a retirement/drift shape that
-    // WHY: reaches here can never surface a dishonest cause in the envelope-validated RangeCause union.
     const cause = error.cause ?? error.details.cause ?? "never-served";
     return new DomainError("E_STALE_ANCHOR", {
       headline:
@@ -563,8 +556,11 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
   });
 }
 
-// WHY: (§0's exact-code pins) the lease code survives verbatim: retirement or drift must surface under
-// WHY: the code that means it — an `E_STALE_ANCHOR` rewrite would name the wrong cause and offer no rows.
+/**
+ * The lease code survives verbatim: retirement or drift must surface under the code that means it — an
+ * `E_STALE_ANCHOR` rewrite would name the wrong cause and offer no rows. Any other code throws: the
+ * caller's set admits only the two arms above plus `E_TARGET_LOST`.
+ */
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
@@ -591,8 +587,6 @@ function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
       ...firstOffending,
     });
   }
-  // WHY: fail closed — the caller's code set admits only the two arms above plus `E_TARGET_LOST`,
-  // WHY: which passes through untouched; a set edited without extending this wrap must be loud.
   throw error;
 }
 
@@ -616,17 +610,12 @@ async function materializeForeignItem(
 ): Promise<NormalizedEditItem> {
   const payload = item.payload;
   if (payload.kind !== "reference") return item;
-  // WHY: (keel F3) the same mode-agreement rule as the parse seam — the foreign seam must not decide between the arms implicitly either.
   if (payload.span.mode !== payload.mode) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message:
         'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
     });
   }
-  // WHY: (ticket-04b) ticket-04 item (iv) refused a foreign `mode: "cut"` here because enabling it
-  // WHY: without a transaction would report success and leave the source behind; that refusal is
-  // WHY: DELETED deliberately — the correlated transaction is the missing half, and the cut's
-  // WHY: retirement now rides the recorded entry below (`edit.foreign-cut.test.ts` witnesses it).
   // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
   const { fileLines } = view;
   const snapshot: FileSnapshotContext = {
@@ -634,8 +623,6 @@ async function materializeForeignItem(
     fileHashes: view.fileHashes,
     filePath: refFile,
   };
-  // WHY: the SAME seam as every served span — leased identity first, fail-closed on a missing or
-  // WHY: retired lease, whole window verified; the foreign half is read-only, its semantics identical.
   const spanEdit: HEdit = {
     content_lines: [],
     hash_bounds: [{ hash: payload.span.anchor_from }, { hash: payload.span.anchor_to }],
@@ -654,8 +641,6 @@ async function materializeForeignItem(
   const l1 = resolution.resolved.hash_bounds[0].line;
   const l2 = resolution.resolved.hash_bounds[1].line;
   if (payload.mode === "cut") {
-    // WHY: the SUBMITTED anchors are recorded, not resolved lines: the source transaction re-resolves
-    // WHY: them through its own leases, so a shift rebases honestly and real drift fails closed before any rename.
     cuts.push({
       refFile,
       absolutePath: view.absolutePath,
@@ -669,9 +654,11 @@ async function materializeForeignItem(
   };
 }
 
-// WHY: (ticket-04 item (i)) `parseText` maps "" → [] and N newlines → N blank lines
-// WHY: (`src/hashline/parse.ts:76-77`), the INVERSE of `join("\n")`: joining an all-blank span would
-// WHY: lose exactly one line, so the all-blank case reuses the wire's own convention; mixed spans join exactly.
+/**
+ * `parseText` maps `""` → `[]` and N newlines → N blank lines (`src/hashline/parse.ts:76-77`), the inverse
+ * of `join("\n")`: joining an all-blank span would lose exactly one line, so the all-blank case reuses the
+ * wire's own convention. Mixed spans join exactly.
+ */
 function collapseSpanToText(span: string[]): string {
   if (span.length > 0 && span.every((line) => line.length === 0)) {
     return "\n".repeat(span.length);
@@ -679,6 +666,11 @@ function collapseSpanToText(span: string[]): string {
   return span.join("\n");
 }
 
+/**
+ * One read+load+lease per RESOLVED path per batch: without the memo, a foreign file that changes on disk
+ * between two items would materialize two revisions into one call with no diagnostic — correctness, not
+ * performance. The map is batch-scoped, because a global cache would go stale.
+ */
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
   input: { cwd: string; file: string; store: HashStore; sessionKey: string },
@@ -686,9 +678,6 @@ async function materializeForeignReferences(
   const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
   const cuts: ForeignCutRecord[] = [];
   if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
-  // WHY: (item (v), §10) one read+load+lease per RESOLVED path per batch: without the memo a foreign
-  // WHY: file changing on disk BETWEEN two items materializes two revisions into one call with no
-  // WHY: diagnostic — correctness, not performance. The map is batch-scoped; a global cache would go stale.
   const views = new Map<string, Promise<ForeignServedView>>();
   const out: NormalizedEditItem[] = [];
   for (let index = 0; index < items.length; index++) {
@@ -714,12 +703,23 @@ async function materializeForeignReferences(
   return { items: out, cuts };
 }
 
+/**
+ * The batch mutate loop. Its buffer is the preceding-delta rebase: each edit applies to the previous
+ * edit's output (`p_buffer = s'_k + Δ_k`), which the disjoint baseline spans keep well-defined.
+ * `batchBlockedHashes` starts from the store snapshot and grows with each applied item's removals, so
+ * later items still observe earlier removals with no store write before `writeAtomic` (#117).
+ * A move's retired source is an edited interval too, so the drift scan sees its negative delta and the
+ * union covers the removed lines. A span-ref item splices its two regions in DESCENDING start order, so
+ * each region's coordinates still name pre-item lines; it reports its own counts because
+ * `countLineChanges` sees only the target span. The final `persist: false` keeps S_final in memory,
+ * because persisting it there retired anchors a batch that wrote nothing still validly held.
+ * The never-served soft hint is once per call (#146); a noop insert never contributes, because a noop writes nothing.
+ */
 async function runMutations(
   request: NormalizedEditRequest,
   cwd: string,
   options?: PipelineOptions,
 ): Promise<ProcessedEditFile> {
-  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
   const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
@@ -731,9 +731,6 @@ async function runMutations(
     sessionKey,
   });
   const warnings: string[] = [];
-  // WHY: (#146) the never-served soft hint is once per call: per-item counts travel as structured data
-  // WHY: (`neverServedCount`) and aggregate here into one counted hint rendered after the loop; no
-  // WHY: other warning tier is capped, and a noop writes nothing so its count is never aggregated.
   let neverServedTotal = 0;
   const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
     if (list) warnings.push(...list);
@@ -747,7 +744,6 @@ async function runMutations(
   const isPreview = options?.noPersist === true;
 
   const parsed = parseEdits(items, path);
-  // WHY: noop-insert markers mutate nothing, so the batch span gate (regions the call rewrites) skips them.
   const realEdits: HEdit[] = [];
   for (const one of parsed) {
     if ("edit" in one) realEdits.push(one.edit);
@@ -771,17 +767,12 @@ async function runMutations(
     ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
   });
 
-  // WHY: (04b-rem P2-3) the admission round-trip guard: anchors were derived from the DECODED text, so
-  // WHY: bytes that do not re-encode identically cannot be restored by any line-addressed write —
-  // WHY: refuse before anything mutates, making every later byte-identity claim in this module true by
-  // WHY: construction. The read path keeps disclosing such files; only the edit path refuses.
+  // Ref: docs/reference/error-and-warning-contract.md
   if (hadUtf8DecodeErrors) {
     throw new DomainError("E_LOSSY_TEXT", { path });
   }
 
   if (realEdits.length > 1) {
-    // WHY: the baseline identity seam is built from the pre-batch `S_curr`, so a span the gate
-    // WHY: compares is the `s'_k` the apply path would rewrite — one source for both (spec §3.2.1).
     await assertBatchSpansDisjoint(realEdits, {
       served,
       identity: leaseSpanSource({
@@ -813,10 +804,6 @@ async function runMutations(
     const id = currentIds[bufferLine - 1];
     return id === null || id === undefined ? undefined : baselineLineById.get(id);
   };
-  // WHY: the working buffer applies each edit to the previous edit's output — exactly spec §3.2.2's
-  // WHY: preceding-delta rebase, so `p_buffer = s'_k + Δ_k` falls out without materializing Δ_k.
-  // WHY: `assertBatchSpansDisjoint` keeps the shift well-defined: disjoint baseline spans mean no edit's
-  // WHY: coordinates are moved by an edit whose span contains them.
   let appliedCount = 0;
   let noopCount = 0;
   let totalAddedLines = 0;
@@ -828,9 +815,6 @@ async function runMutations(
   let unionEndHash = "";
   const editedIntervals: ResolvedRange[] = [];
   let lastApplied: { content: string; hashes: string[]; removedHashes: Set<string> } | undefined;
-  // WHY: (#117, spec §3.2.4 step 4) the legacy v6 `served.retired` mirror stays read-only in-memory:
-  // WHY: `batchBlockedHashes` starts from the store snapshot and grows with each applied item's
-  // WHY: removals, so later items still observe earlier removals with no store write before `writeAtomic`.
   let baseCanonDigests: (string | null)[] = [];
   try {
     baseCanonDigests = await createSessionHandle(
@@ -861,8 +845,6 @@ async function runMutations(
     const item = items[index]!;
     const parsedItem = parsed[index]!;
     if ("noopInsert" in parsedItem) {
-      // WHY: (ticket-04 §3.6) an empty "before"/"after" writes nothing by construction, so it skips
-      // WHY: `applyEdit` and the noop-loop tracker — that tracker counts repeated content REWRITES, not this.
       noopCount += 1;
       warnings.push(
         formatWarning("W_NOOP_INSERT", {
@@ -897,8 +879,6 @@ async function runMutations(
     });
 
     const range = outcome.range;
-    // WHY: (ticket-02) a move's retired source is an edited interval too: the drift scan must
-    // WHY: see its negative delta, and the union must cover the lines it removed.
     const coveredRanges: ResolvedRange[] =
       outcome.kind === "applied" && outcome.sourceRange ? [range, outcome.sourceRange] : [range];
     editedIntervals.push(...coveredRanges);
@@ -932,13 +912,8 @@ async function runMutations(
         lines: splitLines(currentContent),
         sessionKey,
         contentHash: snapshotHashFor(currentContent),
-        // WHY: pass the buffer→baseline mapping only once an earlier item changed the buffer, so the
-        // WHY: noop-loop reject path can apply the same rowless rule as the shifted-buffer rejections.
         ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       });
-      // WHY: a looping item of a multi-item call rejects through the same batch envelope as every other
-      // WHY: rejection — the failing item, its own `[E_NOOP_LOOP]` diagnostic, the atomicity trailer — so
-      // WHY: the model knows the earlier items were rolled back too; single-item calls keep the direct path.
       if (decision.action === "reject") {
         if (items.length === 1) throw decision.error;
         throw batchAbortFor({ error: decision.error, index, path });
@@ -954,8 +929,6 @@ async function runMutations(
     }
     appliedCount += 1;
     if (outcome.literalBypass) literalDeclarations += 1;
-    // WHY: (ticket-02, invariant 8) a span-ref item reports its own honest counts — inserted lines and
-    // WHY: retired-source-plus-replaced-target removals — because `countLineChanges` sees only the target span.
     const stats = outcome.mutationStats;
     const { totalAddedLines: added, totalRemovedLines: removed } = stats
       ? { totalAddedLines: stats.addedLines, totalRemovedLines: stats.removedLines }
@@ -975,9 +948,6 @@ async function runMutations(
     currentHashes = outcome.hashes;
     if (!isPreview) {
       if (outcome.mutationSpans) {
-        // WHY: (ticket-02) a span-ref item mutates up to two regions of the same pre-item buffer, so each
-        // WHY: is spliced in DESCENDING start order: every region's coordinates then still name the pre-item
-        // WHY: lines, and a region the item skipped as a noop never shifts the map.
         for (const span of [...outcome.mutationSpans].sort((a, b) => b.startLine - a.startLine)) {
           currentIds = spliceWorkingBufferIds(
             currentIds,
@@ -1005,8 +975,6 @@ async function runMutations(
   const result = currentContent;
   let resultHashes = currentHashes;
   if (appliedCount > 0 && lastApplied) {
-    // WHY: `persist: false` — S_final is still an in-memory working buffer here (spec §3.2.4); persisting
-    // WHY: made a batch that wrote nothing retire every anchor the session still validly held.
     resultHashes = await lineHashes(
       result,
       absolutePath,
@@ -1035,7 +1003,6 @@ async function runMutations(
         path: absolutePath,
       });
     } catch (error) {
-      // WHY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.
       reportDiagnostic("mutation-engine", "Failed to compute drift notice:", error);
     }
   }
@@ -1085,25 +1052,18 @@ export async function previewEdits(
  * tally clears, the legacy retire mirror, and the authoritative snapshot/lineage/lease/served-
  * mirror transaction. Shared verbatim by the single-file path and `runCutTransaction` — one
  * materialization owner for every committed file. Returns the diff info for the batch section.
+ * Only bytes on disk retire the tally and the leases: a rejected batch, `E_UNDO_UNAVAILABLE` or a
+ * `writeAtomic` rollback never reaches this site, so its counters and leases survive the resubmission.
+ * The served mirror's truncation shape reproduces `recordDiff`'s plan (`planServeRecording`) exactly.
  */
 async function finishCommittedFile(
   file: ProcessedEditFile,
   options: PipelineOptions | undefined,
   sessionKey: string,
 ): Promise<ReturnType<typeof genDiff>> {
-  // WHY: the clear side of the tally, separated from verification: the count was recorded while the edit
-  // WHY: was uncommitted, so only bytes on disk retire it — per session, another session's tally stays its own.
   clearServedRefusals(sessionKey, file.absolutePath);
-  // WHY: the noop-loop tracker clears only here, beside the served-refusal tracker, so the counters
-  // WHY: reflect committed reality: an edit that writes nothing (rejected batch, `E_UNDO_UNAVAILABLE`,
-  // WHY: `writeAtomic` rollback) never reaches this site, so its counters survive for the resubmission.
   clearNoopLoop(sessionKey, file.absolutePath);
 
-  // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4), deferred to
-  // WHY: here so an edit that writes nothing (rejected batch, `E_UNDO_UNAVAILABLE`, `writeAtomic` rollback)
-  // WHY: can never retire a lease the session still holds — `runMutations` materializes while `writeAtomic`
-  // WHY: can still fail. (#117) The legacy mirror retires once here from the batch's accumulation; a store
-  // WHY: failure keeps the committed bytes authoritative and warns, never swallows.
   if (file.removedHashes.size > 0) {
     try {
       const legacyHandle =
@@ -1130,9 +1090,6 @@ async function finishCommittedFile(
   );
   const denseRows = denseServeRows(file.resultHashes);
   try {
-    // WHY: the served mirror is written in the SAME transaction as snapshot/lineage/retirement/leases
-    // WHY: (spec §3.2.4 step 4, CAND-3): a lease committed without its mirror row serves a false
-    // WHY: `E_STALE_RANGE`, and a mirror row without a lease is no evidence at all.
     // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
     await upsertSnapshotFor(
       {
@@ -1146,8 +1103,6 @@ async function finishCommittedFile(
       {
         retireLeases: true,
         leases: { sessionKey, rows: denseRows },
-        // WHY: the mirror shape reproduces `recordDiff`'s truncation plan
-        // WHY: (`planServeRecording`) exactly — same clamp/clear/patch, same displaced-anchor retirement.
         servedMirror: {
           sessionKey,
           rows: denseRows,
@@ -1159,8 +1114,6 @@ async function finishCommittedFile(
       },
     );
   } catch (error) {
-    // WHY: best-effort post-write materialization (SPEC §3.6.2): the bytes are on disk, so a store failure
-    // WHY: leaves the in-memory hashes authoritative — report success, but warn that store sync is deferred.
     reportDiagnostic(
       "mutation-engine",
       "Failed to commit post-write snapshot materialization:",
@@ -1172,16 +1125,15 @@ async function finishCommittedFile(
 }
 
 /**
- * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md). NO FILESYSTEM ATOMICITY IS CLAIMED:
- * `writeAtomic` is per-path, so two files mean two renames with a real crash window between them. The guarantee is three-part:
- *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source retirement. A crash between the renames
- *     leaves the copy at the target and the span still at the source — duplication, recoverable; the inverse ordering would be data loss.
- *  2. DURABLE INTENT — every file's undo row carries the transaction id and a `cut_intent` row names the transaction before the first
- *     rename, so a half-applied transaction is detectable on the next run.
- *  3. REPAIR — `repairCutIntents` (src/cut-repair.ts, run on every live apply) resolves an orphaned intent to complete-the-cut OR
- *     restore-both-files from the rows' pre/post bytes, losing no content in either resolution.
- * Every failure before the first rename leaves every file untouched (the plans run in-memory first; any throw aborts the call); failures
- * inside the window roll back the written files best-effort, and a rollback that does not hold LEAVES THE INTENT ROW for repair.
+ * The foreign-source cut as one correlated multi-file transaction (`docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md`);
+ * NO filesystem atomicity is claimed: `writeAtomic` is per-path, so two files mean two renames with a real crash window between them.
+ * ORDERED COMMIT: the target insert is durable BEFORE the destructive source retirement, so a crash between the renames leaves
+ * duplication — recoverable — where the inverse ordering would lose the span. DURABLE INTENT: the `cut_intent` row and the
+ * transaction-tagged undo rows land before the first rename, so a half-applied call is detectable. REPAIR: `repairCutIntents`
+ * (src/cut-repair.ts, run on every live apply) resolves an orphaned intent to complete-the-cut or restore-both from the stored
+ * pre/post bytes. A source's retirement reuses the ordinary deletion-edit shape, so it loads, lease-verifies and span-gates like any
+ * edit; the raw pre-images are captured before the first rename, so the undo rows and a ROLLBACK write those same bytes, never the
+ * canonical fold; and a stale intent row left after a full commit resolves to all-committed and drops itself.
  */
 async function runCutTransaction(
   file: ProcessedEditFile,
@@ -1198,9 +1150,6 @@ async function runCutTransaction(
   const sourcePlans: ProcessedEditFile[] = [];
   for (const absolutePath of [...groups.keys()].sort()) {
     const cuts = groups.get(absolutePath)!;
-    // WHY: the retirement is a deletion payload over the SUBMITTED anchors — the ordinary edit shape —
-    // WHY: so the source gets its own load, lease verification and batch-span gate: overlapping retire
-    // WHY: spans in one source abort the WHOLE call before any rename (§5's disjointness across both files).
     const req: NormalizedEditRequest = {
       file: cuts[0]!.refFile,
       edits: cuts.map((cut) => ({
@@ -1221,11 +1170,6 @@ async function runCutTransaction(
   const plans = [file, ...sourcePlans];
   const txnId = randomUUID();
 
-  // WHY: the RAW pre-images are captured FIRST, so every consumer below — the undo rows' `raw_pre` and
-  // WHY: the rollback — reads the SAME bytes that were on disk before the first rename. Byte identity is
-  // WHY: not promised by this read, it is PROVEN upstream: the admission round-trip guard refused any file
-  // WHY: whose decoded text re-encodes differently, so decode/encode here is lossless by construction
-  // WHY: (ticket-04b §11: after an abort BOTH files are byte-identical to their pre bytes).
   const rawPreBytes = new Map<string, Buffer>();
   for (const plan of plans) {
     rawPreBytes.set(plan.absolutePath, await readBytes(plan.absolutePath));
@@ -1254,14 +1198,9 @@ async function runCutTransaction(
     throw error;
   }
 
-  // WHY: the commit path serializes canonically (one convention, no third path); a ROLLBACK is not a
-  // WHY: commit and must not smuggle in the canonical fold as if it were the restore — it writes the
-  // WHY: captured BUFFERS (ticket-04b §11: after an abort BOTH files are byte-identical to their pre contents).
   const written: ProcessedEditFile[] = [];
   try {
     if (options?.onBeforeFirstCutWrite) {
-      // WHY: test-only observation seam (04b-rem2 R2): fires BEFORE the first rename so the
-      // WHY: write-ahead ordering of the intent record is OBSERVED, not asserted after the fact.
       await options.onBeforeFirstCutWrite();
     }
     abortIf(options?.signal);
@@ -1272,8 +1211,6 @@ async function runCutTransaction(
     written.push(file);
     for (const plan of sourcePlans) {
       if (options?.onCutBetweenWrites) {
-        // WHY: test-only fault-injection seam (ticket-04b §3): fires INSIDE the two-rename
-        // WHY: window, after the previous file's rename is durable.
         await options.onCutBetweenWrites(written[written.length - 1]!.absolutePath);
       }
       abortIf(options?.signal);
@@ -1309,9 +1246,6 @@ async function runCutTransaction(
         );
       }
     }
-    // WHY: a rollback that did not hold LEAVES the intent row and the transaction-tagged undo rows:
-    // WHY: next-run repair resolves to complete-the-cut or restore-both from the stored bytes — never a
-    // WHY: silent loss, never a fake atomicity claim.
     // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
     throw error;
   }
@@ -1319,8 +1253,6 @@ async function runCutTransaction(
   try {
     await dropCutIntent(txnId);
   } catch (error) {
-    // WHY: every byte is committed; a stale intent row resolves to "all == post" on the next
-    // WHY: run and drops itself — repair owns that path, the edit result stands.
     reportDiagnostic("mutation-engine", "Failed to clear the cut intent after commit:", error);
   }
 
@@ -1343,6 +1275,13 @@ async function runCutTransaction(
   };
 }
 
+/**
+ * Repair runs first: a previous run that crashed inside a cut's two-rename window left a durable intent, and
+ * it must be resolved before this call layers undo rows and leases over that state. A cut transaction
+ * serializes EVERY file it will rename for the whole plan+commit, and the queues are taken in sorted order so
+ * two calls with swapped target/source cannot deadlock; copy items never widen the lock set, because a copy's
+ * foreign file stays read-only.
+ */
 export async function apply(
   request: NormalizedEditRequest,
   cwd: string,
@@ -1370,10 +1309,6 @@ export async function apply(
     };
   }
 
-  // WHY: (ticket-04b §2) repair before work: a previous run that crashed inside the two-rename window
-  // WHY: left a durable intent, so resolve it now — complete the cut or restore both files, never lose
-  // WHY: content — BEFORE this call layers its own undo rows and leases over the state. Best-effort: an
-  // WHY: ambiguous member keeps its intent untouched (`src/cut-repair.ts`). Previews skip it: repair is a write path.
   await repairCutIntents(options?.store);
 
   const path = request.file;
@@ -1381,9 +1316,6 @@ export async function apply(
   const mutationTargetPath = await resolveTarget(absolutePath);
   const sessionKey = requireSessionKey(options?.sessionKey);
 
-  // WHY: (ticket-04b §2) a cut transaction serializes EVERY file it will rename for the whole plan+commit,
-  // WHY: and the queues are taken in deterministic sorted order so two calls with swapped target/source
-  // WHY: cannot deadlock. COPY items never widen the lock set — a copy's foreign file stays read-only.
   const cutSourcePaths: string[] = [];
   for (const item of request.edits) {
     if (item.payload.kind !== "reference" || item.payload.mode !== "cut") continue;
@@ -1415,7 +1347,6 @@ export async function apply(
 
     abortIf(options?.signal);
 
-    // WHY: (ticket-04b) a foreign-source cut commits through the correlated transaction; red-first witnessed by `edit.foreign-cut.test.ts`.
     if (file.foreignCuts.length > 0) {
       return await runCutTransaction(file, cwd, options, sessionKey);
     }

@@ -369,10 +369,12 @@ describe("comment gate baseline", () => {
     else it.skip(name, body);
   }
 
-  it("holds the migration backlog at exactly the enumerated count", () => {
-    // WHY: this is the assertion that keeps the dormant ratchet honest — the wave may shrink as
-    // the migration lands, but a comment that joins it raises this number and fails here first.
-    expect(current.length).toBe(AWAITING_MIGRATION_BACKLOG);
+  it("holds the migration backlog at or under the enumerated count", () => {
+    // WHY: this is the assertion that keeps the dormant ratchet honest — the migration lowers the
+    // tree's count without touching this file, so the bound is "at or under"; a comment that JOINS
+    // the wave raises the count and fails here first. The constant is lowered by the ticket that
+    // closes the drain, and at 0 it re-arms the four assertions above.
+    expect(current.length).toBeLessThanOrEqual(AWAITING_MIGRATION_BACKLOG);
   });
 
   itTree("records every current violation in the baseline", () => {
