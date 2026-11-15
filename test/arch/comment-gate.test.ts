@@ -129,6 +129,31 @@ const CORPUS: readonly Shape[] = [
     rules: [],
   },
   {
+    shape: "mid-sentence (WHY: …) is prose, not a tag",
+    code: "// fall through to partial halt below (WHY: never break the view)\nconst a = 1;\n",
+    rules: ["prose"],
+  },
+  {
+    shape: "mid-sentence (See ADR-…) is prose, not a tag",
+    code: "// the canon derivation stays stable (See ADR-0013)\nconst a = 1;\n",
+    rules: ["prose"],
+  },
+  {
+    shape: "leading-tag twin of the mid-sentence WHY is allowed",
+    code: "// WHY: fall through to partial halt below, never breaking the view\nconst a = 1;\n",
+    rules: [],
+  },
+  {
+    shape: "directive with a tagged reason after `--` is allowed",
+    code: "// eslint-disable-next-line no-control-regex -- WHY: these code points are the subject.\nconst probe = /\\u0000/u;\n",
+    rules: [],
+  },
+  {
+    shape: "directive with no reason is prose",
+    code: "// eslint-disable-next-line no-control-regex\nconst probe = /\\u0000/u;\n",
+    rules: ["prose"],
+  },
+  {
     shape: "bare ADR number is not the path form",
     code: "// Ref: ADR-0013\nconst a = 1;\n",
     rules: ["prose"],

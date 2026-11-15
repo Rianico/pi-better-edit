@@ -18,9 +18,32 @@
  * an allowed duplicate with the same text appears beside a rejected one.
  */
 
-/** Tags that make a `//` or `/* *\/` comment carry a reason instead of prose. */
+/**
+ * Tags that make a `//` or `/* *\/` comment carry a reason instead of prose. ANCHORED: the tag must
+ * OPEN the text it is matched against, because an unanchored alternation let a tag anywhere in a
+ * sentence satisfy the gate — `// fall through … (WHY: never break the view)` passed without being
+ * a reason, which is the whole failure this gate exists to prevent.
+ */
 export const ALLOWLIST_RE =
-  /WHY:|SAFETY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|Ref: docs\/[\w./-]+/;
+  /^(?:WHY:|SAFETY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|Ref: docs\/[\w./-]+)/;
+
+/**
+ * Directive comments whose keyword must open the line for its tool to honour it, with the
+ * justification after a `--` separator. Anchoring alone would force these to choose between being
+ * honoured and being explained, so the reason is matched at the start of the remainder.
+ */
+export const DIRECTIVE_PREFIX_RE =
+  /^(?:eslint-disable(?:-next-line|-line)?|oxlint-disable(?:-next-line|-line)?|pi-lens-ignore)(?::\s*[\w@./-]+)?(?:\s+[\w@./-]+)*\s+--\s+/;
+
+/**
+ * Does a tag open this text — either directly, or at the start of a directive's `--` reason?
+ * @param {string} text trimmed comment value
+ */
+export function hasTagAtStart(text) {
+  if (ALLOWLIST_RE.test(text)) return true;
+  const directive = DIRECTIVE_PREFIX_RE.exec(text);
+  return directive !== null && ALLOWLIST_RE.test(text.slice(directive[0].length));
+}
 
 /** Gherkin steps: Title Case keyword plus a mandatory trailing space. Case-sensitive. */
 export const GHERKIN_STEP_RE = /^(Given|When|Then|And|But) /;
@@ -84,9 +107,8 @@ export function isJSDoc(comment) {
 export function isAllowedText(rawValue) {
   const trimmed = rawValue.trim();
   if (trimmed === "") return true;
-  if (ALLOWLIST_RE.test(rawValue)) return true;
-  const unindented = trimmed.trimStart();
-  return GHERKIN_STEP_RE.test(unindented) || GHERKIN_HEADING_RE.test(unindented);
+  if (hasTagAtStart(trimmed)) return true;
+  return GHERKIN_STEP_RE.test(trimmed) || GHERKIN_HEADING_RE.test(trimmed);
 }
 
 /** @param {{ type: string, value: string }} comment */
