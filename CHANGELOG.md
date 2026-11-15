@@ -4,7 +4,7 @@
 
 ### Documentation
 
-* **read:** teach the outline workflow in the served prompts: start with outline above about 200 lines, read only the target window, and do not read the whole file to verify.
+* **read:** teach the outline workflow in the served prompts: start with outline above about 200 lines, read a span under 150 lines in one call, use a 60-line window for a larger function, and do not read the whole file to verify.
 
 ## [2.18.2] - 2026-11-15
 
