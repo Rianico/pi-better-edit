@@ -94,7 +94,6 @@ export async function saveUndo(
       anchorGeneration: entry.anchorGeneration ?? ANCHOR_GENERATION,
     });
   } catch (error) {
-    // WHY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
     reportDiagnostic("edit-undo", "Failed to persist undo entry:", error);
     return { persisted: false, restore: async () => undefined };
   }
@@ -105,7 +104,6 @@ export async function saveUndo(
         if (previous) await writeUndo(path, previous);
         else await removeUndo(path);
       } catch (error) {
-        // WHY: best-effort undo restore — failures to restore previous undo entry after persist failure are ignored; edit already failed and will report E_UNDO_UNAVAILABLE, stale undo state is recoverable on next edit.
         reportDiagnostic("edit-undo", "Failed to restore previous undo entry:", error);
       }
     },
@@ -132,7 +130,6 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
       anchorGeneration: record.anchorGeneration ?? 0,
     };
   } catch (error) {
-    // WHY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
     reportDiagnostic("edit-undo", "Failed to load undo entry:", error);
     return undefined;
   }
@@ -142,7 +139,6 @@ export async function clearUndo(path: string): Promise<void> {
   try {
     await removeUndo(path);
   } catch (error) {
-    // WHY: best-effort undo cleanup — clearUndo failures are ignored; stale undo entry will be overwritten on next edit or pruned, file content already correct.
     reportDiagnostic("edit-undo", "Failed to clear undo entry:", error);
   }
 }

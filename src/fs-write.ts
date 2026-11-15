@@ -99,7 +99,6 @@ async function sweepStaleTemps(dir: string): Promise<void> {
       }
     }
   } catch (error: unknown) {
-    // WHY: best-effort stale temp sweep — readdir failures are ignored; sweep is opportunistic cleanup, writeAtomic proceeds regardless.
     reportDiagnostic("fs-write", "[fs-write] failed to sweep stale temps", error);
   }
 }

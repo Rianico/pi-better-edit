@@ -73,8 +73,6 @@ function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string
       }
     }
   };
-  // WHY: an insertion removes no line — treating its target span as removed would retire the
-  // WHY: identity of a line that survives byte-identical next to the splice point.
   if (edit.placement !== "before" && edit.placement !== "after") {
     addSpan(edit.hash_bounds[0].hash, edit.hash_bounds[1].hash);
   }
@@ -302,7 +300,6 @@ function shiftedBufferRejection(
     servedBlock: "",
     ...(firstOffendingLine !== undefined ? { firstOffendingLine } : {}),
   };
-  // WHY: each `code` gate below selects the registry member whose shape `payload` holds.
   if (error.code === "E_STALE_RANGE") {
     const { headline, cause } = error.payload as DomainError<"E_STALE_RANGE">["payload"];
     return new DomainError("E_STALE_RANGE", {

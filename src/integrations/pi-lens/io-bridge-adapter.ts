@@ -80,9 +80,6 @@ function recordMutated(bridge: IOBridge, notification: MutatedFileNotification):
     });
     if (result?.mutate?.accepted !== true) dropCount += 1;
   } catch {
-    // WHY: advisory-only — a refused record must not propagate into the edit
-    // WHY: or write that already landed, and the failure is the bridge's to
-    // WHY: report.
     dropCount += 1;
   }
 }
@@ -109,9 +106,6 @@ function recordSlicedSpan(
     });
     if (result?.read?.accepted !== true) dropCount += 1;
   } catch {
-    // WHY: advisory-only — one rejected span must not stop the remaining
-    // WHY: spans of the same notification, and the failure is the bridge's
-    // WHY: to report.
     dropCount += 1;
   }
 }
@@ -139,8 +133,6 @@ function recordDiskReads(
     });
     if (result?.read?.accepted !== true) dropCount += 1;
   } catch {
-    // WHY: advisory-only — the bridge's failure belongs to the bridge, never
-    // WHY: to the read or edit that served the rows.
     dropCount += 1;
   }
 }
@@ -191,9 +183,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
       }
       recordMutated(bridge, notification);
     } catch {
-      // WHY: advisory-only — this runs inside core tool execution, so no
-      // WHY: failure may propagate into the edit or write that produced the
-      // WHY: mutation.
+      // WHY: advisory-only — a broken bridge degrades to "no I/O mirrored", never a failed tool call.
     }
   });
   const detachServed = addServedSpanObserver((notification: ServedSpanNotification): void => {
@@ -208,9 +198,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
       }
       recordServedSpans(bridge, notification);
     } catch {
-      // WHY: advisory-only — this runs inside core tool execution, so no
-      // WHY: failure may propagate into the read or edit that served the
-      // WHY: rows.
+      // WHY: advisory-only — mirroring never fails the read that served these rows.
     }
   });
   return () => {
