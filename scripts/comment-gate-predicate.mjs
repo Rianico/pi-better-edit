@@ -32,15 +32,19 @@ export const GHERKIN_HEADING_RE = /^(Feature|Scenario):/;
 export const MAX_BLOCK_LINES = 12;
 
 /**
- * Function node types that own a body. oxlint's AST spells a class or object method as
- * `MethodDefinition` holding a `FunctionExpression`, so this list covers methods too.
+ * Function node types that own a body, spelled for BOTH parsers. oxlint spells a class or object
+ * method as `MethodDefinition` holding a `FunctionExpression`; Babel spells them `ClassMethod` and
+ * `ObjectMethod`. The union is required: the plugin never emits the last two, but the generator's
+ * parser would miss a docblock inside a method body without them, and the arch suite's parity
+ * corpus caught exactly that divergence before this comment existed.
  */
 export const FUNCTION_KINDS = [
   "FunctionDeclaration",
   "FunctionExpression",
   "ArrowFunctionExpression",
+  "ClassMethod",
+  "ObjectMethod",
 ];
-
 /**
  * The only node kinds a `// SAFETY:` run may guard. There is deliberately no
  * callee-name arm: no live site needs one, and a name list would be guessed from
@@ -192,12 +196,14 @@ export function baselineKey(path, text, occurrence) {
 }
 
 /**
- * Parse a suppression file into a key set.
+ * Parse a suppression file into its validated entries. The generator needs the entries (to diff
+ * and rewrite them); the plugin needs only the keys, and `parseBaseline` derives those from here
+ * so both consumers accept exactly the same bytes.
  *
  * @param {string} raw file contents
- * @returns {{ ok: true, keys: Set<string> } | { ok: false, reason: string }}
+ * @returns {{ ok: true, entries: BaselineEntry[] } | { ok: false, reason: string }}
  */
-export function parseBaseline(raw) {
+export function parseBaselineEntries(raw) {
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -208,7 +214,6 @@ export function parseBaseline(raw) {
   if (!Array.isArray(entries)) {
     return { ok: false, reason: 'no "entries" array' };
   }
-  const keys = new Set();
   for (const entry of entries) {
     const { path, text, occurrence } = entry ?? {};
     if (typeof path !== "string" || typeof text !== "string" || typeof occurrence !== "number") {
@@ -217,6 +222,21 @@ export function parseBaseline(raw) {
         reason: "an entry is missing a string path/text or a numeric occurrence",
       };
     }
+  }
+  return { ok: true, entries };
+}
+
+/**
+ * Parse a suppression file into its key set.
+ *
+ * @param {string} raw file contents
+ * @returns {{ ok: true, keys: Set<string> } | { ok: false, reason: string }}
+ */
+export function parseBaseline(raw) {
+  const parsed = parseBaselineEntries(raw);
+  if (!parsed.ok) return parsed;
+  const keys = new Set();
+  for (const { path, text, occurrence } of parsed.entries) {
     keys.add(baselineKey(path, text, occurrence));
   }
   return { ok: true, keys };
@@ -225,4 +245,5 @@ export function parseBaseline(raw) {
 /**
  * @typedef {{ type: string, value: string, loc: { start: { line: number, column?: number }, end: { line: number, column?: number } } }} GateComment
  * @typedef {{ functionBodies: ReadonlyArray<readonly [number, number]>, guardLines: ReadonlyArray<number>, sourceLines: ReadonlyArray<string> }} AstFacts
+ * @typedef {{ path: string, text: string, occurrence: number }} BaselineEntry
  */

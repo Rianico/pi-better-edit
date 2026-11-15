@@ -85,6 +85,12 @@ function sourceLinesOf(sourceCode) {
   return text.split(/\r\n|[\r\n\u2028\u2029]/u);
 }
 
+/**
+ * The rule's contract: a JSDoc type rather than an inline assertion, because this file must
+ * load as plain ESM with no build step while consumers (and the arch suite) need oxlint's
+ * `Rule` type instead of a widened object literal.
+ * @type {import("oxlint/plugins-dev").Rule}
+ */
 const rule = {
   meta: {
     type: "problem",

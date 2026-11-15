@@ -1,0 +1,1624 @@
+{
+  "entries": [
+    {
+      "path": "src/bash-classifier.ts",
+      "text": "*\n * AST-guarded classification of bash commands into slice-accurate file views.\n *\n * WHY a pure module: the chain rule, the slice algebra, and every adversarial\n * guard (ADR-0033 D1/D2/D5) are pure AST predicates — unit-testable without\n * fixtures, stores, or the pi runtime. The lifecycle layer applies the result\n * to the disk re-read; this module never touches the filesystem.\n *\n * WHY unbash instead of regex: a regex cannot tell `cat f > g` (mutation)\n * from `cat f` (view), nor `cat $F` (expansion) from `cat f` (literal). The\n * typed AST makes every dangerous shape structural: redirects, heredocs,\n * substitutions, and expansions are nodes, so fail-closed is the absence of\n * a proof rather than the presence of a pattern.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-classifier.ts",
+      "text": "*\n * WHY: (item 9) a content filter cannot fold over `LineInterval[]` — that algebra is\n * WHY: count-based over a line count, so a keep/drop stage needs the line bytes. These ops\n * WHY: carry the filter through the ordered stage array; the lifecycle layer folds them over\n * WHY: `(true line, stream text)` pairs left to right and byte-gates the recomputed output\n * WHY: against the observed stdout. Matching is literal substring, so a regex-looking\n * WHY: pattern simply fails that gate and passes through raw.\n *\n * WHY: (item 11) `sortUnique`, `uniq` and `count` are the line-SET consumers. `sortUnique`\n * WHY: (`sort -u`) dedupes by text keeping the FIRST occurrence's true line, then orders by\n * WHY: raw bytes; `uniq` collapses ADJACENT equal runs keeping each run head; `count`\n * WHY: (`wc -l`) is terminal — it consumes the whole stream and emits its length, so\n * WHY: `parseViewSegment` refuses any stage after it. The first two reorder the stream, which\n * WHY: is why the render states the order in its header while every lease keeps the true file\n * WHY: coordinate it was folded from.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-classifier.ts",
+      "text": "*\n * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed\n * silent set (R3). A `-`-leading operand is an option, not a directory: bash\n * consumes `cd --`/`cd -P`/`cd -L` and, with no operand left, cds to `$HOME`, so\n * taking the flag as the target would resolve a path the model never viewed.\n *\n * WHY `prefixPosition`: every statement before the terminal view of a `;` chain\n * must be silent, and the field writes that prefix `pwd` as often as `cd`.\n * `pwd` prints the working directory, so it is admitted *only* there: the\n * position proves the sequencing is deterministic, and D9 still byte-checks\n * stdout, which carries the directory line and therefore never matches the\n * slice — the lease is refused at serve time. Outside a prefix position (an\n * `&&` chain) the set stays exactly the three commands above.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-classifier.ts",
+      "text": "*\n * `grep`/`rg` single-file search selector (spec §3.2). Strict default-deny: only the\n * allowlisted flags above survive and the shape must be exactly\n * `[flags] PATTERN [flags] FILE [flags]`. Flags are admitted at any position before `--` —\n * before the pattern, between pattern and file, and after the file — because GNU grep/rg\n * accept post-operand options and the benchmark issues them (`grep pat -i f`). A bundled\n * single-dash cluster (`-in`, `-wF`) is decomposed and EVERY letter must be admitted; the\n * value-taking `m` may only close it (`-nm 3`). The explicit-pattern `-e` is admitted in\n * three spellings — separate (`-e PAT`), attached (`-ePAT`, handled before cluster\n * decomposition since `PAT` letters are not admitted), and cluster-close (`-ine PAT`,\n * mirroring `m`: must close, consumes the next argument) — exactly once; its value becomes\n * THE pattern so the operands must then be exactly `[FILE]`. `--` ends flag parsing, so\n * `grep pat -- -n` names the file `-n`. Fail closed: attached short values (`-m3`, `-nm3`),\n * any digit in a cluster (`-n5`), an unknown letter (`-inQ`), every `=`-long form but\n * `--max-count=N` (`--line-number=x`, `--color=always`), a value that is not a strictly\n * positive integer or not exactly `never`, `-f` (stays denied: file-input patterns break\n * the single-`PATTERN FILE` geometry), `-e` with no value, `-e` twice, a pattern both via\n * `-e` and positionally, a `-`-leading pattern with no `--` (unless given via `-e`), zero\n * operands (stdin), and more than `BASH_SEARCH_MAX_FILES` file operands.\n * Globs, tildes and expansions never reach here because `stageShape`/`literalValue` reject\n * them first.\n * WHY: (item 10) the operand arity now spans four shapes — `[PATTERN FILE]` (single-file),\n * WHY: `[PATTERN FILE...]` (multi-file), `grep -r PATTERN DIR` (recursive walk) and\n * WHY: `rg --files [DIR]` (anchorless list). Their stdout geometries differ (`LINE:content`,\n * WHY: `FILE:LINE:content`, a path list), so the family is returned as a tagged union rather\n * WHY: than one widened interface. Directory operands are still NOT detected here: this module\n * WHY: is pure and zero-fs, so the lifecycle layer re-checks the resolved file kind — and\n * WHY: upgrades an `rg` directory operand (rg recurses by default) while a `grep` directory\n * WHY: operand stays raw (native grep errors without `-r`).\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-conversion/decide.ts",
+      "text": "*\n * Bash conversion as data (ADR: #151): the `classifyBash` guard chain, transcribed rule by rule\n * into one ordered table instead of an inline `if` ladder.\n *\n * WHY a table: array order is precedence — a new rule is inserted at its altitude and every guard\n * it can shadow is visible above it, which is exactly what the inline chain made expensive\n * (the #135 gate and the declined compounds both turned on shadowing). Each rule cites the source\n * line it was transcribed from (pre-extraction `src/bash-classifier.ts`) and the ADR it implements.\n *\n * WHY the phases: the chain has loop-carried state (statements feed segments feed blocks), so a\n * flat pass cannot express it. `decide` runs each phase's entries in array order — pre, then one\n * statement walk (guards plus the structural segment push), then the chain ceiling, then one\n * segment walk, then the conversion tail. Inside a walk, `run` returns `ADVANCE` to move to the\n * next statement/segment (the transcribed `continue`) or a `Decision` to stop; `undefined` from\n * `fireRule` means no rule fired. Accumulation (glue admission, `cd` recording, block recording)\n * lives inside the entries because the source interleaves it with the guards.\n *\n * Scope note: `Decision` mirrors the established `BashClass` union (including the `passThrough`\n * kind spelling) rather than inventing new block types — S1 is zero behaviour change, and the\n * serve seams already switch on those kinds.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-multifile-config.ts",
+      "text": "*\n * `bash.multiFile` — the multi-file view caps (ADR-0049 M6), the sibling of `bash.view`.\n *\n * WHY the caps are settings: they are operator policy over how much one bash result may spend, not\n * a correctness bound (the ADR's safety bound IS the allowed range — a config can only lower a cap,\n * never raise it past the hard maximum). They resolve per KEY through the shared project/global\n * ladder so \"the project file is set\" never stands in for \"this key came from the project file\".\n *\n * WHY an out-of-range value warns instead of falling through silently: ADR-0049 M6 requires the\n * warning, and a dropped cap changes how much the session serves — the silent drop this ladder\n * refuses to make at file level is the same drop one level down. A MISSING key still warns about\n * nothing, and a broken file keeps warning exactly once through `readScopeConfig`.\n *\n * This module never touches the filesystem itself: reads go through `readScopeConfig`, writes\n * through `updateConfigFile`, so the config file keeps one owner.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/bash-view-config.ts",
+      "text": "*\n * Bash view setting — the `bash.view` key of the shared config file, resolved\n * through the shared ladder: env override, then project file, then global file,\n * then the default.\n *\n * WHY the interception is configurable at all: the view replacement swaps bash\n * stdout for anchored lines, which is a display decision about the model's own\n * session — an operator who would rather see raw output turns one key off, and\n * every other session keeps the default without restating it.\n *\n * WHY a warning is part of the contract here: a dropped setting changes what the\n * session shows, so an existing-but-unusable file is reported through `onWarn`\n * while the value falls through the ladder. A missing file warns about nothing,\n * and a value outside the accepted shape is ignored exactly as the sibling\n * ladders ignore one. Nothing here throws on the read side.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/config-dir.ts",
+      "text": "*\n * The retired per-user config directories, strongest first: each one held the settings file AND\n * every state artifact before #190, which is exactly the coupling this relocation breaks. Read once\n * for adoption, never written again.\n *\n * WHY the override comes first: a user who set `PI_BETTER_EDIT_CONFIG_DIR` before the relocation\n * kept `pi-better-edit.json`, `hash-store.json` and the logs directly in that directory, and the\n * override is still the strongest statement about where that user meant their files to live.\n *\n * WHY the XDG base is read HERE and only here: the pre-#190 ladder honoured `$XDG_CONFIG_HOME`, so a\n * user who relocated the old directory through it has their settings and state under that base.\n * Adoption is the one job that has to look where the old ladder looked — every NEW path is derived\n * from the agent dir and the state home, so changing this variable never moves a file written by\n * this version. A relative value is ignored, as it was.\n *\n * WHY deduped: an unset `$XDG_CONFIG_HOME` resolves to `<home>/.config`, so two rungs collapse into\n * one and a single artifact must not be visited, moved or reported twice.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/config-dir.ts",
+      "text": "*\n * The two directories this extension owns, and the only module that names any of their paths.\n *\n * WHY two roots rather than one: settings belong to the pi agent tree (an operator reads them\n * beside the other extensions they configure), while the store, the legacy JSON and the\n * diagnostics log are STATE — machine-written, disposable, and never edited by hand. The XDG\n * state directory is where a machine-written artifact belongs, and keeping settings out of it is\n * what stops a `rm -rf` of the state root from deleting the user's configuration.\n *\n * WHY this is its own module rather than a corner of `hash-store.ts`: the diagnostics sink has to\n * answer \"where is my directory?\" on its very first line, and `hash-store.ts` is one of its\n * callers. Importing the directory rule from the store made a cycle (diagnostics → hash-store →\n * hash-identity → diagnostics) whose partial initialisation reached the schema as `undefined`\n * columns. The directory rule has no dependency on the store, so it lives where nothing forces a\n * cycle: below both of them.\n *\n * WHY every RETIRED path is spelled here too: `test/arch/config-ladder-single-owner.test.ts` pins\n * exactly one module naming the config-file locations. A second copy of a retired literal is how\n * an adoption chain silently reads a path nobody meant it to.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/cut-repair.ts",
+      "text": " SAFETY: intent stays, which is exactly the \"keep the question open\" resolution.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/cut-repair.ts",
+      "text": " SAFETY: leaves every intent in place for the next run; the edit that triggered it proceeds.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/cut-repair.ts",
+      "text": " SAFETY: one unresolvable intent must not abort the scan or the triggering edit; the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/cut-repair.ts",
+      "text": " SAFETY: repair is best-effort durability cleanup — a store that will not answer the scan",
+      "occurrence": 0
+    },
+    {
+      "path": "src/cut-repair.ts",
+      "text": "*\n * (ticket-04b section 2) Next-run repair for the foreign-cut transaction. NO filesystem atomicity\n * is claimed: the two renames leave a real window, and a crash inside it is resolved here — on\n * the NEXT run, from the durable intent record plus the correlated undo rows — with no content\n * lost in either resolution:\n *\n * FORWARD intent (a cut that crashed between its renames):\n *  - target at POST  → the crash landed the insert but not the destructive retirement: COMPLETE\n *    the cut by writing each still-PRE member its undo row's post bytes.\n *  - target at PRE   → the insert never committed: RESTORE by writing each POST member its undo\n *    row's pre bytes (the target at PRE is the undo already; the inverse ordering is\n *    unreachable by construction and collapses to a no-op here).\n *  - every member PRE or POST with a definitive state → that state decides (all-POST merely\n *    drops the intent — the crash hit the final intent-delete).\n *  - ANY member outside both (modified or missing) → touch nothing, keep the intent: repairing\n *    over an outside write would destroy content, and the intent keeps the question open.\n *\n * REVERT intent (04b-rem P2-1: a correlated UNDO whose writes failed partway):\n *  - members at POST are not yet reverted → complete the revert by writing them their pre\n *    bytes; members already at PRE stay.\n *  - every member at PRE → the revert landed: clear the transaction's undo rows and the intent.\n *  - ANY member outside both → touch nothing, keep both: same fail-closed rule as forward.\n *\n * (04b-rem P2-2) The state oracle compares BYTES, never decoded text: the abort/rollback arms\n * rest members at their RAW pre-images (never canonically folded), so a mixed-line-ending\n * member must be recognized from its raw bytes — a text oracle would read it as \"other\" and\n * the intent would leak forever. The rows carry the raw pre image precisely for this reason.\n *\n * Store materialization is deliberately byte-only: the next read re-materializes snapshots and\n * leases from the committed bytes (the repo's deferred-sync semantics), so repair can never\n * half-write the store.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/diagnostics.ts",
+      "text": " SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/diagnostics.ts",
+      "text": " SAFETY: last resort — losing a diagnostic must never fail the caller (see the module WHY).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/diagnostics.ts",
+      "text": " SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/diagnostics.ts",
+      "text": "*\n * The extension's ONLY diagnostic sink.\n *\n * WHY this exists at all: the extension runs inside Pi's process, and that process owns the\n * terminal through a differential renderer (`pi-tui` main screen): it tracks the hardware cursor\n * row and the lines it last painted, and repaints only what it believes changed. A write to\n * stdout/stderr therefore lands at whatever cursor position the frame happens to occupy — the text\n * is splatted across unrelated rows, interleaved with the UI, and erased by the next paint. It is\n * also uncopyable: by the time a selection starts, the renderer has rewritten the cells. That is\n * exactly how `console.error(\"Bash view interception failed:\", error)` surfaced: a stack trace\n * smeared over the view, gone when you tried to select it.\n *\n * WHY the file lives in `stateRoot()` and nowhere else: the log is STATE — machine-written,\n * disposable, rotated by size — and the state root is the one base directory this extension writes\n * at runtime (the store, its WAL, the janitor's bookkeeping and the pre-SQLite JSON store). ONE\n * rule: `<stateRoot>/diagnostics.log`, rotated to `<stateRoot>/diagnostics.log.1`. The operator's\n * `PI_BETTER_EDIT_CONFIG_DIR` still moves it, through `<override>/state/`; settings deliberately do\n * NOT share this directory, so clearing state never deletes configuration.\n *\n * WHY JSONL and not prose: the records carry stack traces, and a stack trace in prose needs either\n * multi-line records (unparseable) or escaped newlines (unreadable). One JSON object per line is\n * both — `jq -r '.error.stack[]'` prints a normal trace, `grep` still finds a line by message.\n *\n * WHY synchronous appends: a record is written at most once per failure, and a synchronous append\n * keeps records ordered and never floats a promise that an exit could drop. The cost is paid on\n * failure paths only, never on the happy path.\n *\n * WHY nothing here may throw: this is the last resort of a best-effort hook. A diagnostic sink that\n * can fail its caller turns \"the view passed through\" into \"the tool call errored\" — the very\n * failure it exists to make visible. Every entry point swallows its own I/O errors.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/domain-errors.ts",
+      "text": "*\n * Domain error registry — the closed, type-safe contract for every\n * negative-path rejection (spec docs/spec/unified-error-and-warning-contract.md\n * section 4, D1). Its only import is the dependency-free alphabet leaf\n * (`./hashline/alphabet.js`, which itself imports nothing), so any seam can\n * still throw without wiring a store, session, or hasher.\n *\n * INVARIANT (the point of this module): a code is never declared without a\n * producer. Every `DomainErrorCode` member must have at least one\n * `new DomainError(code, payload)` site in src/, and every code passed at a\n * throw site must be a union member. Asserted BOTH directions in\n * test/arch/domain-error-registry.test.ts. This is what makes the registry a\n * contract instead of a list.\n *\n * WHY: payload text reports facts. A served `Options:` section may appear only\n * when it is neutral, unharmful and fail-closed, AND the evidence pins a single\n * cause. Neutral means an explicit list of admissible next moves that keeps the\n * model's choice — never one directive, because a biased suggestion steers the\n * model's next action. A code with no neutral option declares none and renders\n * facts only.\n *\n * WHY: options live on the refusal, never in a prompt or on a success path. They\n * render only for `MODEL` audience. `E_LARGE_FILE` stays fact-only until its\n * payload can name the invoking tool, because read and edit need different\n * options. `E_SUSPICIOUS_TEXT` is the reference: two options, and the payload\n * arm selects text vs content.\n *\n * See ADR-0047.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/drift.ts",
+      "text": "*\n * WHY (CAND-9, ADR-0023): the drift-notice episode identity is the drifted line's rebased\n * position in the CURRENT file — not its anchor string. An anchor is a spelling, not an\n * identity: one reported entry for a hash shared by two distinct lines silenced both\n * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an\n * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing\n * strings (schema unchanged); this base-62 encoding of the position at the configured width is the KEY VALUE.\n * Positions are bounded by `SERVED_MAX_LINES` (the served admission budget), which\n * already sits below the anchor-space ceiling, so the encoding is injective over\n * every reachable position.\n * An out-of-file position (never shown, never marked) keys on \"\" — not a valid stored entry, always\n * \"not yet reported\", matching the legacy behavior for unshown drift.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-diff.ts",
+      "text": "*\n * SAFETY: edit-diff - row-intrinsic invisible-code-point annotation (issue #231).\n *\n * WHY: in-scope code points are a vanishingly small share of real-corpus characters,\n * WHY: so fatigue is not the risk; a missed disclosure is a silent byte change. The\n * WHY: annotation therefore lives on the diff rows themselves instead of a sentence:\n * WHY: each `-` row lists its own in-scope code points as `removed`, each `+` row\n * WHY: lists its own as `added`, in column order on one sub-row placed immediately\n * WHY: after its row. There is no cross-row pairing and no aggregation - block\n * WHY: rewrites annotate both sides independently - and context rows never get\n * WHY: sub-rows. The sub-row carries no file-line slot: adjacency to its diff row,\n * WHY: whose anchors map to the file line, carries the line.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-diff.ts",
+      "text": "*\n * genDiff is the single diff projection (#169). Return contract:\n * - every emitted row's anchor equals the true new-file line content hash at that\n *   position; removed rows carry the true old-file hash when old hashes are provided.\n * - every emitted marker's count equals the span it hides:\n *   ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING\n *   emitted anchor at its true file position; whether the hidden rows are addressable is a property\n *   of the serve that carries this projection (rows rendered through serve paths are leased there),\n *   not of this renderer, and ` - ... [N lines deleted] ...` advances the old cursor past\n *   N deleted rows (cursor-exact).\n * - collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172);\n *   at context 0 every non-empty middle gap collapses to a single counted untouched\n *   marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.\n * - servedRows mirror exactly the rendered context/addition rows (position + hash).\n * - `firstChangedLine`/`lastChangedLine` bracket the changed new-content lines (1-indexed,\n *   `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the\n *   position where the removed text sat, so an end-of-file deletion may name one line past the\n *   last new line — exactly as `firstChangedLine` already can, and both are absent on a no-op.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-response.ts",
+      "text": "*\n * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`:\n * one aggregated rejection with one bullet per failing item (`- edit[1]: …`) so a single\n * resubmission can fix them all instead of burning one turn per failure. The batch is still\n * all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic\n * (and code) inline, so the model can act on every failure without a re-read.\n *\n * Field aggregation (spec D2 — the envelope must stay actionable):\n * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the\n *   first item's domain code so `toFailure` still routes the typed path (and keeps this full\n *   message) instead of rewriting it as `E_UNKNOWN`.\n * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed\n *   batch states each cause inline instead of promoting one.\n * - `servedRows`: the union of every failing item's rows (each item's retry leases were already\n *   recorded on its own rejection path).\n * - `servedBlock`: every failing item's block, in item order.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-tool.ts",
+      "text": " SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-tool.ts",
+      "text": " SAFETY: normalized is validated NormalizedEditRequest after assertReq",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-tool.ts",
+      "text": " SAFETY: signal is AbortSignal | undefined at pi boundary — runtime check via engine's abortIf",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: \"every member at pre\" on the next run and retires itself; the undo stands.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: 04b-rem P2-1 (the separate remedy defect): an unexpected failure must never",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: best-effort undo cleanup — clearUndo failures are ignored; stale undo entry will be overwritten on next edit or pruned, file content already correct.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: best-effort undo load — failures return undefined (no history) and caller reports \"No undo history\"; stale or corrupt store is recoverable on next edit, not silent undefined without log.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: best-effort undo restore — failures to restore previous undo entry after persist failure are ignored; edit already failed and will report E_UNDO_UNAVAILABLE, stale undo state is recoverable on next edit.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: envelope renders it with its audience and code. Transactional state is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: escape between writes leaves a half-reverted set that repair resolves.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: escape the tool as a raw non-[MODEL] throw — the registry's E_UNKNOWN",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: every byte and both row clears committed — an orphan revert intent resolves to",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: falls back to the stored current-generation hashes (or a fresh",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: honest either way: the revert intent lands before the first write, so any",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: is never rolled forward again; the store re-materializes on the next read.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: put the bytes back, so the file is never rolled back. The result still reports",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: section 3.6.2 post-write semantics — the bytes are back on disk, so the member",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: success and names the deferred synchronization; the next call re-materializes.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: the pi context is typed for the extension host, which exposes `sessionManager`",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: §3.6.2 post-write semantics — the restore transaction failed AFTER `writeAtomic`",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": "*\n * (ticket-04b section 4, remediated by 04b-rem P2-1) Undo of one correlated cut transaction is a\n * DURABLE TRANSACTION, mirroring the forward cut: freshness of all members is validated FIRST by\n * BYTES; a `revert`-direction intent record lands BEFORE the first write; the undo rows are\n * cleared ONCE after the last write; and a write that fails partway COMPLETES the revert over the\n * remaining members instead of escaping raw. A completion that is itself defeated refuses with the\n * typed `E_UNDO_REVERT_FAILED` (MODEL audience, remedy names the repair) and clears NOTHING — the\n * intent plus the intact rows let the next run's `repairCutIntents` finish the revert. A stale or\n * deleted member fails the whole undo closed with `E_UNDO_STALE` naming THAT member, before the\n * intent exists, and no undo row of the transaction is cleared: clearing one row of a correlated\n * set would silently degrade a future undo into a partial revert. Reverts run under the same\n * sorted multi-path queues the cut transaction itself used.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo",
+      "occurrence": 1
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: falls back to the stored current-generation hashes (or a fresh",
+      "occurrence": 1
+    },
+    {
+      "path": "src/edit-undo.ts",
+      "text": " SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.",
+      "occurrence": 1
+    },
+    {
+      "path": "src/edit.ts",
+      "text": " SAFETY: drops the compute if the serving session changed between arming and firing.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit.ts",
+      "text": " SAFETY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit.ts",
+      "text": " SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit.ts",
+      "text": " SAFETY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts",
+      "occurrence": 0
+    },
+    {
+      "path": "src/edit.ts",
+      "text": " SAFETY: the fire-time read stays inside the call so the ctx names the session serving anchors now.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/error-envelope.ts",
+      "text": "*\n * SAFETY: single owner of the rejection envelope. The five forwarded fields are `code`,\n * `details.cause`, `servedRows`, `servedBlock`, and `payloadMessage`. Every rejection carries\n * them from its producer to the engine's reader. Before this module each site\n * hand-copied them through `as { code?: string }` casts (batch-abort wrappers,\n * the tool-seam throw, `toFailure`'s sniff), so adding a field meant five edits.\n *\n * Design (chosen over an Error subclass): the wire shape stays plain properties\n * on the caught `Error`, and this module owns BOTH ends — `attachEnvelope` (the\n * only writer) and `readEnvelope` (the only reader/validation seam). A subclass\n * would force `DomainError` — whose public surface the registry tests pin — or\n * the batch wrappers onto a new hierarchy without deepening anything: the\n * wrappers must stay `instanceof Error`-plain while a caught `DomainError` is\n * still routed by class identity in `toFailure`. Adding a sixth envelope field\n * `readEnvelope` — never a call-site change.\n *\n * Honesty rule: the read validates, it does not trust. Only a registry member\n * survives in `code` and only a `RangeCause` member in `cause` — errno-style\n * pass-through is not a legitimate use: `toFailure` already routes non-registry\n * codes to `E_UNKNOWN`, so a dropped field changes no routing decision. The\n * writer keeps the `details: { code?, cause }` projection in lockstep with the\n * top-level `cause`, preserving the engine's failure shape; registry-typed\n * fields are forwarded unchanged, while untyped extras on `details` are no\n * longer carried (no in-repo consumer reads them).\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/file-content/preview.ts",
+      "text": "*\n   * WHY: one walk per page answers both of a read's questions: the lines to render, and (served) the\n   * WHY: anchors to render them with. Without a plan the anchors keep their own whole-content call,\n   * WHY: and verbatim never makes one — the render mode is the hashless authority.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: best-effort directory sync — sync failures after atomic rename are ignored; file is already persisted, sync is durability optimization.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: best-effort stale temp cleanup — inspect failures are ignored; temp files are single-writer UUID names and will be retried on next sweep, no caller depends on removal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: best-effort stale temp sweep — readdir failures are ignored; sweep is opportunistic cleanup, writeAtomic proceeds regardless.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: join of trusted currentPath (root or prior candidate) with nextPart split from resolved absolutePath — components are validated non-empty segments from normalized absolutePath, not raw user concatenation.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: join of trusted dir (dirname of resolved targetPath) with TEMP_PREFIX + randomUUID — randomUUID is cryptographically random, not user-controlled, no traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: join of trusted dir (dirname of resolved targetPath) with entry.name validated against TEMP_UUID_RE — only .tmp-UUID files, not arbitrary user traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: join of validated candidatePath with remaining tail parts from resolved absolutePath — all parts are split segments of normalized absolute path, not raw user input.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: resolve normalizes \"..\" and sep; result is absolute and null-byte validated — editing scope intentionally allows any absolute path, OS permissions enforced by valAccess.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: resolve of trusted dirname(candidatePath) with symlink target from readlink (filesystem-controlled); result is absolute and normalized, validated via lstat symlink check.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: resolveTarget returns an absolute, null-byte-validated, symlink-resolved path — the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/fs-write.ts",
+      "text": " SAFETY: same boundary every other file-layer read passes through.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: HASH_STORE_VERSION is this module's own numeric literal constant, never input.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: `anchor_generation` only, and the leftover `canon_version` values were already copied",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: after drop column`), and a both-columns store is inert: every v7 reader/writer names",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: allocUnsafe is safe here because readSync fills all 100 bytes before any of them is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: closing a read-only descriptor this call opened; a failure leaves no lock, no",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: exposure is the unreleased intermediate build only; see ADR-0031 §4.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: join of trusted stateRoot with fixed \"hash-store.json\" — constant suffix, no traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: join of trusted stateRoot with fixed \"hash-store.sqlite\" — constant suffix, no traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: over by the UPDATE above, so the stale column is never read. A concurrently open",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: pre-rename process whose prepared statement names `canon_version` breaks fail-closed",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: read — the `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: support DROP COLUMN: an index naming the column refuses it with `error in index ...",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": " SAFETY: write and no state behind, and the verdict above is already decided.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": "*\n * The FAST path's integrity check (#87c): does this store FILE still look like one SQLite file?\n *\n * WHY a header read replaces the full `PRAGMA quick_check` here: the stamp gate removed the sweep,\n * so the integrity sweep became the dominant remaining cost of a stamp-matching open — it walks\n * every page of the store — and what it buys is EARLIER notice, not prevention. The remedy for a\n * damaged store is `quarantineStore` plus a rebuild from empty, because this store is a\n * disposable CACHE: the served mirror, the snapshots and their lineage are all re-derived from the\n * files on disk on the next read. Paying the dominant share of every process's open latency, on\n * every open, to move that notice a few statements earlier was the bad trade.\n *\n * WHAT IS DELIBERATELY NOT CHECKED, and where the check MOVES to instead: page-level damage inside\n * an otherwise well-formed file — a torn b-tree page, a freelist that disagrees with itself — is\n * not visible from the header. Such corruption surfaces LATER, at the statement that first touches\n * the damaged page, as its own error (`database disk image is malformed`, SQLITE_CORRUPT), never\n * as a silently wrong result: every honoring path re-derives from the bytes it is about (see the\n * trap-(c) block above). Issue #90 INHERITS the throttled deep check: its janitor sweep runs the\n * store's own maintenance off the tool-call path, so the deep pass is MOVED rather than lost.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": "*\n * The HEAL half of the janitor's periodic deep check: when the open store fails `isHealthy`, quarantine\n * and rebuild as the open path's own recovery does — through the one `quarantineStore`, then\n * `openStore` — and report whether that happened. Called only by the store janitor\n * (`src/store-janitor.ts`), off the tool-call path.\n *\n * WHY it re-checks instead of trusting its caller's verdict: this is then safe to call from\n * anywhere and can never quarantine a healthy store, which is the property the open path's own\n * recovery has too (`if (... !isHealthy(db))`). The cost is one extra `PRAGMA quick_check` on a\n * store already known to be damaged.\n *\n * WHY it is HONEST on a LIVE store: the sequence it runs is its OWN, quoted here as it is —\n * `shutdownHashStore`, then `quarantineStore`, then `openStore` — and every piece of state it drops\n * is re-derivable, because the store is a disposable cache: the served mirror, the snapshots and\n * their lineage are all rebuilt from the files on disk. What it does NOT\n * do is reach a second QUARANTINE implementation: there is ONE (`quarantineStore`), with THREE\n * orchestrations calling it — this heal, the open path's own recovery, and the use-time trigger\n * (`triggerUseTimeHeal`), which skips the health re-check because the failing statement already\n * proved the damage — and it\n * does NOT touch a store that is currently inside a transaction of its own: the janitor runs at a\n * lifecycle boundary, where no tool call of this session is in flight, and any statement prepared on\n * the closed connection afterwards fails closed on the reopened one's absence rather than silently\n * reading a dead handle.\n *\n * WHAT IT LEAVES BEHIND, stated rather than implied: because the rebuild goes through `openStore`\n * and not around it, the store comes back COMPLETE — hooks run, the stamp written after them — so the\n * next open of that path takes the fast path over a store that really is current. The one handle this\n * leaves stale is the caller's own `db` argument, which the recovery closes: a caller must re-read the\n * store (`loadHashStore`) rather than reuse the connection it passed in.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": "*\n * The SLOW path's integrity check: SQLite's own full pass over the store, unchanged. Runs when\n * there is no stamp to trust — a fresh store, a stamp mismatch, `existed === false`, or the open\n * that follows a quarantine — where the open is already building or rebuilding from empty, so a\n * pass over every page is not the latency being avoided.\n *\n * WHY it is ALSO the periodic deep check, and which half of #100 that is: the fast path stopped\n * running this pass when it took the header smoke check instead, so page-level damage inside an\n * otherwise well-formed file had no detector left at open. `src/store-janitor.ts` runs this same\n * function on `session_start` and `session_shutdown`, off the tool-call hot path, and that run IS\n * the periodic half of issue #100: it closes \"not detected at open\" (this call finds the damage)\n * and \"not healed on reopen\" (its failure routes into `healUnhealthyStore`, which quarantines and\n * rebuilds through the one `quarantineStore` primitive), and it deliberately leaves \"not quarantined\n * at use\" — the FIRST FAILING STATEMENT as the trigger — to #100, which owns the use-time clause.\n * See the janitor's header for the full boundary statement.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": "*\n * The SQLite database header — the 100-byte prefix of every database file, described by the file\n * format spec (`fileformat2.html` §1.3, \"The Database Header\"). Every field below is read from\n * those bytes directly, which is what makes the smoke check cheap: no page cache, no statement, no\n * lock — one read of the file's first page.\n *\n * WHAT EACH FIELD CARRIES, and the range this check holds it to:\n * - bytes 0-15: the magic string `SQLite format 3\\000`. A file without it is not a database.\n * - bytes 16-17: the page size, big-endian, a power of two from 512 to 32768 inclusive — or the\n *   literal value 1, the format's encoding of 65536.\n * - bytes 28-31: the database size in pages, big-endian. The main file's page count only: WAL\n *   frames live outside it (measured — the field equals the file's own page count both while a WAL\n *   is pending and after a checkpoint, on the same store). Zero means \"size unknown\" to SQLite,\n *   which then derives the size from the file; no open of this store writes zero, so this check\n *   reads it as damage instead of guessing.\n * - the file's length must then be exactly page size x page count.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hash-store.ts",
+      "text": "*\n * The use-time quarantine's SEAM (#100): the single wrap point for the single cached handle.\n * `openStore` publishes the proxy into `cachedDb` and returns it, so both statement paths share\n * it with zero call-site changes — `loadHashStore` hands out `cachedDb.db`, and `withStore`\n * frames `BEGIN`/`COMMIT`/`ROLLBACK` on `cachedDb.db` directly while `fn`'s statements come from\n * a closure over a `loadHashStore` handle (`snapshotStmts(store.db)` inside `withStore(...)` in\n * snapshot-store and served-session). Guarding only `loadHashStore`'s return would leave the\n * framing statements unguarded; wrapping once here covers both.\n *\n * WHY a proxy: the handle must stay ONE object — `openStamp`, the hook phase and the `WeakMap`\n * statement caches all key on its identity — and `DatabaseSync` is a native class. Members outside\n * `prepare`/`exec` forward bound to the raw connection, so native-method receivers stay valid and\n * teardown (`shutdownDb`'s checkpoint, `close`) keeps working through the guard.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/alphabet.ts",
+      "text": " SAFETY: ALPHA is a fixed 62-char alphanumeric constant; ALPHA_SAFE escapes the only regex meta (\"-\") and pattern length is bounded to 62 chars — no user input, no ReDoS, linear character class.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/alphabet.ts",
+      "text": " SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded length, no nested quantifiers or backtracking — linear match, no ReDoS; not built from user input.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: (suite-wide instrumentation at 67a5812: 6,346 source-arm executions, 0 degenerate).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: (ticket-02c AP4 ledger) no fail-closed guard stands here for a degenerate/empty",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: `E_STALE_RANGE`. Hence `s2 <= fileLines.length` and the slice is never empty",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: `resolve.ts` swaps when the resolved lines cross, `resolveLeasedEdit` swaps too),",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: content resolution reads `fileHashes`, the lease seam rebases `line_id`s through",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: current-content positions and `verifyRebasedSpan` refuses anything else with",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: it. Both resolution seams heal a reversed pair before returning (`valEdit` in",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: retirement (the deleted `slice(s1 - 1, s2).length === 0` throw): no input reaches",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": " SAFETY: so `s1 <= s2`; and resolved coordinates only ever name lines this buffer has —",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/apply.ts",
+      "text": "*\n * SAFETY: one serialization rule for a line list produced by span-ref assembly — shared by\n * `assembleLines` and the sweep's reference oracle (`test/core/hashline.span-ref-sweep.test.ts`)\n * so the two can never silently fork it (ticket-02c F4). The pinned EOF-deletion convention lives\n * HERE and nowhere else: a retirement reaching EOF in a file with no trailing newline keeps a\n * surviving empty line's own terminator — the empty-preceding-line arm of `resToSpan`'s EOF\n * deletion, byte-asserted in `test/core/hashline.apply.test.ts` (\"EOF deletion preserves an empty\n * preceding line\"). For a non-empty file with at least one surviving line, `out`'s last line is\n * empty without an original trailing newline only when that arm fired (ticket-02c F1: the byte\n * convention is canonical, the line path conforms). The empty file is the shape that arm cannot\n * describe: `splitLines(\"\")` is one empty line, so a degenerate retirement of it assembles\n * `out = [\"\"]` without the arm ever firing — `content.length > 0` keeps that spelling the honest\n * noop its parent commit wrote (ticket-02d P1).\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: fixed digit set from the trusted alphabet at the configured width, no user input, linear character class, no ReDoS.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: large-class — HashIdentity owns hash allocation and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": "*\n * ANCHOR_GENERATION 2 (issue #230, ADR-0013): the file-scoped anchor-derivation generation.\n * It covers exactly: (1) the width (`HASH_LEN`, `ALPHA`, `HASH_SPACE`/`USABLE_HASH_SPACE`);\n * (2) the (path, content) seeding (`fileBaseIndex` seeds xxh32 with the canonical absolute path,\n * `contentBaseIndex` is the explicit content-only fallback) — generation 2 seeds on the line's RAW\n * bytes, where generation 1 seeded on the canonicalised line, because identity and alignment are\n * different questions: `canon` folds 28 whitespace code points, so a canon-seeded identity cannot\n * tell `const s = \"a`+NBSP+`b\";` from `const s = \"a b\";` and falls back to its positional probe;\n * (3) the all-digit reservation\n * (`DIGIT_CHARS`/`RESERVED_HASH_SPELLINGS`/`RESERVED_BITS` pre-marked in allocation); (4) the probe\n * stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.\n *\n * WHY: single owner of the anchor-generation literal — anchor-bearing artifacts (the undo/snapshot\n * generation gate and the open-time sweep) read this axis only, never `CANON_VERSION`; the snapshot\n * cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a canon-only change\n * misses the cache without invalidating anchor state while a generation change invalidates both.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.",
+      "occurrence": 1
+    },
+    {
+      "path": "src/hashline/hash-identity.ts",
+      "text": " SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.",
+      "occurrence": 1
+    },
+    {
+      "path": "src/hashline/hasher.ts",
+      "text": " SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/hasher.ts",
+      "text": " SAFETY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/lease-resolve.ts",
+      "text": "*\n * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5).\n *\n * Two lease paths, chosen by ONE predicate, verified by ONE gate:\n *\n *  - **Fast path** (`S_from === C ∧ S_to === C ∧ S_from === S_to`): the anchors were leased from\n *    the content now on disk, so the caller keeps applying at the served coordinates.\n *  - **Dynamic rebase path**: the caller resolved each leased `line_id` in `line_lineage(C)` (an\n *    on-demand materialization through `pairSnapshots`) and applies at the rebased coordinate.\n *\n * Both paths run `verifyRebasedSpan` over the whole served window (#151, spec §3.5): the fast path\n * is the rigid remap whose rebased coordinates happen to equal the served ones, so per-line lease\n * identity and retirement are checked identically either way.\n *\n * Resolution is strictly READ-ONLY on `served_leases`: it never re-stamps `line_id` and never\n * writes `retired_at`. The authoritative retirement update belongs to materialization.\n *\n * Fail-closed semantics (never weakened): an unleased anchor, a retired/absent leased `line_id`, a\n * coordinate that no longer carries the leased identity, or an external insert/delete strictly\n * inside the span all reject before any write, so a rejection leaves the file byte-identical.\n * A retired identity whose named window collapses or misses the file rejects with no rows;\n * the surviving-bound-live-and-unshifted case serves the named window as a fresh read\n * (no retry hint) with the rows leased as today; any other retired identity with an\n * identifiable window rejects with that window served for a retry.\n *\n * INVARIANT (spec §3.1.1, §5.3, ADR-0016) — a served anchor is never resolved by content. `apply.ts`\n * routes EVERY edit that has a lease source here, so a boundary anchor either has a live lease or its\n * identity is lost: a missing lease is an unknown or foreign anchor (the session-wide lookup\n * decides which), a retired identity with no live unshifted survivor and no identifiable window\n * carries no rows, and the one-bound-retired survivor-live-and-unshifted case serves a fresh\n * read to decide from, never a content question.\n * An unread (never-served) interior line strictly between the anchors is accepted (ADR-0024): it\n * carries no identity to verify, and the boundary leases plus the window-length gate pin the span;\n * a never-served BOUNDARY row keeps the fail-closed diagnosis (`[E_STALE_RANGE]`, spec §5.3).\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/parse.ts",
+      "text": " SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/patience-pairing.ts",
+      "text": "*\n * Bounded leaf alignment (spec §3.4.4). Uniqueness is **embedding-level**: a pairing survives\n * only when it lies on every maximal traceback path, and an interval with more than one maximum\n * pairing pairs nothing (its lines stay UNPAIRED / RETIRED).\n *\n * `pairingCount` is the exact number of maximum pairings (embeddings) of the optimal LCS in the\n * sub-interval, capped at 2 so the decision stays polynomial. It deliberately counts neither\n * distinct canon strings nor DP orderings:\n * - A repeated canon that can be matched in two places counts twice, although the LCS string is\n *   the same: `[A, A, A]` vs `[A, A]` counts 3, not 1.\n * - Two orderings of down/right skips around the same matched lines count once, because they are\n *   the same embedding: `[A, X, B]` vs `[A, Y, B]` counts 1, not 2.\n *\n * The recurrence is a first-pair decomposition. For the region starting at `(i, j)` with optimal\n * length `target`, every maximum pairing either matches `i` with `j` (only possible when the\n * canons agree, and then it extends a maximum pairing of `(i + 1, j + 1)`), or leaves at least\n * one of the two lines unmatched, which is a maximum pairing of `(i + 1, j)` and/or `(i, j + 1)`\n * at the same length. The overlap of those two jump regions is subtracted, so each pairing is\n * counted exactly once. The cap is applied after the inclusion-exclusion subtraction, and because\n * `|A ∪ B| == 1` forces `A` and `B` to be the same singleton, the `=== 1` test that drives\n * `isUnique` stays exact under the cap.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/patience-pairing.ts",
+      "text": "*\n * Scaled recursive patience pairing (spec §5.2): aligns a previous snapshot's lines to the\n * current snapshot's lines so `line_id`s survive reorders, inserts, and deletes.\n *\n * The engine has four phases, all fail-closed: an ambiguous interval pairs nothing rather\n * than guessing coordinates.\n *\n *   1. Locally unique canon anchors become candidate pins (`findUniquePins`).\n *   2. The candidate pins' minimal-displacement LIS backbone is their unconditional\n *      intersection across every maximum-length, minimum-Δ subsequence\n *      (`findStablePinBackbone`, two-pass DP over patience-sorted ranks).\n *   3. Pinless rigid runs with identical canon sequences zip pairwise (Probe N).\n *   4. Bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when\n *      it lies on every maximal traceback path, so an interval with several optimal pairings\n *      stays UNPAIRED / RETIRED.\n *\n * When the backbone is empty the interval falls straight through to leaf handling: the\n * engine never recurses on identical bounds, so alignment cannot starve the scan budget.\n *\n * Invariant: `prevLines` and `currLines` are contiguous ascending 1-based line numbers\n * (spec §5.2 descriptor shape), so a descriptor's index + 1 is its line number.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, linear row prefix — bounded, no user input, no ReDoS.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: Keep it a refusal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/hashline/resolve.ts",
+      "text": " SAFETY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/command.ts",
+      "text": " SAFETY: a command handler must never reject into the host's event loop — the failure is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/command.ts",
+      "text": " SAFETY: reported to the user and the command ends.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/command.ts",
+      "text": " SAFETY: the message carries the command's entire output and there is no other channel in these modes.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/command.ts",
+      "text": "*\n * The store's half of the status output, in the lens block's own layout: the settings, then the\n * override, then a precedence line.\n *\n * WHY each key carries its rung: the ladder resolves PER KEY, so \"the project file is set\" says\n * nothing about which value the store will actually use, and the rung is what says which file to\n * edit next.\n *\n * WHY the store path is printed with its override: `PI_BETTER_EDIT_CONFIG_DIR` is the ONLY thing that\n * can move the store, and no config file key can (there is deliberately no `store.dir`), which is\n * worth saying where a reader is looking for the setting that moved it.\n *\n * WHY a warning is repeated here: an unusable config file degrades to the defaults, and a display\n * that showed those defaults with no reason would be the silent drop this ladder refuses to make.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/config.ts",
+      "text": "*\n * pi-lens bridge configuration — the on-disk `lens.bridge` setting and its precedence ladder.\n *\n * WHY a seam: the mode is read on every served-row notification and written only by the\n * `/pi-better-edit` command, so both sides must agree on one ladder — env, then project file,\n * then global file, then the `auto` default. A malformed config is never an error: it degrades\n * to \"not configured\" so a hand-edited file can never break editing.\n *\n * Shape of the shared config file (`CONFIG_REL`, owned by `src/json-config.ts`):\n * `{ \"$schema\": <LENS_SCHEMA_ID>, \"lens\": { \"bridge\": \"auto\" | \"on\" | \"off\" } }`\n * (documented by `schemas/pi-better-edit.json`). Unknown keys are preserved on write.\n *\n * The FILE, the scopes, the read and the preserving atomic write belong to\n * `src/json-config.ts`, which the store settings use too: one ladder, not one per settings owner.\n * This module owns only the `lens.*` keys.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: advisory-only — a refused record must not propagate into the edit",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: advisory-only — one rejected span must not stop the remaining",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: advisory-only — the bridge's failure belongs to the bridge, never",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: advisory-only — this runs inside core tool execution, so no",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: an unusable cwd means the mode cannot be resolved, so nothing",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: failure may propagate into the edit or write that produced the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: failure may propagate into the read or edit that served the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: is mirrored and no drop is counted for a config read.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: mutation.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: or write that already landed, and the failure is the bridge's to",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: report.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: rows.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: spans of the same notification, and the failure is the bridge's",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: to report.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: to the read or edit that served the rows.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": "*\n * Unified I/O bridge adapter — the only place that records to pi-lens v2.\n *\n * WHY one module for both seams: a v2 `record` entry carries at most one facet\n * of each kind, and the two domain-neutral seams (`src/served-spans.ts`,\n * `src/mutated-files.ts`) already separate reads from mutations, so each\n * notification maps to single-facet `record` calls. Edit-plus-preview pairs\n * therefore travel as two back-to-back calls in producer order, never as one\n * atomic compound.\n *\n * Read evidence: a notification that carries verbatim `content` is recorded span\n * by span, each span in its own single-range call with its slice (`content` is\n * valid only for a single contiguous range, and slicing keeps multi-span\n * notifications honest). A span whose slice fails is dropped, never sent short.\n * A notification without `content` — diff previews and reject-and-serve rows,\n * where no raw text is at hand — is recorded as ONE call carrying every range\n * with `evidence: \"disk\"`, the v1-equivalent behavior. `lineHashes` are never\n * sent: they would need the bridge's hash algorithm, while `content` lets the\n * bridge hash in memory with its own.\n *\n * Silence is the contract: these observers run inside core tool execution, so\n * nothing here logs and nothing throws — a broken bridge degrades to \"no I/O\n * mirrored\", never to a failed read, edit or write. Drops are counted instead,\n * for tests only. An explicit `off` mode is a configuration choice, not a failed\n * mirror, so it is never a drop.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge-adapter.ts",
+      "text": " SAFETY: advisory-only — this runs inside core tool execution, so no",
+      "occurrence": 1
+    },
+    {
+      "path": "src/integrations/pi-lens/io-bridge.ts",
+      "text": "*\n * Unified pi-lens File I/O Lifecycle Bridge v2 — the only place that knows the\n * `pi-lens:io-bridge` mount exists.\n *\n * WHY a separate module: the observer seams (`src/served-spans.ts`,\n * `src/mutated-files.ts`) are domain-neutral and must not reference any\n * extension, while this module is the integration edge that turns served and\n * mutated notifications into `record` calls. Detection is structural (a global\n * symbol key plus a version and shape check), so nothing here imports pi-lens.\n * When the bridge is absent, or the mode is `off`, every notification is a\n * no-op.\n *\n * The structural copies below are the v2-native subset this integration sends —\n * no `v1-compat` fields, which exist only for the frozen v1 shims. The pi-lens\n * contract file (`clients/io-bridge-contract.ts`) is authoritative when this\n * module and the migration guide disagree.\n *\n * Silence is the contract: the observers run inside core tool execution, so\n * nothing here logs and nothing throws — a broken bridge degrades to \"no I/O\n * mirrored\", never to a failed read, edit or write.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: a hand-edited file can be unparseable mid-write; reading it as \"not configured\" keeps",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: an absent config means \"not configured\", so the caller falls through the precedence",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: and an orphaned .tmp-<pid> sibling is inert.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: best-effort cleanup after a failed write — the original error is the actionable one,",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: cares is told while a caller that does not still reads it as \"not configured\".",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: concurrent writers from clobbering each other's staging file.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: destination that refuses the write means the user's settings were not carried over.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: filesystem), so renameSync replaces the target atomically; the pid suffix keeps",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: ladder; any OTHER read failure is a file someone meant to be read, so a caller that",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: skip exists to remove. The global scope keeps attempt-and-report, because a global",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: so there is nothing to report: a warning here would be the same noise per session the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: the project scope skips the write BEFORE attempting it. The design promises the skip,",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: the read side keeps working from the retired object; only the move is reported.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: the read total and lets the next save rewrite the file from the canonical shape.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": " SAFETY: the temp file is a sibling of the target inside the directory just created (same",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": "*\n * Replace the file at `path` with `update(existing)`. The update function receives the existing\n * object and returns the full next object, so keeping a key it does not own is the default rather\n * than something each writer has to remember; a non-object or unparseable existing file is an empty\n * one, which is what makes the next save rewrite it from the canonical shape.\n *\n * `$schema` is this seam's OWN key: an existing non-empty string survives (a deliberate editor-time\n * choice belongs to the user), anything else is replaced by `CONFIG_SCHEMA_ID`. It is written first,\n * so the head of the file is the same for every writer.\n *\n * Creates the parent directory as needed and replaces the file atomically (sibling temp file +\n * rename, same filesystem). Throws only what the filesystem throws.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": "*\n * Serve a file left at a retired location, and retire it once the new one holds its keys (#190).\n *\n * WHY every retired source is renamed, not just the one that won: the chain is ordered, so the\n * losers are history the moment the winner's keys are adopted; leaving one behind makes a later\n * edit to it silently do nothing. WHY a renamed source keeps its bytes (`.bak`) rather than being\n * deleted: the same convention the store's own retirements use, and it leaves the operator's\n * hand-written file recoverable.\n *\n * WHY a failed adoption still returns the object: settings must keep working when the destination\n * is, say, read-only — the write is the only part that can fail, and the read side never depends\n * on it. A project tree that refuses the write is the same case: the old keys serve and nothing is\n * renamed — but there the attempt is SKIPPED rather than made and reported (`isWritable`), because a\n * read-only checkout would otherwise pay a failed write, and a warning, on every session.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/json-config.ts",
+      "text": "*\n * The settings-file seam — WHERE the file lives, HOW it is read and HOW it is written, shared by\n * every settings owner that keeps keys in it.\n *\n * WHY this module owns the file and not each settings owner: the scopes, the precedence order and\n * the preserving atomic write are ONE contract, and a second hand-rolled copy of any of them is how\n * two ladders over one file drift apart. Owners keep their own KEYS (`lens.bridge`, `store.*`) and\n * import everything else from here.\n *\n * Shape: `{ \"$schema\": <CONFIG_SCHEMA_ID>, ...owner keys... }` — documented by\n * `schemas/pi-better-edit.json`, whose root `additionalProperties` stays `true` so an owner's keys\n * need no schema change to be written, only to be validated.\n *\n * The LOCATIONS are not spelled here: `src/config-dir.ts` names every path (current and retired),\n * because the arch guard pins one naming module and an adoption chain that re-derived a retired\n * path would read a file nobody meant it to. This module owns the ladder over those paths.\n *\n * Absence is never an error. A missing file reads as \"not configured\"; so does a file that exists\n * but cannot be read or parsed. The difference is only whether anyone is TOLD: `readConfigObject`\n * takes an optional `onWarn` for callers whose setting is load-bearing (the store path warns, so a\n * dropped knob cannot silently change what the store does), and stays silent when the caller passes\n * none (the bridge path keeps reading total, because a hand-edited file must never make a read\n * noisy). Nothing here throws on the read side.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: an unresolvable prefix is not a file, therefore not admitted — skip.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: best-effort serve recording — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: best-effort startup cleanup — pruneMissingAll failures are ignored; hash store remains usable and stale entries will be retried next startup, no user data loss.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: every failure returns undefined so the original bash output reaches",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: string-key widening for session_start",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " SAFETY: the model untouched — interception must never break a view.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": " fall through to partial halt below (SAFETY: never break the view).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n         * WHY (ADR-0049 M2/M3): a served multi-file view is ONE result with ONE page section per file,\n         * in operand order, under the existing page header grammar — no new root\n         * banner and no second chrome dialect. Every page's rows come from its own re-read file and are\n         * leased under the existing `(session, path, anchor)` identity: no anchor is ever shared between files.\n         *\n         * WHY the whole-command gate (M8): boundaries are line counts, so the observed STREAM must\n         * equal the render built from the re-read files before the first lease — one bad file, page,\n         * transform or cap passes the entire command through raw with zero leases. The zero-row page\n         * (M4) has a zero-length observed interval, which is why it cannot weaken that proof.\n         ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n         * WHY: (ADR-0039 D1/D2/D4) sequential peeling + hybrid envelope. Each segment's expected raw\n         * WHY: bytes come from re-read disk (never observed stdout); the peel consumes exact prefixes\n         * WHY: left-to-right and halts at the first mismatch, keeping verified prefix rendering and\n         * WHY: leases with the rest raw. Glue contributes verified bytes verbatim; views/searches\n         * WHY: render anchored blocks via the shared paths on verified slices. Zero blocks, nothing\n         * WHY: verified, or a trailing remainder beyond lone-newline leniency returns undefined (F2).\n         ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n         * WHY: (ADR-0039 D2/D4) render one verified envelope block (single trailing newline; glue\n         * WHY: stays byte-exact). Views/searches render through the shared serving paths on their\n         * WHY: verified slice (their internal gates re-verify defensively); multi/recursive/file-list\n         * WHY: searches never reach here (no expected variants — the peel halts first). An empty\n         * WHY: search renders its banner with zero rows and zero leases rather than halting the rest.\n         ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n         * WHY: shared view serving (single views call it with whole stdout; the envelope calls it\n         * WHY: per verified slice). Pure relocation of the branch body — `event`, `deps` and helpers\n         * WHY: resolve via closure. Throws propagate to the caller SAFETY catch.\n         ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n       * WHY (#151): the single decision switch — every conversion shape routes by\n       * WHY: `decision.kind`; no shape-sniffing, no stringified reasons downstream (the\n       * WHY: debug seam below records the reason in the diagnostics file, never in the model's\n       * WHY: text (ADR-0033 D6: observability is never model-visible). Banners and headers stay\n       * WHY: in the shape seams this calls; this is where the routing decision lands.\n       ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (ADR-0039 D1) expected raw bytes for one envelope segment, computed from re-read disk\n   * WHY: content (never from observed stdout). Each entry is an exact byte candidate, longest\n   * WHY: first: glue is a single predicted literal; views cover the two D9-accepted trailing\n   * WHY: forms; searches cover theirs. A candidate that matches as a prefix is consumed; if none\n   * WHY: matches, peeling halts. No candidate invents bytes — mismatch fails closed, never leases.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (ADR-0048 D1 — bash serve admission) never content matching, no\n   * WHY: other-file anchor bleed. The triple regex splits `FILE:LINE:content` non-greedily, so\n   * WHY: when two splits of one observed row both resolve into the admitted set, the row is\n   * WHY: served under a coordinate bash never printed. Concrete twin: file `a` line 1 ==\n   * WHY: `b.txt:3:x` and file `a:1:b.txt` line 3 == `x` produce the identical stdout row\n   * WHY: `a:1:b.txt:3:x`. Enumerate EVERY split whose suffix is itself a line-number shape\n   * WHY: (`^\\d+:` with a safe integer >= 1, the parser's own line rule) and resolve the prefix —\n   * WHY: candidates are resolved, never display-matched, because `admitted` displays are\n   * WHY: `path.join`-normalized (`sub/a`) while bash prints the operand spelling (`./sub/a`\n   * WHY: for a `.` root). A prefix that fails to resolve is not a file and is skipped, never a\n   * WHY: refusal: matched content beginning `digits:` yields phantom candidates (e.g.\n   * WHY: `sub/ok.txt:2:5:foo` yields `sub/ok.txt:2`), and refusing on throw would make the\n   * WHY: common content-with-colons case unservable. More than one distinct resolved path\n   * WHY: fails the WHOLE serve closed before the first lease — several display aliases of one\n   * WHY: resolved path are not ambiguous. Residual, still fail-closed: `resolveTarget` catches\n   * WHY: ENOENT and resolves a deleted admitted file lexically, so deletion cannot blind this\n   * WHY: guard — the serve then fails at `valAccess` (`E_NOT_FOUND`) in `loadTextTarget` before\n   * WHY: the first lease, and the outer `handleBash` catch passes the command through raw.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) `rg --files`: every entry is existence-checked against the walk (invariant 2)\n   * inside the same count cap, and NOTHING is leased — a path list has no lines to anchor, so\n   * listing grants no edit rights.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) resolve + read one candidate file for a triple serve. The classifier is pure\n   * WHY: and zero-fs, so the file kind is re-checked here: anything that is not decodable text\n   * WHY: fails the WHOLE serve closed rather than being silently skipped.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) the multi-file seam. Triples require a numbered spelling, and the `tool_call`\n   * rewrite supplies it; a command that somehow reaches here without it fails closed instead of\n   * serving an unverifiable geometry.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) the recursive seam over one explicit root (`grep -r PATTERN DIR`, and an `rg`\n   * directory operand). Only files the walk actually visited can be leased, so the exclusion list\n   * is what keeps `node_modules`/`.git`/hidden subtrees out of the anchor budget.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) the shared multi-file / recursive serve seam. Every named file must resolve\n   * INTO the admitted set (explicit operands or the walked set), every row's bytes must equal\n   * the disk line at that number, and the total row count must fit `SEARCH_MAX_MATCHES` — all\n   * verified BEFORE the first lease, so a refusal grants nothing (invariant 2) and an over-cap\n   * search passes through raw instead of truncating (invariant 3). Sections render in operand /\n   * first-seen order under the admitted display (which differs from bash's spelling for a `.`\n   * root: `sub/a` renders where bash printed `./sub/a`), so coordinates are stable.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 10) the walk behind a recursive search and `rg --files`: breadth-first, hidden and\n   * `node_modules` directories never descended into, symlinks never followed (a `Dirent`'s\n   * `isFile()` does not follow one), and the visit count bounded — past\n   * `BASH_SEARCH_WALK_MAX_FILES` the WHOLE command passes through raw.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: (item 9) the content stage's serve seam. A filter's survivors are sparse, so they are\n   * WHY: leased row by row exactly like a search's matches — the same `fmtServedRows` renderer\n   * WHY: and `SEARCH_MAX_MATCHES` bound — rather than borrowing the read tool's window budget,\n   * WHY: which would pass a realistic sparse filter through raw. The whole-stdout byte gate is\n   * WHY: the witness: a literal fold that diverges from what bash printed (a regex pattern, an\n   * WHY: `-i` spelling) fails closed here instead of being served as if it were the command's\n   * WHY: output. Empty survivors pass through, so a filter that matched nothing leases nothing.\n   *\n   * WHY: (item 11) the same seam serves the line-SET consumers. `sort -u`/`uniq` reorder the\n   * WHY: rows, so the header names the order while every lease keeps the true file coordinate;\n   * WHY: `wc -l` is terminal and takes the count gate instead of the byte gate, leasing EVERY\n   * WHY: counted row in file order so the number it printed is checkable by editing a row.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * WHY: [ADR-0039 D3] positional fold over resolved search rows. `first`/`last` (and their\n   * WHY: `from`/`dropLast`/`range` siblings, kept total so a new kind breaks typecheck here)\n   * WHY: select by stream position; each row already carries its original file line, so surviving\n   * WHY: rows keep original numbers by construction. Uses `slice`, never a line split.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n   * [spec §3.4] The `tool_result` half of search interception: parse the `LINE:content` stdout of an\n   * already-rewritten search, verify every match against the disk bytes (D9), then swap the raw\n   * match list for anchored rows and synchronously enroll their leases.\n   *\n   * WHY the stdout is normalized rather than rejected: `grep` emits the disk bytes, so a CRLF file\n   * yields `5:line5\\r` while `readNormFile` — and the anchors served here — describe LF/no-BOM text.\n   * `toLF(stripBOM(...))` is exactly the D9 normalization `handleBash` applies to a view, which\n   * keeps both seams consistent on the files the model inspects through bash.\n   *\n   * Every gate fails closed to `undefined` (raw bash output untouched): a non-zero exit or zero\n   * matches, an unparsable row, more than `SEARCH_MAX_MATCHES` rows, a byte mismatch on any line, or\n   * a line the hash array does not cover. Truncating or partially leasing would serve anchors for\n   * lines the model never saw.\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/lifecycle-hooks/index.ts",
+      "text": "*\n  /**\n   * WHY deferred module load: `bash-classifier` statically pulls `unbash`, which must\n   * WHY: never join the extension entry graph — entry import cost is budgeted\n   * WHY: (`measure-import --max-ratio 0.75`). The handler therefore reaches the\n   * WHY: classifier only through a dynamic `import()` on the first bash result.\n   * WHY:\n   * WHY: Load-shape record (ADR-0033): esbuild bundles the relative specifier into\n   * WHY: the entry and hoists the external `unbash` import to a top-level static\n   * WHY: import in the shipped artifact, so the artifact is NOT lazy — only the\n   * WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,\n  * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure\n  * WHY: of the lazily imported classifier still fails closed via the catch below,\n  * WHY: which passes the original output through untouched (in the shipped artifact\n  * WHY: the hoisted top-level import is instead fatal at entry — same class as the\n  * WHY: other entry imports).\n   ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutated-files.ts",
+      "text": " SAFETY: observer isolation — a broken integration sink must never fail the edit or write",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutated-files.ts",
+      "text": " SAFETY: that already landed, nor silence the remaining observers.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutated-files.ts",
+      "text": "*\n * Mutated-file observer seam — the domain-neutral notification of which file this tool just\n * changed, and which of its lines moved. Producers (edit, undo-last-edit, write) hand over the\n * 1-indexed changed ranges; this module fans them out to registered observers.\n *\n * WHY a seam: the mutated set is known deep in the mutation paths, while the consumer is an\n * optional outer integration that may be absent entirely (the mutation bridge). Inverting\n * the dependency here keeps every producer free of integration imports, and with no observer\n * registered the behavior of the tool is unchanged.\n *\n * Invariant: an empty `ranges` list means the WHOLE file changed (whole-file authorship, an undo\n * that re-serves the file, a producer that knows no line detail) — it is never \"nothing happened\",\n * so every notification is delivered. `src/served-spans.ts` makes the opposite choice for the same\n * word: an empty `spans` list there means nothing was served and is dropped. The two payloads read\n * alike but mean opposites, which is why the two seams stay separate modules.\n *\n * Invariant: no path handling lives here — `filePath` is the absolute normalized path the caller\n * already holds. Ranges are 1-indexed and expected ascending, non-overlapping, non-adjacent.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/batch-span-gate.ts",
+      "text": "*\n * Resolves one edit's baseline span (`s'_start .. s'_end`) in the pre-batch snapshot through the same\n * seam the apply path resolves it with (spec §3.2.1): every edit goes through `resolveLeasedEdit`, so\n * its span is the `line_lineage(S_curr)` window of its leased `line_id`s — a duplicate canon resolves\n * through the leased identity, never through the first content occurrence. An anchor this seam cannot\n * place has no comparable baseline coordinate, and the sequential apply rejects that edit anyway, so\n * the batch aborts with that same diagnostic (`[E_STALE_ANCHOR]`, `[E_STALE_RANGE]`) instead of\n * silently dropping the span (a dropped span blinds the overlap gate for every other item in the\n * call).\n *\n * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines\n * are mutated state the overlap gate must see (invariant 5). A copy's source is read, not mutated,\n * so it adds no span.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: best-effort post-write materialization — the edit already committed; a store failure",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: each `code` gate below selects the registry member whose shape `payload` holds.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: every byte is committed; a stale intent row resolves to \"all == post\" on the next",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: run and drops itself — repair owns that path, the edit result stands.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": " SAFETY: warn that store synchronization is deferred.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": "*\n * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (ADR-0028). NO\n * FILESYSTEM ATOMICITY IS CLAIMED: `writeAtomic` is per-path, so two files mean two renames\n * with a real crash window between them. The honest guarantee is three-part:\n *\n *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source\n *     retirement. A crash between the renames leaves the copy at the target and the span still\n *     at the source — duplication, recoverable; the inverse ordering would be data loss. This\n *     ordering is the spine of the design.\n *  2. DURABLE INTENT — every file's undo row carries the transaction id and a `cut_intent` row\n *     names the transaction before the first rename, so a half-applied transaction is\n *     detectable on the next run.\n *  3. REPAIR — `repairCutIntents` (src/cut-repair.ts, run on every live apply) resolves an\n *     orphaned intent to complete-the-cut OR restore-both-files from the rows' pre/post bytes,\n *     losing no content in either resolution.\n *\n * Every failure before the first rename leaves every file untouched (the plans run in-memory\n * first and any throw aborts the call); failures inside the window roll back the written files\n * best-effort, and a rollback that does not hold LEAVES THE INTENT ROW for repair.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": "*\n * A foreign-source rejection never renders unleased rows: the rows a leased-range rejection names\n * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write\n * (`loadForeignServedView` is the read-only authority). Rows are therefore SERVED or ABSENT —\n * the leased codes are re-wrapped HERE with their rows dropped and `refFile` named, except\n * `E_TARGET_LOST`, whose format already names the file and carries no rows, so it passes through.\n * §0's never-served pass-through below stays (its exact-code pins ride it); the length guard in\n * it is SHADOWED by the code-set check and is NOT the enforcement point.\n * WHY: (B6, ISSUE-6 repo half — second recurrence) a never-served foreign anchor is ticketed to\n * WHY: the `W_NEVER_SERVED_SHAPE` soft hint, but it surfaces as a hard rejection here, and that\n * WHY: deviation is structural: `[W_*]` codes are the APPLIED tier — `warnBlock` renders them only\n * WHY: on a result that mutated — and a foreign failure aborts before any apply, so the channel\n * WHY: that would carry the hint never exists for this call.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/mutation-engine/pipeline.ts",
+      "text": "*\n * Foreign-source copy (ticket-04 §3.3) and the cut record (ticket-04b): a `text_ref` naming\n * another served file is read from that file's CURRENT content through the READ-ONLY half of the\n * lease seam and collapsed to a `literal` payload BEFORE the mutate loop, so a foreign resolution\n * failure aborts the whole call atomically (nothing has been mutated yet) and every downstream\n * gate runs on the bytes that will be written. The read+load+lease assembly is\n * `loadForeignServedView` (edit-source.ts) — one entry, memoized per resolved path by\n * `materializeForeignReferences`.\n *\n * SAFETY: the pre-pass read is read-only by construction, not by convention:\n *  - `loadForeignServedView` is built on `readNormFile(..., { noPersist: true })` — the loader\n *    gates every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;\n *  - `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes` — resolution never\n *    re-stamps a lease and never writes `retired_at`;\n *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path.\n * For `mode: \"copy\"` that is the whole story: the foreign path is never written. For\n * `mode: \"cut\"` (ticket-04b) the file is instead edited LATER as a first-class transaction\n * member — its own `runMutations` load, verification, undo row, and store commit — under\n * `runCutTransaction`; this pre-pass itself still persists nothing.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/paths.ts",
+      "text": " SAFETY: cwd is trusted (ctx.cwd), expand resolves \"~\" via homedir/XDG and resolvePath normalizes \"..\"; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/preview-controller.ts",
+      "text": " SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/ast-provider.ts",
+      "text": " SAFETY: a symbol-free or unparseable file yields an empty list, never a throw.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/ast-provider.ts",
+      "text": " SAFETY: an unresolvable optional module is an absent runtime, not a read failure.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/ast-provider.ts",
+      "text": " SAFETY: load failures are the same answer as no boundary; the read stays exact.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: an absent log is the first-run state, not a fault.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: best effort — the append this precedes still succeeds, and the old pair stays",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: best effort — the read already served its rows (see the module WHY).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": " SAFETY: readable under its retired name, which is a worse report than a moved one.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/audit.ts",
+      "text": "*\n * The note's failure sink — the trajectory record for provider lookups that failed.\n *\n * WHY its own file beside `diagnostics.log`: a failed span lookup is an expected event, not a\n * diagnostic failure, and a queryable \"which lookup failed, on what, and why\" belongs in its own\n * JSONL stream. The placement and rotation policy are deliberately the diagnostics one:\n * `<stateRoot>/selection-range.log` with one rotated generation, so an operator can attach the pair\n * whole.\n *\n * WHY the retired name is ADOPTED rather than left behind: this sink was `read-expansion.log` before\n * the read-expansion retirement, and the log that explains a bug an operator is reporting is exactly\n * the file a rename must not orphan. The first write moves the old pair onto the new names, each\n * generation only while its new path is absent — the rule `MOVED_ARTIFACTS` applies to a state-root\n * move, and for the same reason: a log already written under the new name is this install's own\n * record and wins over the history beside it.\n *\n * WHY failures only: an ordinary read — note-free, gated out, or served with a note — writes no row,\n * so the file stays proportional to the defects worth fixing instead of every tool call.\n *\n * WHY the first record of a session carries `rung`: recording the resolved ladder source once per\n * session makes the effective policy visible without repeating it on every line. Later records omit\n * it. The rung is required, so a new caller cannot silently stamp the wrong value.\n *\n * The refusal vocabulary lives in `docs/agents/selection-note-replay.md#refusal-vocabulary`.\n *\n * WHY nothing here may throw: an audit write is best effort. A sink failure must never turn a read\n * that already served its rows into a failed call.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/grammar-cache.ts",
+      "text": " SAFETY: a fetch/write failure is the same answer as an offline grammar.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/grammar-cache.ts",
+      "text": " SAFETY: best effort cleanup.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/grammar-cache.ts",
+      "text": " SAFETY: best effort — a cache deletion failure must not fail the read.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/grammar-cache.ts",
+      "text": " SAFETY: offline, timeout, DNS failure and a malformed response are all \"no grammar\".",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/provider-contract.ts",
+      "text": "*\n * The provider contract — every interface a boundary provider must satisfy.\n *\n * WHY its own module: the providers outlive the expansion decision layer. The decision module is\n * due for deletion, and a provider that imported its shapes from there would stop compiling the\n * day it goes. This module is the one definition site for the enclosing-chain answer, the decline,\n * the window, and the line range, so it survives that removal unchanged.\n *\n * A provider answers \"what encloses this window's first line\" and nothing else — innermost\n * first. It does not render chrome, and it does not know what the answer is used for.\n * WHY `EnclosingSpan` stays internal: it is an answer detail, not part of what a provider\n * author implements — `SpanProvider` is. Exporting it would let callers depend on a shape\n * the seam must stay free to reshape. `EnclosingChain` is the exported answer: the chain\n * of spans from innermost to outermost.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/qualified-names.ts",
+      "text": " SAFETY: enrichment is advisory; any resolver failure leaves the parser label intact.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/selection-range-note.ts",
+      "text": " SAFETY: a throwing or hanging provider must never fail a read; the note is a best effort.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/selection-range-note.ts",
+      "text": "*\n * The selection-range note seam — one module decides whether a note is due and renders it.\n *\n * WHY its own module: a provider answers \"what encloses this window's first line\" and nothing else —\n * innermost first — the header formatter only places a finished clause, and the read path never\n * formats note text. This module is the one place those three meet, so the note cannot scatter\n *\n * One decision, two placements: the seam returns one clause per served window, keyed by chain (a chain\n * is named once, on the first window served from it). A single-window page places its clause on the\n * page header; a multi-window page places each clause on the section that serves it. Neither the\n * read path nor the header formatter decides which windows get a note.\n *\n * The note is silent in four distinct situations, and only one of them is a fault:\n * - the window equals its innermost span (nothing to add);\n * - nothing encloses the window's first line (the provider declines or answers an empty chain);\n * - the pre-lookup gate declined it (no registered provider, a window that covers its file);\n * - the lookup failed (threw, timed out, or answered something invalid) — the only case that logs.\n *\n * A window that straddles two siblings is not silence: the chain anchors on the window's first\n * line, so the innermost span names the sibling the window starts in.\n * The gate runs before any parser work. The note is chrome: it changes no served line, holds no\n * lease, and carries no anchor.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read-expansion/span-kind.ts",
+      "text": "*\n * The closed vocabulary of note labels.\n *\n * The base is LSP 3.17 `SymbolKind`: every lowercase member below names one protocol kind, and\n * `SPAN_KIND_TO_LSP` carries the canonical PascalCase name next to it. Six extensions cover\n * concepts the protocol cannot express honestly: `arrow` (an anonymous function assigned to a\n * name), `typeAlias`, `impl` and `trait` (Rust items; mapping them to `Object` would be a lie),\n * and the non-AST prose units `section` and `paragraph`.\n *\n * Display stays lowercase because the note is model-facing prose, not a protocol symbol. The two\n * camel-case members `enumMember` and `typeParameter` are rendered as `enum member` and\n * `type parameter`. `typeAlias` is an extension and keeps its camel-case label. A raw grammar node\n * type is never a member: an unmatched node declines.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: best-effort post-read materialization — the preview rows are already computed",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: falls through to schema validation, which is exactly where it must be refused.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: from a single simple window, without mutating the caller's `args`. Multi-window reads",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: get their count appended below — the builtin has no chrome for them.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: projectReadRenderArgs derives the path from the flat `file` (D4) and the range",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: the builtin renderers are keyed on `file_path ?? path` plus `offset`/`limit`;",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload",
+      "occurrence": 0
+    },
+    {
+      "path": "src/read.ts",
+      "text": " SAFETY: to the fail-closed path the next edit would take anyway.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/search-hook.ts",
+      "text": " SAFETY: interception is an optimisation, never a gate — a classifier fault leaves the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/search-hook.ts",
+      "text": " SAFETY: original command and the original raw bash output untouched.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/search-hook.ts",
+      "text": "*\n * SAFETY: Pre-execution bash rewrite for intercepted search commands (spec §3.1/§3.3, I1a).\n *\n * WHY a `tool_call` hook and not `tool_result`: native `grep`/`rg` only print `LINE:content`\n * rows when asked for line numbers, and patching the command before dispatch is the only seam\n * that makes the real binary emit them — no shell re-run, no duplicated regex engine (JS\n * `RegExp` and BRE/ERE/Rust regex diverge, so the system binary must execute natively).\n *\n * WHY no shared state with the `tool_result` side: the rewrite is a pure function of the\n * command text, and `handleBash` re-parses the mutated `event.input.command` on its own. A\n * session- or call-keyed map would leak across concurrent bash calls and could pin a lease to\n * a command some other call rewrote.\n *\n * The hook fails open by construction: it returns without touching `input` unless the pure\n * rewrite actually changed the command, and every throw is swallowed so interception can never\n * break a bash call.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/serve-render.ts",
+      "text": "*\n * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J). The caller resolved\n * each end anchor's leased `line_id`; this verifies the whole served window remapped onto\n * `rebasedStart..rebasedEnd` — the dynamic rebase path's rigid remap, and the fast path's identity\n * remap (`rebasedStart === servedStart ∧ rebasedEnd === servedEnd`), which is why both paths reach\n * the same verdicts (#151):\n *\n *  - a different window length means an external insert/delete landed strictly inside the range\n *    (Probe J) -> `E_STALE_RANGE`;\n *  - a served line whose mirror row was truncated away, or an anchor holding no lease -> `E_STALE_RANGE`\n *    (the diagnosis separates the two: the served record cannot be reconciled, and no served identity);\n *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity\n *    to verify, and the span's extent is already pinned by the two boundary leases this gate verifies\n *    plus the window-length check above. Only rows `0` and `servedLen - 1` — the anchors the model\n *    named — stay fail-closed on a `null`, because with no served row there is nothing to verify them\n *    against;\n *  - a multi-line span whose strict interior covers a recorded outline fold line that is still\n *    unserved in the mirror -> `E_STALE_RANGE` (tranche 3 fold-gate); single-line spans have no\n *    interior and skip it, and a later served read that fills the folded lines disarms it;\n *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: \"retirement\"`, and\n *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code\n *    with `cause: \"served-range staleness\"` (Probes A/E/K: never apply at a coordinate whose\n *    immutable `line_id` is not the one leased).\n *\n * No canon data is consulted: identity comes from the mirror row's lease, so a same-anchor collision\n * between an old served line and unrelated current content cannot satisfy the gate (issue #151).\n * Identity — not anchor spelling — is authoritative: a surviving line may legitimately present a\n * different (content-derived) anchor in the new snapshot, so a string mismatch is not by itself a\n * failure. Throwing happens before any write, so a rejection leaves the file byte-identical.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/serve-render.ts",
+      "text": "*\n * SAFETY: Served prefix mismatch — the middle tier beside the served hash echo gate.\n *\n * A candidate reports here when it opens with an anchor served for this session\n * and file, yet its remainder canon digest matches none of the digests the\n * leases recorded for that anchor's served line. Position-agnostic like the\n * gate: `start` only shifts the reported `line` and never narrows matching.\n * Empty or all-null `canonDigests` means no\n * served content to compare against, so the result stays empty — never a\n * shape-only report. Exact reproductions are excluded (the gate owns them),\n * so callers scan for this tier only after the gate stays silent.\n * Pure with no retained state: fires per occurrence, never suppressed.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/serve-render.ts",
+      "text": "*\n * SAFETY: ServedHashEcho — one evidence predicate for the served hash echo condition.\n *\n * WHY: this section lives here (with the serve-row builders) rather than beside the edit path: the\n * WHY: evidence it judges is a served row, so the module that renders served rows also owns the\n * WHY: gates that read them. Callers keep passing every input explicitly (no session handle).\n *\n * GLOSSARY.md served hash echo: a candidate line\n * triggers only with evidence — it begins (after one optional leading `+`,\n * `-`, or space diff marker) with an anchor served for this session and path\n * at any position, AND the remainder reproduces the served content for that\n * anchor (`canonDigest(remainder) === served_leases.canon_hash`). One\n * such row suffices. No canon data means no evidence, so the candidate stays\n * silent — the tool never gates on the shape of a line.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/serve-render.ts",
+      "text": "*\n * SAFETY: Soft hint for an applied edit carrying never-served anchor-shaped lines.\n * Applied-only, bytes untouched, never blocks: the bytes were written as-is with\n * no rewrite. Once per `edit` call however many offending lines it holds — `count`\n * states how many replacement lines match the tool's own row shape with anchors\n * never served for this session and file. The trailing conditional clause is deliberate:\n * gated on `if ... unintended`, it names the affordance that exists in that case\n * (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an\n * order, carrying no run prefix. Both applied-hint builders (this one and\n * `buildServedEditPrefixNote`) carry the clause byte-identically, pinned by\n * test/core/served-prefix-note.test.ts.\n * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/serve-render.ts",
+      "text": "*\n * SAFETY: serve-render — deep module owning the shared serve-row/rejection/verification surface.\n *\n * It is the serve→mirror→lease→retire machine's pure render adapter: it builds the rows a serve\n * shows (`buildRangeServeRows`/`denseServeRows`/`fmtServedRows`) and the rows a rejection shows\n * (`makeServedRejection`/`makeStaleAnchorRejection`/`makeTargetLostRejection`), and it verifies the\n * served rows themselves (the served hash echo and prefix-mismatch evidence gates, the never-served\n * shape scan, the rejection bookkeeping, and the lease seam's `verifyRebasedSpan`). It owns no\n * session state: every input arrives as an argument, and the session module is the only writer.\n *\n * This module absorbs the served-range verification sprawl previously in served.ts:\n *  - served span position lookup (servedPositionsOf)\n *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)\n *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)\n *  - the dense serve-row projection (denseServeRows) — the single owner of the serve-record row shape\n *  - the reject-and-serve rejection builders (makeServedRejection / makeTargetLostRejection /\n *    makeStaleAnchorRejection)\n *\n * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject\n * fail-closed with E_STALE_RANGE. Coordinate realignment is owned exclusively by MVCC\n * `pairSnapshots` + `line_lineage` upstream in the edit path.\n *\n * The lease seam owns verification for every edit it resolves (#151): `verifyRebasedSpan` checks the\n * whole served window by lease identity. The module's former mirror-vs-mirror decision table\n * (`ServedVerification`, `verifyServedRange`) served only the library-level seam — a caller with a\n * served mirror and no lease source — and had no live caller, so it is retired (#10).\n *\n * GLOSSARY.md terms preserved: serve, served state, served span, served-range\n * staleness, never-served, reject-and-serve, drift.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " AND its displaced retirement — mirrored here.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `file_path`.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `outline_folds`.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: a missed lease degrades to the fail-closed path the next edit would take anyway.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: best-effort lease grant — serves are already recorded and the tool result is valid;",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: the store open still succeeds and later reads re-attempt the additive migration.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": "*\n * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never\n * invented here: it is read from the committed snapshot whose content was actually served, so the\n * edit path can resolve the anchor's identity later. Anchors without committed lineage (e.g. a\n * preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay\n * fail-closed.\n *\n * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the\n * served content (`recordEpoch` full reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`,\n * `recordLeases`). There is deliberately NO fallback to the newest materialization: after content\n * reverts to an earlier committed snapshot a re-serve of the reverted content would bind anchors\n * that both snapshots share to the OTHER version's `line_id` — the silent-miswrite class §3.1.2\n * exists to prevent. An unknown hash therefore grants nothing and the next edit fails closed.\n *\n * This is the in-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and\n * deliberately propagates instead of swallowing, so a failed re-serve rolls back the adoption and\n * retirement it shares a transaction with (the undo restore is one transaction, not three).\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": "*\n * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one. Both the\n * delete and its run stamp are writes, and a `DELETE` takes the store's write lock even when its\n * predicate matches no row, so a healthy stamp-matching open that took no lock before would otherwise\n * contend for one here. The item is therefore asked only when it is due, and it deletes only when\n * there is something to delete.\n *\n * WHAT IT RELAXES: retention moves from \"every open\" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so\n * an expired row can live `SERVED_TTL_MS` plus that interval. The timer earns its place because the\n * guard it skips scans the mirror whenever nothing is expired (no index covers `updated_at`); the\n * measured medians and the sizing argument are in that constant's WHY block.\n *\n * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now -\n * SERVED_TTL_MS`) is asked as an existence question before it is asked as a delete, the same rows are\n * removed, and the run stamp is written only by a run that removed some.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.",
+      "occurrence": 1
+    },
+    {
+      "path": "src/served-session/session.ts",
+      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.",
+      "occurrence": 2
+    },
+    {
+      "path": "src/served-spans.ts",
+      "text": " SAFETY: an open run covers the half-open range [runStart, runStart + runCount - 1]; the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-spans.ts",
+      "text": " SAFETY: next contiguous position in that run is therefore exactly runStart + runCount.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-spans.ts",
+      "text": " SAFETY: observer isolation — a broken integration sink must never fail the read or edit",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-spans.ts",
+      "text": " SAFETY: that already served its rows, nor silence the remaining observers.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/served-spans.ts",
+      "text": "*\n * Served-span observer seam — the domain-neutral notification of which lines this tool just\n * served. Producers (read, reject-and-serve, auto-read, diff) hand over 0-based rows; this\n * module run-length encodes them into 1-indexed maximal contiguous spans and fans them out to\n * registered observers.\n *\n * WHY a seam: the served set is known deep in the read and reject-and-serve paths, while the\n * consumer is an optional outer integration that may be absent entirely. Inverting the\n * dependency here keeps every producer free of integration imports, and with no observer\n * registered the behavior of the tool is unchanged.\n *\n * Invariant: no path handling lives here — `filePath` is the absolute normalized path the caller\n * already holds. Spans are 1-indexed because served rows are 0-indexed internally while every\n * consumer-facing surface counts lines from 1.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: best-effort retention — the snapshot is committed and the tool result is valid; a",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: best-effort rollback — the original failure is authoritative.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: missed pass only defers eviction to the next fresh commit or store open.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: observability only — a broken diagnostic sink must never fail the caller.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: pass only defers eviction to the next fresh commit or store open.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/index.ts",
+      "text": " SAFETY: best-effort rollback — the original failure is authoritative.",
+      "occurrence": 1
+    },
+    {
+      "path": "src/snapshot-store/migrate.ts",
+      "text": " SAFETY: best-effort legacy cleanup — rename failure after successful migration is ignored; legacy file remains but next migration will be skipped due to valid snapshot state, no data loss.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/migrate.ts",
+      "text": " SAFETY: best-effort legacy migration — parse failures are ignored; corrupted legacy file is skipped and fresh hashing will repopulate, no caller depends on legacy data.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/migrate.ts",
+      "text": " SAFETY: best-effort legacy migration — read failures beyond ENOENT are ignored; migration is optional and fresh store remains valid, no caller depends on legacy data.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/snapshot-io.ts",
+      "text": "*\n * SAFETY: snapshot-io — the persistence seam between a hash identity and the snapshot store.\n *\n * WHY: `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a two-method interface\n * WHY: (`get` / `upsert`). That seam belongs to the store: the store owns the rows, the cache key and\n * WHY: the transaction, and identity stays free of store shape. The adapter here is the whole wiring —\n * WHY: a caller names the store it materializes into and gets an IO bound to it.\n *\n * WHY: explicit parameter over an ambient default. ADR-0002's import-time install let a bare\n * WHY: `lineHashes(content, path)` choose whichever store happened to be open in the process, so a\n * WHY: call that never named a store still persisted into one. Callers now pass `snapshotIOFor(store)`\n * WHY: (or `persist: false` when they only derive anchors), and nothing installs a process-wide IO.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/snapshot-store/vacuum.ts",
+      "text": " SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: best-effort by contract — the marker was not written, so the next call retries.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: next session tries again; a completed copy counts as moved, and a failed DELETION is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: only reported — see the header for why that does not withhold the marker.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: the marker means \"nothing is left to move\". A failed move keeps it unwritten so the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: the state root is created here (not by the caller) because the artifacts below have",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: the store open's own [E_ACCESS] refusal, which is where a caller can act on it.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": " SAFETY: to land inside it; a failure is swallowed by the enclosing catch and surfaces later as",
+      "occurrence": 0
+    },
+    {
+      "path": "src/state-migration.ts",
+      "text": "*\n * One-shot adoption of the STATE artifacts left in the retired per-user directories (#190).\n *\n * WHY the retired side is an ORDERED LIST and not one directory: before the relocation the layout\n * resolved to `PI_BETTER_EDIT_CONFIG_DIR` when set, else `$XDG_CONFIG_HOME/pi-better-edit` or\n * `$HOME/.config/pi-better-edit`. All three held the same artifacts, so a user who set the override\n * or relocated with `XDG_CONFIG_HOME` has their old store and log somewhere the default root never\n * looks. `retiredConfigRoots()` orders them strongest first.\n *\n * WHY a pass at all: the settings file is adopted by the ladder in `json-config.ts`, but the store\n * and the log are not settings — they are written by the extension itself, so nobody would ever\n * read the old copies by asking for them. Without this pass an upgraded install would silently\n * start a second, empty state root and leave the old log (the one that explains the bug the user\n * is reporting) behind.\n *\n * WHY the SQLite store is NOT migrated: an older pi process may still be using the old file, and\n * copying or renaming a live SQLite database corrupts one of the two owners. The store's contract\n * is therefore \"fresh start, old file abandoned in place\", and the only action left is to say\n * where it is — once, deduped by a marker file in the new root so a log reader is not told the\n * same thing every session.\n *\n * WHY everything here is best-effort: this runs underneath the diagnostics sink and the store open,\n * both of which have their own failure contracts. A migration that threw would turn \"the user's\n * config moved\" into \"the tool stopped working\", which is a worse outcome than a stale log. The\n * marker is written only when every attempted MOVE succeeded, so a partial run is retried rather\n * than recorded as done. A failed DELETION does not withhold the marker: it is reported, and retrying\n * it would mean re-walking a directory on every session forever for a file we already stopped\n * caring about.\n *\n * WHY the reporting sink is a parameter instead of an import of `diagnostics.ts`: this module runs\n * BEFORE the diagnostics sink's first write (that is the point — the old log has to be in place\n * first), and importing the sink would make the two modules import each other.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor-warning.ts",
+      "text": "*\n * #197 — the STORE JANITOR's user-visible warning: a pure rendering of one `JanitorOutcome`.\n *\n * WHY the trigger lives in the formatter rather than in a caller: \"did anything observable happen\"\n * is a property of the outcome, and a caller that re-derived it would be a second owner of the same\n * rule (three counts, the compaction, the deep check, the rebuild). Returning `null` here makes the\n * quiet case unrepresentable downstream, so #198's wiring has one decision — render what it is given\n * — and a run that removed nothing can never become a warning by accident.\n *\n * WHY two levels and not three (#199): the operator's question is \"does this need my attention\".\n * A routine cleanup and a DEFERRED compaction both answer no (`info`); damage and a compaction that\n * FAILED answer yes (`warn`). The outcome already carries that answer, so the wiring never decides a\n * severity and every surface publishes the same level for the same run.\n *\n * WHY nothing here performs I/O: the only dependency is the log's PATH (`diagnosticsLogPath`, a\n * computation over the state root), never the file. A formatter that opened the log would fail on the\n * failure path it exists to describe, and a test could no longer assert the text without a store.\n *\n * WHY one em-dash clause and no emoji: this text is rendered inside Pi's differential renderer, where\n * width changes are expensive and emoji width is not stable. The bracket prefix is the greppable\n * handle (`grep -F '[pi-better-edit store-janitor]'`), so every line carries it — including the\n * multi-line damaged-store shape, whose lines are read out of order in a log.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: (every step is idempotent and its own work is its own throttle record), so the",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: a failed sweep removes nothing and is retried by the next due run; the deep check below",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: best-effort maintenance — a failed janitor run leaves the store exactly as it was",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: best-effort notice — the diagnostics record written next is the surface that survives.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: best-effort restore — the compaction outcome is authoritative, and the next open",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: is what decides whether this store needs the open path's recovery instead.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: narrowed to the handler signature the widened `on` above declares.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: re-applies the store's own busy timeout. Log-only, never the console: this catch is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: reachable from the shutdown surface, where the console is already torn down (#199).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": " SAFETY: session continues and the next lifecycle event retries. The publish step itself",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": "*\n * Delete every row a predicate names, at most `batchSize` rows per statement, returning the count.\n * The statement is re-prepared per batch so no state is held between them, and each batch carries\n * the store's own busy budget (`withBusyRetry`) rather than the janitor inventing a retry.\n *\n * WHY `rowid IN (SELECT rowid ... LIMIT ?)`: `DELETE ... LIMIT` needs a SQLite build option this\n * runtime does not guarantee, while every table here is an ordinary rowid table, so the bounded\n * delete is spelled with a subquery instead. `table` admits only `JanitorTable` members, so the\n * two interpolated table slots cannot name a table no call site passes (#105 rider).\n *\n * A short final batch ends the loop: no statement re-reads rows it could have deleted twice, because\n * nothing in this store re-creates foreign-generation or expired rows while a janitor run is open.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": "*\n * Reclaim free pages into the file after a maintenance sweep (ADR-0046).\n *\n * One `VACUUM` in autocommit, gated on the reclaimable share, with a SHORT busy budget for STARTING\n * it: if a rival writer holds the store the pass returns `busy` and the next maintenance pass\n * retries. The VACUUM itself is not interruptible once started (SQLite owns it); the janitor never\n * runs on the tool path, so a tool call never triggers this rewrite, and the store's existing busy\n * budget covers a concurrent writer for the duration. Any failure is reported through the OUTCOME\n * and never thrown out of a lifecycle hook.\n *\n * WHY this function writes NOTHING itself — neither console nor log: a console call here cannot see\n * the per-event surface map, so it would print on `session_shutdown` too, where the console is\n * already torn down (#199). The warning pipeline renders this outcome on the surface its event owns,\n * and the record it writes carries the reason and the error text.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": "*\n * Render one run's warning and publish it on `surface`. The TRIGGER is not re-derived here: the\n * formatter owns \"did anything observable happen\" (#197), so `null` is the only decision left — and\n * it means write nothing, on either surface.\n *\n * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and a\n * module that read the state root itself could not be tested without one. Resolving it at the call\n * site also means the damaged-store shape points at the file this process is actually writing.\n *\n * WHY the level picks the sink helper (`reportInfo` / `reportWarning`) rather than `reportDiagnostic`:\n * that one writes level `error`, and a routine cleanup filed as an error would make the log's\n * severity column lie about the run it describes.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": "*\n * The lifecycle events the janitor is wired to: the two that are OFF the tool-call hot path.\n * `session_shutdown` (reason quit|reload|new|resume|fork) had no consumer in this repo before this\n * module, so it is wired deliberately: it is the one event that fires while a session's work is\n * finished and before the runtime is torn down, which is where a maintenance pass belongs.\n *\n * NEVER SUBSCRIBE THIS JANITOR TO — the hot path, where a janitor run would be paid by every tool\n * call of the session and could hold the write lock a call is waiting on:\n *   `tool_call`, `tool_result`, `tool_execution_start`, `tool_execution_update`,\n *   `tool_execution_end`, `context`, `before_provider_request`.\n * These are forbidden, not merely unused: a run there is the latency regression #90 exists to avoid,\n * so a future reader adding one must see that it is prohibited rather than think it is untried.\n * A background timer is not an option either: the extension API exposes no idle timer and no\n * `deactivate` event, so a timer-based trigger is impossible rather than unimplemented.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-janitor.ts",
+      "text": "*\n * The store janitor — the store's PERIODIC maintenance item, wired to the lifecycle events that are\n * OFF the tool-call hot path. Ticket #90; the open-time half is `src/hash-store.ts`'s stamp-gated\n * sweep, which this module REUSES rather than restates (see the exported `*_SQL` predicates there).\n *\n * WHAT ONE RUN DOES, in order, and why that order:\n * 1. THROTTLE — `due(db, JANITOR_META_KEY, intervalMs, now)`, the primitives the served-mirror\n *    prune already uses (#87c). Not due means the run ends here, having issued no DELETE and no\n *    `PRAGMA quick_check`. The interval is resolved from the shared config ladder\n *    (`src/store-config.ts`), defaulting to a day.\n * 2. GC — foreign-generation, dangling and expired rows, deleted in statements of at most\n *    `batchSize` rows. Expiry covers BOTH terminal states (ADR-0045): a retired lease past its\n *    1-hour grace and an ACTIVE lease past the 7-day session TTL.\n *    Batching is about HOLD TIME, not statement count: one unbounded DELETE scans and holds the write\n *    lock for its whole scan, so a rival writer waits on a maintenance pass; a loop of bounded\n *    statements releases the lock between batches and lets a rival interleave. The batch width\n *    defaults to 64, the width the snapshot store already deletes in (`STAT_BATCH`).\n * 3. MARK — `markRun` records the run, and it is written BEFORE the deep check because a\n *    detected failure may close this connection (step 4).\n * 4. DEEP CHECK — the open path's own `PRAGMA quick_check` (`isHealthy`, never reimplemented), on a\n *    store the fast path no longer checks (PR #101 replaced it there with the header smoke check).\n *    A failing check routes into `healUnhealthyStore`, the janitor's orchestration over the one\n *    `quarantineStore` primitive; the open path's own recovery is its other caller.\n *\n * NO CHECKPOINT HERE, deliberately: `shutdownDb` owns `PRAGMA wal_checkpoint(TRUNCATE)`, registered\n * once by `openStore` on `exit`, `SIGINT` and `SIGTERM`. The janitor therefore adds no second\n * checkpoint site and no second owner of the same WAL; its writes ride the WAL and are truncated by\n * the close path that already truncates it, and `wal_checkpoint(TRUNCATE)` on an already-truncated\n * WAL is a no-op. One writer, one checkpoint, measured on close — see the report for the WAL numbers.\n *\n * THE #90 / #100 BOUNDARY, stated here in this module's own header. Issue #100's three clauses, its\n * own words: \"not detected at open, not quarantined at use, not healed on reopen.\"\n * - CLOSED HERE: \"not detected at open\" — the fast path stopped running `PRAGMA quick_check` (#87c),\n *   so page-level damage was detected by nothing at all; this janitor detects it periodically, on a\n *   store the fast path accepts.\n * - CLOSED HERE: \"not healed on reopen\" — a detected failure routes into the SAME quarantine-and-\n *   rebuild the open path performs (`healUnhealthyStore`), so the store is rebuilt rather than left\n *   damaged until someone deletes it by hand.\n * - LEFT TO #100: \"not quarantined at use\" — nothing triggers on the FIRST FAILING STATEMENT. A\n *   statement that hits a damaged page still surfaces its own error and leaves the file damaged until\n *   the next janitor run. That is a USE-TIME trigger, #100's own scope; this module must not grow a\n *   half-implemented one, and it does not.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: 0 -> 250ms and -250 -> 250ms — so no caller reads a non-positive deadline.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: DEFENSIVE, not the mechanism: the loop's own `attempt >= maxAttempts - 1` guard throws",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: The check runs AFTER the attempt that failed, so a deadline-ended episode stops between",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: The clock is `budget.now` — the real clock unless a caller injects one — so production keeps",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: `Date.now` by reference (not a wrapper), so the default IS the real clock: a caller that",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: `resolveBusyBudget` maps 0 -> 1 attempt and -1 -> 1, and `busyBudgetMs` maps",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: a deadline, not only an attempt count — an attempt already inside SQLite cannot be",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: after the FIRST failed attempt for any maxAttempts <= 1, so the single attempt is",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: attempts, so no caller may treat an exact count as guaranteed.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: attempts: at most one capped sleep plus one already-running attempt past the deadline.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: guaranteed by the loop itself. What the floor buys is a sane RESOLVED model —",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: injects nothing gets production wall-clock behaviour, and the optional seam cannot change",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: interrupted, so the count alone would let one slow attempt extend the episode without bound.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: measuring wall time while a test can freeze or jump the deadline source through the same",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: optional budget argument. This backstop is what lets an episode end BELOW `maxAttempts`",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": " SAFETY: what any existing call site measures.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store-kernel/busy.ts",
+      "text": "*\n * Run `fn` under the store's contention budget. EVERY store write funnels through here — the open\n * (via `openDbWithBusyRetry`), `withStore`, and the statement-level retries in snapshot-store,\n * undo-store and the served session — so this budget and its deadline apply to all of them, not just\n * to the open. On exhaustion the ORIGINAL error is rethrown unchanged, so every caller keeps\n * classifying busy against corrupt exactly as it did before.\n * A retried open re-enters the WHOLE `buildStore` sequence from the top, because the open is not one\n * transaction: `buildStore` is many independent statement sites — the PRAGMAs, the `CREATE\n * TABLE/INDEX IF NOT EXISTS` set, the conditional DROP of the pre-session-keyed served shell, the meta\n * version INSERT, the `addColumnIfMissing` and rename helpers and the two `ensure*` helpers (one of\n * which owns the generation sweep) — every one autocommit, so partial progress survives a failed\n * attempt and the only transaction on the OPEN path is the sweep's own `BEGIN IMMEDIATE`. A retried\n * write re-enters the WHOLE caller body for the same reason, because this budget wraps `withStore`'s\n * `BEGIN IMMEDIATE ... COMMIT` too, and that transaction cannot serve the open instead: the open hooks\n * run before the store handle is published and `withStore` refuses without it, so the open path has\n * one transaction while the write path retries its whole body.\n * The ceiling on re-entry is therefore `maxAttempts` and not one attempt — 4 -> 8 (2x) on an\n * idempotent, lock-serialized path, at the SAME 4300ms TOTAL model either way: the internal waiting\n * moved with the shape, 8 x 250ms = 2000ms here against 4 x 1000ms = 4000ms there, while the model\n * that replaced it holds the TOTAL at 4300ms. That is a WASH under sustained contention, because a\n * contended attempt blocks at its FIRST lock-taking statement — one full busy timeout plus the same\n * connection and statement overhead in either shape, an overhead these constants do not model and a\n * comment cannot derive, so it carries no figure here — and does no body work; the attempts each\n * shape spends are its own `maxAttempts`, 4 there against 8 here. The INTERLEAVED case, a rival\n * taking the lock BETWEEN statements, can reach that ceiling and is BOUNDED BUT UNMEASURED.\n ",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store.ts",
+      "text": " SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/store.ts",
+      "text": " SAFETY: large-class — in-memory store mirrors SQLite shape for test isolation; cohesive and not split.",
+      "occurrence": 0
+    },
+    {
+      "path": "src/tui-presenter.ts",
+      "text": " SAFETY: ToolDef renderCall/renderResult typed strictly by pi — casts validated by ToolDef contract, owned by framework adapter seam. `NonNullable` names the always-defined renders this adapter owns (`ToolDefinition` declares them optional).",
+      "occurrence": 0
+    },
+    {
+      "path": "src/tui-presenter.ts",
+      "text": " SAFETY: pi context carries untyped state/expanded — cast to RRState/boolean narrowed by getPreviewInput and theme contract",
+      "occurrence": 0
+    },
+    {
+      "path": "src/write-hook.ts",
+      "text": " SAFETY: ExtensionAPI ctx carries sessionManager at runtime; cast narrows to sessionKeyFor's expected shape which is validated by sessionKeyFor's internal guards.",
+      "occurrence": 0
+    },
+    {
+      "path": "vitest.config.ts",
+      "text": "*\n * Test-harness hardening (#84). This suite is I/O- and subprocess-heavy: 204 files, each opening the\n * hash store, spawning git/hash subprocesses and materialising temp fixtures, run nine-at-a-time.\n * Under host load the TIMER LATENESS of a slow call — never a hang — exceeds vitest's defaults\n * (`testTimeout` 5000ms, `hookTimeout` 10000ms) and fails a test that passes in isolation.\n *\n * Measured on this machine, same commit, host load in parentheses:\n * - `test/tools/replace-validation.test.ts` 10174ms (load ~6) and\n *   `test/core/whitespace-insensitive-canon.test.ts` 11041ms (load ~8) — both green in isolation\n *   (1285ms / 4.09s).\n * - Deliberate reproduction: the full suite overlapping an I/O-heavy load (load ~172) failed\n *   `test/tools/lifecycle-hooks.test.ts` > `onWrite returns undefined for non-text file (no record)`\n *   at 5526ms — a 5000ms ceiling missed by 10%. The SAME load with these ceilings is green\n *   (2207 passed | 1 skipped) and 9s FASTER in wall time (108s vs 117s): a timeout failure costs\n *   more than the slack it guards.\n *\n * WHY these numbers: 20000ms is 4× the default and above the worst observed test lateness\n * (11041ms); 30000ms is 3× the default and above the worst observed hook lateness (~14000ms). They\n * are ceilings, not budgets — no test is expected to reach them, and a real hang still fails rather\n * than blocking the run.\n *\n * THE COST OF THAT SLACK, stated next to the numbers: a genuine hang now takes the higher ceiling to\n * surface, so the pessimistic case — every worker stuck at once, e.g. a deadlocked hash-store call —\n * costs about (204 files ÷ ~9 workers) × 15-20s ≈ 6-8 min before the run fails, against ≈2-3 min at\n * the old 5s/10s defaults. A single hung test still costs only its own 20s. That tax is paid only\n * when something is truly stuck; the alternative, measured above, is paying it in false failures\n * under load.\n *\n * WHY `hookTimeout` as well as `testTimeout`: the failures come in BOTH shapes — a plain test body\n * (`replace-validation`, `lifecycle-hooks`) and a module-level `beforeAll(async () => await\n * initHasher())` (`whitespace-insensitive-canon`, `task147-rejection-diagnostics`). Raising only\n * `testTimeout` leaves the 10s hook limit in place to flake again.\n *\n * WHY no structural lever — all three were measured and rejected on this branch:\n * - `isolate: false`, the only way a module-level singleton is reused across files, breaks the\n *   suite: 19 tests in 8 files fail, so the per-file module registry is load-bearing.\n * - `maxWorkers: 4` survives the same reproduction but costs +33s wall (150s vs 117s) and does not\n *   remove the failure mode: the ceilings stay at 5000ms/10000ms, so lateness above them still\n *   fails — the same suite was separately observed at 11041ms — and it cannot bound the host's\n *   external load, which is where the contention came from.\n * - Hoisting `initHasher()`: nothing to hoist. It is ALREADY a module-level singleton promise, and\n *   a file awaiting it runs in 3.3-4.4s under load in isolation, so the ~14s figures were\n *   contention, not init cost. `globalSetup` runs in the main process and cannot populate a\n *   worker's module variable.\n *\n * WHY the coverage thresholds are NOT here: they stay on the `test:coverage` CLI line so `test` and\n * `test:coverage` keep one definition of the gate.\n ",
+      "occurrence": 0
+    }
+  ]
+}
