@@ -18,6 +18,13 @@ import { resolveLineIdentity } from "../hashline/resolve.js";
 import { leaseSpanSource } from "../mutation-engine/edit-source.js";
 import { assertNever } from "../utils.js";
 import { visibleLineTotal, walkLines } from "./line-walker.js";
+/**
+ * WHY: (#272) the read schema is a union, so a non-array `windows` ALSO fails the outline variant's
+ * missing `mode`; the model reads that line and never learns the window shapes. Both the
+ * pre-validation guard and the admission seam speak this one contract sentence instead.
+ */
+const WINDOWS_ARRAY_CONTRACT =
+  '"windows" must be an array of windows: [{ offset, limit }] or [{ around_anchor, radius }]. A JSON string is not an array.';
 
 /** Default `limit` for an `{ offset }` window that names none. */
 export const DEFAULT_WINDOW_LIMIT = 50;
@@ -147,6 +154,18 @@ export function normalizeReadPayload(params: RawReadParams): RawReadParams {
     ...(raw.mode === undefined ? {} : { mode: raw.mode }),
   };
 }
+/**
+ * WHY: (#272) a non-array `windows` must reach the model as the window contract, not as the union
+ * validator's outline-variant `mode` error. `prepareArguments` calls this BEFORE the validator; and
+ * `admitReadRequest` calls it for callers that bypass the schema (ADR-0041).
+ */
+export function guardWindowsArray(params: RawReadParams): unknown[] | undefined {
+  if (params === null || typeof params !== "object") return undefined;
+  const windows = params.windows;
+  if (windows === undefined) return undefined;
+  if (!Array.isArray(windows)) throw badPayload(WINDOWS_ARRAY_CONTRACT);
+  return windows;
+}
 
 /**
  * Admission for the flat single-file shape (ADR-0041 D1): validates the file, every window,
@@ -160,10 +179,7 @@ export function admitReadRequest(params: RawReadParams): AdmittedRequest {
   if (typeof file !== "string" || file === "") {
     throw badPayload('Read request field "file" must be a non-empty path.');
   }
-  const rawWindows = request.windows;
-  if (rawWindows !== undefined && !Array.isArray(rawWindows)) {
-    throw badPayload('Read request field "windows" must be an array.');
-  }
+  const rawWindows = guardWindowsArray(request);
   const windows =
     rawWindows === undefined || rawWindows.length === 0
       ? undefined

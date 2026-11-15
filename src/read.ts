@@ -24,6 +24,7 @@ import {
   DEFAULT_WINDOW_LIMIT,
   OUTLINE_IGNORED_WINDOWS_WARNING,
   admitReadRequest,
+  guardWindowsArray,
   normalizeReadPayload,
   planWindows,
   type AdmittedRequest,
@@ -411,8 +412,17 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     // WHY: model-facing schema deliberately stays the canonical `{ file, windows, mode }` shape.
     // SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload
     // SAFETY: falls through to schema validation, which is exactly where it must be refused.
-    prepareArguments: (args: unknown) =>
-      normalizeReadPayload(args as RawReadParams) as unknown as Static<typeof readToolSchema>,
+    // WHY: (#272) the union validator reports the outline variant's missing `mode` beside a rejected
+    // WHY: `windows`, so the guard runs BEFORE it and the model reads the window contract instead.
+    prepareArguments: (args: unknown) => {
+      try {
+        const prepared = normalizeReadPayload(args as RawReadParams);
+        guardWindowsArray(prepared);
+        return prepared as unknown as Static<typeof readToolSchema>;
+      } catch (error) {
+        throw withPayloadSubject(error, "read");
+      }
+    },
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
