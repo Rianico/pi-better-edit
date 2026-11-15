@@ -8,7 +8,7 @@ import type { DisplayTransform } from "./bash-classifier.js";
 const execFileAsync = promisify(execFile);
 
 /**
- * WHY: (ADR-0048 D2) the transform is a closed display set. The re-run is the oracle: the same
+ * WHY: (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D2) the transform is a closed display set. The re-run is the oracle: the same
  * executable and flags run on a temporary copy of the exact raw head bytes, so platform-specific
  * `od`/`xxd`/`hexdump` layouts cannot drift between what bash printed and what this proves.
  * `cat -A` is GNU-only; `cat -vet` is the BSD/GNU-portable equivalent. A missing command, a

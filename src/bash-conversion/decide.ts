@@ -283,9 +283,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-count-tail",
-    // WHY: D4 admits a count tail only after the LAST verified block — two blocks recorded, every
-    // WHY: remaining segment a count tail — so no block follows and none competes for attribution; D10's
-    // WHY: second-block guard stays closed because this rule never admits a block.
+    // WHY: a count tail is admitted only after the LAST verified block, so nothing later competes
+    // WHY: for attribution; it pushes a raw segment, never a block, so D10's guard stays closed.
     why: "ADR-0048 D4 (inert count tail after the last verified block)",
     phase: "segment",
     when: (ctx) => {
@@ -396,8 +395,7 @@ export const RULES: readonly ConversionRule[] = [
   {
     id: "inert-tail-head",
     // WHY: relaxation A exists for the shape the prefix declines would reject — one leading block
-    // WHY: with an inert tail. Only that head is exempt; anything else falls through to the original
-    // WHY: guards, and a glued chain keeps its legacy reasons.
+    // WHY: with an inert tail; widening past that head would rob a glued chain of its legacy declines.
     why: "ADR-0039 D10 (relaxation A; single leading block with inert tail)",
     phase: "segment",
     when: (ctx) => {
@@ -481,8 +479,6 @@ export const RULES: readonly ConversionRule[] = [
     when: () => true,
     run: (ctx) => {
       const current = currentOf(ctx);
-      // WHY: the multi-file view records into its own slot, never `compoundSegs` — it rides in no
-      // WHY: compound envelope.
       if (current.kind === "multiView") {
         ctx.multiView = current.view;
         return ADVANCE;
@@ -496,9 +492,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-view-chain",
-    // WHY: the multi-file shape is STANDALONE: glue, a second block or an inert tail proves more
-    // WHY: stream than the N pages this seam attributes, so the whole command passes through as
-    // WHY: `multi-view` — the existing reason, not a new one.
+    // WHY: the multi-file shape is STANDALONE: glue or a second block proves more stream than the N
+    // WHY: pages named, so it passes through as `multi-view` — the existing reason, not a new one.
     why: "ADR-0049 M1 (standalone only; a chained multi-file view has no admitted envelope)",
     phase: "post",
     when: (ctx) => ctx.multiView !== undefined && (ctx.sawGlue || ctx.compoundSegs.length > 0),
@@ -525,8 +520,6 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "compound",
-    // WHY: (F2-as-restated) glue alone admits nothing — with zero admitted BLOCKS the compound
-    // WHY: declines even when glue parsed. With a block, the admitted segments form the envelope.
     why: "ADR-0039 D1/D2/D4 + F2 (source src/bash-classifier.ts:1233-1239 pre-extraction)",
     phase: "post",
     when: (ctx) => ctx.sawGlue && (ctx.view !== undefined || ctx.searchSeg !== undefined),
@@ -741,8 +734,7 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
       return out;
     }
   }
-  // WHY: the relaxations apply only when glue is present anywhere in the chain, so the walk reads one
-  // WHY: boolean instead of re-deciding it per segment.
+  // WHY: every relaxation keys on glue anywhere in the chain, so one hoisted boolean replaces the per-segment decision.
   ctx.hasGlue = ctx.segments.some(
     (segment) => segment.node.type === "Command" && parseGlueSegment(segment.node) !== undefined,
   );

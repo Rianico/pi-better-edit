@@ -2,13 +2,11 @@
  * SAFETY: edit-diff - row-intrinsic invisible-code-point annotation (issue #231).
  *
  * WHY: in-scope code points are a vanishingly small share of real-corpus characters, so fatigue is
- * WHY: not the risk; a missed disclosure is a silent byte change. The annotation therefore lives on
- * WHY: the diff rows themselves instead of a sentence: each `-` row lists its own in-scope code
- * WHY: points as `removed`, each `+` row lists its own as `added`, in column order on one sub-row
- * WHY: placed immediately after its row. There is no cross-row pairing and no aggregation - block
- * WHY: rewrites annotate both sides independently - and context rows never get sub-rows. The sub-row
- * WHY: carries no file-line slot: adjacency to its diff row, whose anchors map to the file line,
- * WHY: carries the line.
+ * WHY: not the risk; a missed disclosure is a silent byte change. So the annotation sits on the diff
+ * WHY: rows instead of in a sentence: each row lists its own code points on one sub-row after it, and
+ * WHY: there is no cross-row pairing and no aggregation - block rewrites annotate both sides
+ * WHY: independently - while context rows get none. The sub-row carries no file-line slot: adjacency
+ * WHY: to its diff row, whose anchors map to the file line, carries the line.
  */
 import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
@@ -58,11 +56,9 @@ function entryToken(codePoint: number): string {
 }
 
 /**
- * WHY: the sub-row is row-intrinsic - it lists only the in-scope code points of
- * WHY: its own row, in column order, with the direction word naming the row kind.
- * WHY: The caret points at the first entry's column; past the byte cap the caret
- * WHY: and its padding are dropped rather than pointed at nothing, while every
- * WHY: entry keeps its column and full name.
+ * WHY: the caret points at the first entry's column; past the byte cap the caret and its
+ * WHY: padding are dropped rather than pointed at nothing, while every entry keeps its
+ * WHY: column and full name.
  */
 function subRowForLine(line: string, direction: "removed" | "added"): string | undefined {
   const found = scanInvisibleLine(line);
@@ -221,9 +217,8 @@ export function genDiff(
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
       }
-      // WHY: a pure deletion names the position where the removed text sat, and an added part can
-      // WHY: push nothing; clamping to `firstChangedLine` keeps last >= first for every consumer
-      // WHY: that pairs them.
+      // WHY: an added part can push nothing, so its `lastChangedLine` lands below the first — the clamp
+      // WHY: holds `last >= first` for every consumer that pairs them.
       if (lastChangedLine < (firstChangedLine ?? lastChangedLine)) {
         lastChangedLine = firstChangedLine;
       }

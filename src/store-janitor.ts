@@ -4,10 +4,10 @@
  * ONE RUN, in order: THROTTLE (`due`, #87c — not due ends it: no DELETE, no `quick_check`);
  * GC of foreign-generation, dangling and expired rows in batches of at most `batchSize` — batching is
  * HOLD TIME, not statement count, since one unbounded DELETE holds the write lock for its whole scan —
- * expiry covering BOTH terminal states (ADR-0045); MARK (`markRun`, before the deep check, which may
+ * expiry covering BOTH terminal states (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md); MARK (`markRun`, before the deep check, which may
  * close this connection); DEEP CHECK (`isHealthy`, never reimplemented, on a store the fast path stops
  * checking — PR #101), a failure routing into `healUnhealthyStore` over the one `quarantineStore`.
- * NO checkpoint here: `shutdownDb` owns the only `wal_checkpoint(TRUNCATE)` (archived ADR-0037 holds the model).
+ * NO checkpoint here: `shutdownDb` owns the only `wal_checkpoint(TRUNCATE)` (docs/.archive_adrs/0037-store-janitor-lifecycle-maintenance-model.md holds the model).
  * #90 / #100: "not detected at open" and "not healed on reopen" CLOSE HERE; "not quarantined at use" — the FIRST FAILING STATEMENT — is LEFT TO #100.
  */
 
@@ -64,7 +64,7 @@ interface JanitorDeletions {
 }
 
 /**
- * What the compaction step did (ADR-0046). `freeBytesBefore` is the reclaimable page space the
+ * What the compaction step did (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md). `freeBytesBefore` is the reclaimable page space the
  * sweep left behind; `reclaimedBytes` is the logical file space the VACUUM actually returned.
  * `reason` is present exactly when `ran` is false, so a caller can tell "nothing to do" from
  * "contended" from "failed" without parsing prose.
@@ -164,7 +164,7 @@ export function runJanitor(input: {
   readonly now: number;
   readonly settings: StoreJanitorSettings;
   /**
-   * Injection seam for the reclaim floor (ADR-0046): tests use a small value to exercise a VACUUM
+   * Injection seam for the reclaim floor (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md): tests use a small value to exercise a VACUUM
    * on a tiny store. Production omits it and takes `STORE_COMPACT_MIN_FREE_BYTES`.
    */
   readonly compactMinFreeBytes?: number;
@@ -178,25 +178,23 @@ export function runJanitor(input: {
   // WHY: name (a lease whose snapshot a later batch removes is swept as dangling), and lineage after
   // WHY: the snapshots that cascade it. All four predicates are the sweep's, imported — not restated.
   const deletions = collectGarbage(db, now, batchSize);
-  // WHY: (ADR-0046) a GC pass leaves free pages in the file; compaction is the only step that gives
-  // WHY: them back to the filesystem. It runs after the sweep, in autocommit, on this maintenance
-  // WHY: boundary — never inside a read/edit transaction — and it defers rather than waits when a
-  // WHY: rival writer holds the store. A failed sweep skips it: a damaged store is the deep check's
-  // WHY: business, and VACUUM on damage can only fail again.
+  // WHY: a GC pass leaves free pages in the file; compaction is the only step that gives them back
+  // WHY: to the filesystem. It runs after the sweep, in autocommit, on this maintenance boundary —
+  // WHY: never inside a read/edit transaction — and defers rather than waits when a rival writer
+  // WHY: holds the store. A failed sweep skips it: a damaged store is the deep check's business.
+  // Ref: docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md
   const compacted =
     deletions === undefined
       ? NOTHING_COMPACTED
       : compactStore(db, input.compactMinFreeBytes ?? STORE_COMPACT_MIN_FREE_BYTES);
 
-  // WHY: the mark is written only by a run whose GC COMPLETED: the primitives' contract is that
-  // WHY: "ran" means "did something", and a sweep that threw did not — so a failed sweep stays due
-  // WHY: and is retried at the next lifecycle event instead of being hidden for a full interval.
-  // WHY: the mark precedes the deep check because a detected failure may close this connection.
+  // WHY: the mark belongs only to a run whose GC COMPLETED — the primitives' contract is that "ran"
+  // WHY: means "did something", so a sweep that threw stays due and retries at the next lifecycle
+  // WHY: event instead of hiding for an interval. It precedes the deep check, which may close this db.
   if (deletions !== undefined) markRun(db, JANITOR_META_KEY, now);
 
-  // WHY: the deep check runs even when the GC threw, and that ordering is the point of ticket #100:
-  // WHY: a store whose pages are damaged is exactly a store the GC may fail on, and detection must
-  // WHY: not be conditional on the cleanup it is meant to trigger a heal for.
+  // WHY: the deep check runs even when the GC threw (#100): damaged pages are exactly why the GC may
+  // WHY: fail, so detection must not depend on the cleanup it exists to trigger a heal for.
   return {
     ran: true,
     deleted: deletions ?? NOTHING_DELETED,
@@ -234,10 +232,10 @@ function collectGarbage(
     );
     const lineage = deleteInBatches(db, "line_lineage", ORPHAN_LINEAGE_SQL, [], batchSize);
     const dangling = deleteInBatches(db, "served_leases", DANGLING_LEASE_SQL, [], batchSize);
-    // WHY: (ADR-0045) hard expiry makes an ACTIVE lease past the session TTL a dead row: it has no
-    // WHY: resolution authority and no pin authority, but it still inflated every lease index and the
-    // WHY: vacuum's per-snapshot EXISTS probe. It is deleted AFTER the dangling sweep (a dead lease
-    // WHY: whose snapshot was evicted is already gone) and in the same bounded, off-path manner.
+    // WHY: an ACTIVE lease past the session TTL is a dead row under hard expiry — no resolution
+    // WHY: authority and no pin authority — yet it inflated every lease index and the vacuum's per-
+    // WHY: EXISTS probe. Deleted AFTER the dangling sweep, so a swept dead lease is not revisited.
+    // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
     const expiredActive = deleteInBatches(
       db,
       "served_leases",
@@ -259,8 +257,7 @@ function collectGarbage(
       expiredLeases: expiredActive + expiredRetired,
     };
   } catch (error) {
-    // WHY: a failed sweep removes nothing and is retried by the next due run; the deep check below
-    // WHY: is what decides whether this store needs the open path's recovery instead.
+    // WHY: a failed sweep removes nothing and stays due for the next run; the deep check decides whether this store needs the open path's recovery instead.
     reportDiagnostic("store-janitor", "[store-janitor] GC pass failed:", error);
     return undefined;
   }
@@ -284,7 +281,7 @@ function pragmaNumber(db: DatabaseSync, sql: string): number {
 }
 
 /**
- * Reclaim free pages into the file after a maintenance sweep (ADR-0046).
+ * Reclaim free pages into the file after a maintenance sweep (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md).
  *
  * One `VACUUM` in autocommit, gated on the reclaimable share, with a SHORT busy budget for STARTING
  * it: if a rival writer holds the store the pass returns `busy` and the next pass retries. The
@@ -479,10 +476,9 @@ export function registerJanitorHooks(
     try {
       publishJanitorWarning(await deps.runJanitor(), surface);
     } catch (error) {
-      // WHY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
-      // WHY: (every step is idempotent and its own work is its own throttle record), so the
-      // WHY: session continues and the next lifecycle event retries. The publish step itself
-      // WHY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.
+      // WHY: best-effort maintenance — a failed run leaves the store exactly as it was (every step is
+      // WHY: idempotent and carries its own throttle record), so the session continues and the next
+      // WHY: lifecycle event retries; the publish cannot throw, so this catch stays the pass's alone.
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };
@@ -492,7 +488,6 @@ export function registerJanitorHooks(
   const register = (pi as unknown as { on: (event: string, handler: () => Promise<void>) => void })
     .on;
   for (const event of JANITOR_EVENTS) {
-    // WHY: narrowed to the handler signature the widened `on` above declares.
     register.call(pi, event, handlerFor(WARNING_SURFACE_BY_EVENT[event]));
   }
 }

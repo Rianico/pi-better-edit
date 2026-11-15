@@ -12,16 +12,13 @@ type NoopLoopEntry = {
   count: number;
 };
 
-// WHY: session-keyed slots (`session -> path -> ref -> entry`): serves are
-// WHY: session-keyed (ADR-0002), so one session's counts must never leak into
-// WHY: another session editing the same file. Siblings in one call carry
-// WHY: distinct payloads per `ref`, so a shared key would let each item reset
-// WHY: the other's count and the loop would never trip. Nested maps keep the
-// WHY: slots structurally separate (no separator to collide). Clearing takes
-// WHY: the session first because the session owns the authority: one delete
-// WHY: drops the whole session tracker, and one nested delete drops a single
-// WHY: file's slots. A single-item call carries only `edit[0]`, so its
-// WHY: behaviour is unchanged.
+// WHY: session-keyed slots (`session -> path -> ref -> entry`): serves are session-keyed, so one
+// WHY: session's counts must never leak into another session editing the same file. Siblings in one
+// WHY: call carry distinct payloads per `ref`, so a shared key would let each item reset the other's
+// WHY: count and the loop would never trip. Nested maps keep the slots structurally separate (no
+// WHY: separator to collide), and clearing a session drops its whole subtree in one delete, leaving a
+// WHY: single-item call's behaviour unchanged.
+// Ref: docs/.archive_adrs/0002-session-keyed-served-state.md
 const noopLoopTracker = new Map<string, Map<string, Map<string, NoopLoopEntry>>>();
 
 function noopPayloadKey(
@@ -70,15 +67,11 @@ export function clearNoopLoop(sessionKey: string, absolutePath?: string): void {
   }
 }
 
-// WHY: test seam only — lets the unit check confirm the per-path
-// WHY: clear releases the session entry once its last path is gone,
-// WHY: so a long-lived process keeps no empty maps. Never used
-// WHY: outside tests; the policy path stays unchanged.
+// WHY: test seam only — the unit check confirms a last-path clear releases the session entry, so a
+// WHY: long-lived process keeps no empty maps. Never used by the policy path.
 export function _noopLoopHasSession(sessionKey: string): boolean {
   return noopLoopTracker.has(sessionKey);
 }
-
-// WHY: NOOP_LOOP_THRESHOLD re-export removed
 
 export interface NoopPolicyInput {
   absolutePath: string;
@@ -118,9 +111,8 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
   if (count >= NOOP_LOOP_THRESHOLD) {
     const baselineLineOf = input.baselineLineOf;
     // WHY: (rowless rule, same as the shifted-buffer rejections) once an earlier item of this batch
-    // WHY: changed the working buffer, the noop's rows come from an uncommitted buffer and are not
-    // WHY: guaranteed current-file rows: show none, record none, grant none. The single-item (or
-    // WHY: unchanged-buffer) case keeps serving the current on-disk rows.
+    // WHY: changed the working buffer, the noop's rows are uncommitted and not guaranteed current:
+    // WHY: show none, record none, grant none. The unchanged-buffer case keeps the on-disk rows.
     if (baselineLineOf !== undefined) {
       const currentLines = [input.range.startLine, input.range.endLine]
         .map((line) => baselineLineOf(line))

@@ -16,8 +16,7 @@ type HashPrior = {
 };
 
 export interface HashOptions {
-  // WHY: required — file materialization has no content-only fallback. Tests that
-  // WHY: need content-only derivation use the explicit `contentOnlyHashes` instead.
+  // WHY: required — file materialization has no content-only fallback; tests use `contentOnlyHashes`.
   path: string;
   prior?: HashPrior;
   persist?: boolean;
@@ -203,16 +202,15 @@ function contentBaseIndex(line: string): number {
 export function fileBaseIndex(line: string, pathSeed: number): number {
   return (xxh32(line, pathSeed) >>> 0) % HASH_SPACE;
 }
-// WHY: large-class — HashIdentity owns hash allocation and snapshot IO as one cohesive state; splitting would scatter the stable-hash invariant.
-// WHY: the cache bound is the served admission budget (SERVED_MAX_LINES), not an arbitrary number:
-// WHY: every product materialization is hard-capped at one budget per call by the throwing lines clamp
-// WHY: (src/file-content/loader.ts), so the memo never clears in-budget and sits ~40x below V8's smallest
-// WHY: per-Map cap (~2^23 entries on Node 24.0.0) — an unbounded memo would grow one entry per allocated
-// WHY: anchor (~14.77M on the exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so
-// WHY: RangeError would pre-empt E_LARGE_FILE.
-// WHY: Eviction is clear-on-full (amortized O(1); FIFO via keys().next() measured ~1400x slower,
-// WHY: scripts/bench-evict.mjs) and behaviour-preserving, because idxToHash is pure. buildNewByContent
-// WHY: is not cleared — per-call pairing state, not a memo — and it is bounded by the input, so the
+// WHY: large-class — allocation and snapshot IO are one cohesive state; splitting would scatter
+// WHY: the stable-hash invariant. The cache bound is the served admission budget (SERVED_MAX_LINES):
+// WHY: every product materialization is clamped to one budget per call (`src/file-content/loader.ts`),
+// WHY: so the memo never clears in-budget and sits ~40x below V8's smallest per-Map cap (~2^23 on
+// WHY: Node 24.0.0). Unbounded it would take one entry per allocated anchor (~14.77M on the
+// WHY: exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so RangeError would pre-empt
+// WHY: E_LARGE_FILE. Eviction is clear-on-full (amortized O(1); FIFO via `keys().next()` measured
+// WHY: ~1400x slower, `scripts/bench-evict.mjs`) and behaviour-preserving: `idxToHash` is pure.
+// WHY: `buildNewByContent` stays uncleared — per-call pairing state bounded by the input, so the
 // WHY: pure-API exhaustion path stays RangeError-free only up to ~2^23 distinct line contents.
 export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
@@ -270,8 +268,7 @@ export class HashIdentity {
     return this.hashAt(nextIdx);
   }
 
-  // WHY: content-only derivation — never a file's served rows. File materialization
-  // WHY: goes through `fileScopedHashes`/the `hashesFor` path branch instead.
+  // WHY: content-only derivation — never a file's served rows (that path is `fileScopedHashes`).
   contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.lineHashesPure(content, blockedHashes);
   }
@@ -506,9 +503,8 @@ export class HashIdentity {
       }
     }
     if (cached) return { cached };
-    // WHY: the plan assigns one line at a time and writes nothing: the read path persists its snapshot
-    // WHY: and leases through `upsertSnapshotFor`, once the page has been rendered.
-    // WHY: the walk seeds from the file when known: a content-only walk would serve anchors the file-scoped edit refuses as foreign — both halves must derive identically.
+    // WHY: the plan writes nothing — the read path persists through `upsertSnapshotFor` after the page
+    // WHY: renders — and it seeds from the file, so its anchors are not foreign to the file's edit.
     return {
       assign: this.newLineAssigner(options?.blockedHashes, xxh32(canonicalAnchorPath(path))),
     };
@@ -559,7 +555,6 @@ export class HashIdentity {
       try {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
-        // WHY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
         reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
@@ -642,7 +637,7 @@ export async function lineHashes(
   persist?: boolean,
   blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
-  // WHY: main's served preview falls back to a pathless call when it holds no path —
+  // WHY: the served preview falls back to a pathless call when it holds no path.
   if (path === undefined) return contentOnlyHashes(content, blockedHashes);
   return defaultHashIdentity.hashesFor(content, {
     path,
