@@ -480,9 +480,9 @@ export function applyEdit(
     // WHY: prefix with a differing remainder stays accepted. Nothing rewrites `content_lines` between
     // WHY: resolution and the write, so one view suffices; no canon data means no evidence, and the scan
     // WHY: stays silent. A lease-resolved span needs no current-anchor scan: identity lives in the lease
-    // WHY: seam, and the served hash echo condition only names served anchors — the archived 0009
-    // WHY: record owns the evidence-only revision, and its filename cannot be cited in src/ (the
-    // WHY: terminology test bans that word in any non-canonical form), so it stays a bare number.
+    // WHY: seam, and the served hash echo condition only names served anchors — the evidence-only revision
+    // WHY: is the archived 0009 record's.
+    // Ref: docs/.archive_adrs/0009-bounded-hash-echo-guard.md
     const digests = canonDigests ?? [];
     const scan = { lines: resolved.content_lines, anchors: served, digests };
     const hit = findServedHashEcho(scan.lines, scan.anchors, scan.digests, 1);

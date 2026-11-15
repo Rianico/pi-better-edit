@@ -347,11 +347,12 @@ export function verifyRebasedSpan(args: {
     }
   }
   // WHY: the fold gate exists so a fold cannot be silently erased, and it disarms itself: the interior
-  // WHY: must be mirror-null, so a served read that fills the folded lines releases it. Folds and the
-  // WHY: mirror are both recorded in served coordinates, so the interior is walked in that frame
-  // WHY: (`servedStart + k`), never in rebased ones: inside a batch an earlier size-changing item
-  // WHY: shifts the rebased span, and probing at rebased lines refused a fully served body over lines
-  // WHY: it never covered.
+  // WHY: must be mirror-null, so a served read that fills the folded lines releases it. Single-line spans
+  // WHY: (a replacement or point insertion on a declaration anchor) have no interior and skip the gate.
+  // WHY: Folds and the mirror are both recorded in served coordinates, so the interior is walked in that
+  // WHY: frame (`servedStart + k`), never in rebased ones: inside a batch an earlier size-changing item
+  // WHY: shifts the rebased span, and probing at rebased lines refused a fully served body over lines it
+  // WHY: never covered.
   // WHY: `served-range staleness` names it and a re-read revives the span — never a retry mandate (#149).
   // Ref: docs/adr/0016-outline-mode-point-anchors.md
   if (outlineFolds !== undefined && outlineFolds.length > 0 && servedEnd > servedStart) {

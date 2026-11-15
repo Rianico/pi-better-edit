@@ -207,8 +207,9 @@ export function fileBaseIndex(line: string, pathSeed: number): number {
 // WHY: the cache bound is the served admission budget (SERVED_MAX_LINES), not an arbitrary number:
 // WHY: every product materialization is hard-capped at one budget per call by the throwing lines clamp
 // WHY: (src/file-content/loader.ts), so the memo never clears in-budget and sits ~40x below V8's smallest
-// WHY: per-Map cap (~2^23 entries) — an unbounded memo would grow one entry per allocated anchor
-// WHY: (~14.77M on the exhaustion path at HASH_LEN=4), so RangeError would pre-empt E_LARGE_FILE.
+// WHY: per-Map cap (~2^23 entries on Node 24.0.0) — an unbounded memo would grow one entry per allocated
+// WHY: anchor (~14.77M on the exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so
+// WHY: RangeError would pre-empt E_LARGE_FILE.
 // WHY: Eviction is clear-on-full (amortized O(1); FIFO via keys().next() measured ~1400x slower,
 // WHY: scripts/bench-evict.mjs) and behaviour-preserving, because idxToHash is pure. buildNewByContent
 // WHY: is not cleared — per-call pairing state, not a memo — and it is bounded by the input, so the

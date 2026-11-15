@@ -78,6 +78,12 @@ function stripCanonical(text: string): string {
   // so a quoted mention names the builtin while a bare mention — or an identifier carrying the
   // letters — still fails below. Matching pairs only; mixed quotes are not a quoted form.
   out = out.replace(/"echo"|'echo'|`echo`/gi, "");
+  // Allow a CITED RECORD'S PATH. A `docs/…/*.md` citation names a file, not a vocabulary choice,
+  // so a banned token inside the filename (`0009-bounded-hash-echo-guard.md`) is provenance rather
+  // than prose — and a Ref must never lose to a prose rule. Narrow by construction: only the
+  // `docs/…md` literal is stripped, so the same token in surrounding prose, in an identifier or in
+  // a bare mention still fails below. Relative link forms (`../../docs/adr/…md`) match too.
+  out = out.replace(/docs\/[\w./-]+\.md/gi, "");
   return out;
 }
 
