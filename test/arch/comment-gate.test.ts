@@ -30,7 +30,7 @@ import {
  * and the baseline itself is at or under the ceiling (a bloated file cannot hide behind a
  * count that happens to match).
  */
-const EXPECTED_MAX_LEGACY_COMMENTS = 242;
+const EXPECTED_MAX_LEGACY_COMMENTS = 121;
 
 type Shape = {
   shape: string;

@@ -233,6 +233,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       cause: "never-served",
     });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
+  // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
+  // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
     prior: { content: input.content, hashes: input.hashes, removedHashes },
@@ -243,8 +245,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: blockedHashes passed as ReadonlySet via unknown for HashIdentity compatibility — input.blockedHashes is already typed, cast preserves immutability
     blockedHashes: input.blockedHashes as unknown as ReadonlySet<string> | undefined,
-    // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
-    // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   } as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
   return {
     kind: "applied",
@@ -302,7 +302,7 @@ function shiftedBufferRejection(
     servedBlock: "",
     ...(firstOffendingLine !== undefined ? { firstOffendingLine } : {}),
   };
-  // SAFETY: each `code` gate below selects the registry member whose shape `payload` holds.
+  // WHY: each `code` gate below selects the registry member whose shape `payload` holds.
   if (error.code === "E_STALE_RANGE") {
     const { headline, cause } = error.payload as DomainError<"E_STALE_RANGE">["payload"];
     return new DomainError("E_STALE_RANGE", {
@@ -1103,7 +1103,7 @@ async function runMutations(
         path: absolutePath,
       });
     } catch (error) {
-      // SAFETY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.
+      // WHY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.
       reportDiagnostic("mutation-engine", "Failed to compute drift notice:", error);
     }
   }
@@ -1244,10 +1244,10 @@ async function finishCommittedFile(
       },
     );
   } catch (error) {
-    // SAFETY: best-effort post-write materialization — the edit already committed; a store failure
-    // SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and
-    // SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
-    // SAFETY: warn that store synchronization is deferred.
+    // WHY: best-effort post-write materialization — the edit already committed; a store failure
+    // WHY: leaves the in-memory hashes authoritative and the next read re-materializes and
+    // WHY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
+    // WHY: warn that store synchronization is deferred.
     reportDiagnostic(
       "mutation-engine",
       "Failed to commit post-write snapshot materialization:",
@@ -1411,8 +1411,8 @@ async function runCutTransaction(
   try {
     await dropCutIntent(txnId);
   } catch (error) {
-    // SAFETY: every byte is committed; a stale intent row resolves to "all == post" on the next
-    // SAFETY: run and drops itself — repair owns that path, the edit result stands.
+    // WHY: every byte is committed; a stale intent row resolves to "all == post" on the next
+    // WHY: run and drops itself — repair owns that path, the edit result stands.
     reportDiagnostic("mutation-engine", "Failed to clear the cut intent after commit:", error);
   }
 

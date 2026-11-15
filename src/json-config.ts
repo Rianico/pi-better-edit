@@ -153,10 +153,10 @@ function adoptRetiredConfig(
   for (const source of sources) {
     const retired = readConfigObject(source);
     if (retired === undefined) continue;
-    // SAFETY: the project scope skips the write BEFORE attempting it. The design promises the skip,
-    // SAFETY: so there is nothing to report: a warning here would be the same noise per session the
-    // SAFETY: skip exists to remove. The global scope keeps attempt-and-report, because a global
-    // SAFETY: destination that refuses the write means the user's settings were not carried over.
+    // WHY: the project scope skips the write BEFORE attempting it. The design promises the skip,
+    // WHY: so there is nothing to report: a warning here would be the same noise per session the
+    // WHY: skip exists to remove. The global scope keeps attempt-and-report, because a global
+    // WHY: destination that refuses the write means the user's settings were not carried over.
     if (scope === "project" && !isWritable(dirname(newPath))) return retired;
     adoptSettings(newPath, retired, source, sources);
     return retired;
@@ -183,7 +183,7 @@ function adoptSettings(
     }
     reportInfo("json-config", `adopted settings ${source} → ${newPath}`);
   } catch (error: unknown) {
-    // SAFETY: the read side keeps working from the retired object; only the move is reported.
+    // WHY: the read side keeps working from the retired object; only the move is reported.
     reportWarning("json-config", `could not adopt settings ${source} → ${newPath}:`, error);
   }
 }
@@ -224,9 +224,9 @@ function readConfigObject(
   try {
     raw = readFileSync(path, "utf-8");
   } catch (error: unknown) {
-    // SAFETY: an absent config means "not configured", so the caller falls through the precedence
-    // SAFETY: ladder; any OTHER read failure is a file someone meant to be read, so a caller that
-    // SAFETY: cares is told while a caller that does not still reads it as "not configured".
+    // WHY: an absent config means "not configured", so the caller falls through the precedence
+    // WHY: ladder; any OTHER read failure is a file someone meant to be read, so a caller that
+    // WHY: cares is told while a caller that does not still reads it as "not configured".
     if (!isMissingFile(error)) onWarn?.(`cannot read config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -234,8 +234,8 @@ function readConfigObject(
   try {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
-    // SAFETY: a hand-edited file can be unparseable mid-write; reading it as "not configured" keeps
-    // SAFETY: the read total and lets the next save rewrite the file from the canonical shape.
+    // WHY: a hand-edited file can be unparseable mid-write; reading it as "not configured" keeps
+    // WHY: the read total and lets the next save rewrite the file from the canonical shape.
     onWarn?.(`cannot parse config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -281,9 +281,9 @@ export function updateConfigFile(
 
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  // SAFETY: the temp file is a sibling of the target inside the directory just created (same
-  // SAFETY: filesystem), so renameSync replaces the target atomically; the pid suffix keeps
-  // SAFETY: concurrent writers from clobbering each other's staging file.
+  // WHY: the temp file is a sibling of the target inside the directory just created (same
+  // WHY: filesystem), so renameSync replaces the target atomically; the pid suffix keeps
+  // WHY: concurrent writers from clobbering each other's staging file.
   const tempPath = `${path}.tmp-${process.pid}`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
@@ -292,8 +292,8 @@ export function updateConfigFile(
     try {
       unlinkSync(tempPath);
     } catch {
-      // SAFETY: best-effort cleanup after a failed write — the original error is the actionable one,
-      // SAFETY: and an orphaned .tmp-<pid> sibling is inert.
+      // WHY: best-effort cleanup after a failed write — the original error is the actionable one,
+      // WHY: and an orphaned .tmp-<pid> sibling is inert.
     }
     throw error;
   }

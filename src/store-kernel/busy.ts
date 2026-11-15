@@ -118,19 +118,19 @@ export interface BusyBudget {
 export function resolveBusyBudget(overrides?: BusyBudget): Required<BusyBudget> {
   return {
     timeoutMs: overrides?.timeoutMs ?? HASH_STORE_BUSY_TIMEOUT,
-    // SAFETY: DEFENSIVE, not the mechanism: the loop's own `attempt >= maxAttempts - 1` guard throws
-    // SAFETY: after the FIRST failed attempt for any maxAttempts <= 1, so the single attempt is
-    // SAFETY: guaranteed by the loop itself. What the floor buys is a sane RESOLVED model —
-    // SAFETY: `resolveBusyBudget` maps 0 -> 1 attempt and -1 -> 1, and `busyBudgetMs` maps
-    // SAFETY: 0 -> 250ms and -250 -> 250ms — so no caller reads a non-positive deadline.
+    // WHY: DEFENSIVE, not the mechanism: the loop's own `attempt >= maxAttempts - 1` guard throws
+    // WHY: after the FIRST failed attempt for any maxAttempts <= 1, so the single attempt is
+    // WHY: guaranteed by the loop itself. What the floor buys is a sane RESOLVED model —
+    // WHY: `resolveBusyBudget` maps 0 -> 1 attempt and -1 -> 1, and `busyBudgetMs` maps
+    // WHY: 0 -> 250ms and -250 -> 250ms — so no caller reads a non-positive deadline.
     maxAttempts: Math.max(1, Math.trunc(overrides?.maxAttempts ?? BUSY_MAX_ATTEMPTS)),
     backoffBaseMs: overrides?.backoffBaseMs ?? BUSY_BACKOFF_BASE_MS,
     backoffCapMs: overrides?.backoffCapMs ?? BUSY_BACKOFF_CAP_MS,
     backoffJitterMs: overrides?.backoffJitterMs ?? BUSY_BACKOFF_JITTER_MS,
     random: overrides?.random ?? (() => Math.random()),
-    // SAFETY: `Date.now` by reference (not a wrapper), so the default IS the real clock: a caller that
-    // SAFETY: injects nothing gets production wall-clock behaviour, and the optional seam cannot change
-    // SAFETY: what any existing call site measures.
+    // WHY: `Date.now` by reference (not a wrapper), so the default IS the real clock: a caller that
+    // WHY: injects nothing gets production wall-clock behaviour, and the optional seam cannot change
+    // WHY: what any existing call site measures.
     now: overrides?.now ?? Date.now,
   };
 }
@@ -178,14 +178,14 @@ export function busyBudgetMs(overrides?: BusyBudget): number {
  */
 export function withBusyRetry<T>(fn: () => T, overrides?: BusyBudget): T {
   const budget = resolveBusyBudget(overrides);
-  // SAFETY: a deadline, not only an attempt count — an attempt already inside SQLite cannot be
-  // SAFETY: interrupted, so the count alone would let one slow attempt extend the episode without bound.
-  // SAFETY: The check runs AFTER the attempt that failed, so a deadline-ended episode stops between
-  // SAFETY: attempts: at most one capped sleep plus one already-running attempt past the deadline.
-  // SAFETY: The clock is `budget.now` — the real clock unless a caller injects one — so production keeps
-  // SAFETY: measuring wall time while a test can freeze or jump the deadline source through the same
-  // SAFETY: optional budget argument. This backstop is what lets an episode end BELOW `maxAttempts`
-  // SAFETY: attempts, so no caller may treat an exact count as guaranteed.
+  // WHY: a deadline, not only an attempt count — an attempt already inside SQLite cannot be
+  // WHY: interrupted, so the count alone would let one slow attempt extend the episode without bound.
+  // WHY: The check runs AFTER the attempt that failed, so a deadline-ended episode stops between
+  // WHY: attempts: at most one capped sleep plus one already-running attempt past the deadline.
+  // WHY: The clock is `budget.now` — the real clock unless a caller injects one — so production keeps
+  // WHY: measuring wall time while a test can freeze or jump the deadline source through the same
+  // WHY: optional budget argument. This backstop is what lets an episode end BELOW `maxAttempts`
+  // WHY: attempts, so no caller may treat an exact count as guaranteed.
   const deadline = budget.now() + busyBudgetMs(budget);
   for (let attempt = 0; ; attempt++) {
     try {

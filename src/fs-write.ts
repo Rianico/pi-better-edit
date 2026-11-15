@@ -21,7 +21,7 @@ export async function resolveTarget(path: string): Promise<string> {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: "Path contains null byte.",
     });
-  // SAFETY: resolve normalizes ".." and sep; result is absolute and null-byte validated — editing scope intentionally allows any absolute path, OS permissions enforced by valAccess.
+  // WHY: resolve normalizes ".." and sep; result is absolute and null-byte validated — editing scope intentionally allows any absolute path, OS permissions enforced by valAccess.
   const absolutePath = resolve(path);
   const { root } = parse(absolutePath);
   const parts = absolutePath
@@ -36,7 +36,7 @@ export async function resolveTarget(path: string): Promise<string> {
     }
 
     const [nextPart, ...tail] = remainingParts;
-    // SAFETY: join of trusted currentPath (root or prior candidate) with nextPart split from resolved absolutePath — components are validated non-empty segments from normalized absolutePath, not raw user concatenation.
+    // WHY: join of trusted currentPath (root or prior candidate) with nextPart split from resolved absolutePath — components are validated non-empty segments from normalized absolutePath, not raw user concatenation.
     const candidatePath = join(currentPath, nextPart);
 
     try {
@@ -54,7 +54,7 @@ export async function resolveTarget(path: string): Promise<string> {
       }
       visitedSymlinks.add(candidatePath);
 
-      // SAFETY: resolve of trusted dirname(candidatePath) with symlink target from readlink (filesystem-controlled); result is absolute and normalized, validated via lstat symlink check.
+      // WHY: resolve of trusted dirname(candidatePath) with symlink target from readlink (filesystem-controlled); result is absolute and normalized, validated via lstat symlink check.
       const linkTargetPath = resolve(dirname(candidatePath), await readlink(candidatePath));
       const targetParts = linkTargetPath
         .slice(parse(linkTargetPath).root.length)
@@ -63,7 +63,7 @@ export async function resolveTarget(path: string): Promise<string> {
       return resParts(parse(linkTargetPath).root, [...targetParts, ...tail]);
     } catch (error: unknown) {
       if (errCode(error) === "ENOENT") {
-        // SAFETY: join of validated candidatePath with remaining tail parts from resolved absolutePath — all parts are split segments of normalized absolute path, not raw user input.
+        // WHY: join of validated candidatePath with remaining tail parts from resolved absolutePath — all parts are split segments of normalized absolute path, not raw user input.
         return join(candidatePath, ...tail);
       }
       throw error;
@@ -86,7 +86,7 @@ async function sweepStaleTemps(dir: string): Promise<void> {
     const now = Date.now();
     for (const entry of entries) {
       if (!entry.isFile() || !TEMP_UUID_RE.test(entry.name)) continue;
-      // SAFETY: join of trusted dir (dirname of resolved targetPath) with entry.name validated against TEMP_UUID_RE — only .tmp-UUID files, not arbitrary user traversal.
+      // WHY: join of trusted dir (dirname of resolved targetPath) with entry.name validated against TEMP_UUID_RE — only .tmp-UUID files, not arbitrary user traversal.
       const tempPath = join(dir, entry.name);
       try {
         const stats = await stat(tempPath);
@@ -94,12 +94,12 @@ async function sweepStaleTemps(dir: string): Promise<void> {
           await rm(tempPath, { force: true });
         }
       } catch (error: unknown) {
-        // SAFETY: best-effort stale temp cleanup — inspect failures are ignored; temp files are single-writer UUID names and will be retried on next sweep, no caller depends on removal.
+        // WHY: best-effort stale temp cleanup — inspect failures are ignored; temp files are single-writer UUID names and will be retried on next sweep, no caller depends on removal.
         reportDiagnostic("fs-write", "[fs-write] failed to inspect stale temp", error);
       }
     }
   } catch (error: unknown) {
-    // SAFETY: best-effort stale temp sweep — readdir failures are ignored; sweep is opportunistic cleanup, writeAtomic proceeds regardless.
+    // WHY: best-effort stale temp sweep — readdir failures are ignored; sweep is opportunistic cleanup, writeAtomic proceeds regardless.
     reportDiagnostic("fs-write", "[fs-write] failed to sweep stale temps", error);
   }
 }
@@ -114,7 +114,7 @@ async function syncDir(dir: string): Promise<void> {
       await handle.close();
     }
   } catch (error: unknown) {
-    // SAFETY: best-effort directory sync — sync failures after atomic rename are ignored; file is already persisted, sync is durability optimization.
+    // WHY: best-effort directory sync — sync failures after atomic rename are ignored; file is already persisted, sync is durability optimization.
     reportDiagnostic("fs-write", "[fs-write] failed to sync directory", error);
   }
 }
@@ -131,8 +131,8 @@ export async function readBytes(path: string): Promise<Buffer> {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: "Path contains null byte.",
     });
-  // SAFETY: resolveTarget returns an absolute, null-byte-validated, symlink-resolved path — the
-  // SAFETY: same boundary every other file-layer read passes through.
+  // WHY: resolveTarget returns an absolute, null-byte-validated, symlink-resolved path — the
+  // WHY: same boundary every other file-layer read passes through.
   return readFile(await resolveTarget(path));
 }
 
@@ -164,7 +164,7 @@ export async function writeAtomic(path: string, content: string | Buffer): Promi
 
   const dir = dirname(targetPath);
   await sweepStaleTemps(dir);
-  // SAFETY: join of trusted dir (dirname of resolved targetPath) with TEMP_PREFIX + randomUUID — randomUUID is cryptographically random, not user-controlled, no traversal.
+  // WHY: join of trusted dir (dirname of resolved targetPath) with TEMP_PREFIX + randomUUID — randomUUID is cryptographically random, not user-controlled, no traversal.
   const tempPath = join(dir, `${TEMP_PREFIX}${randomUUID()}`);
   await mkdir(dir, { recursive: true });
   const tempHandle = await open(tempPath, "wx", 0o600);

@@ -259,8 +259,8 @@ function collectGarbage(
       expiredLeases: expiredActive + expiredRetired,
     };
   } catch (error) {
-    // SAFETY: a failed sweep removes nothing and is retried by the next due run; the deep check below
-    // SAFETY: is what decides whether this store needs the open path's recovery instead.
+    // WHY: a failed sweep removes nothing and is retried by the next due run; the deep check below
+    // WHY: is what decides whether this store needs the open path's recovery instead.
     reportDiagnostic("store-janitor", "[store-janitor] GC pass failed:", error);
     return undefined;
   }
@@ -338,9 +338,9 @@ function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome
     try {
       db.exec(`PRAGMA busy_timeout = ${previousTimeout}`);
     } catch (error) {
-      // SAFETY: best-effort restore — the compaction outcome is authoritative, and the next open
-      // SAFETY: re-applies the store's own busy timeout. Log-only, never the console: this catch is
-      // SAFETY: reachable from the shutdown surface, where the console is already torn down (#199).
+      // WHY: best-effort restore — the compaction outcome is authoritative, and the next open
+      // WHY: re-applies the store's own busy timeout. Log-only, never the console: this catch is
+      // WHY: reachable from the shutdown surface, where the console is already torn down (#199).
       reportDiagnostic("store-janitor", "[store-janitor] failed to restore busy timeout:", error);
     }
   }
@@ -453,7 +453,7 @@ function printJanitorWarning(warning: JanitorWarning): void {
       else console.error(line);
     }
   } catch {
-    // SAFETY: best-effort notice — the diagnostics record written next is the surface that survives.
+    // WHY: best-effort notice — the diagnostics record written next is the surface that survives.
   }
 }
 
@@ -479,10 +479,10 @@ export function registerJanitorHooks(
     try {
       publishJanitorWarning(await deps.runJanitor(), surface);
     } catch (error) {
-      // SAFETY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
-      // SAFETY: (every step is idempotent and its own work is its own throttle record), so the
-      // SAFETY: session continues and the next lifecycle event retries. The publish step itself
-      // SAFETY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.
+      // WHY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
+      // WHY: (every step is idempotent and its own work is its own throttle record), so the
+      // WHY: session continues and the next lifecycle event retries. The publish step itself
+      // WHY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };
@@ -492,7 +492,7 @@ export function registerJanitorHooks(
   const register = (pi as unknown as { on: (event: string, handler: () => Promise<void>) => void })
     .on;
   for (const event of JANITOR_EVENTS) {
-    // SAFETY: narrowed to the handler signature the widened `on` above declares.
+    // WHY: narrowed to the handler signature the widened `on` above declares.
     register.call(pi, event, handlerFor(WARNING_SURFACE_BY_EVENT[event]));
   }
 }

@@ -1,4 +1,4 @@
-// SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
+// WHY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
@@ -28,12 +28,12 @@ import { stateRoot } from "./config-dir.js";
 export { STORE_CONFIG_DIR_ENV_VAR, configDirOverride, stateRoot } from "./config-dir.js";
 
 export function hashStorePath(): string {
-  // SAFETY: join of trusted stateRoot with fixed "hash-store.sqlite" — constant suffix, no traversal.
+  // WHY: join of trusted stateRoot with fixed "hash-store.sqlite" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.sqlite");
 }
 
 export function legacyHashStorePath(): string {
-  // SAFETY: join of trusted stateRoot with fixed "hash-store.json" — constant suffix, no traversal.
+  // WHY: join of trusted stateRoot with fixed "hash-store.json" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.json");
 }
 
@@ -222,15 +222,15 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
       db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
       // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
       db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
-      // SAFETY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused
-      // SAFETY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES
-      // SAFETY: support DROP COLUMN: an index naming the column refuses it with `error in index ...
-      // SAFETY: after drop column`), and a both-columns store is inert: every v7 reader/writer names
-      // SAFETY: `anchor_generation` only, and the leftover `canon_version` values were already copied
-      // SAFETY: over by the UPDATE above, so the stale column is never read. A concurrently open
-      // SAFETY: pre-rename process whose prepared statement names `canon_version` breaks fail-closed
-      // SAFETY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —
-      // SAFETY: exposure is the unreleased intermediate build only; see ADR-0031 §4.
+      // WHY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused
+      // WHY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES
+      // WHY: support DROP COLUMN: an index naming the column refuses it with `error in index ...
+      // WHY: after drop column`), and a both-columns store is inert: every v7 reader/writer names
+      // WHY: `anchor_generation` only, and the leftover `canon_version` values were already copied
+      // WHY: over by the UPDATE above, so the stale column is never read. A concurrently open
+      // WHY: pre-rename process whose prepared statement names `canon_version` breaks fail-closed
+      // WHY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —
+      // WHY: exposure is the unreleased intermediate build only; see ADR-0031 §4.
       try {
         // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
         db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
@@ -371,7 +371,7 @@ function writeStoreStamp(db: DatabaseSync): void {
   db.prepare(
     "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(META_STAMP_KEY, storeGenerationStamp());
-  // SAFETY: HASH_STORE_VERSION is this module's own numeric literal constant, never input.
+  // WHY: HASH_STORE_VERSION is this module's own numeric literal constant, never input.
   db.exec(`PRAGMA user_version = ${HASH_STORE_VERSION}`);
 }
 
@@ -583,7 +583,7 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
       try {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
+        // WHY: best-effort rollback — the original failure is authoritative and must not be masked.
         reportDiagnostic(
           "hash-store",
           "[hash-store] failed to rollback sweep transaction:",
@@ -816,8 +816,8 @@ function smokeCheckStoreFile(storePath: string): boolean {
   let fd: number | undefined;
   try {
     fd = openSync(storePath, "r");
-    // SAFETY: allocUnsafe is safe here because readSync fills all 100 bytes before any of them is
-    // SAFETY: read — the `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.
+    // WHY: allocUnsafe is safe here because readSync fills all 100 bytes before any of them is
+    // WHY: read — the `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.
     // WHY: kept on purpose, uncovered though they are (#87c). The short-read guard, the magic
     // WHY: comparison, the page-size range check and its power-of-two test are this check's ONLY
     // WHY: arms whose refusal body never runs — in a whole-suite coverage run at 17f7e14 those
@@ -857,8 +857,8 @@ function smokeCheckStoreFile(storePath: string): boolean {
       try {
         closeSync(fd);
       } catch {
-        // SAFETY: closing a read-only descriptor this call opened; a failure leaves no lock, no
-        // SAFETY: write and no state behind, and the verdict above is already decided.
+        // WHY: closing a read-only descriptor this call opened; a failure leaves no lock, no
+        // WHY: write and no state behind, and the verdict above is already decided.
       }
     }
   }
