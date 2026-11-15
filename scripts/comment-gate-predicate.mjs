@@ -95,16 +95,33 @@ function isSafetyLine(comment) {
 }
 
 /**
- * The first non-blank source line strictly after `line`, or `null` at end of file.
+ * How many of a `// SAFETY:` run's next NON-BLANK lines may carry the guard. One was the shipped
+ * bound (the immediately following line only); Tranche 2A proved that bound cannot express an
+ * honest placement whenever the guard sits inside a multi-line expression, so a run may now sit
+ * above one intervening statement. Three non-blank lines between the run and its cast means the
+ * comment no longer points at the claim, which is the failure this bound exists to catch.
+ */
+export const SAFETY_GUARD_LOOKAHEAD = 2;
+
+/**
+ * The next `count` non-blank source lines strictly after `line`, in source order. Shorter than
+ * `count` at end of file.
  * @param {ReadonlyArray<string>} sourceLines 1-indexed by `line - 1`
  * @param {number} line
+ * @param {number} count defaults to the shipped guard lookahead
+ * @returns {number[]}
  */
-export function nextNonBlankLine(sourceLines, line) {
-  for (let candidate = line + 1; candidate <= sourceLines.length; candidate += 1) {
+export function nextNonBlankLines(sourceLines, line, count = SAFETY_GUARD_LOOKAHEAD) {
+  const found = [];
+  for (
+    let candidate = line + 1;
+    candidate <= sourceLines.length && found.length < count;
+    candidate += 1
+  ) {
     const text = sourceLines[candidate - 1] ?? "";
-    if (text.trim() !== "") return candidate;
+    if (text.trim() !== "") found.push(candidate);
   }
-  return null;
+  return found;
 }
 
 /**
@@ -146,11 +163,11 @@ export function classifyComment(comment, facts, safetyLines) {
 
   if (isSafetyLine(comment)) {
     const runEnd = safetyRunEnd(safetyLines, comment.loc.start.line);
-    const guarded = nextNonBlankLine(facts.sourceLines, runEnd);
-    if (guarded === null || !facts.guardLines.includes(guarded)) {
+    const candidates = nextNonBlankLines(facts.sourceLines, runEnd);
+    if (!candidates.some((line) => facts.guardLines.includes(line))) {
       return {
         rule: RULE.safetyPosition,
-        data: { line: guarded === null ? "end of file" : guarded },
+        data: { line: candidates[0] ?? "end of file" },
       };
     }
   }

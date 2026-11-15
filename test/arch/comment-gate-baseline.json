@@ -37,11 +37,6 @@
     },
     {
       "path": "src/edit-tool.ts",
-      "text": " SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)",
-      "occurrence": 0
-    },
-    {
-      "path": "src/edit-tool.ts",
       "text": " SAFETY: normalized is validated NormalizedEditRequest after assertReq",
       "occurrence": 0
     },
@@ -183,11 +178,6 @@
     {
       "path": "src/hashline/resolve.ts",
       "text": " SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement",
-      "occurrence": 0
-    },
-    {
-      "path": "src/hashline/resolve.ts",
-      "text": " SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.",
       "occurrence": 0
     },
     {
@@ -377,11 +367,6 @@
     },
     {
       "path": "src/read.ts",
-      "text": " SAFETY: falls through to schema validation, which is exactly where it must be refused.",
-      "occurrence": 0
-    },
-    {
-      "path": "src/read.ts",
       "text": " SAFETY: from a single simple window, without mutating the caller's `args`. Multi-window reads",
       "occurrence": 0
     },
@@ -402,11 +387,6 @@
     },
     {
       "path": "src/read.ts",
-      "text": " SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload",
-      "occurrence": 0
-    },
-    {
-      "path": "src/read.ts",
       "text": " SAFETY: to the fail-closed path the next edit would take anyway.",
       "occurrence": 0
     },
@@ -418,16 +398,6 @@
     {
       "path": "src/search-hook.ts",
       "text": " SAFETY: original command and the original raw bash output untouched.",
-      "occurrence": 0
-    },
-    {
-      "path": "src/served-session/session.ts",
-      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `file_path`.",
-      "occurrence": 0
-    },
-    {
-      "path": "src/served-session/session.ts",
-      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `outline_folds`.",
       "occurrence": 0
     },
     {
@@ -454,16 +424,6 @@
       "path": "src/served-session/session.ts",
       "text": " SAFETY: the store open still succeeds and later reads re-attempt the additive migration.",
       "occurrence": 0
-    },
-    {
-      "path": "src/served-session/session.ts",
-      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.",
-      "occurrence": 1
-    },
-    {
-      "path": "src/served-session/session.ts",
-      "text": " SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.",
-      "occurrence": 2
     },
     {
       "path": "src/served-spans.ts",
@@ -592,17 +552,7 @@
     },
     {
       "path": "src/tui-presenter.ts",
-      "text": " SAFETY: ToolDef renderCall/renderResult typed strictly by pi — casts validated by ToolDef contract, owned by framework adapter seam. `NonNullable` names the always-defined renders this adapter owns (`ToolDefinition` declares them optional).",
-      "occurrence": 0
-    },
-    {
-      "path": "src/tui-presenter.ts",
       "text": " SAFETY: pi context carries untyped state/expanded — cast to RRState/boolean narrowed by getPreviewInput and theme contract",
-      "occurrence": 0
-    },
-    {
-      "path": "src/write-hook.ts",
-      "text": " SAFETY: ExtensionAPI ctx carries sessionManager at runtime; cast narrows to sessionKeyFor's expected shape which is validated by sessionKeyFor's internal guards.",
       "occurrence": 0
     }
   ]

@@ -30,7 +30,7 @@ import {
  * and the baseline itself is at or under the ceiling (a bloated file cannot hide behind a
  * count that happens to match).
  */
-const EXPECTED_MAX_LEGACY_COMMENTS = 121;
+const EXPECTED_MAX_LEGACY_COMMENTS = 111;
 
 type Shape = {
   shape: string;
@@ -70,6 +70,26 @@ const CORPUS: readonly Shape[] = [
     shape: "SAFETY: above a line whose guard starts mid-line (lenient reading)",
     code: "declare function take(value: string): void;\ndeclare const raw: unknown;\n// SAFETY: the callee checks the tag\n take(raw as string);\n",
     rules: [],
+  },
+  {
+    shape: "SAFETY: above a multi-line call that closes in a cast (the pipeline.ts shape)",
+    code: "declare function f(options: { a: number }): void;\n// SAFETY: the options object is typed by the internal parameter shape, which the caller never sees.\nf({\n  a: 1,\n} as unknown as { a: number });\n",
+    rules: [],
+  },
+  {
+    shape: "SAFETY: with one intervening statement before its cast",
+    code: "declare const raw: unknown;\n// SAFETY: the marker below pins the order, the cast follows it\ndeclare const marker: number;\nconst a = raw as string;\n",
+    rules: [],
+  },
+  {
+    shape: "SAFETY: three non-blank lines above its cast (the lookahead bound holds)",
+    code: "declare const raw: unknown;\n// SAFETY: too far from the cast to point at it\ndeclare const first: number;\ndeclare const second: number;\nconst a = raw as string;\n",
+    rules: ["safetyPosition"],
+  },
+  {
+    shape: "SAFETY: directly above the line that closes a multi-line cast (residual gap)",
+    code: "declare const raw: unknown;\nexport const wrapped = (\n  raw\n  // SAFETY: the cast closes this expression, so the claim is about raw\n) as unknown as string;\nexport const after = 1;\n",
+    rules: ["safetyPosition"],
   },
   {
     shape: "SAFETY: above a line with no guard at all",
