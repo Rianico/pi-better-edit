@@ -13,5 +13,4 @@
 
 export { isMutationSuccess, isMutationFailure } from "./types.js";
 
-// WHY: Deep seam — small interface.
 export { execute, preview } from "./engine.js";

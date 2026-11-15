@@ -76,8 +76,7 @@ function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string
   if (edit.placement !== "before" && edit.placement !== "after") {
     addSpan(edit.hash_bounds[0].hash, edit.hash_bounds[1].hash);
   }
-  // WHY: (ticket-02, invariant 7) a move's retired source span joins the removed-hash union
-  // WHY: regardless of the target's placement; a copy (retire false) removes nothing.
+  // WHY: (ticket-02, invariant 7) a move's retired source joins the union whatever the placement; a copy retires nothing.
   if (edit.source?.retire) {
     addSpan(edit.source.bounds[0].hash, edit.source.bounds[1].hash);
   }
@@ -91,7 +90,6 @@ function countLineChanges(
 ): { totalAddedLines: number; totalRemovedLines: number } {
   if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
   if (edit.placement === "before" || edit.placement === "after") {
-    // WHY: an insertion adds its lines and removes none (see `collectRemovedHashes`).
     return { totalAddedLines: edit.content_lines.length, totalRemovedLines: 0 };
   }
   let totalRemovedLines = 0;
@@ -177,8 +175,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   let anchorResult: ReturnType<typeof applyEdit>;
   try {
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
-      // WHY: read/write agreement — the verify path is literally the same
-      // WHY: canonical absolute path the `hashesFor` call below uses (one field).
+      // WHY: read/write agreement — both fields must be the canonical absolute path `hashesFor` re-reads below.
       filePath: input.absolutePath,
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
@@ -189,11 +186,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     });
   } catch (error) {
     if (error instanceof DomainError) {
-      // WHY: rows rendered from a buffer earlier batch items already changed come from content this
-      // WHY: call has not committed as the current on-disk state, so they are not guaranteed
-      // WHY: current-file rows: recording them would patch the persistent mirror at the wrong
-      // WHY: positions (displacing the real served rows, so a later standalone edit of an already
-      // WHY: served span was refused).
+      // WHY: recording these rows would patch the persistent mirror at the wrong positions,
+      // WHY: displacing the real served rows so a later standalone edit of a served span was refused.
       if (input.baselineLineOf !== undefined && error.servedRows.length > 0) {
         return input.onRejected(shiftedBufferRejection(error, input.baselineLineOf));
       }
@@ -236,9 +230,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
     prior: { content: input.content, hashes: input.hashes, removedHashes },
-    // WHY: the working buffer is strictly in-memory (spec §3.2.4): no snapshot is written and no
-    // WHY: lease is retired until the batch commits S_final to disk. Persisting here made a batch
-    // WHY: that wrote nothing retire every anchor the session still validly held.
     persist: false,
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: blockedHashes passed as ReadonlySet via unknown for HashIdentity compatibility — input.blockedHashes is already typed, cast preserves immutability
@@ -274,11 +265,9 @@ function shiftedBufferRejection(
   error: DomainError,
   baselineLineOf: (bufferLine: number) => number | undefined,
 ): DomainError {
-  // WHY: E_STALE_RANGE (and E_STALE_ANCHOR) producers name working-buffer coordinates; the
-  // WHY: E_UNVERIFIED_RANGE retirement window names served coordinates (lease.servedLineNumber),
-  // WHY: which are already current-file lines. Mapping a served coordinate through
-  // WHY: `baselineLineOf` (buffer → current-file) would double-map it, so the row frame is
-  // WHY: selected per code.
+  // WHY: E_STALE_RANGE/E_STALE_ANCHOR producers name working-buffer coordinates; the E_UNVERIFIED_RANGE
+  // WHY: retirement window names served (already current-file) lines, so mapping those through
+  // WHY: `baselineLineOf` would double-map them — the row frame is selected per code.
   const rowsAreBufferCoordinates = error.code !== "E_UNVERIFIED_RANGE";
   const toCurrentLine = (line: number): number | undefined =>
     rowsAreBufferCoordinates ? baselineLineOf(line) : line;
@@ -362,13 +351,11 @@ async function recordRejectionServe(args: {
   lineCount: number;
   contentHash: string | undefined;
 }): Promise<void> {
-  // WHY: a target-lost rejection carries no rows (seam oracle pins `servedRows: []`), so there is
-  // WHY: nothing to lease — an accidental retry cannot write. Every window that identifies the
-  // WHY: model's range still leases through the rows below. The length check alone owns the
-  // WHY: skip: no code branch is needed because the oracle proves the payload invariant.
+  // WHY: a target-lost rejection carries no rows (the seam oracle pins `servedRows: []`), so there is
+  // WHY: nothing to lease and an accidental retry cannot write; every window that identifies the model's
+  // WHY: range still leases through the rows below, so the length check alone owns the skip.
   if (args.error.servedRows.length === 0) return;
-  // WHY: a preview is a containment boundary — its served rows are a rehearsal of the same edit, so
-  // WHY: mirroring them would let an edit that was never applied satisfy the read guard.
+  // WHY: a preview is a containment boundary — mirroring its rows would let an edit that was never applied satisfy the read guard.
   if (!args.isPreview) {
     notifyServedSpans({
       filePath: args.absolutePath,
@@ -415,9 +402,8 @@ type ParsedItem = { edit: HEdit } | { noopInsert: true };
 
 function parseEdits(items: NormalizedEditRequest["edits"], path: string): ParsedItem[] {
   const parsed: ParsedItem[] = [];
-  // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another,
-  // WHY: so the model fixes every malformed item in a single resubmission. Parsing is pure (no
-  // WHY: mutation runs before it), so collecting every failure preserves atomicity trivially.
+  // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another, so
+  // WHY: the model fixes every malformed item in one resubmission; parsing is pure, so atomicity is trivial.
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
@@ -427,12 +413,10 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "literal":
-          // WHY: (remediation-2 B4) the min-line guard must sit where the destructive behaviour is
-          // WHY: reachable: `execute()` never calls `assertReq`, so a directly-constructed
-          // WHY: `{kind:"literal", text:""}` used to delete the span and report success (the wire
-          // WHY: folds `"text": ""` into the deletion payload and can never produce this shape —
-          // WHY: only engine-seam construction can). Mirror item (iv): refuse LOUD at the seam,
-          // WHY: naming the wire field `"text"` with the admission message verbatim.
+          // WHY: (remediation-2 B4) the guard sits where the destruction is reachable: `execute()` never
+          // WHY: calls `assertReq`, and a directly-constructed `{kind:"literal", text:""}` used to delete the
+          // WHY: span and report success (the wire folds `"text": ""` into the deletion payload, so only
+          // WHY: engine-seam construction can produce it). Mirror item (iv): refuse LOUD, naming the wire field.
           if (payload.text === "") {
             throw new DomainError("E_INTERNAL_INVARIANT", {
               message:
@@ -443,21 +427,18 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
           text = payload.text;
           break;
         case "reference":
-          // WHY: (keel F3) the `reference` payload carries the mode twice — `payload.mode` and
-          // WHY: `span.mode` — and only the top-level one is consumed below; a disagreement is
-          // WHY: refused, not silently resolved in favor of one arm. Admission always folds the
-          // WHY: wire `text_ref` verbatim, so this fires only on a directly-constructed payload.
+          // WHY: (keel F3) the mode travels twice — `payload.mode` and `span.mode` — and only the
+          // WHY: top-level one is consumed: a disagreement is refused, never silently resolved, because
+          // WHY: admission folds the wire `text_ref` verbatim, so this fires only on a constructed payload.
           if (payload.span.mode !== payload.mode) {
             throw new DomainError("E_INTERNAL_INVARIANT", {
               message:
                 'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
             });
           }
-          // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes
-          // WHY: them from the resolved source span before any gate or splice runs, so the parse
-          // WHY: seam carries the span, never a placeholder text. A foreign-source span (a
-          // WHY: `text_ref` naming another served file) has already been materialized to a
-          // WHY: `literal` payload by the pre-pass in `runMutations`, so this span names THIS file.
+          // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes them
+          // WHY: from the resolved source span before any gate or splice runs, so no placeholder text
+          // WHY: reaches the wire. A foreign span is already a `literal` here, so this span names THIS file.
           source = {
             anchor_from: payload.span.anchor_from,
             anchor_to: payload.span.anchor_to,
@@ -499,9 +480,8 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
   return parsed;
 }
 
-// WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a RESOLVED-PATH question, not a spelling
-// WHY: question: `./target.txt` and `target.txt` name one file, so a legal same-file `mode:"cut"`
-// WHY: must take the intra-file path and a same-file copy must keep the `text_ref` metrics.
+// WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a RESOLVED-PATH question, not a spelling one:
+// WHY: `./target.txt` and `target.txt` name one file, so a same-file `cut` takes the intra-file path.
 async function sameResolvedPath(a: string, b: string, cwd: string): Promise<boolean> {
   const [resolvedA, resolvedB] = await Promise.all([
     resolveTarget(toCwd(a, cwd)),
@@ -521,9 +501,8 @@ async function foreignRefFileOf(
     : payload.span.file;
 }
 
-// WHY: (item (ii)) the three never-served codes pass through UNCHANGED regardless of how many
-// WHY: rows a producer attaches: the payload-length proxy below (§0's pinned pass-through) is
-// WHY: correct today only because no producer carries rows there — a code set is the honest rule.
+// WHY: (item (ii)) the three never-served codes pass through UNCHANGED however many rows a producer
+// WHY: attaches: §0's length proxy holds only because no producer carries rows there — a code set is honest.
 const NEVER_SERVED_FOREIGN_CODES: ReadonlySet<DomainErrorCode> = new Set([
   "E_UNKNOWN_ANCHOR",
   "E_FOREIGN_ANCHOR",
@@ -551,9 +530,8 @@ const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
  */
 function foreignRejection(error: unknown, refFile: string): DomainError {
   if (error instanceof DomainError) {
-    // WHY: (§0) kept per §0, but FULLY SHADOWED by the code-set check below (mutation M9 → 0 red):
-    // WHY: every code it matches is already in `NEVER_SERVED_FOREIGN_CODES`. It is not the
-    // WHY: enforcement point — do not describe it as one.
+    // WHY: (§0) kept per §0, but FULLY SHADOWED by the code-set check below (mutation M9 → 0 red): every
+    // WHY: code it matches is already in `NEVER_SERVED_FOREIGN_CODES` — not the enforcement point.
     if (
       (error.code === "E_UNKNOWN_ANCHOR" ||
         error.code === "E_FOREIGN_ANCHOR" ||
@@ -564,15 +542,13 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     }
     if (NEVER_SERVED_FOREIGN_CODES.has(error.code)) return error;
     if (LEASED_FOREIGN_PASSTHROUGH_CODES.has(error.code)) {
-      // WHY: (item A) `E_TARGET_LOST` already satisfies served-or-absent: its format names the
-      // WHY: file (the foreign snapshot always carries `filePath`) and renders no rows.
+      // WHY: (item A) `E_TARGET_LOST` already satisfies served-or-absent: its format names the file and renders no rows.
       if (error.code === "E_TARGET_LOST") return error;
       return foreignLeasedWrap(error, refFile);
     }
-    // WHY: (§9.9) the fallback claims `cause: "never-served"` — that is only honest for failures
-    // WHY: with no lease behind them. Derive the inner typed cause when it has one, so a
-    // WHY: retirement/drift shape that reaches here can never surface a dishonest cause in the
-    // WHY: envelope-validated RangeCause union.
+    // WHY: (§9.9) the fallback claims `cause: "never-served"`, honest only for failures with no lease
+    // WHY: behind them: derive the inner typed cause when there is one, so a retirement/drift shape that
+    // WHY: reaches here can never surface a dishonest cause in the envelope-validated RangeCause union.
     const cause = error.cause ?? error.details.cause ?? "never-served";
     return new DomainError("E_STALE_ANCHOR", {
       headline:
@@ -587,11 +563,8 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
   });
 }
 
-// WHY: (remediation-2 item A) served-or-absent for a foreign leased failure: the inner fresh-read
-// WHY: rows belong to the FOREIGN file and were never leased by this call, so they are dropped and
-// WHY: the headline names `refFile` — the model re-reads the foreign file itself. The code is
-// WHY: preserved verbatim (§0's exact-code pins): retirement or drift must still surface under the
-// WHY: code that means it; an `E_STALE_ANCHOR` rewrite would name the wrong cause and offer no rows.
+// WHY: (§0's exact-code pins) the lease code survives verbatim: retirement or drift must surface under
+// WHY: the code that means it — an `E_STALE_ANCHOR` rewrite would name the wrong cause and offer no rows.
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
@@ -643,29 +616,26 @@ async function materializeForeignItem(
 ): Promise<NormalizedEditItem> {
   const payload = item.payload;
   if (payload.kind !== "reference") return item;
-  // WHY: (keel F3) same agreement rule as the parse seam — check before anything else consumes
-  // WHY: the mode, so a disagreement can never decide between the arms implicitly.
+  // WHY: (keel F3) the same mode-agreement rule as the parse seam — the foreign seam must not decide between the arms implicitly either.
   if (payload.span.mode !== payload.mode) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message:
         'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
     });
   }
-  // WHY: (ticket-04b) ticket-04 item (iv) refused a foreign `mode: "cut"` here because the
-  // WHY: pre-pass had no retirement target — enabling cut without a transaction would report
-  // WHY: success and leave the source behind. That refusal is DELETED deliberately: the
-  // WHY: correlated multi-file transaction (`runCutTransaction`, ADR-0028) is the missing half,
-  // WHY: and the cut's retirement now rides the recorded entry below. `edit.foreign-cut.test.ts`
-  // WHY: and `edit.wire-contract.test.ts` witness both halves of that history.
+  // WHY: (ticket-04b) ticket-04 item (iv) refused a foreign `mode: "cut"` here because enabling it
+  // WHY: without a transaction would report success and leave the source behind; that refusal is
+  // WHY: DELETED deliberately — the correlated transaction is the missing half, and the cut's
+  // WHY: retirement now rides the recorded entry below (`edit.foreign-cut.test.ts` witnesses it).
+  // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
   const { fileLines } = view;
   const snapshot: FileSnapshotContext = {
     fileLines,
     fileHashes: view.fileHashes,
     filePath: refFile,
   };
-  // WHY: the SAME seam as every served span: leased identity first, fail-closed on a missing or
-  // WHY: retired lease, whole-window verified — the foreign half is read-only, the semantics are
-  // WHY: identical to an intra-file `text_ref`.
+  // WHY: the SAME seam as every served span — leased identity first, fail-closed on a missing or
+  // WHY: retired lease, whole window verified; the foreign half is read-only, its semantics identical.
   const spanEdit: HEdit = {
     content_lines: [],
     hash_bounds: [{ hash: payload.span.anchor_from }, { hash: payload.span.anchor_to }],
@@ -684,9 +654,8 @@ async function materializeForeignItem(
   const l1 = resolution.resolved.hash_bounds[0].line;
   const l2 = resolution.resolved.hash_bounds[1].line;
   if (payload.mode === "cut") {
-    // WHY: the SUBMITTED span anchors are recorded, not the resolved line numbers: the source
-    // WHY: transaction re-resolves them through its own leases, so a shift between this read and
-    // WHY: that load rebases honestly and any real drift fails closed BEFORE the first rename.
+    // WHY: the SUBMITTED anchors are recorded, not resolved lines: the source transaction re-resolves
+    // WHY: them through its own leases, so a shift rebases honestly and real drift fails closed before any rename.
     cuts.push({
       refFile,
       absolutePath: view.absolutePath,
@@ -701,10 +670,8 @@ async function materializeForeignItem(
 }
 
 // WHY: (ticket-04 item (i)) `parseText` maps "" → [] and N newlines → N blank lines
-// WHY: (`src/hashline/parse.ts:76-77`) — the INVERSE of `join("\n")` — so joining an all-blank
-// WHY: span loses exactly one line (two blanks → one) and a single blank collapses to "" (zero
-// WHY: lines). Emitting the wire's own all-blank convention reuses the already-pinned
-// WHY: serialization instead of inventing a third encoding; mixed spans join exactly, as before.
+// WHY: (`src/hashline/parse.ts:76-77`), the INVERSE of `join("\n")`: joining an all-blank span would
+// WHY: lose exactly one line, so the all-blank case reuses the wire's own convention; mixed spans join exactly.
 function collapseSpanToText(span: string[]): string {
   if (span.length > 0 && span.every((line) => line.length === 0)) {
     return "\n".repeat(span.length);
@@ -719,11 +686,9 @@ async function materializeForeignReferences(
   const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
   const cuts: ForeignCutRecord[] = [];
   if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
-  // WHY: (item (v), §10) one read+load+lease per RESOLVED absolute path per batch: without the
-  // WHY: memo, each item performs its own fresh disk read and store SELECT, so a foreign file
-  // WHY: changing on disk BETWEEN two items materializes TWO revisions into one call with no
-  // WHY: diagnostic — correctness, not performance. The map is batch-scoped (this call only); a
-  // WHY: global cache would serve stale served state across calls.
+  // WHY: (item (v), §10) one read+load+lease per RESOLVED path per batch: without the memo a foreign
+  // WHY: file changing on disk BETWEEN two items materializes two revisions into one call with no
+  // WHY: diagnostic — correctness, not performance. The map is batch-scoped; a global cache would go stale.
   const views = new Map<string, Promise<ForeignServedView>>();
   const out: NormalizedEditItem[] = [];
   for (let index = 0; index < items.length; index++) {
@@ -759,9 +724,6 @@ async function runMutations(
   const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = requireSessionKey(options?.sessionKey);
-  // WHY: (ticket-04 §3.3) the foreign-source pre-pass runs before ANY parse or mutation: a
-  // WHY: `text_ref` naming another served file is materialized to a `literal` payload here, so a
-  // WHY: foreign resolution failure aborts the call atomically with the target not yet loaded.
   const { items, cuts: foreignCuts } = await materializeForeignReferences(request.edits, {
     cwd,
     file: path,
@@ -769,10 +731,9 @@ async function runMutations(
     sessionKey,
   });
   const warnings: string[] = [];
-  // WHY: (#146) the never-served soft hint is once per call: per-item counts
-  // WHY: travel as structured data (`neverServedCount`) and aggregate here, and
-  // WHY: one counted hint is rendered after the loop. No other warning tier is
-  // WHY: capped. A noop writes nothing, so its count is never aggregated.
+  // WHY: (#146) the never-served soft hint is once per call: per-item counts travel as structured data
+  // WHY: (`neverServedCount`) and aggregate here into one counted hint rendered after the loop; no
+  // WHY: other warning tier is capped, and a noop writes nothing so its count is never aggregated.
   let neverServedTotal = 0;
   const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
     if (list) warnings.push(...list);
@@ -786,8 +747,7 @@ async function runMutations(
   const isPreview = options?.noPersist === true;
 
   const parsed = parseEdits(items, path);
-  // WHY: (ticket-04 §3.6) noop-insert markers mutate nothing, so they are not part of the batch
-  // WHY: span gate — the gate compares regions the call will rewrite.
+  // WHY: noop-insert markers mutate nothing, so the batch span gate (regions the call rewrites) skips them.
   const realEdits: HEdit[] = [];
   for (const one of parsed) {
     if ("edit" in one) realEdits.push(one.edit);
@@ -811,11 +771,10 @@ async function runMutations(
     ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
   });
 
-  // WHY: (04b-rem P2-3) the admission round-trip guard: anchors were derived from the DECODED
-  // WHY: text, so bytes that do not re-encode identically cannot be restored by any line-
-  // WHY: addressed write — refuse before anything mutates, making every later byte-identity
-  // WHY: claim in this module true by construction. The read path keeps disclosing such files;
-  // WHY: only the edit path refuses.
+  // WHY: (04b-rem P2-3) the admission round-trip guard: anchors were derived from the DECODED text, so
+  // WHY: bytes that do not re-encode identically cannot be restored by any line-addressed write —
+  // WHY: refuse before anything mutates, making every later byte-identity claim in this module true by
+  // WHY: construction. The read path keeps disclosing such files; only the edit path refuses.
   if (hadUtf8DecodeErrors) {
     throw new DomainError("E_LOSSY_TEXT", { path });
   }
@@ -843,15 +802,9 @@ async function runMutations(
 
   let currentContent = originalNormalized;
   let currentHashes = originalHashes;
-  // WHY: the working buffer's line identity travels with its content (spec §3.2.4 step 1). It is the
-  // WHY: exact `line_id` of every line the batch has not touched, so the commit persists identities it
-  // WHY: already knows instead of re-deriving them by pairing S_final against S_latest. `null` marks a
-  // WHY: line a preceding edit in this batch created; the commit allocates those from the counter.
   let currentIds: (number | null)[] = isPreview
     ? []
     : workingBufferIds(hashStore, absolutePath, originalNormalized);
-  // WHY: pre-batch line of each identity, so a rejection inside a changed buffer can name the
-  // WHY: current-file lines an anchored read would serve (see `shiftedBufferRejection`).
   const baselineLineById = new Map<number, number>();
   currentIds.forEach((id, i) => {
     if (id !== null) baselineLineById.set(id, i + 1);
@@ -860,12 +813,10 @@ async function runMutations(
     const id = currentIds[bufferLine - 1];
     return id === null || id === undefined ? undefined : baselineLineById.get(id);
   };
-  // WHY: the working buffer applies each edit to the previous edit's output, which is exactly the
-  // WHY: preceding-delta rebase of spec §3.2.2: an anchor of edit k resolves in a buffer that only
-  // WHY: edits with `s'_end,j < s'_start,k` have shifted, so `p_buffer = s'_k + Δ_k` falls out of the
-  // WHY: sequential apply without ever materializing Δ_k as a coordinate. `assertBatchSpansDisjoint`
-  // WHY: is what keeps the shift well-defined: disjoint baseline spans mean no edit's coordinates are
-  // WHY: moved by an edit whose span contains them.
+  // WHY: the working buffer applies each edit to the previous edit's output — exactly spec §3.2.2's
+  // WHY: preceding-delta rebase, so `p_buffer = s'_k + Δ_k` falls out without materializing Δ_k.
+  // WHY: `assertBatchSpansDisjoint` keeps the shift well-defined: disjoint baseline spans mean no edit's
+  // WHY: coordinates are moved by an edit whose span contains them.
   let appliedCount = 0;
   let noopCount = 0;
   let totalAddedLines = 0;
@@ -877,11 +828,9 @@ async function runMutations(
   let unionEndHash = "";
   const editedIntervals: ResolvedRange[] = [];
   let lastApplied: { content: string; hashes: string[]; removedHashes: Set<string> } | undefined;
-  // WHY: (#117, spec §3.2.4 step 4) the legacy v6 `served.retired` mirror is read-only
-  // WHY: in-memory during the batch. `batchBlockedHashes` starts from the store snapshot and grows
-  // WHY: with each applied item's removals, so later items still observe earlier removals for
-  // WHY: hash-allocation and verification without any store write before `writeAtomic`.
-  // WHY: `accumulatedRemoved` is the post-commit payload, retired once after the bytes are on disk.
+  // WHY: (#117, spec §3.2.4 step 4) the legacy v6 `served.retired` mirror stays read-only in-memory:
+  // WHY: `batchBlockedHashes` starts from the store snapshot and grows with each applied item's
+  // WHY: removals, so later items still observe earlier removals with no store write before `writeAtomic`.
   let baseCanonDigests: (string | null)[] = [];
   try {
     baseCanonDigests = await createSessionHandle(
@@ -912,9 +861,8 @@ async function runMutations(
     const item = items[index]!;
     const parsedItem = parsed[index]!;
     if ("noopInsert" in parsedItem) {
-      // WHY: (ticket-04 §3.6) an empty "before"/"after" writes nothing by construction: bytes
-      // WHY: unchanged, counted as a noop, model channel warned. It skips `applyEdit` AND the
-      // WHY: noop-loop tracker — that tracker counts repeated content REWRITES, not this.
+      // WHY: (ticket-04 §3.6) an empty "before"/"after" writes nothing by construction, so it skips
+      // WHY: `applyEdit` and the noop-loop tracker — that tracker counts repeated content REWRITES, not this.
       noopCount += 1;
       warnings.push(
         formatWarning("W_NOOP_INSERT", {
@@ -940,9 +888,6 @@ async function runMutations(
       store: hashStore,
       isPreview,
       mode,
-      // WHY: the intermediate buffer is in-memory only, so its identities come from the buffer map
-      // WHY: (`null` lines are the batch's own creations) — a re-diff of it against S_latest cannot
-      // WHY: tell which of two byte-identical lines carries a leased line_id.
       ...(isPreview ? {} : { currentIds }),
       ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       onRejected: async (error) => {
@@ -991,11 +936,9 @@ async function runMutations(
         // WHY: noop-loop reject path can apply the same rowless rule as the shifted-buffer rejections.
         ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       });
-      // WHY: a looping item of a multi-item call rejects through the same
-      // WHY: batch envelope as every other rejection — the failing item, its
-      // WHY: own `[E_NOOP_LOOP]` diagnostic, and the atomicity trailer — so the
-      // WHY: model knows the earlier items were rolled back too. Single-item
-      // WHY: calls keep the direct rejection path.
+      // WHY: a looping item of a multi-item call rejects through the same batch envelope as every other
+      // WHY: rejection — the failing item, its own `[E_NOOP_LOOP]` diagnostic, the atomicity trailer — so
+      // WHY: the model knows the earlier items were rolled back too; single-item calls keep the direct path.
       if (decision.action === "reject") {
         if (items.length === 1) throw decision.error;
         throw batchAbortFor({ error: decision.error, index, path });
@@ -1011,19 +954,14 @@ async function runMutations(
     }
     appliedCount += 1;
     if (outcome.literalBypass) literalDeclarations += 1;
-    // WHY: (ticket-02, invariant 8) a span-ref item reports its own honest counts — inserted
-    // WHY: lines and retired-source-plus-replaced-target removals — because `countLineChanges`
-    // WHY: can only see the target span.
+    // WHY: (ticket-02, invariant 8) a span-ref item reports its own honest counts — inserted lines and
+    // WHY: retired-source-plus-replaced-target removals — because `countLineChanges` sees only the target span.
     const stats = outcome.mutationStats;
     const { totalAddedLines: added, totalRemovedLines: removed } = stats
       ? { totalAddedLines: stats.addedLines, totalRemovedLines: stats.removedLines }
       : countLineChanges(edit, originalHashes, false);
     totalAddedLines += added;
     totalRemovedLines += removed;
-    // WHY: (#117, spec §3.2.4 step 4) no store mutation before `writeAtomic`. The removed hashes
-    // WHY: accumulate in-memory for the post-commit legacy retire; `batchBlockedHashes` keeps later
-    // WHY: items observing earlier removals without touching the store, so a failed batch retires
-    // WHY: nothing.
     for (const hash of outcome.removedHashes) {
       batchBlockedHashes.add(hash);
       accumulatedRemoved.add(hash);
@@ -1037,10 +975,9 @@ async function runMutations(
     currentHashes = outcome.hashes;
     if (!isPreview) {
       if (outcome.mutationSpans) {
-        // WHY: (ticket-02) a span-ref item mutates up to two regions of the same pre-item buffer
-        // WHY: (target, retired source), so each is spliced into the identity map in descending
-        // WHY: start order — every region's coordinates then still name the pre-item lines, and a
-        // WHY: region the item skipped as a noop never shifts the map.
+        // WHY: (ticket-02) a span-ref item mutates up to two regions of the same pre-item buffer, so each
+        // WHY: is spliced in DESCENDING start order: every region's coordinates then still name the pre-item
+        // WHY: lines, and a region the item skipped as a noop never shifts the map.
         for (const span of [...outcome.mutationSpans].sort((a, b) => b.startLine - a.startLine)) {
           currentIds = spliceWorkingBufferIds(
             currentIds,
@@ -1068,10 +1005,8 @@ async function runMutations(
   const result = currentContent;
   let resultHashes = currentHashes;
   if (appliedCount > 0 && lastApplied) {
-    // WHY: `persist: false` — S_final is still an in-memory working buffer here (spec §3.2.4): the
-    // WHY: batch has not committed to disk, so this call must neither write a snapshot nor be able to
-    // WHY: retire a lease. The single authoritative materialization runs after `writeAtomic` in
-    // WHY: `apply`, and only there.
+    // WHY: `persist: false` — S_final is still an in-memory working buffer here (spec §3.2.4); persisting
+    // WHY: made a batch that wrote nothing retire every anchor the session still validly held.
     resultHashes = await lineHashes(
       result,
       absolutePath,
@@ -1145,12 +1080,6 @@ export async function previewEdits(
   return runMutations(request, cwd, { ...options, noPersist: true });
 }
 
-// WHY: (ticket-04b §2) nested queues in deterministic SORTED order (`withSortedMutationQueues`,
-// WHY: src/mutation-queue.ts): the cut transaction holds a lock for every file it will rename
-// WHY: across the whole plan+commit, and two calls whose file sets overlap in different orders
-// WHY: can never deadlock. Dedup first: a same-file cut shape (resolved equal) collapses to one
-// WHY: queue and takes the intra-file path anyway.
-
 /**
  * The post-write commit for ONE file whose bytes are already on disk: the refusal/noop-loop
  * tally clears, the legacy retire mirror, and the authoritative snapshot/lineage/lease/served-
@@ -1162,25 +1091,19 @@ async function finishCommittedFile(
   options: PipelineOptions | undefined,
   sessionKey: string,
 ): Promise<ReturnType<typeof genDiff>> {
-  // WHY: the clear side of the tally, separated from verification: the refusal count was
-  // WHY: recorded while the edit was still uncommitted, and only this committed write —
-  // WHY: bytes on disk — retires it, per session, so another session's tally stays its own.
+  // WHY: the clear side of the tally, separated from verification: the count was recorded while the edit
+  // WHY: was uncommitted, so only bytes on disk retire it — per session, another session's tally stays its own.
   clearServedRefusals(sessionKey, file.absolutePath);
-  // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
-  // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
-  // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this
-  // WHY: site, so its counters survive for the resubmission to trip on.
+  // WHY: the noop-loop tracker clears only here, beside the served-refusal tracker, so the counters
+  // WHY: reflect committed reality: an edit that writes nothing (rejected batch, `E_UNDO_UNAVAILABLE`,
+  // WHY: `writeAtomic` rollback) never reaches this site, so its counters survive for the resubmission.
   clearNoopLoop(sessionKey, file.absolutePath);
 
-  // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
-  // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing
-  // WHY: (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) can never retire a lease the
-  // WHY: session still validly holds. Retirement must not happen in runMutations, which materializes
-  // WHY: the working buffer while saveUndo/writeAtomic can still fail.
-  // WHY: (#117) the legacy v6 `served.retired` mirror retires once here, after the bytes are on
-  // WHY: disk, from the batch's in-memory accumulation. A failed batch never reaches this point,
-  // WHY: so it retires no blocked hashes. Best-effort with context on failure: the bytes already
-  // WHY: committed, so the edit succeeds with a deferred-sync warning, never a silent swallow.
+  // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4), deferred to
+  // WHY: here so an edit that writes nothing (rejected batch, `E_UNDO_UNAVAILABLE`, `writeAtomic` rollback)
+  // WHY: can never retire a lease the session still holds — `runMutations` materializes while `writeAtomic`
+  // WHY: can still fail. (#117) The legacy mirror retires once here from the batch's accumulation; a store
+  // WHY: failure keeps the committed bytes authoritative and warns, never swallows.
   if (file.removedHashes.size > 0) {
     try {
       const legacyHandle =
@@ -1207,14 +1130,10 @@ async function finishCommittedFile(
   );
   const denseRows = denseServeRows(file.resultHashes);
   try {
-    // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):
-    // WHY: snapshot + lineage + retirement + leases share one `BEGIN IMMEDIATE`, so a lease
-    // WHY: failure rolls the snapshot back instead of leaving snapshot-without-leases behind.
-    // WHY: CAND-3 adds step 6 — the served mirror write (`servedMirror`) — to the same
-    // WHY: transaction: a lease committed with the mirror missing (false `E_STALE_RANGE` at the
-    // WHY: boundary gate) or mirror rows without a lease (ADR-0023: no evidence at all) are now
-    // WHY: structurally unreachable; one failure means one full rollback and the one
-    // WHY: DEFERRED_STORE_SYNC_WARNING below — never a half-committed store.
+    // WHY: the served mirror is written in the SAME transaction as snapshot/lineage/retirement/leases
+    // WHY: (spec §3.2.4 step 4, CAND-3): a lease committed without its mirror row serves a false
+    // WHY: `E_STALE_RANGE`, and a mirror row without a lease is no evidence at all.
+    // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
     await upsertSnapshotFor(
       {
         path: file.absolutePath,
@@ -1228,8 +1147,7 @@ async function finishCommittedFile(
         retireLeases: true,
         leases: { sessionKey, rows: denseRows },
         // WHY: the mirror shape reproduces `recordDiff`'s truncation plan
-        // WHY: (`planServeRecording({resultLineCount, firstChangedLine})`) exactly — the same
-        // WHY: clamp/clear/patch, the same displaced-anchor retirement — inside this transaction.
+        // WHY: (`planServeRecording`) exactly — same clamp/clear/patch, same displaced-anchor retirement.
         servedMirror: {
           sessionKey,
           rows: denseRows,
@@ -1241,10 +1159,8 @@ async function finishCommittedFile(
       },
     );
   } catch (error) {
-    // WHY: best-effort post-write materialization — the edit already committed; a store failure
-    // WHY: leaves the in-memory hashes authoritative and the next read re-materializes and
-    // WHY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
-    // WHY: warn that store synchronization is deferred.
+    // WHY: best-effort post-write materialization (SPEC §3.6.2): the bytes are on disk, so a store failure
+    // WHY: leaves the in-memory hashes authoritative — report success, but warn that store sync is deferred.
     reportDiagnostic(
       "mutation-engine",
       "Failed to commit post-write snapshot materialization:",
@@ -1256,7 +1172,7 @@ async function finishCommittedFile(
 }
 
 /**
- * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (ADR-0028). NO FILESYSTEM ATOMICITY IS CLAIMED:
+ * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md). NO FILESYSTEM ATOMICITY IS CLAIMED:
  * `writeAtomic` is per-path, so two files mean two renames with a real crash window between them. The guarantee is three-part:
  *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source retirement. A crash between the renames
  *     leaves the copy at the target and the span still at the source — duplication, recoverable; the inverse ordering would be data loss.
@@ -1282,10 +1198,9 @@ async function runCutTransaction(
   const sourcePlans: ProcessedEditFile[] = [];
   for (const absolutePath of [...groups.keys()].sort()) {
     const cuts = groups.get(absolutePath)!;
-    // WHY: the retirement is a deletion payload over the SUBMITTED anchors — the ordinary edit
-    // WHY: shape — so the source gets its own load, its own lease verification, and its own
-    // WHY: batch-span gate: overlapping retire spans in one source abort the WHOLE call before
-    // WHY: any rename, which is §5's disjointness-across-both-files requirement.
+    // WHY: the retirement is a deletion payload over the SUBMITTED anchors — the ordinary edit shape —
+    // WHY: so the source gets its own load, lease verification and batch-span gate: overlapping retire
+    // WHY: spans in one source abort the WHOLE call before any rename (§5's disjointness across both files).
     const req: NormalizedEditRequest = {
       file: cuts[0]!.refFile,
       edits: cuts.map((cut) => ({
@@ -1306,13 +1221,10 @@ async function runCutTransaction(
   const plans = [file, ...sourcePlans];
   const txnId = randomUUID();
 
-  // WHY: STEP 1 durable pre-images: undo rows for EVERY file (pre bytes + post bytes + the
-  // WHY: shared transaction id), then the intent record — all BEFORE the first rename.
-  // WHY: (04b-rem P2-2/P2-3) the RAW pre-images are captured FIRST, so every consumer below — the
-  // WHY: rows' `raw_pre` and the rollback — reads the SAME bytes that were on disk before the
-  // WHY: first rename. Byte identity is not promised by this read, it is PROVEN upstream: the
-  // WHY: admission round-trip guard refused any file whose decoded text re-encodes differently,
-  // WHY: so decode/encode here is lossless by construction, stray line-break spellings included
+  // WHY: the RAW pre-images are captured FIRST, so every consumer below — the undo rows' `raw_pre` and
+  // WHY: the rollback — reads the SAME bytes that were on disk before the first rename. Byte identity is
+  // WHY: not promised by this read, it is PROVEN upstream: the admission round-trip guard refused any file
+  // WHY: whose decoded text re-encodes differently, so decode/encode here is lossless by construction
   // WHY: (ticket-04b §11: after an abort BOTH files are byte-identical to their pre bytes).
   const rawPreBytes = new Map<string, Buffer>();
   for (const plan of plans) {
@@ -1342,11 +1254,9 @@ async function runCutTransaction(
     throw error;
   }
 
-  // WHY: STEP 2 ordered commit: the target insert first, then each source retirement, using the
-  // WHY: raw pre-images captured in STEP 1 above. The commit path serializes canonically (one
-  // WHY: convention, no third path); a ROLLBACK is not a commit and must not smuggle in the
-  // WHY: canonical fold as if it were the restore — it writes the captured BUFFERS (ticket-04b
-  // WHY: §11: after an abort BOTH files are byte-identical to the pre-transaction contents).
+  // WHY: the commit path serializes canonically (one convention, no third path); a ROLLBACK is not a
+  // WHY: commit and must not smuggle in the canonical fold as if it were the restore — it writes the
+  // WHY: captured BUFFERS (ticket-04b §11: after an abort BOTH files are byte-identical to their pre contents).
   const written: ProcessedEditFile[] = [];
   try {
     if (options?.onBeforeFirstCutWrite) {
@@ -1399,9 +1309,10 @@ async function runCutTransaction(
         );
       }
     }
-    // WHY: a rollback that did not hold LEAVES the intent row and the transaction-tagged undo
-    // WHY: rows: next-run repair resolves to complete-the-cut or restore-both from the stored
-    // WHY: pre/post bytes (ADR-0028) — never a silent loss, never a fake atomicity claim.
+    // WHY: a rollback that did not hold LEAVES the intent row and the transaction-tagged undo rows:
+    // WHY: next-run repair resolves to complete-the-cut or restore-both from the stored bytes — never a
+    // WHY: silent loss, never a fake atomicity claim.
+    // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
     throw error;
   }
 
@@ -1413,8 +1324,6 @@ async function runCutTransaction(
     reportDiagnostic("mutation-engine", "Failed to clear the cut intent after commit:", error);
   }
 
-  // WHY: STEP 3 store commit per file — the same `finishCommittedFile` the single-file path
-  // WHY: runs, then ONE response whose sections cover BOTH files (§5).
   const sections = [];
   for (const plan of plans) {
     sections.push(toSection(plan, await finishCommittedFile(plan, options, sessionKey)));
@@ -1461,24 +1370,20 @@ export async function apply(
     };
   }
 
-  // WHY: (ticket-04b §2) repair before work: a previous run that crashed inside the two-rename
-  // WHY: window left a durable intent; resolve it now — complete the cut or restore both files,
-  // WHY: never lose content — BEFORE this call layers its own undo rows and leases over the
-  // WHY: state. Best-effort: an ambiguous member keeps its intent untouched (src/cut-repair.ts)
-  // WHY: and the scan is one indexed SELECT. Previews skip it: they write nothing and repair is
-  // WHY: a write path.
+  // WHY: (ticket-04b §2) repair before work: a previous run that crashed inside the two-rename window
+  // WHY: left a durable intent, so resolve it now — complete the cut or restore both files, never lose
+  // WHY: content — BEFORE this call layers its own undo rows and leases over the state. Best-effort: an
+  // WHY: ambiguous member keeps its intent untouched (`src/cut-repair.ts`). Previews skip it: repair is a write path.
   await repairCutIntents(options?.store);
 
-  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
   const sessionKey = requireSessionKey(options?.sessionKey);
 
-  // WHY: (ticket-04b §2) a cut transaction serializes EVERY file it will rename for the whole
-  // WHY: plan+commit, and the queues are taken in deterministic sorted order so two calls with
-  // WHY: swapped target/source cannot deadlock. COPY items never widen the lock set — a copy's
-  // WHY: foreign file stays read-only.
+  // WHY: (ticket-04b §2) a cut transaction serializes EVERY file it will rename for the whole plan+commit,
+  // WHY: and the queues are taken in deterministic sorted order so two calls with swapped target/source
+  // WHY: cannot deadlock. COPY items never widen the lock set — a copy's foreign file stays read-only.
   const cutSourcePaths: string[] = [];
   for (const item of request.edits) {
     if (item.payload.kind !== "reference" || item.payload.mode !== "cut") continue;
@@ -1510,10 +1415,7 @@ export async function apply(
 
     abortIf(options?.signal);
 
-    // WHY: (ticket-04b) a foreign-source cut commits as one correlated transaction (ADR-0028):
-    // WHY: undo rows for every file + a durable intent record BEFORE the first rename, target
-    // WHY: insert durably committed before the destructive source retirement, and next-run
-    // WHY: repair for a half-applied window. Red-first witnessed by `edit.foreign-cut.test.ts`.
+    // WHY: (ticket-04b) a foreign-source cut commits through the correlated transaction; red-first witnessed by `edit.foreign-cut.test.ts`.
     if (file.foreignCuts.length > 0) {
       return await runCutTransaction(file, cwd, options, sessionKey);
     }

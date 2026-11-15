@@ -137,10 +137,9 @@ async function resolveBaselineSpans(
 ): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
-  // WHY: the span gate aggregates per-item rejections in `assertBatchSpansDisjoint`, so this seam
-  // WHY: records the reject-and-serve rows each failing edit owes and rethrows the RAW diagnostic —
-  // WHY: the `edit[i] (path) failed:` envelope is applied once at aggregation time. A non-domain
-  // WHY: throw is unexpected (not an item failure) and aborts immediately.
+  // WHY: rejections are aggregated in `assertBatchSpansDisjoint`, so this seam records the rows
+  // WHY: each failing edit owes and rethrows the RAW diagnostic — the `edit[i] (path) failed:`
+  // WHY: envelope lands once at aggregation, and a non-domain throw aborts immediately.
   const abort = async (error: unknown): Promise<never> => {
     if (error instanceof DomainError) {
       await ctx.recordRejectionServe({
@@ -159,11 +158,9 @@ async function resolveBaselineSpans(
     const to = leased.resolved.hash_bounds[1].line;
     return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
   };
-  // WHY: follow-up — this pre-heal is dead since the lease seam heals a reversed pair
-  // WHY: internally (`resolveLeasedEdit` swaps the resolved lines and narrates
-  // WHY: `[W_REVERSED_ANCHORS]`), and the measured span below is order-proof via
-  // WHY: `Math.min`/`Math.max` either way. Kept (not deleted) pending a cleanup pass
-  // WHY: that removes the redundant swap once the heal path is covered.
+  // WHY: follow-up — this pre-heal is dead since `resolveLeasedEdit` heals a reversed pair itself
+  // WHY: (`[W_REVERSED_ANCHORS]`) and the span below is order-proof via `Math.min`/`Math.max`
+  // WHY: anyway. Kept, not deleted, pending the cleanup pass that covers the heal path.
   const fixed = swapReversedRanges(edit, fileHashes, []);
   let leased: LeasedEditResolution;
   try {
@@ -206,12 +203,9 @@ export async function assertBatchSpansDisjoint(
 ): Promise<void> {
   if (edits.length < 2) return;
   const spans: BaselineSpan[] = [];
-  // WHY: span validation aggregates instead of failing fast — every item resolves against the same
-  // WHY: pre-batch snapshot through a pure seam, so one failing edit cannot mask another and the
-  // WHY: model fixes all of them in one resubmission. Each failure's reject-and-serve rows are
-  // WHY: already recorded inside `resolveBaselineSpans`; a non-domain throw is unexpected and aborts
-  // WHY: immediately. Atomicity is untouched: the gate runs before the first mutation, so an
-  // WHY: aggregated rejection still writes zero bytes.
+  // WHY: validation aggregates instead of failing fast: every item resolves against the same pure
+  // WHY: pre-batch snapshot, so one failing edit cannot mask another and the model fixes all of
+  // WHY: them in one resubmission.
   const failures: { error: DomainError; index: number }[] = [];
   for (let index = 0; index < edits.length; index++) {
     try {
@@ -234,16 +228,14 @@ export async function assertBatchSpansDisjoint(
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
-      // WHY: a move's target and its own retired source are one item: their overlap is that item's
-      // WHY: question, never a batch conflict. `applyEdit` rejects it with `E_BAD_PAYLOAD` under the
-      // WHY: placement-aware rule — for a replacement the spans must not intersect, for an
-      // WHY: insertion (`before`/`after`) only a point strictly inside the retired lines overlaps;
-      // WHY: the four touching spellings stay legal as honest noops (ticket-02b P1-B).
+      // WHY: a move's target and its own retired source are one item, never a batch conflict —
+      // WHY: `applyEdit` rejects that overlap with `E_BAD_PAYLOAD`: a replacement's spans must not
+      // WHY: intersect; an insertion overlaps only a point strictly inside the retired lines, so
+      // WHY: the four touching spellings stay legal noops (ticket-02b P1-B).
       if (a.index === b.index) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
-        // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
-        // WHY: so the retry never needs a re-read.
+        // WHY: served like the sequential abort, so a retry never needs a re-read.
         const originalLines = splitLines(ctx.originalNormalized);
         const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
         throw new DomainError("E_BATCH_ABORT", {

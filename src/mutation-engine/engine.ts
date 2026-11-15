@@ -55,12 +55,10 @@ function toFailure(error: unknown): MutationResult {
     });
   }
   const message = error instanceof Error ? error.message : String(error);
-  // WHY: the batch-abort wrapper preserves the failing item's own code as a
-  // WHY: plain field — a registry member routes the typed path, while
-  // WHY: errno-style codes (ENOENT) and unexpected throws fall through to
-  // WHY: `E_UNKNOWN` instead of leaking a scraped token as the code. The
-  // WHY: envelope reader owns that validation: a non-registry code reads back
-  // WHY: as no code at all, which is exactly the fall-through condition.
+  // WHY: the batch-abort wrapper preserves the failing item's own code as a plain field — a registry
+  // WHY: member routes the typed path; errno-style codes (ENOENT) and unexpected throws fall through
+  // WHY: to `E_UNKNOWN` instead of leaking a scraped token. The envelope reader owns that validation:
+  // WHY: a non-registry code reads back as no code, which is the fall-through condition.
   const env = readEnvelope(error);
   if (env !== undefined && env.code !== undefined) {
     return failureFromEnvelope({ code: env.code, message, env });
@@ -123,15 +121,10 @@ export async function preview(
   options?: Omit<PipelineOptions, "noPersist">,
 ): Promise<MutationResult> {
   try {
-    // WHY: pipelinePreview does not persist and does not write undo — but still
-    // WHY: runs the full mutate→finalize→drift path.
     const file = await pipelinePreview(request, cwd, options);
-    // WHY: #174 single-projection contract — the preview diff IS the `genDiff` projection,
-    // WHY: produced here at the same seam that returns execute's projected `diff`, with the
-    // WHY: preview pane's context (`DIFF_PREVIEW_CONTEXT`). The display path (`edit-tool
-    // WHY: preview` → preview-controller → edit-render) consumes this text and never
-    // WHY: re-projects; `file` already carries everything `genDiff` needs, so no side
-    // WHY: decision of an empty diff is synthesized here.
+    // WHY: #174 single-projection contract — the preview diff IS the `genDiff` projection, produced
+    // WHY: here with the preview pane's context (`DIFF_PREVIEW_CONTEXT`), so the display path
+    // WHY: (`edit-tool preview` → preview-controller → edit-render) consumes it and never re-projects.
     const diff = genDiff(
       file.originalNormalized,
       file.result,
@@ -169,5 +162,5 @@ export async function preview(
   }
 }
 
-// WHY: Re-export for callers that need the throw-based legacy path.
+// WHY: exported so the envelope test drives the routing seam without running a pipeline.
 export { toFailure };

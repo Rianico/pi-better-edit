@@ -12,8 +12,6 @@ import type { EditDetails, RMetrics } from "../edit-response.js";
 import type { DomainErrorCode, RangeCause } from "../domain-errors.js";
 import type { ServedRow } from "../domain-errors.js";
 
-// WHY: Re-export pipeline-facing options — validated once at admission (edit.ts),
-// WHY: trusted inside the engine. No `any`.
 export interface PipelineOptions {
   accessMode?: number;
   signal?: AbortSignal;
@@ -49,8 +47,6 @@ export interface ForeignCutRecord {
   spanTo: string;
 }
 
-// WHY: Internal: the engine's view of one file's mutation outcome.
-// WHY: Mirrors `ProcessedEditFile` from the old pipeline — kept here as the engine's owned fact.
 export interface ProcessedEditFile {
   path: string;
   absolutePath: string;
@@ -96,9 +92,6 @@ export interface ProcessedEditFile {
   foreignCuts: ForeignCutRecord[];
 }
 
-// WHY: Discriminated success/failure for the deep seam.
-// WHY: Callers use exhaustive switch on `ok` — no `isError` flag checks,
-// WHY: no `any` threading.
 export interface MutationSuccess {
   ok: true;
   /** SAFETY: Normalized result content (LF). */
@@ -143,7 +136,6 @@ export interface MutationFailure {
 
 export type MutationResult = MutationSuccess | MutationFailure;
 
-// WHY: Narrowing helpers — keep call sites exhaustive.
 export function isMutationSuccess(r: MutationResult): r is MutationSuccess {
   return r.ok === true;
 }

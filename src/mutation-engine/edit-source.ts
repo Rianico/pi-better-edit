@@ -121,10 +121,9 @@ export async function loadForeignServedView(input: {
       noPersist: true,
     },
   );
-  // WHY: (04b-rem P2-3) the admission round-trip guard applies to the FOREIGN source exactly as
-  // WHY: it applies to the target: the cut materializes span bytes decoded from THIS file, so
-  // WHY: lossy bytes here would write destroyed content into the target. The refusal names the
-  // WHY: member whose bytes broke the round-trip — the cause is observed, not assumed.
+  // WHY: (04b-rem P2-3) the admission round-trip guard applies to the FOREIGN source exactly as to
+  // WHY: the target: the cut materializes span bytes decoded from THIS file, so lossy bytes here
+  // WHY: would write destroyed content into the target, and the refusal names the member that broke.
   if (hadUtf8DecodeErrors) {
     throw new DomainError("E_LOSSY_TEXT", { path: absolutePath });
   }
@@ -163,15 +162,14 @@ export function leaseSpanSource(input: {
   currentIds?: (number | null)[];
 }): LeaseSpanSource {
   const byAnchor = new Map<string, ServedLease>();
-  // WHY: (ADR-0045) hard expiry — an ACTIVE lease past the session TTL has no resolution
-  // WHY: authority. It is dropped here, before any `leaseFor` can return it, so the read and edit
-  // WHY: seams re-resolve content instead of trusting a dead identity. A retired lease is a
-  // WHY: different state and is still returned (the resolver judges its `retiredAt`).
+  // WHY: hard expiry — an ACTIVE lease past the session TTL has no resolution authority, so it is
+  // WHY: dropped here before any `leaseFor` can return it and the read/edit seams re-resolve content
+  // WHY: instead of trusting a dead identity; a retired lease is a different state, still returned.
+  // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
   const now = Date.now();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
-    // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a
-    // WHY: stale generation cannot resolve by line_id alone. The open-time sweep
-    // WHY: deletes these rows; this gate covers rows written between sweep and read.
+    // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a stale generation
+    // WHY: cannot resolve by line_id alone (the open-time sweep cannot cover rows written after it).
     if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
     if (isExpiredActiveLease(lease, now)) continue;
     byAnchor.set(lease.anchor, lease);
@@ -182,9 +180,9 @@ export function leaseSpanSource(input: {
   // WHY: the session-wide home lookup runs on the failure path only: the happy
   // WHY: path never calls it, so serving one more file costs nothing at edit time.
   const { store, sessionKey, absolutePath } = input;
-  // WHY: outline fold ranges recorded by the last outline read of this file (tranche 3 fold-gate).
-  // WHY: Absent or empty keeps the span gate inert (ADR-0024), so non-outline reads — which record
-  // WHY: no folds — resolve exactly as before.
+  // WHY: outline fold ranges recorded by the last outline read of this file (tranche 3 fold-gate);
+  // WHY: absent or empty keeps the span gate inert, so non-outline reads resolve exactly as before.
+  // Ref: docs/adr/0016-outline-mode-point-anchors.md
   const outlineFolds = loadOutlineFolds(store, sessionKey, absolutePath);
   return {
     currentSnapshotHash: snapshotHashFor(input.content),
