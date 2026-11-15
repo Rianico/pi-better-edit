@@ -201,6 +201,28 @@ function bindingDocsViolations(): string[] {
   });
 }
 
+describe("path allowance — a cited record is provenance, not vocabulary", () => {
+  // The strip in `stripCanonical` exists so a `// Ref:`/link/docblock citation of an archived
+  // record whose FILENAME carries the banned token stays green. These two arms pin both halves:
+  // the path form is allowed, and the same token as prose still fails. Without arm 2 the strip
+  // could widen to bare tokens and nothing would notice; without arm 1 a path citation would
+  // redden the guard again, which is the collision t10 resolved.
+  it("allows the banned token inside a cited docs/ record path", () => {
+    const cited = "// Ref: docs/.archive_adrs/0009-bounded-hash-echo-guard.md";
+    expect(/echo/i.test(stripCanonical(cited))).toBe(false);
+    // The markdown-link form names the same record by a relative path; the fragment is what the
+    // strip matches, so the citation style is irrelevant to the allowance.
+    const linked = "per [the guard](../../docs/.archive_adrs/0009-bounded-hash-echo-guard.md)";
+    expect(/echo/i.test(stripCanonical(linked))).toBe(false);
+  });
+
+  it("still flags the same token as prose", () => {
+    const prose =
+      "// WHY: the echo of a served row names the feedback, which is banned vocabulary.";
+    expect(/echo/i.test(stripCanonical(prose))).toBe(true);
+  });
+});
+
 describe("GLOSSARY.md terminology — forbidden synonyms stay out of src/", () => {
   it("names no `anchor identity`: identity belongs to a line_id, not a presentation anchor", () => {
     expect(matching(/anchor identity|AnchorIdentity/)).toEqual([]);
