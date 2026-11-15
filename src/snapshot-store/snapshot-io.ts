@@ -5,7 +5,7 @@
  * WHY: (`get` / `upsert`). That seam belongs to the store: it owns the rows, the cache key and the
  * WHY: transaction, and identity stays free of store shape — a caller names its store, gets an IO.
  *
- * WHY: explicit parameter over an ambient default. ADR-0002's import-time install let a bare
+ * WHY: explicit parameter over an ambient default. docs/.archive_adrs/0002-session-keyed-served-state.md's import-time install let a bare
  * WHY: `lineHashes(content, path)` choose whichever store happened to be open in the process, so a
  * WHY: call that never named a store still persisted into one. Callers now pass `snapshotIOFor(store)`
  * WHY: (or `persist: false` when they only derive anchors); nothing installs a process-wide IO.
@@ -48,7 +48,7 @@ export interface HashSnapshotUpsertOptions {
     retireAnchors?: readonly string[];
   };
   /**
-   * The `stat(2)` identity the caller observed for this path when it materialized `content` (ADR-0043):
+   * The `stat(2)` identity the caller observed for this path when it materialized `content` (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md):
    * stamped on the snapshot row in the same transaction, so the next read of the unchanged file adopts
    * on stat identity alone. Absent on materializations that never observed the file (working buffers,
    * edit commits, undo restores) — their rows keep a NULL key and never match a stat lookup.

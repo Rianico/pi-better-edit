@@ -1,4 +1,3 @@
-// WHY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import xxhash from "xxhash-wasm";
 import { reportDiagnostic } from "../diagnostics.js";
 
@@ -9,7 +8,7 @@ export type Hasher = {
 
 let hasher: Hasher | null = null;
 
-// WHY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.
+// WHY: getH keeps the null check and its message in one place, so every entry point fails with the same error.
 function getH(): Hasher {
   if (hasher) return hasher;
   throw new Error(

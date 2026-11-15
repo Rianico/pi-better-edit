@@ -4,18 +4,13 @@ import { getCached, withBusyRetry } from "../store-kernel/index.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
-// WHY: --- Global LRU vacuum (spec §3.6.1) ---
-// WHY: The CAS store is a bounded cache of file versions: 50 MB globally, and
-// WHY: `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path where
-// WHY: `snapshot_lineage_bytes ≈ 40 × line_count`. Eviction is global and oldest-`created_at`
-// WHY: first across all paths. Identity wins over budget: a snapshot a session can still resolve
-// WHY: through — an active lease, a `file_undo.snapshot_hash` restore target, or a lease retired
-// WHY: inside the 1-hour grace — is PINNED and never evicted, so the vacuum only drops versions
-// WHY: no live anchor points at. When every remaining candidate is pinned the vacuum defers,
-// WHY: permitting a soft overflow that in practice lapses with the 7-day lease TTL; `overSoftOverflow`
-// WHY: reports the deferred state and is the only thing the 100 MB ceiling governs.
-// WHY: These are the production budgets the store that owns `file_snapshots` / `line_lineage`
-// WHY: enforces; they are module-level policy, never call-site configuration.
+// WHY: the CAS store is a bounded cache: 50 MB globally, and
+// WHY: `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path, where
+// WHY: `snapshot_lineage_bytes ≈ 40 × line_count`; eviction is global, oldest-`created_at` first.
+// WHY: Identity wins over budget: a snapshot a live anchor can still resolve through — an active lease,
+// WHY: an undo restore target, or a lease retired inside the 1-hour grace — is PINNED. An all-pinned
+// WHY: candidate set defers instead: a soft overflow that lapses with the 7-day TTL, which
+// WHY: `overSoftOverflow` reports and the 100 MB ceiling alone governs.
 
 export const VACUUM_GLOBAL_BUDGET_BYTES = 50 * 1024 * 1024;
 export const VACUUM_SOFT_OVERFLOW_BYTES = 100 * 1024 * 1024;
@@ -76,18 +71,16 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
     "SELECT snapshot_id, path, snapshot_hash, line_count, created_at FROM file_snapshots " +
       "WHERE committed = 1 ORDER BY created_at ASC, snapshot_id ASC",
   );
-  // WHY: pinning is a two-table predicate (spec §3.6.1): a lease that is still active inside the
-  // WHY: session TTL, a lease retired inside the 1-hour grace, or an undo restore target.
-  // WHY: the probe MUST stay index-covered. `file_path` alone is not enough — one path holds a lease
-  // WHY: per served line (thousands), so without `served_snapshot_hash` each snapshot re-scans the
-  // WHY: path's whole lease set. `idx_leases_file_snapshot` in the schema owner is that exact tuple
-  // WHY: and its covering order; dropping the hash column turns a ~35 ms pass into seconds.
+  // WHY: pinning is a two-table predicate (spec §3.6.1): a lease still active inside the session TTL,
+  // WHY: a lease retired inside the 1-hour grace, or an undo restore target. The probe MUST stay
+  // WHY: index-covered: one path holds a lease per served line, so without `served_snapshot_hash` each
+  // WHY: snapshot re-scans the whole lease set — `idx_leases_file_snapshot` keeps a ~35 ms pass.
   const pinnedStmt = db.prepare(
     "SELECT DISTINCT fs.snapshot_id AS snapshot_id FROM file_snapshots fs " +
       "WHERE fs.committed = 1 AND (" +
-      // WHY: (ADR-0045) the active half is the canonical expiry predicate, so the pin probe and
-      // WHY: the grant path cannot disagree about which active leases still resolve. `sl` is dropped
-      // WHY: from the subquery so the shared predicate can name `served_leases` itself.
+      // WHY: the active half is the canonical expiry predicate, so the pin probe and the grant path
+      // WHY: cannot disagree about which leases still resolve; `sl` is dropped so it can name `served_leases`.
+      // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
       "EXISTS (SELECT 1 FROM served_leases WHERE served_leases.file_path = fs.path " +
       "AND served_leases.served_snapshot_hash = fs.snapshot_hash " +
       `AND ((${RESOLVABLE_LEASE_SQL}) OR served_leases.retired_at >= ?)) ` +

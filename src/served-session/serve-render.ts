@@ -5,7 +5,7 @@
  * prefix-mismatch gates, never-served shape scan, rejection bookkeeping, `verifyRebasedSpan`). It
  * owns no session state: every input arrives as an argument, and the session module is the only writer.
  *
- * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
+ * Heuristic canon healing is retired (docs/.archive_adrs/0008-orphaned-serve-healing.md; spec §3.3): un-rebased coordinates reject
  * fail-closed with E_STALE_RANGE; realignment belongs exclusively to MVCC `pairSnapshots` +
  * `line_lineage` upstream. The lease seam verifies every edit by lease identity (#151); the former
  * mirror-vs-mirror table (`ServedVerification`, `verifyServedRange`) had no live caller, retired (#10).
@@ -60,8 +60,8 @@ export function buildRangeServeRows(
   return rows;
 }
 
-// WHY: the serve-record shape has no owner; this is it — the dense projection of a file's whole
-// WHY: hash array to serve rows: position is the 0-based array index, hash the anchor at that index.
+// WHY: one owner for the serve-record shape: `position` is the 0-based array index that every
+// WHY: consumer converts to a 1-based line, so a second projection is how that base drifts.
 export function denseServeRows(hashes: readonly string[]): ServedRow[] {
   return hashes.map((hash, position) => ({ position, hash }));
 }
@@ -70,8 +70,8 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
   return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
 }
 
-// WHY: the one continuation a rejected edit offers (read-chrome): the `windows` offset, not a bare
-// WHY: `offset`, because `offset` alone no longer continues anything a page footer used to name.
+// WHY: the one continuation a rejected edit offers: `windows: [{ offset }]`, never a bare `offset` —
+// WHY: the flat read payload has no such key, so a bare one would continue nothing (read-chrome).
 function paginationHint(nextOffset: number, more: number): string {
   return `[... ${more} more — use windows: [{ offset: ${nextOffset} }]]`;
 }
@@ -130,9 +130,9 @@ function assembleRejectAndServe(args: {
 
 /**
  * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose range cannot be
- * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
+ * identified (spec stale-identity-reject-and-serve D1/D6, docs/.archive_adrs/0018-region-scoped-rejection-serves.md decisions 1-2). The payload
  * carries no rows, no `Current range` heading and no retry hint. §D6's row-shape phrasing is
- * superseded in part by ADR-0021 d4: the code alone selects the remedy and row presence is a
+ * superseded in part by docs/.archive_adrs/0021-unified-error-and-warning-contract.md d4: the code alone selects the remedy and row presence is a
  * payload detail — target-side `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` producers serve rows,
  * the foreign leased wrap renders those codes with none, and consumers dispatch on the code.
  */
@@ -145,8 +145,7 @@ export function makeTargetLostRejection(opts: {
     servedLine: opts.servedLine,
     ...(opts.path !== undefined ? { path: opts.path } : {}),
     cause: opts.cause,
-    // WHY: the retired line is the offending line — preserved so `verify()` and
-    // WHY: downstream consumers keep the coordinate without a second lookup.
+    // WHY: the retired line is the offending line, so consumers keep the coordinate without a lookup.
     firstOffendingLine: opts.servedLine,
   });
 }
@@ -167,9 +166,8 @@ export function makeServedRejection(opts: {
   cause: RangeCause;
 }): DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE"> {
   if (opts.code === "E_UNVERIFIED_RANGE") {
-    // WHY: the unverified payload renders the general headline, never the
-    // WHY: caller-supplied clause: the bound is unplaceable, so naming
-    // WHY: per-anchor positions would narrate lines never targeted.
+    // WHY: the unverified payload renders the general headline, never the caller's clause: the bound
+    // WHY: is unplaceable, so per-anchor positions would narrate lines never targeted.
     const { servedRows, rendered } = buildRangeServeBlock(
       opts.startLine,
       opts.endLine,
@@ -232,7 +230,7 @@ export function makeStaleAnchorRejection(opts: {
  * `line_id`, and this verifies the whole served window remapped onto `rebasedStart..rebasedEnd`, so the dynamic rebase path's
  * rigid remap and the fast path's identity remap reach the same verdicts (#151).
  *  - window length differs (external insert/delete strictly inside, Probe J), a truncated mirror row, an anchor holding no lease -> `E_STALE_RANGE`;
- *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity, and the two boundary
+ *  - an interior row the mirror never served (`null`) -> **accepted** (docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md): it carries no identity, and the two boundary
  *    leases plus the length check pin the extent; rows `0` and `servedLen - 1` stay fail-closed on a `null`;
  *  - a strict interior covering a still-unserved recorded outline fold line -> `E_STALE_RANGE` (tranche 3 fold-gate);
  *  - a retired lease -> `E_STALE_RANGE` with `details.cause: "retirement"`, a displaced live `line_id` ->
@@ -278,11 +276,9 @@ export function verifyRebasedSpan(args: {
   for (let k = 0; k < servedLen; k++) {
     const servedAnchor = served[servedStart - 1 + k];
     const currentLine = rebasedStart + k;
-    // WHY: the served window can come from the leases' own `served_line_number` because a truncated
-    // WHY: serve dropped the mirror rows it no longer covers (spec §3.1.1): the lease outlives the
-    // WHY: mirror. An absent slot is that missing record, never "this line was never served", so the
-    // WHY: span fails closed on the truth (the served record cannot be reconciled) and the current
-    // WHY: range is served for a fresh read.
+    // WHY: the mirror drops the rows a truncated serve no longer covers, so the window travels in from
+    // WHY: the leases' own `served_line_number` (spec §3.1.1): an absent slot is a record truncated
+    // WHY: away, never "this line was never served", so the span fails closed and serves a fresh read.
     if (servedAnchor === undefined) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
@@ -295,10 +291,10 @@ export function verifyRebasedSpan(args: {
       });
     }
     if (servedAnchor === null) {
-      // WHY: ADR-0024 narrows informed destruction to the boundaries: an unread interior row has no
-      // WHY: identity to check, and the two verified boundary leases already fix the span's extent, so
-      // WHY: refusing it only taxed a correct edit. A `null` boundary is the named anchor itself —
-      // WHY: unverifiable by construction — so it keeps the fail-closed diagnosis.
+      // WHY: informed destruction is narrowed to the boundaries: an unread interior row has no identity
+      // WHY: to check and the two boundary leases fix the extent, so refusing it only taxed a correct
+      // WHY: edit — while a `null` boundary is the named anchor itself and stays fail-closed.
+      // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
       if (k === 0 || k === servedLen - 1) {
         throw makeServedRejection({
           code: "E_STALE_RANGE",
@@ -324,10 +320,9 @@ export function verifyRebasedSpan(args: {
         cause: "never-served",
       });
     }
-    // WHY: two distinct diagnoses, one per condition (spec §5.3): a terminal lease is a
-    // WHY: `retirement` — the identity is gone and only a re-read revives it — while a live lease
-    // WHY: whose `line_id` no longer sits at its expected coordinate is drift between the served
-    // WHY: record and the rebased span.
+    // WHY: two diagnoses, one per condition (spec §5.3): a terminal lease is `retirement` — the identity
+    // WHY: is gone and only a re-read revives it — while a live lease whose `line_id` moved is drift
+    // WHY: between the served record and the rebased span.
     if (lease.retiredAt !== null) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
@@ -351,19 +346,14 @@ export function verifyRebasedSpan(args: {
       });
     }
   }
-  // WHY: outline fold-gate (tranche 3): a multi-line replacement whose strict interior covers a
-  // WHY: line an outline read hid (a recorded fold) is refused fail-closed with `E_STALE_RANGE` while
-  // WHY: that line is still unserved — the fold must never be silently erased. Single-line spans
-  // WHY: (replacement or point insertion on a declaration anchor) have no interior and skip this gate.
-  // WHY: The gate requires a mirror-null interior: a later served read that fills the folded lines
-  // WHY: disarms it. Folds and the mirror are both recorded in served coordinates, so the interior is
-  // WHY: walked in that frame (`servedStart + k`), never in rebased coordinates: inside a batch an
-  // WHY: earlier size-changing item shifts the rebased span, and probing the mirror at rebased lines
-  // WHY: refused a fully served body over lines it never covered (the window-length check above
-  // WHY: already pins `servedLen === rebasedLen`, so the mapping is rigid). Absent or empty folds keep the gate inert (ADR-0024
-  // WHY: interior acceptance is unchanged for non-outline reads, which record no folds).
-  // WHY: `served-range staleness` is the diagnosis: the span no longer resolves against the served
-  // WHY: record the session holds, and a re-read revives it — never a retry mandate (issue #149).
+  // WHY: the fold gate exists so a fold cannot be silently erased, and it disarms itself: the interior
+  // WHY: must be mirror-null, so a served read that fills the folded lines releases it. Folds and the
+  // WHY: mirror are both recorded in served coordinates, so the interior is walked in that frame
+  // WHY: (`servedStart + k`), never in rebased ones: inside a batch an earlier size-changing item
+  // WHY: shifts the rebased span, and probing at rebased lines refused a fully served body over lines
+  // WHY: it never covered.
+  // WHY: `served-range staleness` names it and a re-read revives the span — never a retry mandate (#149).
+  // Ref: docs/adr/0016-outline-mode-point-anchors.md
   if (outlineFolds !== undefined && outlineFolds.length > 0 && servedEnd > servedStart) {
     for (const fold of outlineFolds) {
       const startLine = fold.startLine;
@@ -530,9 +520,8 @@ export function findServedHashEcho(
   return undefined;
 }
 
-// WHY: the ad-hoc `ServedHashEchoError` subclass is retired (spec D1): the edit
-// WHY: and write seams throw `DomainError` with `E_SUSPICIOUS_TEXT` instead, so
-// WHY: `servedRows`, `servedBlock`, `cause`, and `details` keep their shape.
+// WHY: the ad-hoc `ServedHashEchoError` subclass is retired (spec D1): both seams throw
+// WHY: `DomainError` with `E_SUSPICIOUS_TEXT`, and this alias keeps its payload shape for callers.
 export { DomainError as ServedHashEchoError };
 
 export interface ServedPrefixMismatch {
@@ -690,7 +679,7 @@ type RefusalEntry = {
 
 /**
  * SAFETY: the refusal tally beside the served hash echo gate — one flat composite-key
- * cache (`${sessionKey}\0${absolutePath}`). Serves are session-keyed (ADR-0002), so one
+ * cache (`${sessionKey}\0${absolutePath}`). Serves are session-keyed (docs/.archive_adrs/0002-session-keyed-served-state.md), so one
  * session's count must never leak into another session refusing the same path. The flat
  * key keeps lookup, size, and eviction O(1) with no per-session scan. The `\0` separator
  * is enforced, never assumed (`refusalKey` rejects a part carrying one), so two scopes
@@ -712,12 +701,9 @@ const servedRefusalTracker = new Map<string, RefusalEntry>();
  */
 export const SERVED_REFUSAL_MAX_ENTRIES = 256;
 
-// WHY: `sessionKey` and `absolutePath` travel as two primitives through `refusalKey`,
-// WHY: `clearServedRefusals`, and both `trackServed*` seams, mirroring the established
-// WHY: `(sessionKey, path)` convention (`createSessionHandle`,
-// WHY: `clearNoopLoop`): a refusal scope is a pair of already-typed values, so a
-// WHY: `RefusalScope` wrapper would add an allocation per refusal without narrowing the
-// WHY: interface or preventing an argument-order slip.
+// WHY: a refusal scope is two already-typed values, so the established `(sessionKey, path)`
+// WHY: convention carries it as primitives: a `RefusalScope` wrapper would cost an allocation per
+// WHY: refusal and narrow neither the interface nor an argument-order slip.
 /**
  * SAFETY: the one encoding of a refusal scope. The `\0` separator is enforced, never
  * assumed: a part carrying one is rejected outright, because two scopes that fused into a
@@ -736,13 +722,11 @@ function trackRefusal(sessionKey: string, absolutePath: string, payload: string)
   const key = refusalKey(sessionKey, absolutePath);
   const existing = servedRefusalTracker.get(key);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  // WHY: `Map.set` on an existing key keeps its original position, so the delete is what
-  // WHY: refreshes recency — a resubmitted refusal moves to the tail and survives eviction.
+  // WHY: `Map.set` keeps an existing key's position, so the delete is what refreshes recency for LRU.
   servedRefusalTracker.delete(key);
   servedRefusalTracker.set(key, { payload, count });
-  // WHY: a `while`, not an `if`: the cap must hold for whatever a future caller inserts in
-  // WHY: one refusal, and evicting after the insert keeps the head invariant obvious — the
-  // WHY: head is always the least recently refused key.
+  // WHY: a `while`, not an `if`: the cap must hold for whatever a future caller inserts in one refusal,
+  // WHY: and evicting after the insert keeps the head invariant obvious — head is least recently refused.
   while (servedRefusalTracker.size > SERVED_REFUSAL_MAX_ENTRIES) {
     for (const oldest of servedRefusalTracker.keys()) {
       servedRefusalTracker.delete(oldest);

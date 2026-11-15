@@ -24,7 +24,6 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
     const lines = trimmed.split("\n");
     const first = lines[0] ?? "";
     const last = lines.at(-1) ?? "";
-    // WHY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.
     const hashRe = new RegExp(HASH_CLASS);
     const firstMatch = first.match(hashRe);
     const lastMatch = last.match(hashRe);

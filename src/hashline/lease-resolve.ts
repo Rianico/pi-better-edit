@@ -1,14 +1,14 @@
 /**
- * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5). Two lease paths, chosen by ONE predicate
- * (`isUniformLeaseFastPath`) and verified by ONE gate: the **fast path** (`S_from === C ∧ S_to === C ∧ S_from === S_to`) applies at the
- * served coordinates; the **dynamic rebase path** resolves each leased `line_id` in `line_lineage(C)` (on-demand `pairSnapshots`) and
- * applies at the rebased coordinate. Both run `verifyRebasedSpan` over the whole served window (#151, spec §3.5).
+ * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5). Two lease paths, chosen by ONE
+ * predicate (`isUniformLeaseFastPath`) and verified by ONE gate (`verifyRebasedSpan` over the whole window, #151): **fast**
+ * (`S_from === C ∧ S_to === C ∧ S_from === S_to`) applies at the served coordinates; **dynamic rebase** resolves each leased
+ * `line_id` in `line_lineage(C)` and applies at the rebased one.
  *
- * Fail-closed (never weakened): an unleased anchor, a retired/absent leased `line_id`, a coordinate that no longer carries the leased
- * identity, or an external insert/delete strictly inside the span all reject before any write, so a rejection leaves the file byte-identical.
- * INVARIANT (spec §3.1.1, §5.3, ADR-0016): a served anchor is never resolved by content; `apply.ts` routes EVERY edit with a lease
- * source here, so an unread interior line is accepted (ADR-0024) but a never-served BOUNDARY row stays fail-closed (`[E_STALE_RANGE]`).
- * OWNERSHIP: resolution is strictly READ-ONLY on `served_leases` (never re-stamps `line_id`, never writes `retired_at`); the authoritative retirement update belongs to materialization.
+ * Fail-closed (never weakened): an unleased anchor, a retired/absent leased `line_id`, a coordinate that no longer carries the
+ * leased identity, or an external insert/delete strictly inside the span all reject before any write — byte-identical file.
+ * INVARIANT: a served anchor is never resolved by content — docs/.archive_adrs/0016-content-addressed-line-identity-supersedes-healing.md.
+ * `apply.ts` routes every leased edit here, so an unread interior line is accepted but a never-served BOUNDARY row stays fail-closed.
+ * OWNERSHIP: resolution is READ-ONLY on `served_leases` — never re-stamps `line_id`, never writes `retired_at`; retirement belongs to materialization.
  */
 import {
   isUniformLeaseFastPath,
@@ -102,7 +102,8 @@ function throwUnknownOrForeign(args: {
  *
  * The caller (`apply.ts`) routes every edit that has a served mirror and a lease source here — a
  * boundary anchor with no lease is lost identity (`[E_STALE_ANCHOR]`), never a content question; a
- * never-served interior line between the anchors is accepted (ADR-0024) — it carries no identity to
+ * never-served interior line between the anchors is accepted
+ * (docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md) — it carries no identity to
  * verify, and only a never-served boundary row rejects `[E_STALE_RANGE]`.
  */
 export function resolveLeasedEdit(args: {
@@ -118,9 +119,8 @@ export function resolveLeasedEdit(args: {
   const fromLease = source.leaseFor(fromAnchor);
   const toLease = source.leaseFor(toAnchor);
 
-  // WHY: a boundary anchor with no lease for this file is never satisfied by content:
-  // WHY: the lookup is the edit's first step, so a colliding content anchor cannot stand
-  // WHY: in for the missing lease — that substitution is the silent rebind this seam removes.
+  // WHY: a boundary anchor with no lease for this file is never satisfied by content — the lookup is
+  // WHY: the edit's first step, so a colliding content anchor cannot stand in for it.
   if (!fromLease || !toLease) {
     throwUnknownOrForeign({
       edit,
@@ -134,15 +134,12 @@ export function resolveLeasedEdit(args: {
   const fromDecision = resolveLineIdentity(fromLease, source);
   const toDecision = resolveLineIdentity(toLease, source);
 
-  // WHY: a retired or identity-absent leased line has no coordinate to apply (spec §3.1.1
-  // WHY: line 89 / §5.3, stale-identity-reject-and-serve D1/D5/D6, ADR-0018 decisions 1-3). The
-  // WHY: boundary rule owns the payload: rows are served ONLY when the surviving bound is live
-  // WHY: AND unshifted (its rebased coordinate equals its served coordinate — evidence no shift
-  // WHY: occurred). That single case serves the named window as a fresh read with no retry hint,
-  // WHY: and the rows are leased through the normal seam so the model decides from them. Every
-  // WHY: other stale case carries no rows. The named coordinate is always lease-derived
-  // WHY: (`lease.servedLineNumber`); content placement never places a window and never names a
-  // WHY: coordinate for a retired bound (Probe P).
+  // WHY: a retired or identity-absent leased line has no coordinate to apply (spec §3.1.1 line 89, §5.3,
+  // WHY: `stale-identity-reject-and-serve` D1/D5/D6). Rows are served ONLY when the surviving bound is live
+  // WHY: AND unshifted — evidence no shift occurred — and then as a fresh read with no retry hint, leased
+  // WHY: through the normal seam so the model decides from them; every other stale case carries no rows.
+  // WHY: The named coordinate is always lease-derived (`servedLineNumber`), never content-placed (Probe P).
+  // Ref: docs/.archive_adrs/0018-region-scoped-rejection-serves.md
   if (fromDecision.kind === "stale" || toDecision.kind === "stale") {
     const fromLiveUnshifted =
       fromDecision.kind === "line" && fromDecision.line === fromLease.servedLineNumber;
@@ -159,8 +156,7 @@ export function resolveLeasedEdit(args: {
       const len = fileHashes.length;
       const startLine = Math.max(1, rawStart);
       const endLine = Math.min(len, rawEnd);
-      // WHY: collapsed-window guard: clamp to the file and fail closed when the named window
-      // WHY: collapses (e.g. served startLine 10 against a 4-line file) or misses the file.
+      // WHY: collapsed-window guard: clamp to the file and fail closed when the named window collapses or misses the file.
       if (len > 0 && startLine <= endLine && rawEnd >= 1 && rawStart <= len) {
         throw makeServedRejection({
           code: "E_UNVERIFIED_RANGE",
@@ -180,11 +176,8 @@ export function resolveLeasedEdit(args: {
     });
   }
 
-  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so a
-  // WHY: reversal is a property of the resolved lines of the `anchor_from`/`anchor_to`
-  // WHY: slot pair — the submitted `anchor_from` resolved after `anchor_to`. Swap the
-  // WHY: lines and fall through to the normal fast/rebased branching; the caller
-  // WHY: narrates the heal as `[W_REVERSED_ANCHORS]` from the returned `reversed` field.
+  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so a reversal is a
+  // WHY: property of the resolved slot pair — swap and fall through; the caller narrates the warning.
   let fromLine = fromDecision.line;
   let toLine = toDecision.line;
   const reversed: ReversedAnchorsHeal | undefined =
@@ -195,19 +188,17 @@ export function resolveLeasedEdit(args: {
     toLine = healed;
   }
 
-  // WHY: the served window is the lease's own record of where the two anchors were served: a
-  // WHY: unique mirror position is preferred, and the lease's `served_line_number` covers a serve
-  // WHY: whose mirror rows were truncated away — the lease outlives the mirror (spec §3.1.1).
+  // WHY: the lease is its own record of where the anchors were served: a unique mirror position is
+  // WHY: preferred, and `served_line_number` covers a serve whose mirror rows were truncated away.
   const fromServed = uniqueServedPosition(served, fromAnchor) ?? fromLease.servedLineNumber;
   const toServed = uniqueServedPosition(served, toAnchor) ?? toLease.servedLineNumber;
   const servedStart = Math.min(fromServed, toServed);
   const servedEnd = Math.max(fromServed, toServed);
 
-  // WHY: ONE gate for every leased span (#151, spec §3.5): the fast path is a rigid remap that
-  // WHY: happens to be the identity, so it runs the same per-line interior check — a served
-  // WHY: interior line whose lease is retired, unleased, or no longer living at its expected
-  // WHY: coordinate rejects here exactly as it does on the dynamically rebased path. The fast path
-  // WHY: used to lean on the mirror's anchor tier instead, which a same-anchor collision defeats:
+  // WHY: ONE gate for every leased span (#151, spec §3.5): the fast path is a rigid remap that happens
+  // WHY: to be the identity, so it runs the same per-line interior check — a served interior line whose
+  // WHY: lease is retired, unleased or no longer at its expected coordinate rejects here too. The fast
+  // WHY: path used to lean on the mirror's anchor tier instead, which a same-anchor collision defeats:
   // WHY: an anchor is a spelling, not an identity.
   verifyRebasedSpan({
     served,
@@ -220,16 +211,13 @@ export function resolveLeasedEdit(args: {
     rebasedLineOf: (lineId) => source.rebasedLineOf(lineId),
     ...(source.outlineFolds !== undefined ? { outlineFolds: source.outlineFolds } : {}),
   });
-  // WHY: the fast path is exactly the spec's predicate (spec §3.5):
-  // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
-  // WHY: lease_from.served_snapshot_hash === lease_to.served_snapshot_hash`. Content coordinates
-  // WHY: are NOT part of the qualification — a uniform-snapshot lease is authoritative about its own
-  // WHY: coordinate, so an ambiguous/duplicated canon can neither satisfy nor block it. Qualification
-  // WHY: alone no longer buys an unverified apply: the gate above already ran over the whole span.
+  // WHY: the fast path is exactly the spec's predicate (spec §3.5): `S_from === C ∧ S_to === C ∧
+  // WHY: S_from === S_to`. Content coordinates are NOT part of the qualification — a uniform-snapshot
+  // WHY: lease is authoritative about its own coordinate, so a duplicated canon neither satisfies nor
+  // WHY: blocks it; qualification alone buys no unverified apply, because the gate above already ran.
   if (isUniformLeaseFastPath(fromLease, toLease, source.currentSnapshotHash)) {
-    // WHY: the fast path applies at the served coordinates the lease itself names, so the edit is
-    // WHY: resolved here too — the caller must never fall back to content resolution for a served
-    // WHY: anchor (the mirror-only `valEdit` fallback this seam replaced).
+    // WHY: the fast path applies at the served coordinates the lease itself names, so the edit resolves
+    // WHY: here too — the caller must never fall back to content resolution for a served anchor.
     return {
       status: "fast",
       resolved: resolvedAt(edit, fileHashes, fromLine, toLine),

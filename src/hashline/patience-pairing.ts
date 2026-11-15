@@ -30,7 +30,7 @@ export interface PairingOptions {
   scanBudget?: number;
   /**
    * Whether to zip the unchanged, provably-forced prefix/suffix before the engine runs (default
-   * `true`; see ADR-0044). Diagnostic/test seam: the differential corpus in
+   * `true`; see docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md). Diagnostic/test seam: the differential corpus in
    * `test/hashline/patience-pairing.test.ts` compares this path against the full scan, which is
    * how the shortcut's result-equivalence is pinned.
    */
@@ -56,7 +56,7 @@ export function pairingScanBudget(prevCount: number, currCount: number): number 
 
 /**
  * The unchanged boundary runs whose pairs are FORCED, so they may be zipped without the engine
- * (ADR-0044).
+ * (docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md).
  *
  * WHY uniqueness is the safety condition: a canon that occurs exactly once in `prevLines` and
  * exactly once in `currLines` must be paired by every maximum-length alignment — skipping it would
@@ -385,11 +385,9 @@ export function computeLCSPaths(
       const diagonal = suffix[(i + 1) * stride + (j + 1)]!;
       const pKey = prevLines[pStart - 1 + i]!.canonHash;
       const cKey = currLines[cStart - 1 + j]!.canonHash;
-      // WHY: with `pairingCount[i][j] === 1` each step has exactly one pairing-optimal
-      // WHY: continuation, so this preference order reproduces *the* unique embedding. A canon
-      // WHY: match that preserves the optimum must be in it (a maximum path through that pair
-      // WHY: would otherwise be a second embedding), and when skipping both lines is optimal
-      // WHY: the unique embedding can only continue inside `(i + 1, j + 1)`.
+      // WHY: `pairingCount[i][j] === 1` leaves exactly one pairing-optimal continuation per step, so
+      // WHY: this preference order reproduces *the* unique embedding: a canon match that preserves the
+      // WHY: optimum must be on it, and a skip-both step can only continue inside `(i + 1, j + 1)`.
       if (pKey === cKey && diagonal + 1 === target) {
         pairs.push([pStart + i, cStart + j]);
         i++;
@@ -463,9 +461,8 @@ export function pairSnapshots(
         alignRecursive(pCursor, pEnd, cCursor, cEnd);
         return;
       }
-      // WHY: contested candidate pins leave the backbone empty. Recursing on identical
-      // WHY: bounds here would never shrink the interval; fall through to leaf handling
-      // WHY: instead so progress and the scan budget are both guaranteed.
+      // WHY: contested candidate pins leave the backbone empty, and recursing on identical bounds
+      // WHY: would never shrink the interval — fall through so progress and the scan budget survive.
     }
 
     const pCount = pEnd - pStart + 1;
@@ -502,10 +499,10 @@ export function pairSnapshots(
   if (boundaries.prefix === 0 && boundaries.suffix === 0) {
     alignRecursive(1, prevLines.length, 1, currLines.length);
   } else {
-    // WHY: (ADR-0044) the shortcut still charges the top-level interval the full scan would have
-    // WHY: charged, so an injected `scanBudget` keeps its pre-trim meaning: a budget too small for
-    // WHY: the whole interval pairs nothing, exactly as before. The middle is then aligned on its
-    // WHY: own and charged like any other sub-interval.
+    // WHY: the shortcut still charges the top-level interval the full scan would have charged, so an
+    // WHY: injected `scanBudget` keeps its pre-trim meaning: too small for the whole interval pairs
+    // WHY: nothing, exactly as before; the middle is charged like any other sub-interval.
+    // Ref: docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md
     const fullLength = prevLines.length + currLines.length;
     if (scanBudget < fullLength) return pairing;
     scanBudget -= fullLength;

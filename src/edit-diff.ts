@@ -124,9 +124,9 @@ function pushRemovedLines(
   }
   const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
   for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
-  // WHY: ADR-0024 — the model sees the deletion's head, tail, and exact size; the hidden rows still
-  // WHY: advance the cursor so every later row keeps its exact old line number and hash.
-  // WHY: #169 — the marker's count is the exact deleted span and uses the unified `lines deleted` diction.
+  // WHY: the model sees the deletion's head, tail, and exact size (#169's counted `lines deleted`);
+  // WHY: the hidden rows still advance the cursor, so every later row keeps its old number and hash.
+  // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
   output.push(` - ... [${omitted} lines deleted] ...`);
   oldLineNum.value += omitted;
   for (const line of displayLines.slice(-DIFF_REMOVED_EDGE)) emit(line);

@@ -30,7 +30,6 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
     content = await readFile(legacyPath, "utf-8");
   } catch (error: unknown) {
     if (errCode(error) === "ENOENT") return;
-    // WHY: best-effort legacy migration — read failures beyond ENOENT are ignored; migration is optional and fresh store remains valid, no caller depends on legacy data.
     reportDiagnostic("snapshot-store", "Failed to read legacy hash store for migration:", error);
     return;
   }
@@ -39,7 +38,6 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
   try {
     parsed = JSON.parse(content) as typeof parsed;
   } catch (error) {
-    // WHY: best-effort legacy migration — parse failures are ignored; corrupted legacy file is skipped and fresh hashing will repopulate, no caller depends on legacy data.
     reportDiagnostic(
       "snapshot-store",
       "Failed to parse legacy hash store, skipping migration:",
@@ -86,7 +84,7 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
   try {
     await rename(legacyPath, `${legacyPath}.bak`);
   } catch (error) {
-    // WHY: best-effort legacy cleanup — rename failure after successful migration is ignored; legacy file remains but next migration will be skipped due to valid snapshot state, no data loss.
+    // WHY: best-effort cleanup — the store is already migrated, so a surviving legacy file is never re-imported.
     reportDiagnostic(
       "snapshot-store",
       "Failed to rename legacy hash store after migration:",

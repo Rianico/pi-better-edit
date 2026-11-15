@@ -11,10 +11,6 @@ type RAnchor = {
   hashMatched: boolean;
 };
 
-// WHY: ---------------------------------------------------------------------------
-// WHY: Line-identity MVCC lease resolution (spec §3.1, §3.5)
-// WHY: ---------------------------------------------------------------------------
-
 /**
  * The immutable identity a session holds for one served anchor (spec §3.1.1). It is a plain view
  * over one `served_leases` row; the edit path only ever reads it.
@@ -50,8 +46,9 @@ export interface LeaseSpanSource {
   anchorHomes?(anchor: string): string[];
 
   /**
-   * Outline fold ranges hiding unserved lines for this file (tranche 3 fold-gate). Absent or
-   * empty means no outline coverage is recorded, and the span gate stays inert (ADR-0024).
+   * Outline fold ranges hiding unserved lines for this file (tranche 3 fold-gate). Absent or empty
+   * means no outline coverage is recorded, and the span gate stays inert — see
+   * docs/adr/0016-outline-mode-point-anchors.md decision 6.
    */
   outlineFolds?: readonly OutlineFoldRange[];
 }
@@ -110,14 +107,10 @@ export function resolveLineIdentity(
   lease: LeaseIdentityView,
   source: LeaseSpanSource,
 ): LineIdentityDecision {
-  // WHY: a dead lease can never be applied, and a live lease is authoritative about *where* its
-  // WHY: line is: content-derived anchors can be re-assigned to a colliding line in the new
-  // WHY: snapshot, but §7.1.5 forbids committing to any line whose `line_id` is not the leased one.
-  // WHY: `retired_at` is set -> `E_STALE_RANGE` even when the anchor string is gone from the content
-  // WHY: entirely (spec §3.1.1 line 89 / §5.3): the leased line was retired, so nothing has changed
-  // WHY: about *which* line identity is missing, only about whether it still has a coordinate.
-  // WHY: stale coordinates stay lease-derived only (`lease.servedLineNumber`): no content lookup
-  // WHY: ever names the headline or the window for a retired bound (stale-identity D5, Probe P).
+  // WHY: a live lease is authoritative about *where* its line is: content anchors can be re-assigned
+  // WHY: to a colliding line, and §7.1.5 forbids committing to any line whose `line_id` is not the
+  // WHY: leased one. A retired lease is `E_STALE_RANGE` even when its anchor string is gone from the
+  // WHY: content (spec §3.1.1 line 89 / §5.3); the stale coordinate stays lease-derived (Probe P).
   if (lease.retiredAt !== null) {
     return { kind: "stale", line: lease.servedLineNumber };
   }
@@ -178,8 +171,7 @@ export function uniqueServedPosition(
  */
 export type EditPlacement = "in-place" | "before" | "after";
 
-// WHY: bound to the union (§9.12): a list element outside `EditPlacement` fails `pnpm run typecheck`;
-// WHY: consumers must not re-enumerate the literals inline.
+// WHY: bound to the union (§9.12): a literal outside `EditPlacement` fails typecheck, so no consumer re-enumerates the spellings inline.
 const EDIT_PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly EditPlacement[];
 
 function isEditPlacement(value: unknown): value is EditPlacement {
@@ -266,8 +258,7 @@ function formatNotFound(
   if (notFound.length === 0) return;
   const distinct = [...new Map(notFound.map((m) => [m.ref.hash, m])).values()];
   const refList = distinct.map((m) => `"${m.ref.hash}"`).join(", ");
-  // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]`
-  // WHY: header when the caller wraps this in a `DomainError`.
+  // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]` header when the caller wraps this in a `DomainError`.
   out.push(
     `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
@@ -389,13 +380,11 @@ function assertItem(edit: Record<string, unknown>): void {
       message: `The edit requires "anchor_from" and "anchor_to" anchor strings (bare ${HASH_LEN}-char hashes from served output). Nothing was written.`,
     });
   }
-  // WHY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
-  // WHY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the
-  // WHY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.
-  // WHY: Keep it a refusal.
-  // WHY: the wire vocabulary appears on a library path on purpose: the internal field is
-  // WHY: `placement`, but `E_BAD_PAYLOAD` is MODEL tier — the retrying party acts on the wire
-  // WHY: name `at`, never on a field it never sent (sweep (a)).
+  // WHY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement value:
+  // WHY: `pipeline.ts` and `apply.ts` fall an unrecognized one through to the in-place path, which
+  // WHY: REMOVES the target span, and no `switch`/`assertNever` covers it. Keep it a refusal.
+  // WHY: The message names the wire `at`, not the internal `placement`, because `E_BAD_PAYLOAD` is MODEL
+  // WHY: tier and the retrying party never sent the internal field (sweep (a)).
   if ("placement" in edit && !isEditPlacement(edit.placement)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: `Field "at" must be ${placementSpellings()}. Nothing was written.`,
@@ -543,9 +532,8 @@ export function valEdit(
     }
     return { resolved: undefined, mismatches };
   }
-  // WHY: heal, then narrate (no `E_*` on a success): the content path heals the same
-  // WHY: way the lease seam does — anchors carry no order, so the swapped pair applies
-  // WHY: with the range swapped and the caller narrates `[W_REVERSED_ANCHORS]`.
+  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so the swapped pair
+  // WHY: applies with the range swapped and the caller narrates `[W_REVERSED_ANCHORS]`.
   if (startResolved.line > endResolved.line) {
     return {
       resolved: {
@@ -573,8 +561,9 @@ export function valEdit(
  * library-level `applyEdit` seam (tools embedding the resolver, unit tests of the pure anchor
  * algebra). A session edit never reaches this: `apply.ts` routes every edit that has a seam through
  * `resolveLeasedEdit`, so an anchor with no lease fails closed (`[E_STALE_ANCHOR]`) instead of being
- * satisfied by a colliding content anchor (spec §3.1.1, §5.3; ADR-0016 rejected "content equality as
- * a fallback when the lease is missing").
+ * satisfied by a colliding content anchor (spec §3.1.1, §5.3) — "keep content equality as a fallback
+ * when the lease is missing" was rejected in
+ * docs/.archive_adrs/0016-content-addressed-line-identity-supersedes-healing.md.
  */
 export function resolveEditByContent(
   edit: HEdit,
