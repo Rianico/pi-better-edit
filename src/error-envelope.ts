@@ -118,8 +118,7 @@ export function readEnvelope(source: unknown): ErrorEnvelope | undefined {
   if (typeof carrier.servedBlock === "string" && carrier.servedBlock.length > 0) {
     envelope.servedBlock = carrier.servedBlock;
   }
-  // WHY: the slot is single-purpose, so the same predicate gates the reader.
-  // WHY: A payload message under any other code is an untyped extra this reader refuses.
+  // WHY: the writer's own predicate gates the reader — a payload message under any other code is refused.
   const payloadMessage = carrier.payloadMessage;
   if (admitsPayloadMessage(envelope.code, payloadMessage)) {
     envelope.payloadMessage = payloadMessage;
@@ -156,7 +155,7 @@ export function attributePayloadSubject<T>(
   const envelope = readEnvelope(error);
   if (envelope?.code !== "E_BAD_PAYLOAD" || envelope.payloadMessage === undefined) return error;
   const rebuilt = new DomainError("E_BAD_PAYLOAD", { message: envelope.payloadMessage, subject });
-  // WHY: the rebuilt refusal keeps the routed envelope's diagnosis, rows and block intact.
+  // WHY: a bare rebuild would drop the rows and block the retry needs, so the routed envelope is re-attached.
   attachEnvelope(rebuilt, envelope);
   return rebuilt;
 }

@@ -142,8 +142,7 @@ export function saveBashViewConfig(
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `bash.view` is ours to set — an existing `$schema` is a deliberate editor-time
-  // WHY: choice and unknown top-level or `bash.*` keys belong to the user, so all of them survive.
+  // WHY: only `bash.view` is ours — the existing `$schema` and every other key belong to the user.
   updateConfigFile(path, (existing) => ({
     ...existing,
     bash: { ...(isRecord(existing.bash) ? existing.bash : {}), [BASH_VIEW_KEY]: mode },

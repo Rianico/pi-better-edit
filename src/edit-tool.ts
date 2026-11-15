@@ -54,7 +54,6 @@ export function createEditTool(): EditTool {
       // SAFETY: canonical is validated NormalizedEditRequest after assertReq — trusted inside boundary
       const result = await engineExecute(canonical as NormalizedEditRequest, ctx.cwd, {
         accessMode: constants.R_OK | constants.W_OK,
-        // WHY: signal is AbortSignal | undefined at pi boundary — runtime check via engine's abortIf
         ...(signal !== undefined ? { signal } : {}),
         sessionKey,
       });
@@ -65,16 +64,13 @@ export function createEditTool(): EditTool {
           details: unknown;
         };
       }
-      // WHY: every range-family producer emits `details.cause` (user-facing diagnosis) —
-      // WHY: carry it on the thrown error so callers catching the message still see the cause.
-      // WHY: the whole failure envelope (code, diagnosis, rows, block) is stamped through the
-      // WHY: envelope assembler (src/error-envelope.ts) — this seam never hand-copies fields.
+      // WHY: every range-family producer emits `details.cause`, and a caller that only catches the
+      // WHY: message still needs it — the envelope is assembled here, never hand-copied.
       const failure = new Error(result.message);
       attachEnvelope(failure, {
         code: result.code,
         ...(result.cause !== undefined ? { cause: result.cause } : {}),
-        // WHY: the raw payload message rides the envelope so the adapter can name the tool.
-        // WHY: The rendered message alone cannot say which call raised the refusal.
+        // WHY: `payloadMessage` lets the adapter name the tool; the rendered text cannot.
         ...(result.payloadMessage !== undefined ? { payloadMessage: result.payloadMessage } : {}),
         servedRows: result.servedRows ?? [],
         servedBlock: result.servedBlock ?? "",
@@ -85,9 +81,8 @@ export function createEditTool(): EditTool {
       try {
         const normalized = normReq(request);
         assertReq(normalized);
-        // WHY: (#165) preview verifies against the SAME session the anchors were served to —
-        // WHY: without a session, sessionKeyFor fails loud here instead of minting a key whose
-        // WHY: lease lookups all miss as a misleading E_UNKNOWN_ANCHOR.
+        // WHY: (#165) preview verifies against the session the anchors were served to; without one,
+        // WHY: sessionKeyFor fails loud here rather than minting a key whose lookups all miss as E_UNKNOWN_ANCHOR.
         // SAFETY: normalized is validated NormalizedEditRequest after assertReq
         const result = await enginePreview(normalized as NormalizedEditRequest, cwd, {
           accessMode: constants.R_OK,
@@ -103,9 +98,8 @@ export function createEditTool(): EditTool {
           };
         }
         return {
-          // WHY: #174 single projection — the engine's `preview` seam already produced the
-          // WHY: `genDiff` text with the pane's context; this display path renders it and
-          // WHY: never re-projects.
+          // WHY: #174 single projection — the engine's `preview` seam already rendered the `genDiff`
+          // WHY: text with the pane's context; this display path renders it and never re-projects.
           diff: result.diff,
         };
       } catch (error: unknown) {

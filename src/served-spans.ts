@@ -96,15 +96,13 @@ export function addServedSpanObserver(observer: ServedSpanObserver): () => void 
  */
 export function notifyServedSpans(notification: ServedSpanNotification): void {
   if (notification.spans.length === 0) return;
-  // WHY: a snapshot keeps this pass stable — an observer that subscribes or unsubscribes during
-  // WHY: fan-out must not change the recipient set mid-iteration.
+  // WHY: a snapshot — an observer subscribing or unsubscribing mid-pass must not change the recipients.
   const snapshot = observers.slice();
   for (const observer of snapshot) {
     try {
       observer(notification);
     } catch {
-      // WHY: observer isolation — a broken integration sink must never fail the read or edit
-      // WHY: that already served its rows, nor silence the remaining observers.
+      // WHY: swallowed by contract — isolation clause in `notifyServedSpans`'s docblock above.
     }
   }
 }

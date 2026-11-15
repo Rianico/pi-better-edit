@@ -49,15 +49,13 @@ export function addMutatedFileObserver(observer: MutatedFileObserver): () => voi
  * already landed.
  */
 export function notifyMutatedFile(notification: MutatedFileNotification): void {
-  // WHY: a snapshot keeps this pass stable — an observer that subscribes or unsubscribes during
-  // WHY: fan-out must not change the recipient set mid-iteration.
+  // WHY: a snapshot — an observer subscribing or unsubscribing mid-pass must not change the recipients.
   const snapshot = observers.slice();
   for (const observer of snapshot) {
     try {
       observer(notification);
     } catch {
-      // WHY: observer isolation — a broken integration sink must never fail the edit or write
-      // WHY: that already landed, nor silence the remaining observers.
+      // WHY: swallowed by contract — isolation clause in `notifyMutatedFile`'s docblock above.
     }
   }
 }

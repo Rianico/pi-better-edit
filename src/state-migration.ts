@@ -57,20 +57,17 @@ export function migrateLegacyState(report: (message: string) => void): void {
     // WHY: the marker, not a module flag — a re-pointed override (tests do this) must migrate its own
     // WHY: root, and the marker is what makes "already done" a fact about the DIRECTORY.
     if (existsSync(join(root, STATE_MIGRATION_MARKER))) return;
-    // WHY: the state root is created here (not by the caller) because the artifacts below have
-    // WHY: to land inside it; a failure is swallowed by the enclosing catch and surfaces later as
-    // WHY: the store open's own [E_ACCESS] refusal, which is where a caller can act on it.
+    // WHY: the root is created here, not by the caller, because the artifacts below have to land
+    // WHY: inside it; a failure surfaces later as the store open's own [E_ACCESS] refusal.
     mkdirSync(root, { recursive: true });
     const outcome: MigrationOutcome = { moveFailed: false };
     adoptArtifacts(root, report, outcome);
-    // WHY: the marker means "nothing is left to move". A failed move keeps it unwritten so the
-    // WHY: next session tries again; a completed copy counts as moved, and a failed DELETION is
-    // WHY: only reported — see the header for why that does not withhold the marker.
+    // WHY: a failed move keeps the marker unwritten so the next session retries; a completed
+    // WHY: cross-device copy counts as moved, and a failed deletion is only reported.
     if (!outcome.moveFailed) {
       writeFileSync(join(root, STATE_MIGRATION_MARKER), `${new Date().toISOString()}\n`, "utf-8");
     }
   } catch {
-    // WHY: best-effort by contract — the marker was not written, so the next call retries.
   } finally {
     running = false;
   }
@@ -157,8 +154,7 @@ function copyAcrossDevices(
   try {
     unlinkSync(from);
   } catch (error: unknown) {
-    // WHY: the destination holds the bytes, so the move's purpose is served and the stale source is
-    // WHY: inert history the destination wins over anyway.
+    // WHY: the destination holds the bytes, so the stale source is inert history it wins over.
     report(`copied ${from} → ${to} but left the original in place: ${reasonOf(error)}`);
     return;
   }

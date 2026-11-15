@@ -62,8 +62,7 @@ export function saveStoreJanitorConfig(
     patch[STORE_JANITOR_KEY_NAMES.batchSize] = settings.batchSize;
 
   const path = configFilePath(scope, cwd);
-  // WHY: only the keys named in `patch` are ours to set — the rest of `store` and every other
-  // WHY: top-level key belong to the user, so all of them survive the spread.
+  // WHY: only the keys in `patch` are ours — every other `store.*` and top-level key belongs to the user.
   updateConfigFile(path, (existing) => ({
     ...existing,
     store: { ...(isRecord(existing.store) ? existing.store : {}), ...patch },

@@ -153,10 +153,8 @@ function adoptRetiredConfig(
   for (const source of sources) {
     const retired = readConfigObject(source);
     if (retired === undefined) continue;
-    // WHY: the project scope skips the write BEFORE attempting it. The design promises the skip,
-    // WHY: so there is nothing to report: a warning here would be the same noise per session the
-    // WHY: skip exists to remove. The global scope keeps attempt-and-report, because a global
-    // WHY: destination that refuses the write means the user's settings were not carried over.
+    // WHY: the project skip is silent by design — a warning here would restore the per-session
+    // WHY: noise it removes; the global scope keeps attempt-and-report, a refused write losing settings.
     if (scope === "project" && !isWritable(dirname(newPath))) return retired;
     adoptSettings(newPath, retired, source, sources);
     return retired;
@@ -172,9 +170,8 @@ function adoptSettings(
 ): void {
   try {
     updateConfigFile(newPath, () => settings);
-    // WHY: the re-read — the atomic write is only as good as the file it leaves behind, and the
-    // WHY: rename below is irreversible for the retired source — a file that does not parse must
-    // WHY: not be marked as adopted.
+    // WHY: the re-read gates the rename — the rename is irreversible for the retired source, so a
+    // WHY: file that does not parse must not be marked as adopted.
     if (readConfigObject(newPath) === undefined) {
       throw new Error(`the adopted file does not parse: ${newPath}`);
     }
@@ -183,7 +180,6 @@ function adoptSettings(
     }
     reportInfo("json-config", `adopted settings ${source} → ${newPath}`);
   } catch (error: unknown) {
-    // WHY: the read side keeps working from the retired object; only the move is reported.
     reportWarning("json-config", `could not adopt settings ${source} → ${newPath}:`, error);
   }
 }
@@ -224,9 +220,6 @@ function readConfigObject(
   try {
     raw = readFileSync(path, "utf-8");
   } catch (error: unknown) {
-    // WHY: an absent config means "not configured", so the caller falls through the precedence
-    // WHY: ladder; any OTHER read failure is a file someone meant to be read, so a caller that
-    // WHY: cares is told while a caller that does not still reads it as "not configured".
     if (!isMissingFile(error)) onWarn?.(`cannot read config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -234,8 +227,7 @@ function readConfigObject(
   try {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
-    // WHY: a hand-edited file can be unparseable mid-write; reading it as "not configured" keeps
-    // WHY: the read total and lets the next save rewrite the file from the canonical shape.
+    // WHY: a hand-edited file can be caught unparseable mid-write — transient, not a reason to throw.
     onWarn?.(`cannot parse config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -266,9 +258,6 @@ export function updateConfigFile(
   const existing = readConfigObject(path) ?? {};
   const existingSchema = existing.$schema;
   const updated = update(existing);
-  // WHY: `$schema` is rebuilt FIRST and skipped out of the caller's object rather than spread and
-  // WHY: overwritten — the head of the written file is then the same for every writer, and only this
-  // WHY: seam decides the value.
   const next: Record<string, unknown> = {
     $schema:
       typeof existingSchema === "string" && existingSchema.length > 0
@@ -281,9 +270,7 @@ export function updateConfigFile(
 
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  // WHY: the temp file is a sibling of the target inside the directory just created (same
-  // WHY: filesystem), so renameSync replaces the target atomically; the pid suffix keeps
-  // WHY: concurrent writers from clobbering each other's staging file.
+  // WHY: the pid suffix keeps concurrent writers from clobbering each other's staging file.
   const tempPath = `${path}.tmp-${process.pid}`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
@@ -292,8 +279,7 @@ export function updateConfigFile(
     try {
       unlinkSync(tempPath);
     } catch {
-      // WHY: best-effort cleanup after a failed write — the original error is the actionable one,
-      // WHY: and an orphaned .tmp-<pid> sibling is inert.
+      // WHY: the orphaned .tmp-<pid> is inert and the write error is the actionable one.
     }
     throw error;
   }

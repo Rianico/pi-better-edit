@@ -47,7 +47,6 @@ interface DiagnosticRecord {
 
 /** `<stateRoot>/diagnostics.log` — the sibling of `hash-store.sqlite`. */
 export function diagnosticsLogPath(): string {
-  // WHY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
   return join(stateRoot(), DIAGNOSTICS_LOG_NAME);
 }
 
@@ -163,7 +162,6 @@ function appendRecord(line: string): void {
   // WHY: exists and the old one would be skipped forever, taking the pre-upgrade history with it.
   migrateLegacyState((message) => reportInfo("state-migration", message));
   const path = diagnosticsLogPath();
-  // WHY: mkdir of a path derived from the operator-owned state root with a constant suffix.
   mkdirSync(dirname(path), { recursive: true });
   rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
   appendFileSync(path, line, "utf-8");

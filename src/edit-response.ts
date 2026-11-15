@@ -241,7 +241,6 @@ export function buildChanged(input: SuccessInput): TResult {
     removedLines,
   });
   const denseServedRows = denseServeRows(resultHashes);
-  // WHY: the explicit `editMeta` range wins, else the rendered diff names it; either may be absent.
   const firstChangedLine = editMeta.firstChangedLine ?? diffResult.firstChangedLine;
   const lastChangedLine = editMeta.lastChangedLine ?? diffResult.lastChangedLine;
 
@@ -365,8 +364,6 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
   const summary = `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
-  // WHY: I4 (spec §5) — the model-visible text leads with the summary line, a blank line, then the
-  // WHY: collapsed anchored diff; `details.diff` stays the bare projection for TUI presentation.
   const text = modelText(summary, diff, warnings);
 
   return {
@@ -439,12 +436,8 @@ function indentOptions(message: string): string {
  */
 export function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
   const { error, index, path } = args;
-  // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
-  // WHY: so the wrapper must not render them a second time — one serve block per rejection.
-  // WHY: the inner `details.cause` (user-facing diagnosis) is preserved on the wrapper so a
-  // WHY: batched failure still emits it.
-  // WHY: the failing edit's pre-rendered serve block is forwarded too (spec D2): an atomic
-  // WHY: batch abort must preserve the serve block or the retry owes a re-read.
+  // WHY: one serve block per rejection — the inner rejection already rendered its rows under
+  // WHY: `Current range:`, and an atomic batch abort that lost the block would owe a re-read (D2).
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
       BATCH_ATOMICITY_TRAILER,
@@ -514,15 +507,11 @@ export function batchAbortForMany(args: {
  * `batchAbortForMany` instead so every malformed item is reported together.
  */
 export function wrapParseFailure(error: Error, index: number, path: string): Error {
-  // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
-  // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
-  // WHY: hunt for coordinate overlap.
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n${BATCH_ATOMICITY_TRAILER}`,
   );
-  // WHY: the wrapper carries the inner code and diagnosis through the envelope pair so the
-  // WHY: failure envelope keeps the code the model can act on. A parse failure carries no
-  // WHY: rows or block — only the two diagnostic slots are forwarded here.
+  // WHY: a parse failure forwards only the two diagnostic slots — no rows or block exist to
+  // WHY: carry, and dropping the code would cost the model the one it can act on.
   const { code, cause } = readEnvelope(error) ?? {};
   attachEnvelope(wrapped, {
     ...(code !== undefined ? { code } : {}),

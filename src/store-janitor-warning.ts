@@ -43,8 +43,7 @@ export function formatJanitorWarning(
 ): JanitorWarning | null {
   if (!outcome.ran) return null;
   if (outcome.deepCheckFailed || outcome.rebuilt) {
-    // WHY: damage wins over a failed compaction — a rebuild REPLACED the store, so pointing the
-    // WHY: operator at the old file's failed VACUUM would name the wrong event.
+    // WHY: damage outranks a failed compaction — a rebuild replaced the store, so the old VACUUM names the wrong event.
     return {
       level: "warn",
       lines: damageLines(outcome.rebuilt, options.logPath ?? diagnosticsLogPath()),

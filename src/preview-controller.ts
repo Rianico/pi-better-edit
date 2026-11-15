@@ -12,7 +12,6 @@ export interface PreviewHost {
 
 export type PreviewCompute = (args: unknown, cwd: string) => Promise<RPreview>;
 
-// WHY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class DebouncedPreview {
   constructor(
     private readonly compute: PreviewCompute,
@@ -33,10 +32,9 @@ export class DebouncedPreview {
     state.argsKey = argsKey;
     const previewGeneration = (state.previewGeneration ?? 0) + 1;
     state.previewGeneration = previewGeneration;
-    // WHY: (#168-class) the compute's session is bound at arm time: if the serving session
-    // WHY: changed before the timer fires, verifying these anchors against the new session
-    // WHY: would mint a false E_UNKNOWN_ANCHOR, so the stale compute is dropped (cancelled)
-    // WHY: and the next renderCall re-arms against the session that actually serves anchors.
+    // WHY: (#168-class) the compute's session is bound at arm time — if the serving session changed
+    // WHY: before the timer fires, verifying against the new one mints a false E_UNKNOWN_ANCHOR, so
+    // WHY: the stale compute is cancelled and the next renderCall re-arms against the real session.
     const armedSessionId = this.getSessionId?.();
     state.previewTimer = setTimeout(() => {
       delete state.previewTimer;
