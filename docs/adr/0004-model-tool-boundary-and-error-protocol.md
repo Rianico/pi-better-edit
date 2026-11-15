@@ -22,6 +22,7 @@ We will enforce a pure edit contract (`range = hash_bounds, replacement = text`)
    - `[E_STALE_RANGE]`: A line within the targeted span changed on disk. Rejects fail-closed and immediately serves current disk rows under the header `Current range (fresh read):` with fresh, valid leases. The model recovers in exactly 1 turn without calling `read`.
    - `[E_UNVERIFIED_RANGE]`: One boundary lease retired while the surviving bound is live and unshifted. Serves current rows under `Current range (fresh read):` ([`docs/.archive_adrs/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md`](../.archive_adrs/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)).
    - `[E_STALE_ANCHOR]`: A boundary anchor's content changed since it was served. Serves current rows for the window under the header `Current range:` ([`docs/.archive_adrs/0035-estaleanchor-remedy-status-supersedes-adr-0022-remedy.md`](../.archive_adrs/0035-estaleanchor-remedy-status-supersedes-adr-0022-remedy.md)).
+   - **Changed batch buffer**: when an earlier item of the same call has already changed the temporary working buffer, an `[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]` or `[E_STALE_ANCHOR]` raised for a later item (for example a `text_ref` copy of lines the earlier item rewrote) is served-or-absent, like a foreign-source refusal. Its rows come from a buffer the call has not committed as the current on-disk state and are not guaranteed current-file rows, so none are shown or recorded as served and none grant leases; the prior served record is preserved, and the headline names the current-file lines an anchored read would serve. Refusals against the on-disk baseline keep the reject-and-serve rows above.
    - `[E_TARGET_LOST]`: Target line identity deleted or reordered without stable bounds. Rejects rowless; recovery requires a fresh read.
    - `[E_UNKNOWN_ANCHOR]` / `[E_FOREIGN_ANCHOR]`: Submitted anchor has no lease in this session or belongs to another file. Rejects rowless.
    - `[E_SUSPICIOUS_TEXT]`: Replacement line reproduces an exact served row (`HASH│content`). Bounded served hash echo detection rejects fail-closed unless the caller supplies `mode: "literal"`.
@@ -41,6 +42,6 @@ We will enforce a pure edit contract (`range = hash_bounds, replacement = text`)
 
 ## Consequences
 
-- Stale span conflicts recover in exactly 1 turn with zero auxiliary `read` calls.
+- Stale span conflicts against the on-disk baseline recover in exactly 1 turn with zero auxiliary `read` calls; a refusal inside an already changed batch buffer names the anchored read it needs instead.
 - Pure edits prevent silent syntax corruption.
 - Structured, machine-actionable errors and warnings enable predictable model behavior across frontier LLMs.

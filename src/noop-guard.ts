@@ -93,6 +93,12 @@ export interface NoopPolicyInput {
   sessionKey: string;
   /** Committed `file_snapshots.snapshot_hash` of the served content; binds the served leases. */
   contentHash: string;
+  /**
+   * Present once an earlier item of a live batch has changed the working buffer: maps a buffer line
+   * to its pre-batch line. When present the noop-loop rejection's rows come from an uncommitted
+   * buffer and are shown and recorded only when absent.
+   */
+  baselineLineOf?: (bufferLine: number) => number | undefined;
 }
 
 export type NoopPolicyOutcome =
@@ -110,6 +116,34 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
   const count = trackNoopPayload(input.sessionKey, input.absolutePath, input.ref, payload);
 
   if (count >= NOOP_LOOP_THRESHOLD) {
+    const baselineLineOf = input.baselineLineOf;
+    // WHY: (rowless rule, same as the shifted-buffer rejections) once an earlier item of this batch
+    // WHY: changed the working buffer, the noop's rows come from an uncommitted buffer and are not
+    // WHY: guaranteed current-file rows: show none, record none, grant none. The single-item (or
+    // WHY: unchanged-buffer) case keeps serving the current on-disk rows.
+    if (baselineLineOf !== undefined) {
+      const currentLines = [input.range.startLine, input.range.endLine]
+        .map((line) => baselineLineOf(line))
+        .filter((line): line is number => line !== undefined);
+      const read =
+        currentLines.length > 0
+          ? `An anchored read of current-file lines ${Math.min(...currentLines)}-${Math.max(...currentLines)} would serve that range.`
+          : "None of these rows exist in the current file.";
+      const note =
+        "An earlier item of this call had already changed the temporary batch buffer, so this " +
+        `rejection shows no rows and none were recorded as served. ${read}`;
+      const error = new DomainError("E_NOOP_LOOP", {
+        ref: input.ref,
+        removeFrom: input.removeFrom,
+        removeTo: input.removeTo,
+        count,
+        batch: input.batch,
+        servedRows: [],
+        servedBlock: "",
+        note,
+      });
+      return { action: "reject", count, error };
+    }
     const servedRows = buildRangeServeRows(
       input.range.startLine,
       input.range.endLine,

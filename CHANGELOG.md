@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **edit:** walk the outline fold gate in served coordinates, so a body an anchored read has served stays editable after an earlier batch item changes the line count, and keep a rejection raised inside that changed batch buffer from recording its uncommitted-buffer rows as served. Such a rejection now shows no rows, says they grant no leases and names the current-file lines an anchored read would serve. Unread folded interiors are still refused. (#270)
+
+* **edit:** name a refusal raised inside a changed batch buffer in current-file coordinates only. Its headline, first offending line and bounded-read sentence no longer leak working-buffer numbers, an `E_UNVERIFIED_RANGE` arm keeps its served coordinates instead of double-mapping them, and a noop-loop rejection raised after an earlier item changed the buffer is served-or-absent too — no rows shown or recorded, no lease, prior served record kept. (#270)
+
 ## [2.18.0] - 2026-11-07
 
 ### Features

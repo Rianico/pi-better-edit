@@ -392,19 +392,22 @@ export function verifyRebasedSpan(args: {
   // WHY: that line is still unserved — the fold must never be silently erased. Single-line spans
   // WHY: (replacement or point insertion on a declaration anchor) have no interior and skip this gate.
   // WHY: The gate requires a mirror-null interior: a later served read that fills the folded lines
-  // WHY: disarms it, so only a shifting edit can misalign the recorded coordinates — and a misaligned
-  // WHY: range still fails closed, never erases. Absent or empty folds keep the gate inert (ADR-0024
+  // WHY: disarms it. Folds and the mirror are both recorded in served coordinates, so the interior is
+  // WHY: walked in that frame (`servedStart + k`), never in rebased coordinates: inside a batch an
+  // WHY: earlier size-changing item shifts the rebased span, and probing the mirror at rebased lines
+  // WHY: refused a fully served body over lines it never covered (the window-length check above
+  // WHY: already pins `servedLen === rebasedLen`, so the mapping is rigid). Absent or empty folds keep the gate inert (ADR-0024
   // WHY: interior acceptance is unchanged for non-outline reads, which record no folds).
   // WHY: `served-range staleness` is the diagnosis: the span no longer resolves against the served
   // WHY: record the session holds, and a re-read revives it — never a retry mandate (issue #149).
-  if (outlineFolds !== undefined && outlineFolds.length > 0 && rebasedEnd > rebasedStart) {
+  if (outlineFolds !== undefined && outlineFolds.length > 0 && servedEnd > servedStart) {
     for (const fold of outlineFolds) {
       const startLine = fold.startLine;
       const endLine = fold.endLine;
       if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || endLine < startLine)
         continue;
-      const overlapStart = Math.max(startLine, rebasedStart + 1);
-      const overlapEnd = Math.min(endLine, rebasedEnd - 1);
+      const overlapStart = Math.max(startLine, servedStart + 1);
+      const overlapEnd = Math.min(endLine, servedEnd - 1);
       if (overlapStart > overlapEnd) continue;
       let stillFolded = false;
       for (let line = overlapStart; line <= overlapEnd; line++) {
@@ -414,13 +417,17 @@ export function verifyRebasedSpan(args: {
         }
       }
       if (!stillFolded) continue;
+      // WHY: the diagnosis names current coordinates, like every other headline of this gate.
+      const shift = rebasedStart - servedStart;
+      const hiddenStart = overlapStart + shift;
+      const hiddenEnd = overlapEnd + shift;
       throw makeServedRejection({
         code: "E_STALE_RANGE",
-        headline: `line ${overlapStart}${overlapEnd > overlapStart ? `-${overlapEnd}` : ""}${where} is hidden by an outline fold (unserved).`,
+        headline: `line ${hiddenStart}${hiddenEnd > hiddenStart ? `-${hiddenEnd}` : ""}${where} is hidden by an outline fold (unserved).`,
         startLine: rebasedStart,
         endLine: rebasedEnd,
         snapshot,
-        firstOffendingLine: overlapStart,
+        firstOffendingLine: hiddenStart,
         cause: "served-range staleness",
       });
     }
