@@ -389,10 +389,10 @@ function assertItem(edit: Record<string, unknown>): void {
       message: `The edit requires "anchor_from" and "anchor_to" anchor strings (bare ${HASH_LEN}-char hashes from served output). Nothing was written.`,
     });
   }
-  // SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
-  // SAFETY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the
-  // SAFETY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.
-  // SAFETY: Keep it a refusal.
+  // WHY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
+  // WHY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the
+  // WHY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.
+  // WHY: Keep it a refusal.
   // WHY: the wire vocabulary appears on a library path on purpose: the internal field is
   // WHY: `placement`, but `E_BAD_PAYLOAD` is MODEL tier — the retrying party acts on the wire
   // WHY: name `at`, never on a field it never sent (sweep (a)).
@@ -421,7 +421,7 @@ function assertItem(edit: Record<string, unknown>): void {
   }
 }
 
-// SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, linear row prefix — bounded, no user input, no ReDoS.
+// WHY: HASH_CLASS is derived from the trusted alphabet at the configured width, linear row prefix — bounded, no user input, no ReDoS.
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 function firstHashFromBlock(block: string): string | undefined {
   for (const line of block.split("\n")) {

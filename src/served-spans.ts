@@ -59,8 +59,8 @@ export function servedRowsToSpans(rows: readonly ServedRow[]): ServedSpan[] {
   let runStart: number | undefined;
   let runCount = 0;
   for (const position of [...positions].sort((left, right) => left - right)) {
-    // SAFETY: an open run covers the half-open range [runStart, runStart + runCount - 1]; the
-    // SAFETY: next contiguous position in that run is therefore exactly runStart + runCount.
+    // WHY: an open run covers the half-open range [runStart, runStart + runCount - 1]; the
+    // WHY: next contiguous position in that run is therefore exactly runStart + runCount.
     if (runStart !== undefined && position === runStart + runCount) {
       runCount += 1;
       continue;
@@ -103,8 +103,8 @@ export function notifyServedSpans(notification: ServedSpanNotification): void {
     try {
       observer(notification);
     } catch {
-      // SAFETY: observer isolation — a broken integration sink must never fail the read or edit
-      // SAFETY: that already served its rows, nor silence the remaining observers.
+      // WHY: observer isolation — a broken integration sink must never fail the read or edit
+      // WHY: that already served its rows, nor silence the remaining observers.
     }
   }
 }

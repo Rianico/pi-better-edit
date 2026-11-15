@@ -568,7 +568,7 @@ export async function adoptStatSnapshotFor(
       try {
         store.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative.
+        // WHY: best-effort rollback — the original failure is authoritative.
         console.error("[snapshot-store] failed to rollback stat adoption:", rollbackError);
       }
       throw error;
@@ -699,7 +699,7 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
         `is expected to lapse as leases expire.`,
     );
   } catch {
-    // SAFETY: observability only — a broken diagnostic sink must never fail the caller.
+    // WHY: observability only — a broken diagnostic sink must never fail the caller.
   }
 }
 
@@ -825,7 +825,7 @@ function materializeSnapshot(
         try {
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
-          // SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
+          // WHY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
           reportDiagnostic(
             "snapshot-store",
             "[snapshot-store] failed to rollback transaction:",
@@ -860,8 +860,8 @@ function materializeSnapshot(
         });
         reportVacuumSoftOverflow(store.db, vacuumResult);
       } catch (error) {
-        // SAFETY: best-effort retention — the snapshot is committed and the tool result is valid; a
-        // SAFETY: missed pass only defers eviction to the next fresh commit or store open.
+        // WHY: best-effort retention — the snapshot is committed and the tool result is valid; a
+        // WHY: missed pass only defers eviction to the next fresh commit or store open.
         console.error("[snapshot-store] vacuum failed:", error);
       }
     }
@@ -914,7 +914,7 @@ function materializeBatch(
         try {
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
-          // SAFETY: best-effort rollback — the original failure is authoritative.
+          // WHY: best-effort rollback — the original failure is authoritative.
           reportDiagnostic(
             "snapshot-store",
             "[snapshot-store] failed to rollback batch transaction:",
@@ -943,8 +943,8 @@ function materializeBatch(
         const vacuumResult = vacuumSnapshots(store.db, { protectSnapshotIds: snapshotIds });
         reportVacuumSoftOverflow(store.db, vacuumResult);
       } catch (error) {
-        // SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed
-        // SAFETY: pass only defers eviction to the next fresh commit or store open.
+        // WHY: best-effort retention — the batch is committed and the tool result is valid; a missed
+        // WHY: pass only defers eviction to the next fresh commit or store open.
         console.error("[snapshot-store] vacuum failed:", error);
       }
     }

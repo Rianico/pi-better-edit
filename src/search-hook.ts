@@ -29,8 +29,8 @@ export function registerSearchHook(pi: ExtensionAPI): void {
       if (rewritten === command) return;
       input.command = rewritten;
     } catch {
-      // SAFETY: interception is an optimisation, never a gate — a classifier fault leaves the
-      // SAFETY: original command and the original raw bash output untouched.
+      // WHY: interception is an optimisation, never a gate — a classifier fault leaves the
+      // WHY: original command and the original raw bash output untouched.
     }
   });
 }

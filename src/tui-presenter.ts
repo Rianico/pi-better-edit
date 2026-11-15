@@ -53,10 +53,10 @@ function makeRenderCall(preview: DebouncedPreview) {
     // SAFETY: pi TUI renderCall expects untyped context — cast isolates to adapter, validated by pi's runtime context shape
     preview.renderCall(ctx as unknown as Parameters<DebouncedPreview["renderCall"]>[0], args);
     const text = (ctx.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-    // SAFETY: pi context carries untyped state/expanded — cast to RRState/boolean narrowed by getPreviewInput and theme contract
     text.setText(
       fmtCall(
         getPreviewInput(args),
+        // SAFETY: pi context carries untyped state/expanded — cast to RRState/boolean narrowed by getPreviewInput and theme contract
         (ctx as unknown as { state: RRState }).state as RRState,
         (ctx as unknown as { expanded: boolean }).expanded,
         theme as never,

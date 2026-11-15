@@ -42,7 +42,7 @@ export interface ProviderFailureLogEntry {
 
 /** `<stateRoot>/selection-range.log` — a sibling of `diagnostics.log`. */
 export function selectionRangeLogPath(): string {
-  // SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
+  // WHY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
   return join(stateRoot(), SELECTION_RANGE_LOG_NAME);
 }
 
@@ -61,8 +61,8 @@ function adoptRetiredLogName(): void {
     try {
       renameSync(from, to);
     } catch {
-      // SAFETY: best effort — the append this precedes still succeeds, and the old pair stays
-      // SAFETY: readable under its retired name, which is a worse report than a moved one.
+      // WHY: best effort — the append this precedes still succeeds, and the old pair stays
+      // WHY: readable under its retired name, which is a worse report than a moved one.
     }
   }
 }
@@ -98,13 +98,13 @@ function appendRecord(fields: Record<string, unknown>): void {
       ...fields,
     })}\n`;
     const path = selectionRangeLogPath();
-    // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
+    // WHY: mkdir of a path derived from the operator-owned state root with a constant suffix.
     mkdirSync(dirname(path), { recursive: true });
     adoptRetiredLogName();
     rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
     appendFileSync(path, line, "utf-8");
   } catch {
-    // SAFETY: best effort — the read already served its rows (see the module WHY).
+    // WHY: best effort — the read already served its rows (see the module WHY).
   }
 }
 
@@ -114,7 +114,7 @@ function rotateIfOversize(path: string, incomingBytes: number): void {
   try {
     current = statSync(path).size;
   } catch {
-    // SAFETY: an absent log is the first-run state, not a fault.
+    // WHY: an absent log is the first-run state, not a fault.
     return;
   }
   if (current + incomingBytes <= SELECTION_RANGE_LOG_MAX_BYTES) return;

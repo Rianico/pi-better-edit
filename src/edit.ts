@@ -69,10 +69,10 @@ export function buildToolDef(
   const parameters = editToolSchema;
   const tool = createEditTool();
   const presenter = createTuiPresenter(
-    // SAFETY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview
-    // SAFETY: drops the compute if the serving session changed between arming and firing.
+    // WHY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview
+    // WHY: drops the compute if the serving session changed between arming and firing.
     (req, cwd) => {
-      // SAFETY: the fire-time read stays inside the call so the ctx names the session serving anchors now.
+      // WHY: the fire-time read stays inside the call so the ctx names the session serving anchors now.
       const sessionManager = getSessionManager?.();
       return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
     },
@@ -95,13 +95,13 @@ export function buildToolDef(
       }
     },
     renderShell: "default",
-    // SAFETY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
+    // WHY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
       try {
         const res = await tool.execute(
           params,
+          // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
           signal as AbortSignal | undefined,
           // SAFETY: ctx is untyped at the pi boundary — cast validated by pi's runtime shape
           ctx as unknown as {

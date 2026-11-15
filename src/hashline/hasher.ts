@@ -1,4 +1,4 @@
-// SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
+// WHY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import xxhash from "xxhash-wasm";
 import { reportDiagnostic } from "../diagnostics.js";
 
@@ -9,7 +9,7 @@ export type Hasher = {
 
 let hasher: Hasher | null = null;
 
-// SAFETY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.
+// WHY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.
 function getH(): Hasher {
   if (hasher) return hasher;
   throw new Error(

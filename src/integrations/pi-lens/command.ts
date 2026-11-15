@@ -167,7 +167,7 @@ function notify(
   // WHY: the only legitimate stdout write left in the extension — `hasUI === false` means print or
   // WHY: json mode, where no renderer owns the terminal and stdout is the channel that reaches the
   // WHY: caller. The TUI branch above returns before this line, so a live frame is never touched.
-  // SAFETY: the message carries the command's entire output and there is no other channel in these modes.
+  // WHY: the message carries the command's entire output and there is no other channel in these modes.
   console.log(message);
 }
 
@@ -560,8 +560,8 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           await handleLens(args, ctx);
         }
       } catch (error: unknown) {
-        // SAFETY: a command handler must never reject into the host's event loop — the failure is
-        // SAFETY: reported to the user and the command ends.
+        // WHY: a command handler must never reject into the host's event loop — the failure is
+        // WHY: reported to the user and the command ends.
         if (error instanceof DomainError) {
           // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope built for the model
           // WHY: and host channels, not a sentence for the operator, so the envelope goes to the log

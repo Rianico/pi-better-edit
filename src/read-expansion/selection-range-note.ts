@@ -222,7 +222,7 @@ async function lookup(
       input.timeoutMs ?? NOTE_LOOKUP_TIMEOUT_MS,
     );
   } catch {
-    // SAFETY: a throwing or hanging provider must never fail a read; the note is a best effort.
+    // WHY: a throwing or hanging provider must never fail a read; the note is a best effort.
     return { failure: { source, reason: "provider_error" } };
   }
   if (answer === TIMED_OUT) return { failure: { source, reason: "provider_error" } };

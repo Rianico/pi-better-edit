@@ -78,7 +78,7 @@ export function withQualifiedNames(
             }
           }
         } catch {
-          // SAFETY: enrichment is advisory; any resolver failure leaves the parser label intact.
+          // WHY: enrichment is advisory; any resolver failure leaves the parser label intact.
         }
       }
       return { spans };

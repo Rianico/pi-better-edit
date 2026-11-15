@@ -66,7 +66,7 @@ const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
 const DIGIT_CHARS = ALPHA.split("").filter((c) => c >= "0" && c <= "9");
 const RESERVED_HASH_SPELLINGS = DIGIT_CHARS.length ** HASH_LEN;
 export const USABLE_HASH_SPACE = HASH_SPACE - RESERVED_HASH_SPELLINGS;
-// SAFETY: fixed digit set from the trusted alphabet at the configured width, no user input, linear character class, no ReDoS.
+// WHY: fixed digit set from the trusted alphabet at the configured width, no user input, linear character class, no ReDoS.
 export const DIGIT_ANCHOR_RE = new RegExp(`^[${DIGIT_CHARS.join("")}]{${HASH_LEN}}$`);
 // WHY: the reservation is a fixed pre-set bit mask, so allocation still derives
 // WHY: the base index from content and identical content keeps identical anchors.
@@ -209,7 +209,7 @@ function contentBaseIndex(line: string): number {
 export function fileBaseIndex(line: string, pathSeed: number): number {
   return (xxh32(line, pathSeed) >>> 0) % HASH_SPACE;
 }
-// SAFETY: large-class — HashIdentity owns hash allocation and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
+// WHY: large-class — HashIdentity owns hash allocation and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 // WHY: the hashCache bound is the served admission budget (SERVED_MAX_LINES),
 // WHY: not an arbitrary number: every product materialization is hard-capped at one
 // WHY: budget per call by the throwing lines clamp (src/file-content/loader.ts:91-100,
@@ -519,7 +519,7 @@ export class HashIdentity {
       try {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
-        // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
+        // WHY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
         reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
@@ -568,7 +568,7 @@ export class HashIdentity {
             upsertOptions,
           );
         } catch (error) {
-          // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
+          // WHY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
           reportDiagnostic("hashline", "Failed to persist hash snapshot:", error);
         }
       }
@@ -580,7 +580,7 @@ export class HashIdentity {
       try {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
-        // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
+        // WHY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
         reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
@@ -600,7 +600,7 @@ export class HashIdentity {
             upsertOptions,
           );
         } catch (error) {
-          // SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
+          // WHY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
           reportDiagnostic("hashline", "Failed to re-adopt hash snapshot:", error);
         }
       }
@@ -619,7 +619,7 @@ export class HashIdentity {
           upsertOptions,
         );
       } catch (error) {
-        // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
+        // WHY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
         reportDiagnostic("hashline", "Failed to persist hash snapshot:", error);
       }
     }

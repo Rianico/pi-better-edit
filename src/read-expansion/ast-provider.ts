@@ -287,7 +287,7 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
     try {
       return await runtimeAvailable();
     } catch {
-      // SAFETY: an unresolvable optional module is an absent runtime, not a read failure.
+      // WHY: an unresolvable optional module is an absent runtime, not a read failure.
       return false;
     }
   };
@@ -336,7 +336,7 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
           },
         };
       } catch {
-        // SAFETY: load failures are the same answer as no boundary; the read stays exact.
+        // WHY: load failures are the same answer as no boundary; the read stays exact.
         return { kind: "decline", decline: decline("grammar_unavailable", language) };
       }
     })();
@@ -428,7 +428,7 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
           tree.delete?.();
         }
       } catch {
-        // SAFETY: a symbol-free or unparseable file yields an empty list, never a throw.
+        // WHY: a symbol-free or unparseable file yields an empty list, never a throw.
         return [];
       }
     },

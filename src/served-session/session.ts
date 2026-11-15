@@ -386,9 +386,9 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     servedExpiredExists: (updatedBefore) =>
       servedExpiredExistsStmt.get(updatedBefore) !== undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     snapshotByHash: (path: string, snapshotHash: string) =>
       snapshotByHashStmt.get(path, snapshotHash, ANCHOR_GENERATION) as LeaseSnapshot | undefined,
-    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageForLines: (snapshotId, lineNumbers) => {
       const rows: LeaseLineageRow[] = [];
       for (let i = 0; i < lineNumbers.length; i += LINEAGE_PAGE_CHUNK) {
@@ -531,8 +531,8 @@ export function ensureServedSchema(db: DatabaseSync): void {
       db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
     }
   } catch (error) {
-    // SAFETY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;
-    // SAFETY: the store open still succeeds and later reads re-attempt the additive migration.
+    // WHY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;
+    // WHY: the store open still succeeds and later reads re-attempt the additive migration.
     reportDiagnostic("served-session", "Failed to migrate served schema:", error);
   }
 }
@@ -820,8 +820,8 @@ function grantLeasesForRows(
   try {
     grantLeasesInTransaction(store.db, sessionKey, path, rows, contentHash);
   } catch (error) {
-    // SAFETY: best-effort lease grant — serves are already recorded and the tool result is valid;
-    // SAFETY: a missed lease degrades to the fail-closed path the next edit would take anyway.
+    // WHY: best-effort lease grant — serves are already recorded and the tool result is valid;
+    // WHY: a missed lease degrades to the fail-closed path the next edit would take anyway.
     reportDiagnostic("served-session", "Failed to grant served leases:", error);
   }
 }

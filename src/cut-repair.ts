@@ -164,8 +164,8 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
   try {
     intents = listCutIntents(resolved);
   } catch (error) {
-    // SAFETY: repair is best-effort durability cleanup — a store that will not answer the scan
-    // SAFETY: leaves every intent in place for the next run; the edit that triggered it proceeds.
+    // WHY: repair is best-effort durability cleanup — a store that will not answer the scan
+    // WHY: leaves every intent in place for the next run; the edit that triggered it proceeds.
     reportDiagnostic("cut-repair", "[cut-repair] failed to list cut intents:", error);
     return;
   }
@@ -173,8 +173,8 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
     try {
       await repairOne(resolved, intent.txnId, intent.targetPath, intent.direction);
     } catch (error) {
-      // SAFETY: one unresolvable intent must not abort the scan or the triggering edit; the
-      // SAFETY: intent stays, which is exactly the "keep the question open" resolution.
+      // WHY: one unresolvable intent must not abort the scan or the triggering edit; the
+      // WHY: intent stays, which is exactly the "keep the question open" resolution.
       reportDiagnostic("cut-repair", `[cut-repair] intent ${intent.txnId} left in place:`, error);
     }
   }

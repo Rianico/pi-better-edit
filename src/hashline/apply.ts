@@ -476,15 +476,15 @@ export function applyEdit(
     }
     // WHY: materialize before the evidence scan so every gate runs on the lines that will be
     // WHY: written (invariant 9): copied and hand-written text are the same kind of input.
-    // SAFETY: (ticket-02c AP4 ledger) no fail-closed guard stands here for a degenerate/empty
-    // SAFETY: retirement (the deleted `slice(s1 - 1, s2).length === 0` throw): no input reaches
-    // SAFETY: it. Both resolution seams heal a reversed pair before returning (`valEdit` in
-    // SAFETY: `resolve.ts` swaps when the resolved lines cross, `resolveLeasedEdit` swaps too),
-    // SAFETY: so `s1 <= s2`; and resolved coordinates only ever name lines this buffer has —
-    // SAFETY: content resolution reads `fileHashes`, the lease seam rebases `line_id`s through
-    // SAFETY: current-content positions and `verifyRebasedSpan` refuses anything else with
-    // SAFETY: `E_STALE_RANGE`. Hence `s2 <= fileLines.length` and the slice is never empty
-    // SAFETY: (suite-wide instrumentation at 67a5812: 6,346 source-arm executions, 0 degenerate).
+    // WHY: (ticket-02c AP4 ledger) no fail-closed guard stands here for a degenerate/empty
+    // WHY: retirement (the deleted `slice(s1 - 1, s2).length === 0` throw): no input reaches
+    // WHY: it. Both resolution seams heal a reversed pair before returning (`valEdit` in
+    // WHY: `resolve.ts` swaps when the resolved lines cross, `resolveLeasedEdit` swaps too),
+    // WHY: so `s1 <= s2`; and resolved coordinates only ever name lines this buffer has —
+    // WHY: content resolution reads `fileHashes`, the lease seam rebases `line_id`s through
+    // WHY: current-content positions and `verifyRebasedSpan` refuses anything else with
+    // WHY: `E_STALE_RANGE`. Hence `s2 <= fileLines.length` and the slice is never empty
+    // WHY: (suite-wide instrumentation at 67a5812: 6,346 source-arm executions, 0 degenerate).
     resolved.content_lines = lineIndex.fileLines.slice(s1 - 1, s2);
   }
 

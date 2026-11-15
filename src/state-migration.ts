@@ -57,20 +57,20 @@ export function migrateLegacyState(report: (message: string) => void): void {
     // WHY: the marker, not a module flag — a re-pointed override (tests do this) must migrate its own
     // WHY: root, and the marker is what makes "already done" a fact about the DIRECTORY.
     if (existsSync(join(root, STATE_MIGRATION_MARKER))) return;
-    // SAFETY: the state root is created here (not by the caller) because the artifacts below have
-    // SAFETY: to land inside it; a failure is swallowed by the enclosing catch and surfaces later as
-    // SAFETY: the store open's own [E_ACCESS] refusal, which is where a caller can act on it.
+    // WHY: the state root is created here (not by the caller) because the artifacts below have
+    // WHY: to land inside it; a failure is swallowed by the enclosing catch and surfaces later as
+    // WHY: the store open's own [E_ACCESS] refusal, which is where a caller can act on it.
     mkdirSync(root, { recursive: true });
     const outcome: MigrationOutcome = { moveFailed: false };
     adoptArtifacts(root, report, outcome);
-    // SAFETY: the marker means "nothing is left to move". A failed move keeps it unwritten so the
-    // SAFETY: next session tries again; a completed copy counts as moved, and a failed DELETION is
-    // SAFETY: only reported — see the header for why that does not withhold the marker.
+    // WHY: the marker means "nothing is left to move". A failed move keeps it unwritten so the
+    // WHY: next session tries again; a completed copy counts as moved, and a failed DELETION is
+    // WHY: only reported — see the header for why that does not withhold the marker.
     if (!outcome.moveFailed) {
       writeFileSync(join(root, STATE_MIGRATION_MARKER), `${new Date().toISOString()}\n`, "utf-8");
     }
   } catch {
-    // SAFETY: best-effort by contract — the marker was not written, so the next call retries.
+    // WHY: best-effort by contract — the marker was not written, so the next call retries.
   } finally {
     running = false;
   }

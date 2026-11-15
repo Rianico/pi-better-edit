@@ -54,7 +54,7 @@ export function createEditTool(): EditTool {
       // SAFETY: canonical is validated NormalizedEditRequest after assertReq — trusted inside boundary
       const result = await engineExecute(canonical as NormalizedEditRequest, ctx.cwd, {
         accessMode: constants.R_OK | constants.W_OK,
-        // SAFETY: signal is AbortSignal | undefined at pi boundary — runtime check via engine's abortIf
+        // WHY: signal is AbortSignal | undefined at pi boundary — runtime check via engine's abortIf
         ...(signal !== undefined ? { signal } : {}),
         sessionKey,
       });
@@ -85,10 +85,10 @@ export function createEditTool(): EditTool {
       try {
         const normalized = normReq(request);
         assertReq(normalized);
-        // SAFETY: normalized is validated NormalizedEditRequest after assertReq
         // WHY: (#165) preview verifies against the SAME session the anchors were served to —
         // WHY: without a session, sessionKeyFor fails loud here instead of minting a key whose
         // WHY: lease lookups all miss as a misleading E_UNKNOWN_ANCHOR.
+        // SAFETY: normalized is validated NormalizedEditRequest after assertReq
         const result = await enginePreview(normalized as NormalizedEditRequest, cwd, {
           accessMode: constants.R_OK,
           sessionKey: sessionKeyFor(ctx),

@@ -15,7 +15,7 @@ interface SnapshotStore {
   allPaths(): Array<{ path: string }>;
 }
 
-// SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
+// WHY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class SQLiteSnapshotStore implements SnapshotStore {
   constructor(private readonly db: DatabaseSync) {}
 
@@ -79,7 +79,7 @@ type SnapshotRow = {
   updatedAt: number;
 };
 
-// SAFETY: large-class — in-memory store mirrors SQLite shape for test isolation; cohesive and not split.
+// WHY: large-class — in-memory store mirrors SQLite shape for test isolation; cohesive and not split.
 export class MemorySnapshotStore implements SnapshotStore {
   private readonly data = new Map<string, SnapshotRow>();
   private readonly extraPaths = new Set<string>();

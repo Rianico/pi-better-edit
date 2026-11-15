@@ -12,7 +12,7 @@ export interface PreviewHost {
 
 export type PreviewCompute = (args: unknown, cwd: string) => Promise<RPreview>;
 
-// SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
+// WHY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class DebouncedPreview {
   constructor(
     private readonly compute: PreviewCompute,

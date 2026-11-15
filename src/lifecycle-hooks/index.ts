@@ -467,7 +467,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     try {
       await deps.recordDiffServes(input);
     } catch (error) {
-      // SAFETY: best-effort serve recording — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
+      // WHY: best-effort serve recording — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
       reportDiagnostic("lifecycle-hooks", "Failed to record served rows:", error);
     }
   }
@@ -479,7 +479,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     try {
       await deps.pruneMissingAll();
     } catch (err) {
-      // SAFETY: best-effort startup cleanup — pruneMissingAll failures are ignored; hash store remains usable and stale entries will be retried next startup, no user data loss.
+      // WHY: best-effort startup cleanup — pruneMissingAll failures are ignored; hash store remains usable and stale entries will be retried next startup, no user data loss.
       reportDiagnostic("lifecycle-hooks", "Failed to load or prune hash store:", err);
     }
     const debugValue = process.env.PI_HASHLINE_DEBUG;
@@ -498,7 +498,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       try {
         await deps.clearUndo(await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)));
       } catch (error) {
-        // SAFETY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.
+        // WHY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.
         reportDiagnostic("lifecycle-hooks", "Failed to clear undo after write:", error);
       }
     }
@@ -614,7 +614,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       try {
         clearServedRefusals(sessionKey, absolutePath);
       } catch {
-        // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
+        // WHY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
       }
       // WHY: the auto-read is a whole-file page, so its header states the file's total (and, when the
       // WHY: byte budget cut it, where it stopped) — the same grammar the read tool uses (read-chrome).
@@ -918,7 +918,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               pos += consumed.length;
             }
           } catch {
-            // fall through to partial halt below (SAFETY: never break the view).
+            // WHY: fall through to partial halt below — a failed render must never break the view.
           }
           dbg("done", { renderedBlocks, pos, len: observed.length });
           if (renderedBlocks === 0) return undefined;
@@ -1166,7 +1166,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           const sliceLines: string[] = [];
           for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
           const joinedSlice = sliceLines.join("\n");
-          // D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
+          // WHY: D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
           // WHY: implements D9's symmetric CRLF/BOM normalization here; D1's
           // WHY: `;`-chain gate lives in the classifier.
           const observedText = toLF(stripBOM(stdoutText).text);
@@ -1272,8 +1272,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       }
       return await renderDecision(conversion);
     } catch (error) {
-      // SAFETY: every failure returns undefined so the original bash output reaches
-      // SAFETY: the model untouched — interception must never break a view.
+      // WHY: every failure returns undefined so the original bash output reaches
+      // WHY: the model untouched — interception must never break a view.
       // WHY: the three-way split — a DomainError code means the file the shell just read is no
       // WHY: longer statable/readable (deleted, chmod, rotating symlink); that is expected in a live
       // WHY: workspace and the view already passes through, so it must not read as a defect, while
@@ -1358,7 +1358,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               if (resolved.size > 1) return true;
             }
           } catch {
-            // SAFETY: an unresolvable prefix is not a file, therefore not admitted — skip.
+            // WHY: an unresolvable prefix is not a file, therefore not admitted — skip.
           }
         }
         idx = raw.indexOf(":", idx + 1);
@@ -1940,8 +1940,8 @@ export function registerLifecycleHooks(
 ): ReturnType<typeof createLifecycleHooks> {
   const hooks = createLifecycleHooks(overrides);
   // SAFETY: ExtensionAPI on() typed for known events — string-key widening validated by lifecycle hook contract
+  // SAFETY: string-key widening for session_start
   (pi as unknown as { on: (e: string, h: unknown) => void }).on(
-    // SAFETY: string-key widening for session_start
     "session_start",
     // SAFETY: onSessionStart handler tuple overload — cast to never validated by handleSessionStart signature
     hooks.onSessionStart as unknown as never,

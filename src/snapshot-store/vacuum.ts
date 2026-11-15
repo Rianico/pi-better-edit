@@ -223,7 +223,7 @@ function deleteVacuumSnapshots(db: DatabaseSync, snapshotIds: number[]): void {
       try {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
+        // WHY: best-effort rollback — the original failure is authoritative and must not be masked.
         reportDiagnostic(
           "snapshot-store",
           "[snapshot-store] failed to rollback vacuum transaction:",

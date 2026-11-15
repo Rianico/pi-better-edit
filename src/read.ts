@@ -363,10 +363,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
-    // SAFETY: the builtin renderers are keyed on `file_path ?? path` plus `offset`/`limit`;
-    // SAFETY: projectReadRenderArgs derives the path from the flat `file` (D4) and the range
-    // SAFETY: from a single simple window, without mutating the caller's `args`. Multi-window reads
-    // SAFETY: get their count appended below — the builtin has no chrome for them.
     renderCall: (args: ReadRenderArgs, theme, context) => {
       const projected = projectReadRenderArgs(args);
       const lastComponent = context.lastComponent;
@@ -799,9 +795,9 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             await upsertSnapshotsFor(enrollments);
           }
         } catch (error) {
-          // SAFETY: best-effort post-read materialization — the preview rows are already computed
-          // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
-          // SAFETY: to the fail-closed path the next edit would take anyway.
+          // WHY: best-effort post-read materialization — the preview rows are already computed
+          // WHY: and the served mirror below still records them; a missed snapshot/lease degrades
+          // WHY: to the fail-closed path the next edit would take anyway.
           reportDiagnostic("read", "Failed to commit read-path snapshot materialization:", error);
         }
         for (const entry of servedEntries) {

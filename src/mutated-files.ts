@@ -56,8 +56,8 @@ export function notifyMutatedFile(notification: MutatedFileNotification): void {
     try {
       observer(notification);
     } catch {
-      // SAFETY: observer isolation — a broken integration sink must never fail the edit or write
-      // SAFETY: that already landed, nor silence the remaining observers.
+      // WHY: observer isolation — a broken integration sink must never fail the edit or write
+      // WHY: that already landed, nor silence the remaining observers.
     }
   }
 }

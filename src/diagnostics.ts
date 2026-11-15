@@ -47,7 +47,7 @@ interface DiagnosticRecord {
 
 /** `<stateRoot>/diagnostics.log` — the sibling of `hash-store.sqlite`. */
 export function diagnosticsLogPath(): string {
-  // SAFETY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
+  // WHY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
   return join(stateRoot(), DIAGNOSTICS_LOG_NAME);
 }
 
@@ -96,7 +96,7 @@ function write(level: DiagnosticLevel, scope: string, args: readonly unknown[]):
     const line = `${JSON.stringify(record)}\n`;
     appendRecord(line);
   } catch {
-    // SAFETY: last resort — losing a diagnostic must never fail the caller (see the module WHY).
+    // WHY: last resort — losing a diagnostic must never fail the caller (see the module WHY).
   }
 }
 
@@ -163,7 +163,7 @@ function appendRecord(line: string): void {
   // WHY: exists and the old one would be skipped forever, taking the pre-upgrade history with it.
   migrateLegacyState((message) => reportInfo("state-migration", message));
   const path = diagnosticsLogPath();
-  // SAFETY: mkdir of a path derived from the operator-owned state root with a constant suffix.
+  // WHY: mkdir of a path derived from the operator-owned state root with a constant suffix.
   mkdirSync(dirname(path), { recursive: true });
   rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
   appendFileSync(path, line, "utf-8");
