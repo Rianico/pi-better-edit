@@ -1,4 +1,5 @@
-// WHY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
+// WHY: large-class — one schema owner for the store's DDL and one open/close lifecycle: splitting the
+// WHY: DDL, the sweep predicates or the stamp across files would give the store two definitions.
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
@@ -22,18 +23,15 @@ import { reportInfo } from "./diagnostics.js";
 import { migrateLegacyState } from "./state-migration.js";
 
 import { stateRoot } from "./config-dir.js";
-// WHY: these have been this module's surface since before the diagnostics sink existed, so callers
-// WHY: keep importing them here; the implementation moved to config-dir.ts only to break the
-// WHY: diagnostics → hash-store → hash-identity → diagnostics import cycle.
+// WHY: callers have imported these from here since before the diagnostics sink existed; the move to
+// WHY: config-dir.ts is only to break the diagnostics → hash-store → hash-identity → diagnostics cycle.
 export { STORE_CONFIG_DIR_ENV_VAR, configDirOverride, stateRoot } from "./config-dir.js";
 
 export function hashStorePath(): string {
-  // WHY: join of trusted stateRoot with fixed "hash-store.sqlite" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.sqlite");
 }
 
 export function legacyHashStorePath(): string {
-  // WHY: join of trusted stateRoot with fixed "hash-store.json" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.json");
 }
 
@@ -149,10 +147,9 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
   return { db, stampDue };
 }
 
-// WHY: (#105 Q2, option B) the closed identifier set the DDL helpers resolve through. Each
-// WHY: `(table, column, definition)` triple lives here once, so an ALTER site cannot name a table,
-// WHY: column or definition that is not a member: the helper signatures below admit only members,
-// WHY: and the interpolated fragments in their statements come from those members.
+// WHY: (#105 Q2, option B) the closed identifier set the DDL helpers resolve through: each triple
+// WHY: lives here once, the helper signatures admit only members, and the interpolated fragments in
+// WHY: their statements come from those members — no ALTER site can name a non-member.
 const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
   file_snapshots: { stat_key: "TEXT" },
@@ -180,18 +177,12 @@ function tableColumns(db: DatabaseSync, table: DdlTable): Set<string> {
   try {
     return readTableColumns(db, table);
   } catch {
-    // WHY: the empty set answers TWO questions at once — "this table is not there yet" and "this
-    // WHY: schema could not be read" — and the first is the intended one: PRAGMA table_info returns
-    // WHY: no rows for a missing table rather than throwing (measured), so only a failed READ
-    // WHY: arrives here (a closed handle reads `database is not open`).
-    // WHY: The two questions stop being interchangeable per caller: `addColumnIfMissing` and
-    // WHY: `renameGenerationColumn` go on to attempt their ALTER and fail LOUDLY (`duplicate column
-    // WHY: name`, `no such table`) rather than silently, and `buildStore`'s pre-session-keyed
-    // WHY: `served` shell guard reads `size > 0` as false and so skips its DROP — the safe direction.
-    // WHY: `hasTable` in `ensureSnapshotTables` does NOT take this path: it reads through
-    // WHY: `readTableColumns` and throws on a failed read (#105 Q1), because a failed read there
-    // WHY: would make `hasLeases` false and skip the sweep's two lease deletes — a PARTIAL sweep
-    // WHY: reporting success.
+    // WHY: PRAGMA table_info returns no rows for a missing table rather than throwing (measured), so an
+    // WHY: empty set here is a failed READ (a closed handle reads `database is not open`), and the callers
+    // WHY: that ignore it fail LOUDLY on the attempt their guard allows: `addColumnIfMissing` and
+    // WHY: `renameGenerationColumn` re-run their ALTER (`duplicate column name`, `no such table`) instead
+    // WHY: of passing silently, and `buildStore`'s pre-session-keyed `served` guard reads `size > 0` as
+    // WHY: false and skips its DROP — the safe direction.
     return new Set<string>();
   }
 }
@@ -222,20 +213,18 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
       db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
       // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
       db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
-      // WHY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused
-      // WHY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES
-      // WHY: support DROP COLUMN: an index naming the column refuses it with `error in index ...
-      // WHY: after drop column`), and a both-columns store is inert: every v7 reader/writer names
-      // WHY: `anchor_generation` only, and the leftover `canon_version` values were already copied
-      // WHY: over by the UPDATE above, so the stale column is never read. A concurrently open
-      // WHY: pre-rename process whose prepared statement names `canon_version` breaks fail-closed
-      // WHY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —
-      // WHY: exposure is the unreleased intermediate build only; see ADR-0031 §4.
+      // WHY: the RENAME fallback tolerates a store that keeps both columns, because DROP COLUMN is
+      // WHY: refused whenever SQLite cannot drop it (measured here: an index naming the column refuses
+      // WHY: with `error in index ... after drop column`), and a both-columns store is inert — every v7
+      // WHY: reader/writer names `anchor_generation`, and the UPDATE above already copied the stale
+      // WHY: `canon_version` values. A concurrently open pre-rename process breaks fail-closed on its
+      // WHY: next step; exposure is the unreleased intermediate build only.
+      // Ref: docs/.archive_adrs/0031-file-scoped-anchors-residual-and-generation-discipline.md
       try {
         // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
         db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
       } catch {
-        // WHY: DROP failure leaves the inert both-columns store; see SAFETY above.
+        // WHY: a refused DROP leaves the inert both-columns store described above — no retry, no throw.
       }
       return;
     }
@@ -244,75 +233,53 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
   db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
 }
 
-// WHY: (#87c) the open stamp — the store's own record that its schema, the generation its persisted
-// WHY: anchors were derived under, and the BUILD that wrote it all agree with the one reading it.
-// WHY: It is carried as the header field `PRAGMA user_version` (free: no query, no lock) plus one
-// WHY: indexed read of `meta`. The version row is part of the gate even though it carries no new
-// WHY: information, because the fast path SKIPS the upsert that maintains it: a gate that ignored the
-// WHY: row could leave a deleted one unrestored for as long as the rest of the stamp matched.
-// WHY: The value is a VERSIONED FORMAT and carries IDENTITY only:
+// WHY: (#87c) the open stamp: the store's own record that its schema, the generation its persisted
+// WHY: anchors were derived under, and the BUILD reading it all agree. Carried as the header field
+// WHY: `PRAGMA user_version` (free: no query, no lock) plus one indexed read of `meta`; the version row
+// WHY: is part of the gate although it carries no new information, because the fast path SKIPS the
+// WHY: upsert that maintains it — a gate that ignored the row could leave a deleted one unrestored for
+// WHY: as long as the rest of the stamp matched. The value is a VERSIONED FORMAT, identity only:
 // WHY:     <format>:<store schema>:<canon>:<anchor generation>:<registered open hooks>
-// WHY: - the LEADING field is the format version: bump it when the field list below changes shape, so
-// WHY:   every stamp written by the old shape is invalid BY CONSTRUCTION rather than by luck.
-// WHY: - `HASH_STORE_VERSION` is the schema half — `constants.ts` says when it must move.
-// WHY: - `CANON_VERSION` and `ANCHOR_GENERATION` are the persisted anchor set's generation.
-// WHY: - the OPEN-HOOK COUNT is the build fingerprint. The registry is built by module top-level
-// WHY:   pushes, so the count is a function of the BUILD: a build that registers an ADDITIONAL hook
-// WHY:   mismatches every stamp an older build wrote, instead of silently suppressing the new hook's
-// WHY:   work. LIMITATION, stated rather than implied: a SWAP (one hook removed, another added) keeps
-// WHY:   the count, so this guards ADDITION only — a semantic change to an existing hook still needs
-// WHY:   the version bump above. The count is preferred over a hash of the hook list: a hash would
-// WHY:   have to be measured free on the bundled artifact to earn its place, and the count is free by
-// WHY:   construction. A module imported lazily that registers a hook later costs one extra slow open:
-// WHY:   the count moves, the stamp mismatches, and the next open re-stamps.
-// WHY: NO TIME-VARYING STATE IS FOLDED IN. Due-ness instants — the periodic served-mirror prune's
-// WHY: last-run row, the janitor's schedule — live in their OWN `meta` rows. Folding one in would
-// WHY: conflate "the store's identity changed" with "maintenance is due", and a reader could not tell
-// WHY: from a mismatch WHY the open took the slow path.
-// WHY: BOTH halves must match, so a half-written stamp can only send the next open down the slow path,
-// WHY: never past it.
+// WHY: - the LEADING field is the format version: bump it when the field list changes shape, so every
+// WHY:   stamp the old shape wrote is invalid BY CONSTRUCTION rather than by luck.
+// WHY: - `HASH_STORE_VERSION` is the schema half (`constants.ts` says when it must move); `CANON_VERSION`
+// WHY:   and `ANCHOR_GENERATION` are the persisted anchor set's generation.
+// WHY: - the OPEN-HOOK COUNT is the build fingerprint: module top-level pushes make it a function of
+// WHY:   the BUILD, so an ADDITIONAL hook mismatches every older stamp instead of being silently
+// WHY:   suppressed — LIMITATION: a SWAP keeps the count, so this guards ADDITION only, and a semantic
+// WHY:   change to an existing hook still needs the version bump. A hash of the hook list was rejected
+// WHY:   as unmeasured on the bundle; the count is free by construction, and a lazily imported module
+// WHY:   that registers a hook later costs one extra slow open. NO TIME-VARYING STATE IS FOLDED IN:
+// WHY:   due-ness instants (the served-mirror prune's last-run row, the janitor's schedule) live in
+// WHY:   their OWN `meta` rows, because folding one in would conflate "the store's identity changed"
+// WHY:   with "maintenance is due", and a mismatch could not say which. BOTH halves must match, so a
+// WHY:   half-written stamp can only send the next open down the slow path, never past it.
 //
 // WHY: the traps this gate is built around, and how each is answered:
 // WHY: (a) A STAMP WITH A MISSING OBJECT: the DDL above runs unconditionally, so a dropped table or
-// WHY:     index is recreated on the very next open. What a matching stamp buys is narrower than
-// WHY:     "everything is present" — it says the SWEEP has run for this provenance, so the sweep is all
-// WHY:     it may skip. Rows the skipped sweep would have removed survive (see (c)); every reader that
-// WHY:     consumes them is generation-gated and fails closed, so the exposure is latency, not safety.
-// WHY: (b) TWO BUILDS SHARING ONE STORE: a build whose stamp differs — including one that writes no
-// WHY:     stamp at all — mismatches, re-sweeps, and re-stamps its own view; the other build then
-// WHY:     mismatches in turn. Fail-safe and merely slower: they alternate between the slow and fast
-// WHY:     paths instead of either one trusting a stamp it did not write.
-// WHY: (c) ROW-LEVEL POISONING: the deliberate trade, and the DURATION of the exposure. The sweep is an
-// WHY:     upgrade/migration action now, not a per-open one, so a row poisoned AFTER the sweep that
-// WHY:     stamped the store is not removed by a stamp-matching reopen. What this changes is WHEN foreign
-// WHY:     rows can exist, never WHETHER they can:
-// WHY:     - TODAY'S BOUND, the only deterministic one: the next stamp-invalidating event — a generation
-// WHY:       or schema bump, an ADDITIONAL open hook, or a fresh store. Nothing else bounds it until the
-// WHY:       periodic bound lands.
-// WHY:     - PERIODIC BOUND: IMPLEMENTED, at the lifecycle boundary this file does not own — the
-// WHY:       store janitor (`src/store-janitor.ts`) runs the sweep on `session_start` and
-// WHY:       `session_shutdown` only, throttled through its own `meta` row to at most about once a
-// WHY:       day, never on the tool-call open path, with batched deletes and a live-store guard. It
-// WHY:       reuses the SAME predicates this sweep runs (the exported `*_SQL` constants below), so
-// WHY:       an open-time sweep and a periodic one remove one set of rows. Load-bearing design is
-// WHY:       therefore in the code, not in prose.
-// WHY:     - TRIGGER: operator action only — a hand-edited store, or a copy taken from one. Nothing in
-// WHY:       normal operation reaches it.
-// WHY:     WHY THE TRADE IS SURVIVABLE: no honoring path trusts a stored row without re-deriving from the
-// WHY:       bytes it is about. A lease is generation-gated AT USE TIME (`isCurrentAnchorGeneration` on
-// WHY:       the lease's own 3-part `served_snapshot_hash`, `src/mutation-engine/edit-source.ts`), and its
-// WHY:       resolved span must clear the MVCC contiguity gate (`verifyRebasedSpan` -> `E_STALE_RANGE`,
-// WHY:       `src/hashline/served-verification.ts`), whose line identities come from the CURRENT content's
-// WHY:       own lineage (`positionsByIdentity`). The served mirror decides no identity either: it feeds
-// WHY:       an evidence-only scan of the lines about to be written (`findServedHashEcho`,
-// WHY:       `src/hashline/apply.ts`) and, through `retired`, the set of anchors the RESULT may not be
-// WHY:       ASSIGNED to: `loadBlockedHashes` hands them to the identity as `blockedHashes`, and
-// WHY:       `markHashUsed` pre-marks those slots, so no line of the new content is given one. A
-// WHY:       retired anchor is never refused — only never re-assigned — so it decides no identity
-// WHY:       either. A stale row's worst case is a MISS or a fail-closed refusal, never a wrongly
-// WHY:       honored line identity.
+// WHY:     index is recreated on the next open. A matching stamp therefore buys something narrower than
+// WHY:     "everything is present": it says the SWEEP has run for this provenance, so the sweep is all
+// WHY:     it may skip, and every reader of the rows it left is generation-gated — latency, not safety.
+// WHY: (b) TWO BUILDS SHARING ONE STORE: a differing stamp — including a build that writes none —
+// WHY:     mismatches, re-sweeps and re-stamps its own view, and the other build then mismatches in
+// WHY:     turn. Fail-safe and merely slower: they alternate paths instead of trusting a foreign stamp.
+// WHY: (c) ROW-LEVEL POISONING: the deliberate trade, and its DURATION. The sweep is an
+// WHY:     upgrade/migration action, not a per-open one, so a row poisoned after the sweep that stamped
+// WHY:     the store outlives a stamp-matching reopen. That changes WHEN foreign rows can exist, never
+// WHY:     WHETHER: today's only deterministic bound is the next stamp-invalidating event (a generation
+// WHY:     or schema bump, an ADDITIONAL hook, a fresh store), and the periodic one is the store
+// WHY:     janitor's (`src/store-janitor.ts`) — this SAME sweep, on `session_start`/`session_shutdown`,
+// WHY:     throttled by its own `meta` row to about once a day, never on the tool-call path, over the
+// WHY:     SAME `*_SQL` predicates below. Otherwise only operator action reaches it. THE TRADE IS
+// WHY:     SURVIVABLE because no honoring path trusts a stored row without re-deriving from the bytes it
+// WHY:     is about: a lease is generation-gated at use time (`isCurrentAnchorGeneration`,
+// WHY:     `src/mutation-engine/edit-source.ts`), its span must clear the MVCC contiguity gate
+// WHY:     (`verifyRebasedSpan` -> `E_STALE_RANGE`, `src/hashline/served-verification.ts`) against the
+// WHY:     CURRENT content's own lineage, and the served mirror only feeds an evidence-only scan
+// WHY:     (`findServedHashEcho`) and the never-re-assigned `retired` set. A stale row's worst case is a
+// WHY:     MISS or a fail-closed refusal.
 // WHY: (d) `BEGIN IMMEDIATE` CANNOT NEST: the sweep keeps its own in-transaction guard, so a caller
-// WHY:     already inside a transaction still absorbs the sweep instead of opening a second one.
+// WHY:     already inside a transaction absorbs the sweep instead of opening a second one.
 // WHY: (e) The open hooks' `existed` flag keeps its meaning — computed once in `openStore`, cleared on
 // WHY:     rebuild — and nothing in this stamp reads or clears it.
 const META_VERSION_KEY = "version";
@@ -412,11 +379,12 @@ export const DANGLING_LEASE_SQL =
   "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
   "AND fs.committed = 1)";
 
-// WHY: (ADR-0045) the ONE session-TTL boundary for served leases. An ACTIVE (un-retired) lease
-// WHY: whose `updated_at` is older than `now - SERVED_TTL_MS` has lost resolution authority: the
-// WHY: read/edit grant path treats it as absent, the janitor may delete it, and the vacuum's pin
-// WHY: probe already ignores it. Retirement is the OTHER terminal state and keeps its own 1-hour
-// WHY: grace (`VACUUM_RETIRED_PIN_MS`); an expired active lease is never judged by that grace.
+// WHY: the ONE session-TTL boundary for served leases. An ACTIVE (un-retired) lease whose
+// WHY: `updated_at` is older than `now - SERVED_TTL_MS` has lost resolution authority: the read/edit
+// WHY: grant path treats it as absent, the janitor may delete it, the vacuum's pin probe ignores it.
+// WHY: Retirement is the OTHER terminal state, with its own 1-hour grace (`VACUUM_RETIRED_PIN_MS`);
+// WHY: an expired active lease is never judged by that grace.
+// Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
 
 /** The instant before which an un-retired lease has lost resolution authority (ADR-0045). */
 export function servedLeaseExpiryCutoff(now: number): number {
@@ -485,49 +453,38 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_snapshot_line_id " +
       "ON line_lineage (snapshot_id, line_id)",
   );
-  // WHY: versions the persisted snapshot anchor set — same idiom as file_undo:
-  // WHY: rows written before the column read as 0 (unknown/foreign), never current.
-  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values,
-  // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
-  // WHY: so an older-build row misses and re-derives.
+  // WHY: versions the persisted snapshot anchor set — same idiom as file_undo: rows written before
+  // WHY: the column read as 0 (unknown/foreign), never current, and `canon_version` (pre-rename builds)
+  // WHY: is renamed in place, so a pre-rename store opens with its stamped values intact.
   renameGenerationColumn(db, "file_snapshots");
-  // WHY: the stat identity a READ materialization saw for this path (ADR-0043): a later read whose
-  // WHY: `stat(2)` identity equals it adopts this snapshot's lineage without re-deriving anchors. NULL
-  // WHY: on every row the read path did not stamp (edit/undo materializations, pre-v11 stores), and
-  // WHY: NULL never matches a lookup — the fallback is always the content-hash path.
+  // WHY: the stat identity a READ materialization saw for this path: a later read whose `stat(2)`
+  // WHY: identity equals it adopts this snapshot's lineage without re-deriving anchors. NULL on rows the
+  // WHY: read path did not stamp, and NULL never matches — the fallback is the content-hash path.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   addColumnIfMissing(db, "file_snapshots", "stat_key");
   db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_path_stat ON file_snapshots (path, stat_key)");
-  // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
-  // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
-  // WHY: behind. Current-generation rows survive untouched (same-version sessions
-  // WHY: keep their leases). The served mirror is TTL-owned, never swept: its
-  // WHY: snapshotId is a load-epoch string (`v2|<path>|<ino>|...`), not a
-  // WHY: file_snapshots id, so no generation predicate can judge it — TTL pruning
-  // WHY: at open owns it, and an absent mirror is recoverable only by a fresh serve.
-  // WHY: Runs wherever the schema is ensured, so every store open sweeps.
-  // WHY: The four deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error
-  // WHY: (the vacuum-evict transaction idiom): a crash between the snapshot sweep and
-  // WHY: the orphan-lease delete can no longer strand leases that name no live snapshot
-  // WHY: until the next open.
-  // WHY: anchor-gated lease prefix — the middle component of the 3-part key
-  // WHY: (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`) is the anchor generation, so a
-  // WHY: canon-only change keeps leases while a generation change sweeps them; pre-rename `3:`
-  // WHY: 2-part rows carry no middle component and never match, so they sweep as unknown.
-  // WHY: (#87c) THE FAST PATH, and the reason the check lives HERE: both sweep call sites funnel
-  // WHY: through this one function — `buildStore`'s own call and the snapshot-store open hook's
-  // WHY: re-entrant `ensureSnapshotSchema` — so a single check covers both, and a future caller of the
-  // WHY: sweep cannot forget it.
-  // WHY: (#87d) WHOSE DECISION THIS IS: the store's, read from its stamp — EXCEPT while an open owns this
-  // WHY: connection and is in its hook phase, where `buildStore` has already settled the sweep at the
-  // WHY: sweep's own site and the stamp is not written yet (`openStamp`): re-deciding from the row there
-  // WHY: would sweep a SECOND time on every slow open. Either way the slow path runs ONCE per open.
-  // WHY: the DDL above stays unconditional (and takes no write lock once applied) — see trap (a).
+  // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave unknown/foreign-
+  // WHY: generation snapshots, orphan lineage, or dangling leases behind, and current-generation rows
+  // WHY: survive untouched (same-version sessions keep their leases). The served mirror is TTL-owned,
+  // WHY: never swept: its snapshotId is a load-epoch string (`v2|<path>|<ino>|...`), not a
+  // WHY: file_snapshots id, so no generation predicate can judge it, and an absent mirror is
+  // WHY: recoverable only by a fresh serve.
+  // WHY: The four deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error (the vacuum-evict
+  // WHY: transaction idiom): a crash between the snapshot sweep and the orphan-lease delete can no
+  // WHY: longer strand leases that name no live snapshot until the next open.
+  // WHY: (#87c) THE FAST PATH lives HERE because both sweep call sites funnel through this one function
+  // WHY: — `buildStore`'s own call and the snapshot-store open hook's re-entrant `ensureSnapshotSchema`
+  // WHY: — so a single check covers both and a future caller of the sweep cannot forget it.
+  // WHY: (#87d) WHOSE DECISION THIS IS: the store's, read from its stamp — EXCEPT while an open owns
+  // WHY: this connection and is in its hook phase, where the sweep is already settled at its own site
+  // WHY: and the stamp is not written yet (`openStamp`): re-deciding from the row there would sweep a
+  // WHY: SECOND time on every slow open. Either way the slow path runs ONCE per open, and the DDL above
+  // WHY: stays unconditional (it takes no write lock once applied) — see trap (a).
   if (sweepSettledByOpen(db) || storeStampMatches(db)) return;
 
-  // WHY: tables created later in the fresh-build path (served_leases) may not exist
-  // WHY: yet when this runs — the sweep touches only what is there.
-  // WHY: (#105 Q1) the ONE loud reader: a failed read throws instead of answering "absent",
-  // WHY: because "absent" here skips the sweep's two lease deletes while reporting success.
+  // WHY: tables created later in the fresh-build path (served_leases) may not exist yet when this runs
+  // WHY: — the sweep touches only what is there — and a failed read must THROW (#105 Q1) rather than
+  // WHY: answer "absent", which would skip two lease deletes while reporting success.
   const hasTable = (table: DdlTable): boolean => {
     try {
       return readTableColumns(db, table).size > 0;
@@ -550,16 +507,9 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     db.exec(`DELETE FROM file_snapshots WHERE ${FOREIGN_GENERATION_SNAPSHOT_SQL}`);
     // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
     db.exec(`DELETE FROM line_lineage WHERE ${ORPHAN_LINEAGE_SQL}`);
-    // WHY: one provenance rule as of this sweep — a lease that names no surviving
-    // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
-    // WHY: as generation 0 and are swept above: a one-time pairing-baseline reset). The grant
-    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ? AND committed = 1`),
-    // WHY: so a lease naming a hash that survives only in a foreign path's row — or only
-    // WHY: in an uncommitted row — goes with the orphans.
-    // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and
-    // WHY: may evict a snapshot pinned only by a retired-past-grace lease (the vacuum pin
-    // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
-    // WHY: (the generation-gated grant misses) and self-healing.
+    // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and may evict a
+    // WHY: snapshot pinned only by a retired-past-grace lease (the vacuum pin ignores those), stranding
+    // WHY: its lease until the next open's sweep — fail-closed and self-healing.
     if (hasLeases) {
       // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
       db.exec(`DELETE FROM served_leases WHERE ${DANGLING_LEASE_SQL}`);
@@ -595,13 +545,11 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   }
 }
 
-// WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here
-// WHY: (spec §5.1) so the store and the undo domain cannot drift apart.
-// WHY: (ticket-04b §4) `transaction_id` correlates the undo rows of one multi-file cut
-// WHY: transaction — a column on `file_undo`, deliberately not a new table (ruling); NULL is an
-// WHY: ordinary single-file edit. `cut_intent` is the durable intent record written BEFORE the
-// WHY: first rename of a cut transaction and deleted when every file of the transaction is
-// WHY: committed — its presence at open time marks a half-applied transaction for repair.
+// WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here (spec §5.1)
+// WHY: so the store and the undo domain cannot drift apart. `transaction_id` correlates the undo rows of
+// WHY: one multi-file cut transaction — a column, deliberately not a new table. `cut_intent` is the
+// WHY: durable intent record written BEFORE the first rename and deleted when every file of the
+// WHY: transaction is committed; its presence at open marks a half-applied transaction for repair.
 const FILE_UNDO_DDL =
   "CREATE TABLE IF NOT EXISTS file_undo (" +
   "path TEXT PRIMARY KEY, " +
@@ -621,27 +569,21 @@ const CUT_INTENT_DDL =
   "created_at INTEGER NOT NULL" +
   ")";
 
-// WHY: (04b-rem P2-2/P2-3) `raw_pre` carries the file's RAW pre-transaction text — the decoded
-// WHY: bytes, not the canonical fold. The admission round-trip guard (E_LOSSY_TEXT) makes decode
-// WHY: and re-encode byte-identical by construction, so a rollback or repair that writes
-// WHY: `Buffer.from(raw_pre, "utf-8")` restores EXACTLY the bytes found before the first rename,
-// WHY: stray line-break spellings included; NULL is a pre-remediation row (or a single-file edit)
-// WHY: and falls back to the canonical serialization.
-// WHY: (04b-rem P2-1) `direction` on `cut_intent` marks what the durable record describes: NULL is
-// WHY: the forward cut (two renames, target first), "revert" is a correlated UNDO whose per-file
-// WHY: writes failed partway — next-run repair completes the revert instead of the cut.
-// WHY: (04b-rem P3-6) `transaction_id` is read by equality (`undoGetTransaction`) on EVERY apply
-// WHY: (repair scan) and every correlated undo, so it gets an index; the intent scan orders by the
-// WHY: unindexed `created_at` over a table that holds at most a handful of rows — ADR-0028 §3's
-// WHY: "one indexed SELECT" said otherwise and is corrected there, not here.
+// WHY: (04b-rem P2-2/P2-3) `raw_pre` carries the file's RAW pre-transaction text, not the canonical
+// WHY: fold: the admission round-trip guard (E_LOSSY_TEXT) makes decode and re-encode byte-identical,
+// WHY: so `Buffer.from(raw_pre, "utf-8")` restores EXACTLY the bytes found before the first rename,
+// WHY: stray line-break spellings included; NULL is a pre-remediation row and falls back to the fold.
+// WHY: (04b-rem P2-1) `direction` marks what the durable record describes: NULL the forward cut,
+// WHY: "revert" a correlated UNDO whose per-file writes failed partway.
+// WHY: (04b-rem P3-6) `transaction_id` is read by equality on EVERY apply (repair scan) and every
+// WHY: correlated undo, so it is indexed; the intent scan orders by the unindexed `created_at` over a
+// WHY: handful of rows — §3 of the record below said "one indexed SELECT", corrected there, not here.
+// Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
 export function ensureFileUndoSchema(db: DatabaseSync): void {
   db.exec(FILE_UNDO_DDL);
   addColumnIfMissing(db, "file_undo", "snapshot_hash");
   addColumnIfMissing(db, "file_undo", "transaction_id");
   addColumnIfMissing(db, "file_undo", "raw_pre");
-  // WHY: versions the persisted anchor set — existing rows keep 0 (never current),
-  // WHY: so a pre-bump store is refused, not migrated, on first open after upgrade.
-  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values.
   renameGenerationColumn(db, "file_undo");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
@@ -649,9 +591,8 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
 }
 
 function buildStore(db: DatabaseSync): boolean {
-  // WHY: the open's stamp-due decision is made ONCE here and handed back through `openDb`: it gates the
-  // WHY: sweep below and the `version` upsert at the end, and it is what `openStore` owes a stamp write
-  // WHY: for once the last hook has succeeded (see `writeStoreStamp`). Nothing here writes the stamp.
+  // WHY: the open's stamp-due decision is made ONCE, here, and handed back through `openDb`: it gates
+  // WHY: the sweep below and the `version` upsert at the end, and `openStore` owes the stamp on it.
   const stampDue = !storeStampMatches(db);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
@@ -659,9 +600,8 @@ function buildStore(db: DatabaseSync): boolean {
   db.exec(
     "CREATE TABLE IF NOT EXISTS meta (" + "key TEXT PRIMARY KEY, " + "value TEXT NOT NULL" + ")",
   );
-  // WHY: v7 normalized CAS tables are strictly additive and idempotent — buildStore
-  // WHY: never drops them on meta.version mismatch, so a version flap in
-  // WHY: mixed-version / multi-worktree environments cannot destroy leases, lineage, or undo pins.
+  // WHY: v7 CAS tables are strictly additive and idempotent: a meta.version flap across mixed-version
+  // WHY: worktrees cannot destroy leases, lineage or undo pins, because nothing here drops them.
   ensureSnapshotTables(db);
   db.exec(
     "CREATE TABLE IF NOT EXISTS served_leases (" +
@@ -689,11 +629,10 @@ function buildStore(db: DatabaseSync): boolean {
     "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
       "ON served_leases (file_path, retired_at)",
   );
-  // WHY: the vacuum's pin probe asks "does this (path, snapshot_hash) still have a lease?", and one
-  // WHY: path holds a lease per served line (thousands). `idx_leases_file_retired` can narrow only to
-  // WHY: the path, so the probe re-scanned that path's whole lease set once per snapshot — on a
-  // WHY: 518 MB / 408k-lease store that single query spent 2.2 s on every materialization. This
-  // WHY: composite covers the (path, snapshot_hash) probe and the retired/updated filter.
+  // WHY: the vacuum's pin probe asks "does this (path, snapshot_hash) still have a lease?" and one path
+  // WHY: holds a lease per served line (thousands); `idx_leases_file_retired` narrows only to the path,
+  // WHY: so the probe re-scanned that whole lease set once per snapshot — on a 518 MB / 408k-lease store
+  // WHY: it spent 2.2 s on every materialization. This composite covers the probe and the filter.
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_file_snapshot " +
       "ON served_leases (file_path, served_snapshot_hash, retired_at, updated_at)",
@@ -713,13 +652,11 @@ function buildStore(db: DatabaseSync): boolean {
       ")",
   );
   ensureFileUndoSchema(db);
-  // WHY: complete v6 compatibility shells keep un-restarted v6 sessions and concurrent
-  // WHY: worktrees free of missing-table errors and v6 drop-table wipes, while v7 state
-  // WHY: stays isolated in v7 tables. Only the ancient pre-session-keyed served shell is
-  // WHY: rebuilt — it is unusable by either version without session_id. The shell keeps its
-  // WHY: `canons` column for the same reason: v6 prepares a statement naming it at store open,
-  // WHY: so a dropped column would break every v6 store operation. v7 never reads or writes it —
-  // WHY: canon evidence is derived from `served_leases.canon_hash` (issue #151).
+  // WHY: complete v6 shells keep un-restarted v6 sessions and concurrent worktrees free of missing-table
+  // WHY: errors and drop-table wipes while v7 state stays isolated in v7 tables; only the ancient
+  // WHY: pre-session-keyed `served` shell is rebuilt, because neither version can use it. The shell keeps
+  // WHY: `canons` because v6 prepares a statement naming it at open, so a dropped column would break
+  // WHY: every v6 store operation; v7 derives canon evidence from `served_leases.canon_hash` (#151).
   if (tableColumns(db, "served").size > 0 && !tableColumns(db, "served").has("session_id")) {
     db.exec("DROP TABLE served");
   }
@@ -756,7 +693,6 @@ function buildStore(db: DatabaseSync): boolean {
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  // WHY: non-destructive column migrations keep pre-existing databases aligned without wipes.
   addColumnIfMissing(db, "served", "retired");
   addColumnIfMissing(db, "served", "canons");
   addColumnIfMissing(db, "served", "snapshotId");
@@ -764,13 +700,11 @@ function buildStore(db: DatabaseSync): boolean {
 
   addColumnIfMissing(db, "undo", "result_content");
   // WHY: (#87c) the other half of the fast path: a stamp that is already current records this version
-  // WHY: and this generation, so re-writing either would take the write lock on every open to say what
-  // WHY: the store already says. The upsert stays exactly where it was — LAST, inside the retry loop and
-  // WHY: after the sweep's transaction — so a contended store records its version only once the rest of
-  // WHY: the build has settled.
-  // WHY: (#87d) this row is NOT one of the stamp's two halves — it is the row the gate also reads — and
-  // WHY: its value is a build constant, so it belongs to the build. The halves that certify the WHOLE
-  // WHY: open are owed to `openStore` instead: written here they would certify hook work that has not run.
+  // WHY: and generation, so re-writing either would take the write lock on every open to say what the
+  // WHY: store already says. (#87d) this row is NOT one of the stamp's two halves — it is the row the
+  // WHY: gate also reads — and its value is a build constant, so it belongs to the build: written by
+  // WHY: `openStore` it would certify hook work that has not run. The upsert stays LAST, after the
+  // WHY: sweep's transaction, so a contended store records its version once the build has settled.
   if (!stampDue) return false;
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
@@ -816,19 +750,15 @@ function smokeCheckStoreFile(storePath: string): boolean {
   let fd: number | undefined;
   try {
     fd = openSync(storePath, "r");
-    // WHY: allocUnsafe is safe here because readSync fills all 100 bytes before any of them is
-    // WHY: read — the `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.
-    // WHY: kept on purpose, uncovered though they are (#87c). The short-read guard, the magic
-    // WHY: comparison, the page-size range check and its power-of-two test are this check's ONLY
-    // WHY: arms whose refusal body never runs — in a whole-suite coverage run at 17f7e14 those
-    // WHY: four return statements execute 0 times while the four conditions run 601 times — and
-    // WHY: they are uncovered because NO SEAM REACHES THEM: SQLite's own first read of the file
-    // WHY: refuses every file they guard, so a file that would trip one never arrives here.
-    // WHY: Measured at 17f7e14, in a /tmp copy: deleting all four leaves the focused file green
-    // WHY: (11 tests) and the whole suite green (2264 passed | 2 skipped, the unchanged baseline).
-    // WHY: Do NOT delete them on that evidence; re-measure first. They are defence in depth —
-    // WHY: unreachable only while SQLite keeps refusing a malformed header at first read, and live
-    // WHY: work again the day a version stops — so four uncovered arms here are a KEPT decision.
+    // WHY: allocUnsafe is safe here: readSync fills all 100 bytes before any is read, and the
+    // WHY: `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.
+    // WHY: the short-read guard, the magic comparison, the page-size range check and its power-of-two
+    // WHY: test are this check's ONLY arms whose refusal body never runs — at 17f7e14 those four returns
+    // WHY: executed 0 times while the four conditions ran 601 times — because NO SEAM REACHES THEM:
+    // WHY: SQLite's own first read refuses every file they guard. Deleting all four left the focused
+    // WHY: file green (11 tests) and the suite green (2264 passed | 2 skipped); they are defence in
+    // WHY: depth, unreachable only while SQLite keeps refusing a malformed header at first read, so
+    // WHY: four uncovered arms here are a KEPT decision — re-measure before removing them.
     const header = Buffer.allocUnsafe(SQLITE_HEADER_BYTES);
     const read = readSync(fd, header, 0, SQLITE_HEADER_BYTES, 0);
     if (read < SQLITE_HEADER_BYTES) return false;
@@ -839,13 +769,11 @@ function smokeCheckStoreFile(storePath: string): boolean {
     if (pageSize < SQLITE_MIN_PAGE_SIZE || pageSize > SQLITE_MAX_PAGE_SIZE) return false;
     if ((pageSize & (pageSize - 1)) !== 0) return false;
     const pageCount = header.readUInt32BE(SQLITE_PAGE_COUNT_OFFSET);
-    // WHY: NOT one of the four above, and NOT uncovered: this arm's refusal body DID run (1
-    // WHY: execution in that same suite run). Deleting it is nonetheless invisible, for an
-    // WHY: ARITHMETIC reason instead — the length rule below refuses the same file by itself,
-    // WHY: because `pageSize * 0` is 0 and no store file's size equals 0 (measured in the /tmp
-    // WHY: copy with this line deleted: page size 4096, a 163840-byte store, still quarantined).
-    // WHY: FIVE arms here are invisible to mutation; only the four above are UNCOVERED. Coverage
-    // WHY: and mutation-sensitivity are different properties.
+    // WHY: NOT one of the four above, and NOT uncovered: this arm's refusal body DID run (1 execution
+    // WHY: in that same run). Deleting it is still invisible, for an ARITHMETIC reason — the length rule
+    // WHY: below refuses the same file, because `pageSize * 0` is 0 and no store file's size is 0
+    // WHY: (measured: page size 4096, a 163840-byte store, still quarantined). FIVE arms here are
+    // WHY: invisible to mutation; only the four above are UNCOVERED.
     if (pageCount === 0) return false;
     return fstatSync(fd).size === pageSize * pageCount;
   } catch {
@@ -857,8 +785,7 @@ function smokeCheckStoreFile(storePath: string): boolean {
       try {
         closeSync(fd);
       } catch {
-        // WHY: closing a read-only descriptor this call opened; a failure leaves no lock, no
-        // WHY: write and no state behind, and the verdict above is already decided.
+        // WHY: closing a read-only descriptor leaves no lock, no write, no state — the verdict stands.
       }
     }
   }
@@ -881,14 +808,10 @@ export function isHealthy(db: DatabaseSync): boolean {
     return row?.quick_check === "ok";
   } catch (error) {
     if (isCorruptionError(error)) return false;
-    // WHY: a failure that is NOT corruption reads as HEALTHY, and that direction is load-bearing:
-    // WHY: the remedy for a false verdict is `quarantineStore` plus a rebuild from empty, which
-    // WHY: renames the store file aside and rebuilds it from the DDL, so the undo rows in the old
-    // WHY: file become unreachable. `file_undo` is the table this file calls the single source of
-    // WHY: truth for undo history, and it is not among the rows a read re-derives (the served
-    // WHY: mirror, the snapshots and their lineage are). A probe that merely could not RUN must not
-    // WHY: destroy undo history; a store that really is broken fails closed at the first statement
-    // WHY: that touches the damage instead — #100's use-time clause.
+    // WHY: a failure that is NOT corruption reads as HEALTHY, and that direction is load-bearing: the
+    // WHY: remedy is `quarantineStore` plus a rebuild from empty, which makes the old file's undo rows
+    // WHY: unreachable — and `file_undo` is the one table a read does not re-derive. A probe that could
+    // WHY: not RUN must not destroy undo history; real damage still fails closed at the first statement.
     return true;
   }
 }
@@ -946,9 +869,8 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
     "hash-store",
     "[hash-store] deep check found the store damaged, quarantining and rebuilding",
   );
-  // WHY: the quarantine comes FIRST and on its own: the open path's fast branch accepts a store whose
-  // WHY: header is intact, and an intact header is exactly the case the janitor's deep pass exists to
-  // WHY: catch — so handing the open the same file would reopen the damage instead of repairing it.
+  // WHY: the quarantine comes FIRST and on its own: the open's fast branch accepts a store whose header
+  // WHY: is intact — exactly the case this pass exists to catch — so it would reopen the damage.
   shutdownHashStore();
   await quarantineStore(current.path);
   await openStore(current.path, budget);
@@ -993,9 +915,8 @@ function guardDatabaseHandle(raw: DatabaseSync, storePath: string): DatabaseSync
   const guarded: DatabaseSync = new Proxy(raw, {
     get(target, property) {
       if (property === "prepare" || property === "exec") {
-        // WHY: own properties win — a double must observe every call, including the guard's own,
-        // WHY: or call-through doubles recurse. The guard stays armed underneath: the double
-        // WHY: reaches the real method through the live prototype below, never through this trap.
+        // WHY: own properties win, or call-through doubles recurse; the guard stays armed underneath,
+        // WHY: because the double reaches the real method through the live prototype below.
         if (Object.prototype.hasOwnProperty.call(target, property)) {
           const override: unknown = Reflect.get(target, property, target);
           return typeof override === "function" ? override.bind(target) : override;
@@ -1043,9 +964,6 @@ function guardStatement(
           const override: unknown = Reflect.get(target, property, target);
           return typeof override === "function" ? override.bind(target) : override;
         }
-        // WHY: resolve through the live prototype on every call (see `realMethod`): prototype
-        // WHY: patches must observe these calls exactly as raw ones, and own-property doubles are
-        // WHY: already returned above, so this lookup never sees a double.
         const raw = realMethod(target, property);
         if (property === "iterate") {
           return (...args: unknown[]) => {
@@ -1135,16 +1053,13 @@ function triggerUseTimeHeal(generation: DatabaseSync, storePath: string, error: 
  */
 async function runUseTimeHeal(storePath: string, generation: DatabaseSync): Promise<void> {
   try {
-    // WHY: the heal yields FIRST — the teardown below must not run inside the failing statement's
-    // WHY: own tick. Sibling statements on the same handle — the double-heal race's second
-    // WHY: corruption — still throw the ORIGINAL error against the still-open connection instead
-    // WHY: of a teardown artifact ("not open"), and only then does the generation guard below
-    // WHY: decide whether this generation still owns the cache.
+    // WHY: the heal yields FIRST — the teardown must not run inside the failing statement's own tick.
+    // WHY: Sibling statements on the same handle then still throw the ORIGINAL error against the
+    // WHY: still-open connection, not a teardown artifact ("not open").
     await Promise.resolve();
-    // WHY: the generation guard — heal ONLY if the cache still holds the generation that failed.
-    // WHY: a second trigger never gets here (the flag), and a trigger from a handle the cache
-    // WHY: has since replaced — notably a heal that already rebuilt the store — bails here instead
-    // WHY: of quarantining the FRESH file.
+    // WHY: the generation guard — heal ONLY if the cache still holds the generation that failed: a
+    // WHY: second trigger never gets here (the flag), and a trigger from a handle the cache has since
+    // WHY: replaced — notably a heal that already rebuilt the store — must not quarantine the FRESH file.
     const cached = cachedOpenStore();
     if (cached === null || cached.db !== generation) return;
     shutdownHashStore();
@@ -1161,8 +1076,7 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
   shutdownHashStore();
 
   await initHasher();
-  // WHY: the retired artifacts are adopted BEFORE the store exists, so the pre-SQLite JSON store is
-  // WHY: read from one place — the state root this open is about to use.
+  // WHY: adoption runs BEFORE the store exists, so the pre-SQLite JSON store is read from this root.
   migrateLegacyState((message) => reportInfo("state-migration", message));
   await ensureStateRoot();
 
@@ -1179,11 +1093,10 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
   }
   let db = opened.db;
   // WHY: (#87c) WHICH integrity check an open pays follows from the stamp, because the stamp is the
-  // WHY: store's own record that its provenance is current. `existed` is read before the open and
-  // WHY: cleared by either recovery path below, so a store this open CREATED — or just rebuilt after
-  // WHY: quarantine — is never handed to the header check: it has no settled identity yet, and the
-  // WHY: open is already doing the expensive work. Both arms fence the same single failure shape,
-  // WHY: `false`, so the recovery below is shared rather than duplicated per check.
+  // WHY: store's own record that its provenance is current. `existed` is read before the open and cleared
+  // WHY: by either recovery path, so a store this open CREATED — or just rebuilt — is never handed to the
+  // WHY: header check: it has no settled identity yet and the work is already done. Both arms fence the
+  // WHY: same single shape, `false`, so the recovery below is shared.
   const stampTrusted = existed && !opened.stampDue;
   if (stampTrusted ? !smokeCheckStoreFile(storePath) : !isHealthy(db)) {
     shutdownDb(db);
@@ -1193,9 +1106,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
     db = opened.db;
   }
 
-  // WHY: the open's own stamp decision, in memory from here to the end of the open: the hooks' re-entrant
-  // WHY: ensures consult it (`sweepSettledByOpen`) rather than a stamp this open has not written yet, and
-  // WHY: the stamp write below is owed exactly when it says so.
   const stamp = { db, due: opened.stampDue };
   openStamp = stamp;
   try {
@@ -1203,17 +1113,16 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
       await hook(db, { existed });
     }
 
-    // WHY: (#87d) THE STAMP IS THE OPEN'S LAST STEP: both halves, written together, and only now that
-    // WHY: EVERY hook has succeeded — they certify the whole open, the build, migrations and sweep that
-    // WHY: `openDb` ran included. Written inside the build they certify work that has not happened yet,
-    // WHY: so a hook that throws leaves a valid-looking stamp over an unfinished store and the next open
-    // WHY: takes the fast path over it. This write is also OUTSIDE `openDbWithBusyRetry`'s envelope (the
-    // WHY: open's last write, after the hook loop), so it carries its own retry: without one, a store that
-    // WHY: is merely busy this instant would fail an open that has already done all of its work.
+    // WHY: (#87d) THE STAMP IS THE OPEN'S LAST STEP: both halves, written only now that EVERY hook has
+    // WHY: succeeded, because they certify the whole open — the build, migrations and sweep included.
+    // WHY: Written inside the build they certify work that has not happened yet: a hook that throws
+    // WHY: would leave a valid-looking stamp over an unfinished store. The write is also outside
+    // WHY: `openDbWithBusyRetry`'s envelope, so it carries its own retry — otherwise a merely busy
+    // WHY: store would fail an open that has already done all of its work.
     if (stamp.due) withBusyRetry(() => writeStoreStamp(db), budget);
 
-    // WHY: the publish wraps — this is the seam — the guarded handle is what `loadHashStore`
-    // WHY: hands out and what `withStore` frames on, so one wrap covers every consumer.
+    // WHY: the publish wraps — the guarded handle is what `loadHashStore` hands out and what `withStore`
+    // WHY: frames on, so one wrap covers every consumer.
     const guarded = guardDatabaseHandle(db, storePath);
     setCachedOpenStore({ path: storePath, db: guarded });
 
@@ -1230,13 +1139,12 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
 
     return { db: guarded, engine: "node:sqlite" };
   } finally {
-    // WHY: NOT housekeeping, and not defensive tidiness: this clear is what keeps the slot to the hook
-    // WHY: phase. The slot answers one question — "is an open in its hook phase on THIS connection" —
-    // WHY: and leaving it set lets the next ensure on the still-open connection read a spent decision:
-    // WHY: `sweepSettledByOpen` matches the live handle, so an ensure that runs OUTSIDE an open —
-    // WHY: `ensureSnapshotTables` called directly, which is how seven committed tests sweep after moving
-    // WHY: the stamp (`test/integration/undo-generation-bump.test.ts`, "generation bump refuses pre-v3
-    // WHY: anchors") — silently SKIPS the sweep it owes, and the rows it had to remove survive. Delete
+    // WHY: NOT housekeeping: this clear is what keeps the slot to the hook phase. The slot answers one
+    // WHY: question — "is an open in its hook phase on THIS connection" — and leaving it set lets the next
+    // WHY: ensure on the still-open connection read a spent decision: `sweepSettledByOpen` matches the live
+    // WHY: handle, so an ensure that runs OUTSIDE an open (`ensureSnapshotTables` called directly, as seven
+    // WHY: committed tests do after moving the stamp,
+    // WHY: `test/integration/undo-generation-bump.test.ts`) would silently SKIP the sweep it owes. Delete
     // WHY: this line and those seven tests fail.
     openStamp = null;
   }
@@ -1247,9 +1155,8 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
  * callers pass nothing, and a cached open returns immediately without consulting it.
  */
 export function loadHashStore(budget?: BusyBudget): Promise<HashStore> {
-  // WHY: the join — a use-time heal armed by a just-thrown statement rebuilds the store beside
-  // WHY: this call. Waiting for it first is what makes the access after a loud failure land on
-  // WHY: the FRESH store: without it the caller would get the still-cached damaged handle back.
+  // WHY: the join — a use-time heal armed by a just-thrown statement is rebuilding the store beside this
+  // WHY: call, so waiting for it is what makes the access after a loud failure land on the FRESH store.
   // WHY: No cycle: the heal reopens through `openStore` directly, never through here.
   const healing = useTimeHeal;
   if (healing !== null) return healing.promise.then(() => loadHashStore(budget));
