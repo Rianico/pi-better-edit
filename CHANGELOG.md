@@ -6,6 +6,8 @@
 
 * **read:** accept a `windows` list a model serializes as a JSON string. `normalizeReadPayload` folds a JSON array onto the array the schema requires before validation, so a stringified window serves its rows instead of failing validation and falling back to a whole-file read; a parse failure or a non-array value still fails with the existing `windows must be an array` refusal. (#273)
 
+* **read:** name the `windows` array contract in the refusal. A non-array `windows` is refused in `prepareArguments` before the schema union runs, so the model reads `"windows" must be an array of windows: [{ offset, limit }] or [{ around_anchor, radius }]. A JSON string is not an array.` instead of the outline variant's missing `mode`; the direct admission path speaks the same sentence. Accepted window shapes are unchanged. (#272)
+
 ## [2.18.1] - 2026-11-15
 
 ### Bug Fixes
