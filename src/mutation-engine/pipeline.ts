@@ -291,8 +291,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       cause: "never-served",
     });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
-  // SAFETY: the object below is cast via `unknown` to HashIdentity's internal parameter shape;
-  // SAFETY: every field in it is already typed, so the cast widens nothing.
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
     prior: { content: input.content, hashes: input.hashes, removedHashes },
@@ -303,6 +301,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: blockedHashes passed as ReadonlySet via unknown for HashIdentity compatibility — input.blockedHashes is already typed, cast preserves immutability
     blockedHashes: input.blockedHashes as unknown as ReadonlySet<string> | undefined,
+    // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
+    // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   } as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
   return {
     kind: "applied",
@@ -390,7 +390,6 @@ function shiftedBufferRejection(
   return error;
 }
 
-/**
 /**
  * Re-anchors a producer headline's working-buffer line numbers to the current-file lines they map
  * to. WHY: a headline built inside the changed buffer names buffer lines that no longer exist in the
