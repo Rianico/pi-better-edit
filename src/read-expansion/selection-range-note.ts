@@ -194,13 +194,11 @@ function renderClause(chain: readonly AdmittedSpan[], lastLine: number): string 
   const labels: string[] = [];
   for (let index = kept.length - 1; index >= 0; index--)
     labels.push(spanLabel(kept[index]!.kind, sanitizeName(kept[index]!.name), kept[index]!.source));
-  // WHY: ASCII `>` over U+203A: the note is machine-facing, and the glyph has width and
-  // WHY: replacement risk in a constrained terminal font.
+  // WHY: ASCII `>` over U+203A — the note is machine-facing, and the glyph has width and replacement risk in a constrained font.
   const breadcrumb = labels.join(" > ");
   const preposition = lastLine <= innermost.end ? "in" : "starts in";
-  // WHY: parentheses bind the extent to the innermost name, where a comma bound it to the whole
-  // WHY: chain, and `lines` collided with the window's own `lines a-b of N total`. `(span a-b)`
-  // WHY: binds and names the extent in the same eight characters.
+  // WHY: parentheses bind the extent to the innermost name, where a comma bound it to the whole chain and `lines` collided with
+  // WHY: the window's own `lines a-b of N total`. `(span a-b)` binds and names the extent in the same eight characters.
   return `; ${preposition} ${breadcrumb} (span ${innermost.start}-${innermost.end})`;
 }
 

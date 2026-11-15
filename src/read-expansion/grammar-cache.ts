@@ -108,8 +108,7 @@ function readVerifiedCache(path: string, expected: string): Uint8Array | undefin
     return undefined;
   }
   if (sha256Hex(bytes) === expected) return bytes;
-  // WHY: stale or corrupted cache bytes are discarded before any network attempt, so a re-fetch
-  // WHY: cannot be skipped by the stale file it is meant to replace.
+  // WHY: the discard precedes any network attempt, so the stale file cannot short-circuit the re-fetch meant to replace it.
   discardCachedGrammar(path);
   return undefined;
 }
@@ -177,7 +176,6 @@ function fetchAndCache(
       writeCache(path, bytes);
       return bytes;
     } catch {
-      // WHY: a fetch/write failure is the same answer as an offline grammar.
       return undefined;
     }
   })();

@@ -75,20 +75,23 @@ export interface PrepareResult {
   // WHY: read costs one `stat` per file instead of one per seam.
   stats?: FileStats;
   /**
-   * The `stat(2)` identity this read observed (ADR-0043). Materializations stamp it in the same
+   * The `stat(2)` identity this read observed. Materializations stamp it in the same
    * transaction, so the next read of an unchanged file adopts this snapshot without re-deriving any
    * line identity. Absent for reads that never stat'd a file (verbatim, non-text, pathless previews).
    */
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   statKey?: string;
   /**
    * Present when this page was served from an ALREADY-COMMITTED snapshot that the file's stat identity
-   * named (ADR-0043): `fileHashes` then holds only the served page's anchors, and `snapshotId` is the
+   * named: `fileHashes` then holds only the served page's anchors, and `snapshotId` is the
    * epoch string `fileSnap` would have produced — the checksum comes from the snapshot, not a re-hash.
    */
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   statAdoption?: StatAdoption;
 }
 
-/** The already-committed snapshot a stat-identity read served from (ADR-0043). */
+/** The already-committed snapshot a stat-identity read served from. */
+// Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
 export interface StatAdoption {
   snapshotHash: string;
   /** The epoch `fileSnap` would report for these bytes; no content checksum is recomputed. */
@@ -129,10 +132,8 @@ export async function prepareFile(
   // WHY: the served admission budget (`SERVED_MAX_LINES`) is an edit-domain limit independent of the
   // WHY: anchor-space ceiling (`MAX_HASH_LINES`), so verbatim ignores a caller-supplied cap: a file too
   // WHY: large to anchor is still a file worth reading. Only the 100MB `MAX_BYTES` guard in
-  // WHY: `loadFileKindAndText` bounds both modes, and it bounds BYTES READ: both modes page a file by
-  // WHY: walking its lines, but served additionally retains one anchor per hashed line even for an
-  // WHY: unshown window (see `src/constants.ts`), so verbatim takes no cap and served takes the budget.
-  // WHY: The served default stays `SERVED_MAX_LINES`, not the anchor-space ceiling.
+  // WHY: `loadFileKindAndText` bounds both modes, and it bounds BYTES READ: both page by walking lines,
+  // WHY: but served also retains one anchor per hashed line even for an unshown window (`src/constants.ts`).
   const maxLines = verbatim ? undefined : (options?.maxLines ?? SERVED_MAX_LINES);
   const file =
     options?.preloadedFile ??
@@ -183,9 +184,8 @@ export async function prepareFile(
     };
   }
 
-  // WHY: the ONE seam where verbatim diverges from served. Both modes decode/normalize through
-  // WHY: `decodeNormText`; only served then reaches the anchor store, because anchors and the
-  // WHY: anchor-space line cap are edit-domain concerns.
+  // WHY: both modes decode and normalize through `decodeNormText`; only served then reaches the
+  // WHY: anchor store, because anchors and the anchor-space line cap are edit-domain concerns.
   const norm = await decodeNormText(path, cwd, {
     ...(signal !== undefined ? { signal } : {}),
     ...(options?.accessMode !== undefined ? { accessMode: options.accessMode } : {}),
@@ -202,10 +202,11 @@ export async function prepareFile(
   };
   const maxLineBytes = options?.maxLineBytes;
   const maxTruncLines = options?.maxTruncLines ?? AUTO_READ_MAX;
-  // WHY: (ADR-0043) a read that can name the file version starts from the committed snapshot that
-  // WHY: version produced. Only the served page's lineage is read — never every line's identity — and
-  // WHY: every line is re-verified against the canon it was committed under before its anchor is shown.
+  // WHY: a read that can name the file version starts from the committed snapshot that version
+  // WHY: produced. Only the served page's lineage is read — never every line's identity — and every
+  // WHY: line is re-verified against the canon it was committed under before its anchor is shown.
   // WHY: Anything unproven falls through to the content-hash path below, which is authoritative.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const statKey =
     !verbatim && options?.store !== undefined && file.stats !== undefined
       ? statKeyOf(file.stats)
@@ -260,9 +261,8 @@ export async function prepareFile(
     );
   }
 
-  // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8" — the
-  // WHY: admission round-trip guard (E_LOSSY_TEXT) refuses such an edit instead, so the read
-  // WHY: disclosure now states what the tool actually does with these bytes.
+  // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8", but
+  // WHY: admission's round-trip guard (E_LOSSY_TEXT) refuses that edit, so the tail names what happens.
   // WHY: I2 (spec §6) — the bytes stay verbatim; the notices only name what the rows carry. A
   // WHY: non-printable control character is disclosed, never escaped into a `\xNN` form.
   const notices = [

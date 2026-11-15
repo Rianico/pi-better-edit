@@ -57,7 +57,6 @@ export function walkLines(
     end: range.end,
     lines: [] as string[],
   }));
-  // WHY: past the last line any range asked for, the walk only counts — no line is sliced.
   const lastWanted = wanted.reduce((last, range) => Math.max(last, range.end - 1), -1);
   const sentinel = text.endsWith("\n");
   let total = 0;

@@ -34,7 +34,6 @@ export const TYPESCRIPT_SPAN_KINDS = {
 export const TYPESCRIPT_DECORATION: DecorationSpec = {
   kinds: TYPESCRIPT_SPAN_KINDS,
   docCommentTypes: new Set(["comment"]),
-  // WHY: plain `//` and `/*` comments are not documentation; only `/** ... */` attaches.
   isDocComment: (node) => node.text?.trimStart().startsWith(JSDOC_PREFIX) ?? false,
   wrapperTypes: new Set(["export_statement", "ambient_declaration"]),
   assignmentNodeTypes: new Set(["variable_declarator", "public_field_definition"]),

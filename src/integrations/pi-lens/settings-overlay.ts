@@ -76,8 +76,8 @@ function bashViewLine2(cwd: string): string {
 }
 
 /**
- * The multi-file caps, REPORTED ONLY (ADR-0049 M6): the overlay's `SettingsList` is enum-only
- * (ADR-0038), so numeric editing belongs to `/pi-better-edit bash-view multi-file …`. This line still
+ * The multi-file caps, REPORTED ONLY (docs/.archive_adrs/0049-multi-file-bash-views.md M6): the overlay's `SettingsList` is enum-only
+ * (docs/.archive_adrs/0038-settings-overlay.md), so numeric editing belongs to `/pi-better-edit bash-view multi-file …`. This line still
  * names each cap's rung, because a display that showed the effective numbers without their source
  * would hide which file to edit.
  */

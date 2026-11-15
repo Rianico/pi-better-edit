@@ -70,8 +70,7 @@ export const STORE_JANITOR_DEFAULTS: StoreJanitorSettings = {
   batchSize: STORE_JANITOR_BATCH_DEFAULT,
 };
 
-// WHY: one place maps a setting to its file key, so the read path and the write path cannot spell a
-// WHY: key differently — the failure a second hand-written literal would introduce.
+// WHY: one key map, so the read and write paths cannot spell one setting two ways and drift apart.
 const STORE_JANITOR_KEYS = {
   mode: "janitor",
   intervalMs: "janitorIntervalMs",
@@ -141,8 +140,7 @@ function readScopeSettings(
   const mode = store[STORE_JANITOR_KEYS.mode];
   const intervalMs = store[STORE_JANITOR_KEYS.intervalMs];
   const batchSize = store[STORE_JANITOR_KEYS.batchSize];
-  // WHY: with `exactOptionalPropertyTypes` an unusable key is OMITTED rather than present as
-  // WHY: `undefined`, so "this scope said nothing about it" is one state, not two.
+  // WHY: `exactOptionalPropertyTypes` omits an unusable key, so "scope said nothing" is one state, not two.
   return {
     ...(isStoreJanitorMode(mode) ? { mode } : {}),
     ...(isIntervalMs(intervalMs) ? { intervalMs } : {}),
@@ -217,8 +215,7 @@ export function resolveStoreJanitorSettingsWithSources(
 }
 
 /**
- * The effective janitor settings, without their provenance. Precedence is PER KEY — env, then
- * project, then global, then the default. Never throws.
+ * The effective janitor settings, without their provenance. Never throws.
  */
 export function resolveStoreJanitorSettings(
   cwd: string,

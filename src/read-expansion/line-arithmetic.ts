@@ -23,8 +23,7 @@ function lineBreaksIn(text: string, endExclusive: number): number {
       breaks++;
       continue;
     }
-    // WHY: CRLF is one break, not two. A CR whose LF is outside the slice is not a break yet:
-    // WHY: an end offset at column 0 excludes the terminating LF and must not promote the line.
+    // WHY: a CR whose LF lies outside the slice is not a break yet — otherwise a column-0 end would count an extra break and promote the line.
     if (char === 13) {
       if (text.charCodeAt(index + 1) === 10) {
         if (index + 1 < endExclusive) {

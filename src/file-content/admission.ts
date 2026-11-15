@@ -8,8 +8,9 @@
  *
  * WHY: every rule here is fail-closed on the same payload error, because a tool call that bypasses the
  * WHY: schema (the exhaustiveness contract tests do) must reach identical wording and identical
- * WHY: refusals as a validated one (ADR-0041).
+ * WHY: refusals as a validated one.
  */
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import type { HashStore } from "../hash-store.js";
@@ -135,10 +136,11 @@ export function normalizeReadPayload(params: RawReadParams): RawReadParams {
 }
 
 /**
- * Admission for the flat single-file shape (ADR-0041 D1): validates the file, every window,
- * and the window cap. A payload without `file` was already rejected by the schema; the check
- * below is the safety net for callers that bypass validation.
+ * Admission for the flat single-file shape (`D1`): validates the file, every window, and the window
+ * cap. A payload without `file` was already rejected by the schema; the check below is the safety net
+ * for callers that bypass validation.
  */
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 export function admitReadRequest(params: RawReadParams): AdmittedRequest {
   const request = normalizeReadPayload(params);
   const mode = admitMode(request.mode) ?? "served";
@@ -154,10 +156,9 @@ export function admitReadRequest(params: RawReadParams): AdmittedRequest {
     rawWindows === undefined || rawWindows.length === 0
       ? undefined
       : rawWindows.map((window, windowIndex) => admitWindow(window, `windows[${windowIndex}]`));
-  // WHY: the schema's per-variant `maxItems` and this guard enforce the same split for validated
-  // WHY: and unvalidated callers alike — window count is what multiplies the auto-read budget, but
-  // WHY: outline mode ignores caller windows (its coverage comes from the AST seam), so the cap
-  // WHY: binds every mode except outline. Narrowly outline-only: a 17-window served call still fails here.
+  // WHY: window count multiplies the auto-read budget, so the cap binds every mode that applies caller
+  // WHY: windows; outline takes its coverage from the AST seam and ignores them. The schema's
+  // WHY: per-variant `maxItems` splits validated and unvalidated callers the same way.
   if (mode !== "outline" && (windows?.length ?? 0) > MAX_READ_WINDOWS) {
     throw badPayload(MAX_READ_WINDOWS_MESSAGE);
   }
@@ -213,9 +214,8 @@ function resolveAnchorWindow(
     content: resolver.normalized,
   });
   const lease = source.leaseFor(window.anchor);
-  // WHY: no lease for this file is the whole warning (spec §4.3): an unknown anchor, one this session
-  // WHY: holds for another file, and a foreign-generation row all fail closed the same way, and the
-  // WHY: specification pins one wording for all three — so no homes lookup is needed to say it.
+  // WHY: no lease for this file IS the warning (spec §4.3): unknown, other-file and foreign-generation
+  // WHY: anchors fail closed alike under one pinned wording, so no homes lookup is needed to say it.
   if (lease === undefined) return undefined;
   const decision = resolveLineIdentity(lease, source);
   if (decision.kind !== "line") return undefined;
@@ -240,8 +240,7 @@ export function planWindows(
       windows.push({ offset: window.offset, limit: window.limit });
       continue;
     }
-    // WHY: an anchor window can only resolve against served lineage; a non-text or anchor-less load
-    // WHY: leaves it unresolved, which is the same "not found" the model has to re-read past.
+    // WHY: an anchor resolves only against served lineage, so a non-text load leaves the same "not found".
     const resolved = resolver === undefined ? undefined : resolveAnchorWindow(window, resolver);
     if (resolved === undefined) {
       warnings.push(anchorWarning(window.anchor));

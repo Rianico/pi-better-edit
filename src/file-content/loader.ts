@@ -17,16 +17,17 @@ import type { NormFile, NormText } from "./types.js";
 export type { NormFile, NormText } from "./types.js";
 
 /**
- * The `stat(2)` identity of one file version (ADR-0043): the four numbers a stat key is built from.
+ * The `stat(2)` identity of one file version: the four numbers a stat key is built from.
  *
  * WHY ctime and not just mtime: userspace can set mtime (`utimes`, `rsync --times`), but it cannot set
  * ctime — a write bumps ctime even when the caller restores the mtime and keeps the size. That is what
  * makes "same size, same mtime, different bytes" a detectable change instead of an invisible one.
  */
+// Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
 export type StatIdentity = { ino: number; size: number; mtimeMs: number; ctimeMs: number };
 
 /**
- * The opaque key a read stamps on the snapshot it materialized (ADR-0043). Deliberately a string: the
+ * The opaque key a read stamps on the snapshot it materialized. Deliberately a string: the
  * store compares it, it never interprets it, and it round-trips exact doubles (`String(n)` is shortest
  * round-trip), so no float column equality decides whether a file is unchanged.
  */
@@ -68,12 +69,12 @@ export async function fileSnap(
   preloadedStats?: FileStats,
 ): Promise<SnapInfo> {
   const canonicalPath = await resolveTarget(absolutePath);
-  // WHY: the load path stat'd this same canonical path to size the file and reject directories, so
-  // WHY: its `Stats` is authoritative for the snapshot id; re-stat'ing could only disagree with the
-  // WHY: bytes the caller has already read and hashed.
+  // WHY: the load path stat'd this same canonical path already, so its `Stats` is authoritative for
+  // WHY: the id; a re-stat could only disagree with the bytes the caller has read and hashed.
   const stats: FileStats = preloadedStats ?? (await stat(canonicalPath));
-  // WHY: P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
-  // WHY: Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
+  // WHY: when present, the checksum strengthens the epoch — the id then covers the bytes, so a
+  // WHY: same-size whitespace change cannot pass as the same version. Optional for backward compatibility.
+  // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
   const effectiveChecksum = checksum ?? undefined;
   return {
     snapshotId: fmtSnapId(canonicalPath, stats, effectiveChecksum),
@@ -129,9 +130,8 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    // WHY: the count is the NORMALIZED text's, because `toLF` turns a lone `\r` into a line break: a
-    // WHY: count taken before it under-reads a CR-only file, which would then pass this cap and die in
-    // WHY: the anchor space instead. One walk settles it without holding a line.
+    // WHY: the count must be the NORMALIZED text's — `toLF` turns a lone `\r` into a line break, so a
+    // WHY: count taken earlier under-reads a CR-only file, which then dies in the anchor space instead.
     const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {

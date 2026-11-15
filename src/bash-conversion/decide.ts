@@ -10,6 +10,10 @@
  * recording) lives inside the entries. Scope: `Decision` mirrors the `BashClass` union (including
  * `passThrough`) rather than new block types — S1 is zero behaviour change.
  */
+// Ref: docs/.archive_adrs/0033-bash-view-interception.md
+// Ref: docs/.archive_adrs/0039-compound-bash-view-interception.md
+// Ref: docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
 import { parse } from "unbash";
 import type { AndOr, Command, ParsedScript, Pipeline, Statement } from "unbash";
 import {
@@ -31,7 +35,7 @@ import type {
   ViewSeg,
 } from "../bash-classifier.js";
 
-/** Box for the line-number injection offsets (ADR-0033 D5): the terminal search records its program token end while the chain walk runs, so the rewriter splices without re-deriving. */
+/** Box for the line-number injection offsets (docs/.archive_adrs/0033-bash-view-interception.md D5): the terminal search records its program token end while the chain walk runs, so the rewriter splices without re-deriving. */
 export interface LocatedBox {
   searchNameEnds?: Array<{ end: number; program: SearchProgram; lineNumbered: boolean }>;
 }
@@ -101,14 +105,14 @@ interface RuleContext {
   /** The current segment's classification, computed once per walk step (source: one call). */
   current: Segment | undefined;
   view: ViewSeg | undefined;
-  /** ADR-0049 M1: the standalone multi-file view, recorded only when the chain carries nothing else. */
+  /** docs/.archive_adrs/0049-multi-file-bash-views.md M1: the standalone multi-file view, recorded only when the chain carries nothing else. */
   multiView: BashMultiView | undefined;
   searchSeg: SearchFamily | undefined;
   baseDir: string | undefined;
   effCwd: string | undefined;
   sawGlue: boolean;
   compoundSegs: CompoundSegment[];
-  /** Relaxation A (ADR-0039 D10): set by the head rule once the leading block is admitted — only inert tails may follow. */
+  /** Relaxation A (docs/.archive_adrs/0039-compound-bash-view-interception.md D10): set by the head rule once the leading block is admitted — only inert tails may follow. */
   tailMode: boolean;
 }
 
@@ -136,9 +140,8 @@ function isViewTerminal(segment: Segment): boolean {
 }
 
 /**
- * WHY: (item 10) one place applies the chain's single pre-view `cd` to whichever search family
- * WHY: shape won — moved verbatim with the chain so the resolution base cannot be remembered for
- * WHY: one shape and forgotten for another.
+ * WHY: (item 10) one application point — a search family added later cannot ship without the
+ * resolution base it must carry.
  */
 function applyBaseDir(family: SearchFamily, baseDir: string | undefined): Decision {
   if (baseDir === undefined) return family;
@@ -155,8 +158,8 @@ function applyBaseDir(family: SearchFamily, baseDir: string | undefined): Decisi
 }
 
 /**
- * WHY: (ADR-0049 M1) a multi-file view keeps the chain's single pre-view `cd` for the same reason a
- * single-file view does — bash resolved the operands under it — so the base rides the same field.
+ * WHY: a multi-file view keeps the chain's single pre-view `cd` — bash resolved its operands under
+ * it — so the base rides the same field.
  */
 function applyMultiViewBaseDir(view: BashMultiView, baseDir: string | undefined): Decision {
   return { kind: "pureMultiView", view: baseDir === undefined ? view : { ...view, baseDir } };
@@ -180,8 +183,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-statement",
-    // WHY: D1/D9, amended 2026-10-09 (commit 7b78282): the `;`-chain gate lives here; every other
-    // WHY: multi-statement script is the compound ceiling and stays pass-through (ADR-0033 D1).
     why: "ADR-0033 D1/D9 as amended (source src/bash-classifier.ts:1105-1110 pre-extraction)",
     phase: "pre",
     when: (ctx) =>
@@ -220,10 +221,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "compound-andor-operand",
-    // WHY: ADR-0033 D1 span-kind chain rule; `unbash` types AndOr.commands as Command[]
-    // WHY: but the parser puts ANY statement kind there (For/If/While/TimeClause/Block/
-    // WHY: Subshell/Case/FuncDecl/TestClause), so `cd x && for …; do …; done` pushed a
-    // WHY: node with no `operators` into the walk and crashed parseViewSegment.
+    // WHY: `unbash` types AndOr.commands as Command[], but the parser puts ANY statement kind
+    // WHY: there — `cd x && for …; do …; done` crashed the walk without this guard.
     why: "ADR-0033 D1 span-kind chain rule (structural: AndOr operands must be Command/Pipeline)",
     phase: "statement",
     when: (ctx) => {
@@ -254,8 +253,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "admit-glue",
-    // WHY: (ADR-0039 D6) static glue parses here so a compound can carry it — but only inside a
-    // WHY: multi-segment chain and only beside an admitted block. Accumulation, not a verdict.
     why: "ADR-0039 D6 (source src/bash-classifier.ts:1165-1174 pre-extraction; glue admission)",
     phase: "segment",
     when: (ctx) => {
@@ -277,9 +274,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-tail",
-    // WHY: (ADR-0039 D10) an inert tail command contributes only its already-observed bytes —
-    // WHY: no block, no anchors, no leases. It fires only inside tail mode (set by the head
-    // WHY: rule), so a lone `wc` still declines via `unsafe` with its exact legacy reason.
+    // WHY: a raw tail carries no block, anchor or lease — only bytes bash already printed — and
+    // WHY: tail mode keeps a lone `wc` on its exact legacy `unsafe` decline.
     why: "ADR-0039 D10 (relaxation A; inert tail accumulation)",
     phase: "segment",
     when: (ctx) => ctx.tailMode && isInertTailNode(segmentOf(ctx).node),
@@ -287,13 +283,9 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-count-tail",
-    // WHY: (ADR-0048 D4) relaxation A is glue-free and single-block, so a glued chain's count tail
-    // WHY: used to reach `unsafe`. D4 admits it after the LAST verified block of a multi-block
-    // WHY: glued chain: at least two blocks are already recorded and every remaining segment is a
-    // WHY: count tail, so no block can follow and no later block competes for attribution (ADR-0039
-    // WHY: D10's second-block guard stays closed — this rule never admits a block). The tail is a
-    // WHY: `raw` segment: its already-observed bytes ride the peel's `rest`, never a block, anchor,
-    // WHY: or lease.
+    // WHY: D4 admits a count tail only after the LAST verified block — two blocks recorded, every
+    // WHY: remaining segment a count tail — so no block follows and none competes for attribution; D10's
+    // WHY: second-block guard stays closed because this rule never admits a block.
     why: "ADR-0048 D4 (inert count tail after the last verified block)",
     phase: "segment",
     when: (ctx) => {
@@ -307,8 +299,7 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "unsafe",
-    // WHY: (ADR-0039 D6) a lone print keeps its own decline (F2: glue locates blocks; with no block
-    // WHY: there is nothing to locate). The reason string flows through byte-identically.
+    // WHY: (F2) with no block there is nothing to locate, so the segment keeps its own decline and its byte-identical reason.
     why: "ADR-0039 D6/F2 (source src/bash-classifier.ts:1162 pre-extraction; dynamic segment reason)",
     phase: "segment",
     when: (ctx) => currentOf(ctx).kind === "unsafe",
@@ -320,8 +311,7 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "skip-redundant-cd",
-    // WHY: (ADR-0039 D7/D9) a redundant `cd` is inert — skipped, never counted toward the single
-    // WHY: `cd` limit. Only base-independent dot forms and exact known-absolute repeats qualify.
+    // WHY: an inert `cd` must not consume the single-`cd` budget, which belongs to the move that sets the base.
     why: "ADR-0039 D7/D9 (source src/bash-classifier.ts:1173 pre-extraction; redundancy skip)",
     phase: "segment",
     when: (ctx) => {
@@ -336,9 +326,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "post-block-cd",
-    // WHY: (commit 4) a non-redundant `cd` after an admitted block would misresolve that block
-    // WHY: (`baseDir` attaches to later blocks only) — fail closed. Gated on glue presence so
-    // WHY: single-block chains keep their exact current reasons.
+    // WHY: the base attaches to the blocks recorded after it, so a `cd` behind an admitted block
+    // WHY: would misresolve that block — fail closed.
     why: "commit 4 post-block gate (source src/bash-classifier.ts:1184 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -354,15 +343,12 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "post-view-cd",
-    // WHY: bash resolves each `cd` against the directory in effect at that point, so only a single
-    // WHY: pre-view `cd` applied to `ctx.cwd` is sound (ADR-0033 D1). A `cd` after the view ran too
-    // WHY: late to affect it and fails closed.
+    // WHY: bash resolves each `cd` against the directory in effect at that point, so only one
+    // WHY: pre-view `cd` applied to `ctx.cwd` is sound; one issued later is too late and fails closed.
     why: "ADR-0033 D1 (source src/bash-classifier.ts:1186 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
       const current = currentOf(ctx);
-      // WHY: (ADR-0049 M1) a multi-file view is a view for this rule too: a `cd` after it ran is just
-      // WHY: as late, so the base would misresolve every operand.
       return (
         current.kind === "silent" &&
         current.cdDir !== undefined &&
@@ -373,8 +359,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-cd",
-    // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`, not `b`) — applying only one out
-    // WHY: of order would lease a path never viewed (ADR-0033 D1).
+    // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`), so applying one of them alone would
+    // WHY: lease a path never viewed.
     why: "ADR-0033 D1 (source src/bash-classifier.ts:1187 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -409,20 +395,15 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-tail-head",
-    // WHY: (ADR-0039 D10) relaxation A admits a compound with NO glue iff exactly one block
-    // WHY: exists, it is the first segment, and every later segment is inert (checked by
-    // WHY: classifying the remainder up front — pure functions, no walk state touched). It
-    // WHY: preempts the prefix/second declines for that head only; anything else in the tail
-    // WHY: falls through to the original guards with their original reasons. Glued chains
-    // WHY: keep their exact legacy behavior (`!ctx.hasGlue`).
+    // WHY: relaxation A exists for the shape the prefix declines would reject — one leading block
+    // WHY: with an inert tail. Only that head is exempt; anything else falls through to the original
+    // WHY: guards, and a glued chain keeps its legacy reasons.
     why: "ADR-0039 D10 (relaxation A; single leading block with inert tail)",
     phase: "segment",
     when: (ctx) => {
       if (ctx.segIndex !== 0 || ctx.hasGlue) return false;
       if (ctx.view !== undefined || ctx.searchSeg !== undefined) return false;
       const current = currentOf(ctx);
-      // WHY: (ADR-0049 M1) a multi-file view is standalone: it takes no inert tail, because the
-      // WHY: tail's `raw` segment would be a second block whose attribution this shape never proves.
       if (current.kind === "multiView") return false;
       if (current.kind !== "search" && !isViewTerminal(current)) return false;
       const tail = ctx.segments.slice(1);
@@ -440,9 +421,8 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "search-prefix",
-    // WHY: the search obeys the view's chain rule verbatim (ADR-0033 D1 as amended): only the
-    // WHY: terminal statement may carry it — a prefix `grep` would be a compound chain the model
-    // WHY: did not ask about, so it fails closed.
+    // WHY: a view or a search may ride only the terminal statement — a prefix one means a compound
+    // WHY: chain the model did not ask about.
     why: "ADR-0033 D1 as amended (source src/bash-classifier.ts:1197 pre-extraction)",
     phase: "segment",
     when: (ctx) => {
@@ -479,8 +459,6 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "view-prefix",
-    // WHY: only the terminal statement may carry the view (ADR-0033 D1 as amended) — a view in a
-    // WHY: prefix statement means the script is a compound chain the model did not ask about.
     why: "ADR-0033 D1 as amended (source src/bash-classifier.ts:1223 pre-extraction)",
     phase: "segment",
     when: (ctx) => isViewTerminal(currentOf(ctx)) && segmentOf(ctx).prefixPosition && !ctx.hasGlue,
@@ -503,9 +481,8 @@ export const RULES: readonly ConversionRule[] = [
     when: () => true,
     run: (ctx) => {
       const current = currentOf(ctx);
-      // WHY: (ADR-0049 M1) the multi-file view is the one non-`view` block the trailing else
-      // WHY: records — into its own slot only. It is deliberately NOT pushed into `compoundSegs`, which
-      // WHY: is the compound envelope's segment list: a multi-file view never rides in one.
+      // WHY: the multi-file view records into its own slot, never `compoundSegs` — it rides in no
+      // WHY: compound envelope.
       if (current.kind === "multiView") {
         ctx.multiView = current.view;
         return ADVANCE;
@@ -519,10 +496,9 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "multi-view-chain",
-    // WHY: (ADR-0049 M1) the multi-file shape is a STANDALONE view: this ADR does not compose it as a
-    // WHY: block inside a chain. Any glue, second block or inert tail means the observed stream carries
-    // WHY: more than the N pages this seam proves, so the whole command passes through with the existing
-    // WHY: `multi-view` reason (ADR-0049 adds no reason to the closed vocabulary).
+    // WHY: the multi-file shape is STANDALONE: glue, a second block or an inert tail proves more
+    // WHY: stream than the N pages this seam attributes, so the whole command passes through as
+    // WHY: `multi-view` — the existing reason, not a new one.
     why: "ADR-0049 M1 (standalone only; a chained multi-file view has no admitted envelope)",
     phase: "post",
     when: (ctx) => ctx.multiView !== undefined && (ctx.sawGlue || ctx.compoundSegs.length > 0),
@@ -549,8 +525,8 @@ export const RULES: readonly ConversionRule[] = [
 
   {
     id: "compound",
-    // WHY: F2-as-restated (ADR-0039): glue alone admits nothing — zero admitted BLOCKS means the
-    // WHY: compound declines even if glue parsed. With a block, the admitted segments envelope.
+    // WHY: (F2-as-restated) glue alone admits nothing — with zero admitted BLOCKS the compound
+    // WHY: declines even when glue parsed. With a block, the admitted segments form the envelope.
     why: "ADR-0039 D1/D2/D4 + F2 (source src/bash-classifier.ts:1233-1239 pre-extraction)",
     phase: "post",
     when: (ctx) => ctx.sawGlue && (ctx.view !== undefined || ctx.searchSeg !== undefined),
@@ -562,8 +538,8 @@ export const RULES: readonly ConversionRule[] = [
   },
   {
     id: "inert-compound",
-    // WHY: (ADR-0039 D10) the relaxation-A envelope: the leading block plus its raw tail.
-    // WHY: No `baseDir` spread — the head fires only at segment zero, before any `cd` records.
+    // WHY: relaxation A's envelope is the leading block plus its raw tail, and it spreads no
+    // WHY: `baseDir`: the head fires at segment zero, before any `cd` can record.
     why: "ADR-0039 D10 (relaxation A; envelope for the leading block plus raw tail)",
     phase: "post",
     when: (ctx) => ctx.tailMode && ctx.compoundSegs.length > 0,
@@ -626,14 +602,12 @@ function fireRule(rule: ConversionRule, ctx: RuleContext): Decision | typeof ADV
 }
 
 /**
- * WHY: (ADR-0033 D5) the line-number injection needs the search program token's source offset.
- * Shared by the plain and relaxation-A recording paths so the splice sees identical offsets.
+ * WHY: the line-number injection needs the search program token's source offset.
+ * Shared by the plain and relaxation-A recording paths so both splices see one offset.
  */
 function recordSearchBlock(ctx: RuleContext, current: SearchSeg): void {
   ctx.searchSeg = current.family;
   ctx.compoundSegs.push(current);
-  // WHY: the line-number injection must splice at the search program token's source offset, and
-  // WHY: that offset is only known while the chain walk runs (transcribed with the walk).
   const { node } = segmentOf(ctx);
   if (node.type === "Command" && node.name?.end !== undefined) {
     const family = current.family;
@@ -663,11 +637,10 @@ function isInertTailNode(node: Command | Pipeline): boolean {
 }
 
 /**
- * WHY: (ADR-0048 D4) the count-tail closed set is narrower than D10's inert set: the ADR names
- * `wc -l`/`-c` only, so `-w`/`-m` stay out on this seam. Every other exclusion (stdin, `--`
- * escapes, dash-led operands, redirects, prefixes) is `parseInertTail`'s, shared unchanged.
- * Declining a shape is fail-closed; widening this set is a follow-up with its own safety case —
- * add a flag here, not a new rule.
+ * WHY: the count-tail closed set is narrower than D10's inert set — `wc -l`/`-c` only, so `-w`/`-m`
+ * stay out on this seam, and every other exclusion (stdin, `--` escapes, dash-led operands,
+ * redirects, prefixes) is `parseInertTail`'s. Declining is fail-closed: widen this set here, not
+ * with a new rule.
  */
 function isInertCountTailNode(node: Command | Pipeline): boolean {
   if (node.type !== "Command") return false;
@@ -747,9 +720,8 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
         return out;
       }
     }
-    // WHY: structural segment push (source src/bash-classifier.ts:1112-1135 pre-extraction) —
-    // WHY: the statement guards above already declined anything unpushable, so the else arm is
-    // WHY: unreachable here (the `compound-top` rule fired for it).
+    // WHY: no unpushable statement can reach this push — the statement guards above declined every
+    // WHY: other kind, so a fallback arm would be dead code.
     const statement = statementOf(ctx);
     const prefixPosition = index < ctx.statements.length - 1;
     const top = statement.command;
@@ -769,14 +741,13 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
       return out;
     }
   }
-  // WHY: (commit 4) compound-aware relaxations apply only when glue is present anywhere in the
-  // WHY: chain; computed once up front exactly as the chain did (source :1144 pre-extraction).
+  // WHY: the relaxations apply only when glue is present anywhere in the chain, so the walk reads one
+  // WHY: boolean instead of re-deciding it per segment.
   ctx.hasGlue = ctx.segments.some(
     (segment) => segment.node.type === "Command" && parseGlueSegment(segment.node) !== undefined,
   );
   for (let index = 0; index < ctx.segments.length; index++) {
     ctx.segIndex = index;
-    // WHY: one classification per segment (source src/bash-classifier.ts:1155 pre-extraction).
     ctx.current = classifySegment(segmentOf(ctx).node, segmentOf(ctx).prefixPosition);
     let advanced = false;
     for (const rule of RULES) {

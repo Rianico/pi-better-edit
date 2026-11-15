@@ -61,8 +61,7 @@ function adoptRetiredLogName(): void {
     try {
       renameSync(from, to);
     } catch {
-      // WHY: best effort — the append this precedes still succeeds, and the old pair stays
-      // WHY: readable under its retired name, which is a worse report than a moved one.
+      // WHY: best effort — the append this precedes still succeeds, and the old pair stays readable under its retired name.
     }
   }
 }
@@ -98,7 +97,6 @@ function appendRecord(fields: Record<string, unknown>): void {
       ...fields,
     })}\n`;
     const path = selectionRangeLogPath();
-    // WHY: mkdir of a path derived from the operator-owned state root with a constant suffix.
     mkdirSync(dirname(path), { recursive: true });
     adoptRetiredLogName();
     rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));

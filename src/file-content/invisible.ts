@@ -24,9 +24,8 @@ function expand(low: number, high: number): number[] {
   return out;
 }
 
-// WHY: today's scope exactly — C0 except the three text whitespaces that render
-// WHY: as layout (TAB, LF, CR), plus DEL and the C1 block. U+0085 stays here,
-// WHY: so the existing control disclosure keeps its bytes.
+// WHY: the scope is frozen at the shipped disclosure — C0 minus TAB/LF/CR, DEL, C1 — so U+0085 stays
+// WHY: in this class and the control disclosure keeps the bytes it already names.
 const NON_PRINTABLE_CONTROL: ReadonlySet<number> = new Set([
   ...expand(0x00, 0x08),
   0x0b,
@@ -48,8 +47,7 @@ const CANON_SURVIVING: ReadonlySet<number> = new Set([
   0x2066, 0x2067, 0x2068, 0x2069,
 ]);
 
-// WHY: the 12 bidi codepoints. A bidi codepoint carries the layout-override
-// WHY: hazard in addition to its class hazard.
+// WHY: the 12 bidi codepoints carry the layout-override hazard on top of their class hazard.
 const BIDI: ReadonlySet<number> = new Set([
   0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
 ]);
@@ -92,10 +90,8 @@ const NAMES: Readonly<Record<number, string>> = {
   0x2067: "RIGHT-TO-LEFT ISOLATE",
   0x2068: "FIRST STRONG ISOLATE",
   0x2069: "POP DIRECTIONAL ISOLATE",
-  // WHY: names are the real Unicode aliases — NameAliases.txt (alias type
-  // WHY: control) for the C0 controls and DEL, UnicodeData.txt and the C1
-  // WHY: Controls chart for C1. U+0009, U+000A and U+000D stay deliberately
-  // WHY: absent: text whitespaces that render as layout, never data.
+  // WHY: names are the real Unicode aliases (NameAliases.txt control aliases, UnicodeData.txt, the C1
+  // WHY: Controls chart); TAB, LF and CR stay absent — they render as layout, never as data.
   0x0000: "NULL",
   0x0001: "START OF HEADING",
   0x0002: "START OF TEXT",

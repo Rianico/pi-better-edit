@@ -163,8 +163,8 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       return resolveEffectiveLensMode(getCwd());
     } catch {
-      // WHY: an unusable cwd means the mode cannot be resolved, so nothing
-      // WHY: is mirrored and no drop is counted for a config read.
+      // WHY: an unusable cwd means the mode cannot be resolved, so nothing is mirrored and no drop
+      // WHY: is counted for a config read.
       return undefined;
     }
   };
@@ -172,10 +172,8 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       const mode = resolveMode();
       if (mode === undefined || mode === "off") return;
-      // WHY: `auto` treats an absent bridge as disabled and `on` cannot conjure
-      // WHY: one, so both modes share this single no-op path — the mode gate
-      // WHY: above is the only difference between them, and an absent bridge is
-      // WHY: still a dropped mirror.
+      // WHY: `auto` treats an absent bridge as disabled and `on` cannot conjure one, so both modes
+      // WHY: collapse here — an absent bridge is still a dropped mirror.
       const bridge = getIOBridge();
       if (bridge === undefined) {
         dropCount += 1;
@@ -183,7 +181,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
       }
       recordMutated(bridge, notification);
     } catch {
-      // WHY: advisory-only — a broken bridge degrades to "no I/O mirrored", never a failed tool call.
+      // WHY: advisory-only (module header): a throw here would fail the edit that is already committed.
     }
   });
   const detachServed = addServedSpanObserver((notification: ServedSpanNotification): void => {
@@ -198,7 +196,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
       }
       recordServedSpans(bridge, notification);
     } catch {
-      // WHY: advisory-only — mirroring never fails the read that served these rows.
+      // WHY: advisory-only (module header): a throw here would fail the read that already served its rows.
     }
   });
   return () => {

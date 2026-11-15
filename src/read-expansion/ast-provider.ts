@@ -51,7 +51,7 @@ export const LANGUAGES: Readonly<Record<string, LanguageScope>> = {
  * One outline row: a named symbol and its 1-indexed physical declaration line. The line is the
  * scope node's own start row, never the decorated span start, so leading documentation and
  * decorators never move the row and no text beyond the name is pulled. Tranche 2 derives point
- * anchors from these raw lines (ADR-0013).
+ * anchors from these raw lines (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md).
  */
 export interface OutlineSymbol {
   readonly name: string;
@@ -336,7 +336,6 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
           },
         };
       } catch {
-        // WHY: load failures are the same answer as no boundary; the read stays exact.
         return { kind: "decline", decline: decline("grammar_unavailable", language) };
       }
     })();

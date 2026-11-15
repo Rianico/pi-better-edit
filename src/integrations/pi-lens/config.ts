@@ -133,8 +133,7 @@ export function saveLensBridgeConfig(
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `lens.bridge` is ours to set — an existing `$schema` is a deliberate editor-time
-  // WHY: choice and unknown top-level or `lens.*` keys belong to the user, so all of them survive.
+  // WHY: only `lens.bridge` is ours — `$schema` and unknown keys are the user's, so all survive.
   updateConfigFile(path, (existing) => ({
     ...existing,
     lens: { ...(isRecord(existing.lens) ? existing.lens : {}), bridge: mode },

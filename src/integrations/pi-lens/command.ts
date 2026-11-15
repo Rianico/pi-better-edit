@@ -164,10 +164,8 @@ function notify(
     ctx.ui.notify(message, type);
     return;
   }
-  // WHY: the only legitimate stdout write left in the extension — `hasUI === false` means print or
-  // WHY: json mode, where no renderer owns the terminal and stdout is the channel that reaches the
-  // WHY: caller. The TUI branch above returns before this line, so a live frame is never touched.
-  // WHY: the message carries the command's entire output and there is no other channel in these modes.
+  // WHY: the only legitimate stdout write left in the extension — with `hasUI === false` no renderer
+  // WHY: owns the terminal, so stdout is the only channel that reaches the caller.
   console.log(message);
 }
 
@@ -186,9 +184,8 @@ function statusText(cwd: string): string {
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > auto",
   ];
-  // WHY: a blank line between the blocks — they are five subjects: the bridge, the store, the bash
-  // WHY: view, its multi-file caps, and the diagnostics log — and each one keeps the shape the others
-  // WHY: taught the reader.
+  // WHY: one blank line between the five subjects — bridge, store, bash view, its caps, and the
+  // WHY: diagnostics log — keeps each block's shape legible against the others.
   return [
     lensLines.join("\n"),
     "",
@@ -215,8 +212,8 @@ function statusText(cwd: string): string {
 function storeStatusText(cwd: string): string {
   const warnings: string[] = [];
   const settings = resolveStoreJanitorSettingsWithSources(cwd, (reason) => warnings.push(reason));
-  // WHY: verbatim and never trimmed — this is the value the store will USE (see configDirOverride),
-  // WHY: so a display that trimmed it would name a directory the store does not open.
+  // WHY: verbatim and never trimmed — the store USES this value, so a trimmed display would name a
+  // WHY: directory the store never opens.
   const override = configDirOverride();
   return [
     `${COMMAND_NAME} store`,
@@ -265,13 +262,14 @@ function bashViewStatusText(cwd: string): string {
 }
 
 /**
- * The multi-file caps' half of the status output (ADR-0049 M6).
+ * The multi-file caps' half of the status output (M6).
  *
  * WHY its own block rather than two more lines in the bash-view block: the two ladders have different
  * precedence (`view` has an env override; the caps resolve project > global > default), and one
  * precedence line per block is the only honest way to say so. WHY both file values are printed beside
  * the effective ones: the losing value is the one an operator edits next.
  */
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
 function multiFileStatusText(cwd: string): string {
   const warnings: string[] = [];
   const effective = resolveBashMultiFileSettingsWithSources(cwd, (reason) => warnings.push(reason));
@@ -391,8 +389,6 @@ function applyBashViewMode(mode: BashViewMode, scope: ConfigScope, cwd: string):
 async function pickBashViewInteractively(ctx: ExtensionCommandContext): Promise<void> {
   const labels = BASH_VIEW_PICKER_CHOICES.map((choice) => choice.label);
   const picked = await ctx.ui.select(`${COMMAND_NAME} bash view`, labels);
-  // WHY: an undefined result is the user cancelling the dialog, so nothing is written and no
-  // WHY: confirmation is printed — silence is the correct response to Esc.
   if (picked === undefined) return;
   const choice = BASH_VIEW_PICKER_CHOICES.find((candidate) => candidate.label === picked);
   if (choice === undefined) {
@@ -407,13 +403,15 @@ async function pickBashViewInteractively(ctx: ExtensionCommandContext): Promise<
 }
 
 /**
- * `/pi-better-edit bash-view multi-file …` — the caps' command surface (ADR-0049 M6).
+ * `/pi-better-edit bash-view multi-file …` — the caps' command surface (M6).
  *
  * WHY numbers live here and not in the settings overlay: the overlay is an enum-only `SettingsList`
- * (ADR-0038), so arbitrary numeric editing belongs to the subcommand — exactly as M6 says. A value
+ * (docs/.archive_adrs/0038-settings-overlay.md), so arbitrary numeric editing belongs to the subcommand — exactly as M6 says. A value
  * outside the allowed range is refused with the range named, and nothing is written; the caps can be
  * LOWERED below the safety bound, never raised past it.
  */
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
+// Ref: docs/.archive_adrs/0038-settings-overlay.md
 function handleMultiFile(tokens: string[], ctx: ExtensionCommandContext): void {
   const sub = tokens[1] ?? "status";
   if (sub === "status") {
@@ -463,8 +461,7 @@ async function handleBashView(args: string, ctx: ExtensionCommandContext): Promi
     .trim()
     .split(/\s+/)
     .filter((token) => token.length > 0);
-  // WHY: the multi-file route is dispatched BEFORE the 3-token ceiling — its own surface takes four
-  // WHY: tokens (`bash-view multi-file max-files 8 global`), and it validates them itself.
+  // WHY: the multi-file surface takes four tokens, so it is routed before the 3-token ceiling.
   if (tokens[1] === "multi-file") {
     handleMultiFile(tokens.slice(1), ctx);
     return;
@@ -563,10 +560,9 @@ export function registerLensCommand(pi: ExtensionAPI): void {
         // WHY: a command handler must never reject into the host's event loop — the failure is
         // WHY: reported to the user and the command ends.
         if (error instanceof DomainError) {
-          // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope built for the model
-          // WHY: and host channels, not a sentence for the operator, so the envelope goes to the log
-          // WHY: (where a diagnosis can still reach it) and the user gets a plain failure notice. A
-          // WHY: failure that is not a DomainError keeps its own text: that part is user-actionable.
+          // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope for the model, not a
+          // WHY: sentence for the operator, so it goes to the log and the user gets a plain notice; a
+          // WHY: failure that is not a DomainError keeps its own text, which is user-actionable.
           reportDiagnostic("lens-command", `${COMMAND_NAME}: ${errorText(error)}`, error);
           notify(ctx, `${COMMAND_NAME}: the command failed unexpectedly.`, "error");
         } else {
