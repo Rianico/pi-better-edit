@@ -23,9 +23,23 @@
  * OPEN the text it is matched against, because an unanchored alternation let a tag anywhere in a
  * sentence satisfy the gate — `// fall through … (WHY: never break the view)` passed without being
  * a reason, which is the whole failure this gate exists to prevent.
+ *
+ * `Ref:` is the SOLE source-citation tag, and it takes a resolvable target: a repo-relative doc or
+ * record path, or an absolute `http(s)` link. The `WHY:`, `Invariant:`, `See ADR-` and
+ * `via https://` arms are gone by owner decision: a reason that needs a tag needs a citation a
+ * reader can follow, and a bare tag was the shape that let unreviewable prose through.
  */
 export const ALLOWLIST_RE =
-  /^(?:WHY:|SAFETY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|Ref: docs\/[\w./-]+)/;
+  /^(?:SAFETY:|TODO\(#\d+\):|HACK:|Ref: (?:docs\/[\w./-]+|https?:\/\/\S+))/;
+
+/**
+ * A `/** *\/` block carrying a retired tag as TEXT. Containment, not anchoring, and on purpose: a
+ * docblock has no tag position to anchor to, and a `WHY:`/`Invariant:` inside one is precisely the
+ * escape hatch the `//` rule closes — without this arm a block would become the place a stolen
+ * reason goes to live. The fix is the same either way (delete the tag, or cite a record with
+ * `Ref:`), so it shares the `prose` key instead of adding a rule kind.
+ */
+export const RETIRED_TAG_RE = /(?:WHY|Invariant):/;
 
 /**
  * Directive comments whose keyword must open the line for its tool to honour it, with the
@@ -172,6 +186,7 @@ function overlapsBody(body, comment) {
  */
 export function classifyComment(comment, facts, safetyLines) {
   if (isJSDoc(comment)) {
+    if (RETIRED_TAG_RE.test(comment.value)) return { rule: RULE.prose };
     const body = facts.functionBodies.find((range) => overlapsBody(range, comment));
     if (body !== undefined) return { rule: RULE.bodyDoc, data: { line: body[0] } };
     const lines = comment.loc.end.line - comment.loc.start.line + 1;

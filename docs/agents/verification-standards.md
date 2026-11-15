@@ -207,9 +207,12 @@ reddens on how a question was answered.
 `.oxlintrc.json` — forces every non-JSDoc comment to carry an allowlisted tag, so the *reason* has a place to live;
 the *content* is **convention**. The grammar is not this sentence: it is `ALLOWLIST_RE`, `GHERKIN_STEP_RE` and
 `GHERKIN_HEADING_RE` in `scripts/comment-gate-predicate.mjs`, shared with the baseline generator that owns the
-suppression file, and the four tags named here — `WHY:`, `SAFETY:`, `Invariant:`, `See ADR-` — are **among others**
-in it, as are `via https://`, `TODO(#<digits>):`, `HACK:` and `Ref: docs/<repo-path>`. A `/** */` block is judged
-structurally instead: module scope only, at most 12 lines. An enumeration in a doc decays; the path and the symbol
+suppression file, and the tags named here — `SAFETY:`, `TODO(#<digits>):`, `HACK:` — are **among others** in it.
+`Ref:` is the only citation tag and it takes a target: `Ref: docs/<repo-path>`, or `Ref: https://<link>` /
+`Ref: http://<link>`. `WHY:`, `Invariant:`, `See ADR-` and `via https://` are retired — a reason that is worth
+keeping is worth a record to follow, and a tag with nothing behind it was prose wearing a label. A `/** */`
+block is judged structurally instead: module scope only, at most 12 lines, and block TEXT that carries a retired
+tag is prose like any other. An enumeration in a doc decays; the path and the symbol
 do not.
 
 ## 3 · Decay

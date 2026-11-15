@@ -4,11 +4,12 @@
  * Grammar and baseline keying live in `scripts/comment-gate-predicate.mjs`, shared with the
  * baseline generator so the rule and its suppression file cannot drift.
  *
- * Allowed: WHY:, SAFETY:, Invariant:, See ADR-, via https://, TODO(#<issue>):, HACK:,
- * `Ref: docs/<repo-path>`, strict Gherkin (Given|When|Then|And|But + space, Feature:|Scenario:),
- * and `/** *\/` documentation at module scope within 12 lines.
- * Rejected: prose, an in-body `/** *\/`, an over-cap block, and a `SAFETY:` run that does not
- * guard a cast or non-null assertion.
+ * Allowed: SAFETY:, TODO(#<issue>):, HACK:, `Ref: docs/<repo-path>`, `Ref: https://<link>`,
+ * `Ref: http://<link>`, strict Gherkin (Given|When|Then|And|But + space, Feature:|Scenario:), and
+ * `/** *\/` documentation at module scope within 12 lines. `Ref:` is the only citation tag: it
+ * takes a target, so a tag with nothing to follow is prose.
+ * Rejected: prose, a `/** *\/` block whose text carries a `WHY:` or `Invariant:` tag, an in-body
+ * `/** *\/`, an over-cap block, and a `SAFETY:` run that does not guard a cast or non-null assertion.
  *
  * Provenance: docs/agents/verification-standards.md. ADR pending (Stage 6) — no record for this
  * grammar exists yet, so no ADR number is cited here.
@@ -29,13 +30,13 @@ import {
 
 const MESSAGES = {
   [RULE.prose]:
-    "Comment carries no allowlisted tag. Prefix it with WHY:, SAFETY:, Invariant:, See ADR-, via https://, TODO(#<issue>):, HACK: or Ref: docs/<repo-path>; a Gherkin step is Given /When /Then /And /But (capitalized, trailing space) or a Feature:/Scenario: heading. Prefer deleting the comment until the code explains itself.",
+    "Comment carries no allowlisted tag. Prefix it with SAFETY:, TODO(#<issue>):, HACK:, Ref: docs/<repo-path> or Ref: https://<link>; a Gherkin step is Given /When /Then /And /But (capitalized, trailing space) or a Feature:/Scenario: heading. A `/** */` block that carries a WHY: or Invariant: tag is prose too. Prefer deleting the comment until the code explains itself.",
   [RULE.bodyDoc]:
     "`/** */` block sits inside a function body (the body starts at line {{line}}). Documentation belongs at module scope, on the declaration it describes: rename or extract until the code explains itself, and put the reason in a `//` tag comment.",
   [RULE.blockCap]:
     "`/** */` block spans {{lines}} lines, over the {{max}}-line cap. Move the rationale into an ADR under docs/adr/ and cite it on one line: `// Ref: docs/adr/<NNNN>-<slug>.md`.",
   [RULE.safetyPosition]:
-    "`SAFETY:` guards nothing: the next non-blank line ({{line}}) is not a TSAsExpression, TSTypeAssertion or TSNonNullExpression. Move the comment directly above the cast or non-null assertion it justifies, or use `WHY:` when it explains a reason instead of an unchecked byte-level claim.",
+    "`SAFETY:` guards nothing: the next non-blank line ({{line}}) is not a TSAsExpression, TSTypeAssertion or TSNonNullExpression. Move the comment directly above the cast or non-null assertion it justifies, or delete it when it explains a reason rather than an unchecked byte-level claim.",
   baselineMissing:
     "Comment gate baseline is {{reason}} at {{path}}, so no violation can be classified. Regenerate it with: {{command}}",
 };
