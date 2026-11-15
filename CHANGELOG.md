@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Documentation
+
+* **read:** teach the outline workflow in the served prompts: start with outline above about 200 lines, read only the target window, and do not read the whole file to verify.
+
 ## [2.18.2] - 2026-11-15
 
 ### Bug Fixes
