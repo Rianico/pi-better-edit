@@ -205,10 +205,12 @@ reddens on how a question was answered.
 
 **Enforcement: mixed.** The comment gate — `harness/no-comments`, an oxlint jsPlugin configured in
 `.oxlintrc.json` — forces every non-JSDoc comment to carry an allowlisted tag, so the *reason* has a place to live;
-the *content* is **convention**. The tag list is not this sentence: it is `ALLOWLIST_RE` (with its Gherkin branch)
-in `scripts/oxlint-plugin-comment-gate.js`, and the four tags named here — `WHY:`, `SAFETY:`, `Invariant:`, `See
-ADR-` — are **among others** in it, as are `via https://`, `TODO(#<digits>):`, `HACK:` and the Gherkin keywords.
-An enumeration in a doc decays; the path and the symbol do not.
+the *content* is **convention**. The grammar is not this sentence: it is `ALLOWLIST_RE`, `GHERKIN_STEP_RE` and
+`GHERKIN_HEADING_RE` in `scripts/comment-gate-predicate.mjs`, shared with the baseline generator that owns the
+suppression file, and the four tags named here — `WHY:`, `SAFETY:`, `Invariant:`, `See ADR-` — are **among others**
+in it, as are `via https://`, `TODO(#<digits>):`, `HACK:` and `Ref: docs/<repo-path>`. A `/** */` block is judged
+structurally instead: module scope only, at most 12 lines. An enumeration in a doc decays; the path and the symbol
+do not.
 
 ## 3 · Decay
 
