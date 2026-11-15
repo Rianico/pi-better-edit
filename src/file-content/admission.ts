@@ -116,9 +116,23 @@ export function normalizeReadPayload(params: RawReadParams): RawReadParams {
         : undefined;
   if (file === undefined) return raw;
   const hasFlat = raw.offset !== undefined || raw.limit !== undefined;
+  // WHY: (#271) a model can serialize `windows` as a JSON string; the schema requires an array, so
+  // WHY: the call is refused before `execute` and the model falls back to a whole-file read, paying
+  // WHY: for the failed window AND the page. Fold a JSON array here, BEFORE the schema sees it. A
+  // WHY: parse failure or a non-array JSON value stays as-is, so the downstream array guard keeps its
+  // WHY: single `windows must be an array` wording.
+  let namedWindows: unknown = raw.windows;
+  if (typeof namedWindows === "string") {
+    try {
+      const parsed = JSON.parse(namedWindows) as unknown;
+      if (Array.isArray(parsed)) namedWindows = parsed;
+    } catch {
+      // WHY: unparseable text is not a window list; the downstream array guard owns that refusal.
+    }
+  }
   const windows =
     raw.windows !== undefined
-      ? raw.windows
+      ? namedWindows
       : hasFlat
         ? [
             {
