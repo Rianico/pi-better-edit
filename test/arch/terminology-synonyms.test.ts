@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
@@ -80,10 +80,12 @@ function stripCanonical(text: string): string {
   out = out.replace(/"echo"|'echo'|`echo`/gi, "");
   // Allow a CITED RECORD'S PATH. A `docs/…/*.md` citation names a file, not a vocabulary choice,
   // so a banned token inside the filename (`0009-bounded-hash-echo-guard.md`) is provenance rather
-  // than prose — and a Ref must never lose to a prose rule. Narrow by construction: only the
-  // `docs/…md` literal is stripped, so the same token in surrounding prose, in an identifier or in
-  // a bare mention still fails below. Relative link forms (`../../docs/adr/…md`) match too.
-  out = out.replace(/docs\/[\w./-]+\.md/gi, "");
+  // than prose — and a Ref must never lose to a prose rule. Narrow twice over: only the `docs/…md`
+  // literal is matched, and it is stripped ONLY when a file by that name exists, so a path-shaped
+  // decoy earns nothing and the same token in prose, in an identifier or in a bare mention still
+  // fails below. The fragment is repo-relative even inside a relative link (`../../docs/adr/…md`),
+  // which is why the match — not the whole link — is what gets resolved.
+  out = out.replace(/docs\/[\w./-]+\.md/gi, (literal) => (existsSync(literal) ? "" : literal));
   return out;
 }
 
@@ -214,6 +216,13 @@ describe("path allowance — a cited record is provenance, not vocabulary", () =
     // strip matches, so the citation style is irrelevant to the allowance.
     const linked = "per [the guard](../../docs/.archive_adrs/0009-bounded-hash-echo-guard.md)";
     expect(/echo/i.test(stripCanonical(linked))).toBe(false);
+  });
+
+  it("flags a path-shaped decoy that backs no record", () => {
+    // The allowance is for PROVENANCE. A path literal with no file behind it is not a citation,
+    // so it must not launder the token: existence, not shape, is the test.
+    const decoy = "// Ref: docs/.archive_adrs/9999-no-such-record-echo.md";
+    expect(/echo/i.test(stripCanonical(decoy))).toBe(true);
   });
 
   it("still flags the same token as prose", () => {
