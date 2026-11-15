@@ -47,7 +47,8 @@ export interface ComputeDriftInput {
   resultLines: string[];
   range?: ResolvedRange;
   intervals?: ResolvedRange[];
-  /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — see CAND-9 WHY above. */
+  /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — the CAND-9
+   * identity rule is stated in that function's docblock. */
   reported: Set<string>;
   cap?: number;
   /** Canon digests parallel to `served`, derived from the served rows' leases; absent or empty
