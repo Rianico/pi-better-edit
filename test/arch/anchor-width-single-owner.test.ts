@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
@@ -123,10 +123,22 @@ interface WidthHit {
   line: string;
 }
 
+/**
+ * A cited record's PATH is not a hand-rolled width literal, and every record slug carries the width
+ * it introduced — `0002-tokenizer-stable-4-character-…` is the record that OWNS the digit-subcube
+ * reservation this surface derives from, so the citation the comment grammar requires was the thing
+ * the count-word arm flagged. Only a path that RESOLVES is stripped: a decoy or a typo stays in the
+ * scanned text, so the exemption cannot be widened by inventing a path.
+ */
+function withoutCitedRecordPaths(line: string): string {
+  return line.replace(/docs\/[\w./-]+\.md/g, (cited) => (existsSync(cited) ? "" : cited));
+}
+
 function scanStrictLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
-  if (COUNT_WORD_RE.test(line)) hits.push({ arm: "count-word", line });
-  if (COUNT_WORD_SPACE_RE.test(line)) hits.push({ arm: "count-word-space", line });
+  const scanned = withoutCitedRecordPaths(line);
+  if (COUNT_WORD_RE.test(scanned)) hits.push({ arm: "count-word", line });
+  if (COUNT_WORD_SPACE_RE.test(scanned)) hits.push({ arm: "count-word-space", line });
   // WHY: generalized quantifier — flags `[class]{N}` for any `N` that is not
   // WHY: the live `HASH_LEN`, so the arm stays load-bearing at width 5 instead
   // WHY: of going blind past `3|4`. The `TEMP_UUID_RE` exact-line allowlist

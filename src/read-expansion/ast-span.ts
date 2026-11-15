@@ -69,7 +69,6 @@ export function findEnclosingChain(
   const visit = (node: SyntaxNodeLike): void => {
     const range = scopeLineRange(node);
     if (range.startLine > line || range.endLine < line) return;
-    // WHY: the root is the whole file; widening to it would turn a top-level probe into the file.
     if (node !== root && Object.hasOwn(scopeKinds, node.type)) {
       enclosing.push({ node, length: range.endLine - range.startLine + 1 });
     }
@@ -77,7 +76,6 @@ export function findEnclosingChain(
   };
 
   visit(root);
-  // WHY: stable sort keeps discovery order for equal extents; nesting depth then decides.
   enclosing.sort((a, b) => a.length - b.length);
   return enclosing.map((entry) => entry.node);
 }

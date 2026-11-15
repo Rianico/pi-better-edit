@@ -476,7 +476,10 @@ const OP_KEY_NEEDLE =
 // repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // this guard's own prose (not shrink-only, so no re-assertion is owed).
 // THE GUARD'S STATED CONTRACT: per-file membership, per surface.
-const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
+// WHY (shrink-only): `src/hashline/apply.ts` was carved out only because its sweep note NAMED the
+// retired spellings. The ban deleted that note and the file names no retired wire field now, so the
+// carve-out went with it — an exemption whose documenting comment is gone is a hole, not a waiver.
+const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts"]);
 
 function retiredWireScope(): string[] {
   // WHY (J1/J2): extension-independent — the helper matches by endsWith, so
@@ -544,7 +547,7 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
       expect(scope).toContain(f);
     expect(scope).toContain("scripts/runtime-edge-test.mjs"); // the motivated artifact, pinned BY NAME (model-facing strings on a declared entry point)
     expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
-    expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts", "src/hashline/apply.ts"]); // J4: carve-out set pinned against addition
+    expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts"]); // J4: the set only SHRINKS — apply.ts left it when the ban deleted its sweep note
     expect(retiredWireViolations()).toEqual([]);
   });
 
@@ -585,9 +588,10 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(edit).toContain("REMOVED");
     expect(edit).toContain(["replace", "with"].join("_"));
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toMatch(/WHY:.*named wire fields/);
-    expect(apply).toContain(["copy", "from"].join("_"));
-    expect(apply).toContain(["delete", "source"].join("_"));
+    // The retired spellings are GONE from this file, not merely undocumented: the carve-out that
+    // excused them here is removed, so naming one is a violation again without any exemption.
+    expect(apply).not.toContain(["copy", "from"].join("_"));
+    expect(apply).not.toContain(["delete", "source"].join("_"));
   });
 
   it("carved files carry the spellings only inside leading-marker WHY:/SAFETY: comment lines", () => {

@@ -4,13 +4,15 @@ import { getCached, withBusyRetry } from "../store-kernel/index.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
-// WHY: the CAS store is a bounded cache: 50 MB globally, and
-// WHY: `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path, where
-// WHY: `snapshot_lineage_bytes ≈ 40 × line_count`; eviction is global, oldest-`created_at` first.
-// WHY: Identity wins over budget: a snapshot a live anchor can still resolve through — an active lease,
-// WHY: an undo restore target, or a lease retired inside the 1-hour grace — is PINNED. An all-pinned
-// WHY: candidate set defers instead: a soft overflow that lapses with the 7-day TTL, which
-// WHY: `overSoftOverflow` reports and the 100 MB ceiling alone governs.
+/**
+ * The CAS store is a bounded cache: 50 MB globally, and
+ * `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path, where
+ * `snapshot_lineage_bytes ≈ 40 × line_count`; eviction is global, oldest-`created_at` first.
+ * Identity wins over budget: a snapshot a live anchor can still resolve through — an active lease,
+ * an undo restore target, or a lease retired inside the 1-hour grace — is PINNED. An all-pinned
+ * candidate set defers instead: a soft overflow that lapses with the 7-day TTL, which
+ * `overSoftOverflow` reports and the 100 MB ceiling alone governs.
+ */
 
 export const VACUUM_GLOBAL_BUDGET_BYTES = 50 * 1024 * 1024;
 export const VACUUM_SOFT_OVERFLOW_BYTES = 100 * 1024 * 1024;
@@ -71,15 +73,9 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
     "SELECT snapshot_id, path, snapshot_hash, line_count, created_at FROM file_snapshots " +
       "WHERE committed = 1 ORDER BY created_at ASC, snapshot_id ASC",
   );
-  // WHY: pinning is a two-table predicate (spec §3.6.1): a lease still active inside the session TTL,
-  // WHY: a lease retired inside the 1-hour grace, or an undo restore target. The probe MUST stay
-  // WHY: index-covered: one path holds a lease per served line, so without `served_snapshot_hash` each
-  // WHY: snapshot re-scans the whole lease set — `idx_leases_file_snapshot` keeps a ~35 ms pass.
   const pinnedStmt = db.prepare(
     "SELECT DISTINCT fs.snapshot_id AS snapshot_id FROM file_snapshots fs " +
       "WHERE fs.committed = 1 AND (" +
-      // WHY: the active half is the canonical expiry predicate, so the pin probe and the grant path
-      // WHY: cannot disagree about which leases still resolve; `sl` is dropped so it can name `served_leases`.
       // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
       "EXISTS (SELECT 1 FROM served_leases WHERE served_leases.file_path = fs.path " +
       "AND served_leases.served_snapshot_hash = fs.snapshot_hash " +
@@ -100,7 +96,6 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
 }
 
 function lineageBytes(row: VacuumSnapshotRow, perLine: number): number {
-  // WHY: an empty file still owns one counter row, so its cost floors at one line.
   return perLine * Math.max(1, row.line_count);
 }
 
@@ -140,11 +135,7 @@ export function vacuumSnapshots(db: DatabaseSync, options: VacuumOptions = {}): 
       .listPinned(now - SERVED_TTL_MS, now - VACUUM_RETIRED_PIN_MS)
       .map((row) => row.snapshot_id),
   );
-  // WHY: an in-flight materialization protects its own row: it names the snapshot before the serve
-  // WHY: grants `served_leases`, so the sweep must treat it exactly like a live pin (spec §3.6.1).
   for (const id of options.protectSnapshotIds ?? []) pinned.add(id);
-  // WHY: rows are ascending by `created_at`, so the last row seen for a path is its newest version
-  // WHY: — the file size the per-path retention window is sized against.
   const newestLineCount = new Map<string, number>();
   const pathCounts = new Map<string, number>();
   let total = 0;
@@ -216,7 +207,6 @@ function deleteVacuumSnapshots(db: DatabaseSync, snapshotIds: number[]): void {
       try {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // WHY: best-effort rollback — the original failure is authoritative and must not be masked.
         reportDiagnostic(
           "snapshot-store",
           "[snapshot-store] failed to rollback vacuum transaction:",

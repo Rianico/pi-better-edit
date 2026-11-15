@@ -23,7 +23,6 @@ function lineBreaksIn(text: string, endExclusive: number): number {
       breaks++;
       continue;
     }
-    // WHY: a CR whose LF lies outside the slice is not a break yet — otherwise a column-0 end would count an extra break and promote the line.
     if (char === 13) {
       if (text.charCodeAt(index + 1) === 10) {
         if (index + 1 < endExclusive) {
@@ -54,8 +53,6 @@ export function lineSpanForOffsets(
   if (startOffset < 0 || endOffset < startOffset || endOffset > text.length) return null;
   const startLine = lineBreaksIn(text, startOffset) + 1;
   if (endOffset === startOffset) return { startLine, endLine: startLine };
-  // WHY: exclude the final character: when it is the newline that terminates the node's last line,
-  // WHY: counting it would promote a column-0 end to the next line.
   const endLine = lineBreaksIn(text, endOffset - 1) + 1;
   return { startLine, endLine };
 }

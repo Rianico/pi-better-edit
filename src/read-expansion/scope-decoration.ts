@@ -100,7 +100,6 @@ function decorateScope(node: SyntaxNodeLike, spec: DecorationSpec): DecoratedSco
   let startLine = range.startLine;
   let previous = span.previousNamedSibling;
   while (previous !== null && previous !== undefined && isAttachable(previous, spec)) {
-    // WHY: a blank line breaks attachment; a comment far above a declaration is not its doc block.
     const previousRange = scopeLineRange(previous);
     if (previousRange.endLine + 1 !== startLine) break;
     startLine = previousRange.startLine;

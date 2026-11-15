@@ -64,7 +64,6 @@ export function withQualifiedNames(
             timeoutMs,
           );
           if (qualified === TIMED_OUT) {
-            // WHY: one hanging read must not spend the timeout again for every folded group.
             disabled = true;
             break;
           }
@@ -77,9 +76,7 @@ export function withQualifiedNames(
               spans[index] = { ...span, name: name.slice(0, 120) };
             }
           }
-        } catch {
-          // WHY: enrichment is advisory; any resolver failure leaves the parser label intact.
-        }
+        } catch {}
       }
       return { spans };
     },

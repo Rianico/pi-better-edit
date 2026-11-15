@@ -48,7 +48,6 @@ function fenceOpen(line: string): Fence | null {
   const marker = match[1]!;
   const char = marker[0] as "`" | "~";
   const info = match[2] ?? "";
-  // WHY: a backtick info string cannot contain a backtick; such a line is not a fence.
   if (char === "`" && info.includes("`")) return null;
   return { char, length: marker.length };
 }
@@ -106,7 +105,6 @@ export function findMarkdownSection(
     const heading = atxHeading(line);
     if (heading !== null) headings.push({ line: index, ...heading });
   }
-  // WHY: an unclosed fence makes every following boundary unknowable; fail closed for the file.
   if (fence !== null || headings.length === 0) return null;
 
   let best: MarkdownSection | null = null;

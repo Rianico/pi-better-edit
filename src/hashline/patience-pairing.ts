@@ -7,7 +7,7 @@
  *   3. pinless rigid runs with identical canon sequences zip pairwise (Probe N);
  *   4. bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when it
  *      lies on every maximal traceback path, so several optimal pairings stay UNPAIRED / RETIRED.
- * Invariant: `prevLines`/`currLines` are contiguous ascending 1-based (spec §5.2), so index + 1 = line; an empty backbone
+ * `prevLines`/`currLines` are contiguous ascending 1-based, so index + 1 = line; an empty backbone
  * falls through to leaves and no bound recurses on itself, so the scan budget cannot starve.
  */
 
@@ -23,9 +23,8 @@ export interface AnchorPin {
 
 export interface PairingOptions {
   /**
-   * WHY: production callers omit this so the dynamic `MAX(100000, 4*(prev+curr))` guard
-   * WHY: applies; tests inject a tiny budget to prove the guard halts alignment instead of
-   * WHY: silently recursing past it.
+   * Production callers omit this so the dynamic `MAX(100000, 4*(prev+curr))` guard applies; tests
+   * inject a tiny budget to prove the guard halts alignment instead of silently recursing past it.
    */
   scanBudget?: number;
   /**
@@ -117,12 +116,6 @@ interface WeightedPin {
   displacement: number;
 }
 
-/**
- * WHY: per-rank prefix-min indexes keep the minimal-displacement LIS at O(m log m): a
- * WHY: Fenwick over each rank's compressed `currLine` coordinates answers "min displacement of a
- * WHY: length-(k-1) subsequence ending before this coordinate" in O(log m) without an O(m²)
- * WHY: scan over predecessors.
- */
 class RankDisplacementIndex {
   private readonly sorted: number[];
   private readonly tree: Float64Array;
@@ -187,8 +180,6 @@ function computeLengthAndMinDisplacement(pins: WeightedPin[]): {
     const rank = lengths[i]!;
     let shortest = pin.displacement;
     if (rank > 1) {
-      // WHY: the predecessor with rank-1 is guaranteed to have been processed already
-      // WHY: (pins arrive in ascending prevLine), so a finite minimum always exists when rank > 1.
       const predecessor = indexes[rank - 2]!.queryBelow(pin.currLine);
       if (predecessor !== Infinity) shortest += predecessor;
     }
@@ -385,9 +376,6 @@ export function computeLCSPaths(
       const diagonal = suffix[(i + 1) * stride + (j + 1)]!;
       const pKey = prevLines[pStart - 1 + i]!.canonHash;
       const cKey = currLines[cStart - 1 + j]!.canonHash;
-      // WHY: `pairingCount[i][j] === 1` leaves exactly one pairing-optimal continuation per step, so
-      // WHY: this preference order reproduces *the* unique embedding: a canon match that preserves the
-      // WHY: optimum must be on it, and a skip-both step can only continue inside `(i + 1, j + 1)`.
       if (pKey === cKey && diagonal + 1 === target) {
         pairs.push([pStart + i, cStart + j]);
         i++;
@@ -461,8 +449,6 @@ export function pairSnapshots(
         alignRecursive(pCursor, pEnd, cCursor, cEnd);
         return;
       }
-      // WHY: contested candidate pins leave the backbone empty, and recursing on identical bounds
-      // WHY: would never shrink the interval — fall through so progress and the scan budget survive.
     }
 
     const pCount = pEnd - pStart + 1;
@@ -477,8 +463,6 @@ export function pairSnapshots(
         }
       }
       if (identical) {
-        // WHY: equal counts with an identical canon sequence is a pure shift of a rigid
-        // WHY: run: the only sound pairing is the positional zip (spec §3.5.1, Probe N).
         for (let i = 0; i < pCount; i++) pairing.set(pStart + i, cStart + i);
         return;
       }
@@ -499,9 +483,6 @@ export function pairSnapshots(
   if (boundaries.prefix === 0 && boundaries.suffix === 0) {
     alignRecursive(1, prevLines.length, 1, currLines.length);
   } else {
-    // WHY: the shortcut still charges the top-level interval the full scan would have charged, so an
-    // WHY: injected `scanBudget` keeps its pre-trim meaning: too small for the whole interval pairs
-    // WHY: nothing, exactly as before; the middle is charged like any other sub-interval.
     // Ref: docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md
     const fullLength = prevLines.length + currLines.length;
     if (scanBudget < fullLength) return pairing;

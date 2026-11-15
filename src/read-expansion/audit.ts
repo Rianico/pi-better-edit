@@ -42,16 +42,12 @@ export interface ProviderFailureLogEntry {
 
 /** `<stateRoot>/selection-range.log` — a sibling of `diagnostics.log`. */
 export function selectionRangeLogPath(): string {
-  // WHY: join of trusted stateRoot with a fixed file name — constant suffix, no traversal.
   return join(stateRoot(), SELECTION_RANGE_LOG_NAME);
 }
 
 /**
  * Move a pre-rename log pair onto the new names, each generation only while its new path is absent.
  *
- * WHY here and not in `state-migration.ts`: that pass adopts artifacts that followed a STATE-ROOT
- * move, and its marker makes it a once-per-root event. This is a rename INSIDE the root, so it has
- * to be in place before the very next write rather than at the next migration.
  */
 function adoptRetiredLogName(): void {
   for (const generation of ["", ".1"] as const) {
@@ -60,9 +56,7 @@ function adoptRetiredLogName(): void {
     if (existsSync(to) || !existsSync(from)) continue;
     try {
       renameSync(from, to);
-    } catch {
-      // WHY: best effort — the append this precedes still succeeds, and the old pair stays readable under its retired name.
-    }
+    } catch {}
   }
 }
 
@@ -101,9 +95,7 @@ function appendRecord(fields: Record<string, unknown>): void {
     adoptRetiredLogName();
     rotateIfOversize(path, Buffer.byteLength(line, "utf-8"));
     appendFileSync(path, line, "utf-8");
-  } catch {
-    // WHY: best effort — the read already served its rows (see the module WHY).
-  }
+  } catch {}
 }
 
 /** Rotate BEFORE the append so one oversized record still lands in a fresh file. */
@@ -112,7 +104,6 @@ function rotateIfOversize(path: string, incomingBytes: number): void {
   try {
     current = statSync(path).size;
   } catch {
-    // WHY: an absent log is the first-run state, not a fault.
     return;
   }
   if (current + incomingBytes <= SELECTION_RANGE_LOG_MAX_BYTES) return;

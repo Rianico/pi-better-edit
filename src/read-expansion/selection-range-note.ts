@@ -95,7 +95,6 @@ function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T | typeof
 
 /** Collapse a provider-supplied name to what one header clause can carry safely. */
 function sanitizeName(value: string): string {
-  // WHY: a Markdown heading may legally contain brackets, and the header is one bracket grammar.
   const collapsed = value
     .replace(/[[\]]/g, "")
     .replace(/\s+/g, " ")
@@ -127,7 +126,6 @@ function candidateWindows(
     if (!isPositiveInteger(window.offset) || !isPositiveInteger(window.limit)) continue;
     if (window.offset > input.totalLines) continue;
     const end = Math.min(window.offset + window.limit - 1, input.totalLines);
-    // WHY: a window that covers its file has no larger span to name, so it is not a candidate.
     if (window.offset === 1 && end === input.totalLines) continue;
     candidates.push({ index, window: { offset: window.offset, limit: end - window.offset + 1 } });
   }
@@ -189,16 +187,12 @@ function admittedChain(
  */
 function renderClause(chain: readonly AdmittedSpan[], lastLine: number): string {
   const innermost = chain[0]!;
-  // WHY: Neovim trims from the outer end (`trim_scope = 'outer'), keeping the innermost.
   const kept = chain.slice(0, 3);
   const labels: string[] = [];
   for (let index = kept.length - 1; index >= 0; index--)
     labels.push(spanLabel(kept[index]!.kind, sanitizeName(kept[index]!.name), kept[index]!.source));
-  // WHY: ASCII `>` over U+203A — the note is machine-facing, and the glyph has width and replacement risk in a constrained font.
   const breadcrumb = labels.join(" > ");
   const preposition = lastLine <= innermost.end ? "in" : "starts in";
-  // WHY: parentheses bind the extent to the innermost name, where a comma bound it to the whole chain and `lines` collided with
-  // WHY: the window's own `lines a-b of N total`. `(span a-b)` binds and names the extent in the same eight characters.
   return `; ${preposition} ${breadcrumb} (span ${innermost.start}-${innermost.end})`;
 }
 
@@ -220,7 +214,6 @@ async function lookup(
       input.timeoutMs ?? NOTE_LOOKUP_TIMEOUT_MS,
     );
   } catch {
-    // WHY: a throwing or hanging provider must never fail a read; the note is a best effort.
     return { failure: { source, reason: "provider_error" } };
   }
   if (answer === TIMED_OUT) return { failure: { source, reason: "provider_error" } };
@@ -238,8 +231,6 @@ async function lookup(
   if (!("valid" in admitted) || admitted.valid !== true)
     return { failure: { source, reason: "invalid_answer" } };
   const innermost = admitted.spans[0]!;
-  // WHY: a chain whose innermost level misses the window's first line is a wrong answer, and a
-  // WHY: wrong answer must behave exactly like no answer — the served rows are already correct.
   if (innermost.start > window.offset || innermost.end < window.offset) return {};
   if (innermost.start === window.offset && innermost.end === window.offset + window.limit - 1)
     return {};

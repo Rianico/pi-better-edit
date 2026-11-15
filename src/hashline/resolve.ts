@@ -107,10 +107,6 @@ export function resolveLineIdentity(
   lease: LeaseIdentityView,
   source: LeaseSpanSource,
 ): LineIdentityDecision {
-  // WHY: a live lease is authoritative about *where* its line is: content anchors can be re-assigned
-  // WHY: to a colliding line, and §7.1.5 forbids committing to any line whose `line_id` is not the
-  // WHY: leased one. A retired lease is `E_STALE_RANGE` even when its anchor string is gone from the
-  // WHY: content (spec §3.1.1 line 89 / §5.3); the stale coordinate stays lease-derived (Probe P).
   if (lease.retiredAt !== null) {
     return { kind: "stale", line: lease.servedLineNumber };
   }
@@ -171,14 +167,12 @@ export function uniqueServedPosition(
  */
 export type EditPlacement = "in-place" | "before" | "after";
 
-// WHY: bound to the union (§9.12): a literal outside `EditPlacement` fails typecheck, so no consumer re-enumerates the spellings inline.
 const EDIT_PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly EditPlacement[];
 
 function isEditPlacement(value: unknown): value is EditPlacement {
   return typeof value === "string" && (EDIT_PLACEMENTS as readonly string[]).includes(value);
 }
 
-// WHY: rendered from the bound list so the refusal's allowed values cannot drift from the vocabulary.
 function placementSpellings(): string {
   const quoted = EDIT_PLACEMENTS.map((value) => `"${value}"`);
   const last = quoted.pop()!;
@@ -258,7 +252,6 @@ function formatNotFound(
   if (notFound.length === 0) return;
   const distinct = [...new Map(notFound.map((m) => [m.ref.hash, m])).values()];
   const refList = distinct.map((m) => `"${m.ref.hash}"`).join(", ");
-  // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]` header when the caller wraps this in a `DomainError`.
   out.push(
     `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
@@ -380,11 +373,6 @@ function assertItem(edit: Record<string, unknown>): void {
       message: `The edit requires "anchor_from" and "anchor_to" anchor strings (bare ${HASH_LEN}-char hashes from served output). Nothing was written.`,
     });
   }
-  // WHY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement value:
-  // WHY: `pipeline.ts` and `apply.ts` fall an unrecognized one through to the in-place path, which
-  // WHY: REMOVES the target span, and no `switch`/`assertNever` covers it. Keep it a refusal.
-  // WHY: The message names the wire `at`, not the internal `placement`, because `E_BAD_PAYLOAD` is MODEL
-  // WHY: tier and the retrying party never sent the internal field (sweep (a)).
   if ("placement" in edit && !isEditPlacement(edit.placement)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: `Field "at" must be ${placementSpellings()}. Nothing was written.`,
@@ -410,7 +398,6 @@ function assertItem(edit: Record<string, unknown>): void {
   }
 }
 
-// WHY: HASH_CLASS is derived from the trusted alphabet at the configured width, linear row prefix — bounded, no user input, no ReDoS.
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 function firstHashFromBlock(block: string): string | undefined {
   for (const line of block.split("\n")) {
@@ -532,8 +519,6 @@ export function valEdit(
     }
     return { resolved: undefined, mismatches };
   }
-  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so the swapped pair
-  // WHY: applies with the range swapped and the caller narrates `[W_REVERSED_ANCHORS]`.
   if (startResolved.line > endResolved.line) {
     return {
       resolved: {

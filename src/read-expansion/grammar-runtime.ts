@@ -22,7 +22,6 @@ async function loadRuntime(): Promise<WebTreeSitter | undefined> {
   const pending = import("web-tree-sitter").catch(() => undefined);
   runtime = pending;
   const loaded = await pending;
-  // WHY: a failed resolution is retried on the next probe rather than poisoning the process.
   if (loaded === undefined) runtime = undefined;
   return loaded;
 }
@@ -37,7 +36,6 @@ async function initializeParser(module: WebTreeSitter): Promise<void> {
   try {
     await parserInit;
   } catch {
-    // WHY: a failed host init is retried on the next read rather than poisoning the process.
     parserInit = undefined;
     throw new Error("web-tree-sitter init failed");
   }

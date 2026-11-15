@@ -8,7 +8,6 @@ export type Hasher = {
 
 let hasher: Hasher | null = null;
 
-// WHY: getH keeps the null check and its message in one place, so every entry point fails with the same error.
 function getH(): Hasher {
   if (hasher) return hasher;
   throw new Error(

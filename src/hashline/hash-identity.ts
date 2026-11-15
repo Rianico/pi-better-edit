@@ -16,7 +16,6 @@ type HashPrior = {
 };
 
 export interface HashOptions {
-  // WHY: required — file materialization has no content-only fallback; tests use `contentOnlyHashes`.
   path: string;
   prior?: HashPrior;
   persist?: boolean;
@@ -34,9 +33,6 @@ export interface HashOptions {
 /**
  * The anchor assignment a walk can carry, for a caller that visits every line anyway.
  *
- * WHY: `hashesFor` returns a finished array, which forces it to split the text to produce one. The
- * WHY: served read walks its lines to select a page, so it takes the assignment step instead and drives
- * WHY: it from that walk — one pass over the text for both.
  *
  * A plan is single-use: `assign` carries the bit set of every anchor it has handed out, so replaying one
  * over a second walk keeps assigning from a space the first walk already spent. Ask for a fresh plan
@@ -57,15 +53,11 @@ export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 export const HASH_SPACE = ALPHA.length ** HASH_LEN;
 const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
-// WHY: an all-digit anchor is confusable with a line number — pasted back it resolves and verifies,
-// WHY: so the mistake is undetectable. The digit subcube is reserved and never served, derived from
-// WHY: ALPHA so a width or alphabet change recomputes it without a new literal.
+// Ref: docs/adr/0002-tokenizer-stable-4-character-anchors-canon-v3.md
 const DIGIT_CHARS = ALPHA.split("").filter((c) => c >= "0" && c <= "9");
 const RESERVED_HASH_SPELLINGS = DIGIT_CHARS.length ** HASH_LEN;
 export const USABLE_HASH_SPACE = HASH_SPACE - RESERVED_HASH_SPELLINGS;
-// WHY: fixed digit set from the trusted alphabet at the configured width, no user input, linear character class, no ReDoS.
 export const DIGIT_ANCHOR_RE = new RegExp(`^[${DIGIT_CHARS.join("")}]{${HASH_LEN}}$`);
-// WHY: the reservation is a fixed pre-set mask, so the base index still derives from content and identical content keeps identical anchors.
 const RESERVED_BITS: Uint32Array = (() => {
   const digitIdx = DIGIT_CHARS.map((c) => ALPHA.indexOf(c));
   const radix = digitIdx.length;
@@ -85,16 +77,11 @@ const RESERVED_BITS: Uint32Array = (() => {
   return bits;
 })();
 export const MAX_HASH_LINES = USABLE_HASH_SPACE;
-// WHY: single owner of the space-exhaustion payload — the producer throws it
-// WHY: and the capacity tests assert it, so the binding cannot drift.
 export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
   limitKind: "hash-space",
   limit: USABLE_HASH_SPACE,
 } as const;
 
-// WHY: the stride stays coprime with the raw and the usable space, so the probe cycles the raw
-// WHY: bitset — reserved indices are just set bits — and exhaustion detection stays exact: 3,907 is
-// WHY: prime and does not divide 62^4 = 2^4 × 31^4.
 export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 /**
@@ -114,14 +101,14 @@ export const CANON_VERSION = 3;
  * and a canon-seeded identity cannot tell `const s = "a`+NBSP+`b";` from `const s = "a b";`; (3) the all-digit reservation and
  * (4) the probe stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
  *
- * WHY: single owner of the literal — anchor-bearing artifacts (the undo/snapshot generation gate and the open-time sweep) read this
+ * Single owner of the literal: anchor-bearing artifacts (the undo/snapshot generation gate and the open-time sweep) read this
  * axis only, never `CANON_VERSION`; the snapshot cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a
  * canon-only change misses the cache without invalidating anchor state while a generation change invalidates both.
  */
 export const ANCHOR_GENERATION = 2;
 
 /**
- * WHY: an explicit code-point list, never a Unicode property escape — \p{White_Space} and \p{Cf}
+ * An explicit code-point list, never a Unicode property escape: \p{White_Space} and \p{Cf}
  * drift with engine versions while a versioned canon must be a frozen function (issue #22).
  * Frozen set, 6 + 3 + 11 + 5 + 3 = 28 code points: TAB, LF, VT, FF, CR, SP; NEL, NBSP, OGHAM
  * SPACE; EN QUAD…HAIR SPACE (U+2000–U+200A); LINE/PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM
@@ -180,38 +167,30 @@ function nearestNew(candidates: number[], target: number): number {
   return right < candidates.length ? right : -1;
 }
 
-// WHY: single owner of anchor derivation — every allocation base index flows through
-// WHY: `contentBaseIndex` or `fileBaseIndex`. File-scoped seeding keeps the full 32 bits;
-// WHY: content-only keeps `>>> 14` because 18-bit confinement makes same-spelling-different-file
-// WHY: collisions likely (`n²/2^18`), and `assignHash` refuses a pre-set `RESERVED_BITS` index.
 export function canonicalAnchorPath(path: string): string {
   if (!isAbsolute(path)) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: `Anchor derivation requires an absolute file path, got ${JSON.stringify(path)}.`,
     });
   }
-  // WHY: `resolve` (lexical on absolute inputs — no realpath, no cwd) strips a
-  // WHY: trailing separator, so `/x/a.ts/` and `/x/a.ts` seed identically.
   return resolve(path);
 }
-// WHY: the seed is the line's RAW bytes ([ADR-0013](../../docs/adr/0013-anchor-identity-derives-from-raw-bytes.md));
-// WHY: `canon` is an alignment and verification digest, never the identity function.
+// Ref: docs/adr/0013-anchor-identity-derives-from-raw-bytes.md
 function contentBaseIndex(line: string): number {
   return (xxh32(line) >>> 14) % HASH_SPACE;
 }
 export function fileBaseIndex(line: string, pathSeed: number): number {
   return (xxh32(line, pathSeed) >>> 0) % HASH_SPACE;
 }
-// WHY: large-class — allocation and snapshot IO are one cohesive state; splitting would scatter
-// WHY: the stable-hash invariant. The cache bound is the served admission budget (SERVED_MAX_LINES):
-// WHY: every product materialization is clamped to one budget per call (`src/file-content/loader.ts`),
-// WHY: so the memo never clears in-budget and sits ~40x below V8's smallest per-Map cap (~2^23 on
-// WHY: Node 24.0.0). Unbounded it would take one entry per allocated anchor (~14.77M on the
-// WHY: exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so RangeError would pre-empt
-// WHY: E_LARGE_FILE. Eviction is clear-on-full (amortized O(1); FIFO via `keys().next()` measured
-// WHY: ~1400x slower, `scripts/bench-evict.mjs`) and behaviour-preserving: `idxToHash` is pure.
-// WHY: `buildNewByContent` stays uncleared — per-call pairing state bounded by the input, so the
-// WHY: pure-API exhaustion path stays RangeError-free only up to ~2^23 distinct line contents.
+/**
+ * Cache bound for `hashCache`: the served admission budget (`SERVED_MAX_LINES`), so a product
+ * materialization never clears it in-budget and it sits ~40x below V8's smallest per-Map cap
+ * (~2^23 on Node 24.0.0). Unbounded it would take one entry per allocated anchor (~14.77M on
+ * the exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so a RangeError would
+ * pre-empt E_LARGE_FILE. Eviction is clear-on-full (amortized O(1); FIFO via `keys().next()`
+ * measured ~1400x slower, `scripts/bench-evict.mjs`) and behaviour-preserving: `idxToHash` is
+ * pure. `buildNewByContent` stays uncleared — per-call pairing state bounded by the input.
+ */
 export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
   private hashCache = new Map<number, string>();
@@ -268,17 +247,16 @@ export class HashIdentity {
     return this.hashAt(nextIdx);
   }
 
-  // WHY: content-only derivation — never a file's served rows (that path is `fileScopedHashes`).
   contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.lineHashesPure(content, blockedHashes);
   }
 
   /**
-   * WHY: the per-line step of `lineHashesPure`, split out so the served read can run it inside its
-   * WHY: own walk over the text instead of calling back for a whole-content array.
-   * WHY: (merge) the walk carries the file's path seed when the caller knows the file, so the
-   * WHY: served read's anchors agree with `hashesFor`'s file-scoped ones; pathless callers stay
-   * WHY: content-only (`contentBaseIndex`, the single owner beside `fileBaseIndex`).
+   * The per-line step of `lineHashesPure`, split out so the served read can run it inside its
+   * own walk over the text instead of calling back for a whole-content array. The walk carries
+   * the file's path seed when the caller knows the file, so the served read's anchors agree with
+   * `hashesFor`'s file-scoped ones; pathless callers stay content-only (`contentBaseIndex`, the
+   * single owner beside `fileBaseIndex`).
    */
   private newLineAssigner(
     blockedHashes?: ReadonlySet<string>,
@@ -441,8 +419,6 @@ export class HashIdentity {
     const newHashes: string[] = [];
     newHashes.length = newLines.length;
     const used = new Uint32Array(BITSET_WORDS);
-    // WHY: pre-marked before old/blocked hashes — survivor reuse is spelling
-    // WHY: reuse (faithful copy), not allocation, so only fresh assignment is gated.
     used.set(RESERVED_BITS);
     const hint = { value: 0 };
     const removed = removedHashes ?? new Set<string>();
@@ -475,9 +451,9 @@ export class HashIdentity {
   /**
    * The anchor assignment for a content whose lines the caller is about to walk themselves.
    *
-   * WHY: the served read walks the text once — assigning an anchor AND keeping the page — which a
-   * WHY: `hashesFor` call cannot drive because it must finish the whole array first. Everything else is
-   * WHY: `hashesFor`'s behaviour: the same snapshot cache and the same `blockedHashes` handling.
+   * The served read walks the text once — assigning an anchor AND keeping the page — which a
+   * `hashesFor` call cannot drive because it must finish the whole array first. Everything else is
+   * `hashesFor`'s behaviour: the same snapshot cache and the same `blockedHashes` handling.
    *
    * `prior` (the stable remap) needs the old AND new line arrays, and pathless hashing has no store
    * to hand a walk to, so both stay whole-content calls here.
@@ -486,8 +462,6 @@ export class HashIdentity {
     await initHasher();
     const path = options?.path;
     const persist = options?.persist ?? true;
-    // WHY: no instance fallback — an identity holds no IO, so a call that wants persistence names
-    // WHY: the store-backed IO explicitly (`snapshotIOFor(store)`); absent means derive-only.
     const snapshotIO = options?.snapshotIO;
     if (!path || options?.prior) {
       return { cached: await this.hashesFor(content, options) };
@@ -498,13 +472,10 @@ export class HashIdentity {
       try {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
-        // WHY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
         reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
     if (cached) return { cached };
-    // WHY: the plan writes nothing — the read path persists through `upsertSnapshotFor` after the page
-    // WHY: renders — and it seeds from the file, so its anchors are not foreign to the file's edit.
     return {
       assign: this.newLineAssigner(options?.blockedHashes, xxh32(canonicalAnchorPath(path))),
     };
@@ -513,8 +484,6 @@ export class HashIdentity {
   async hashesFor(content: string, options?: HashOptions): Promise<string[]> {
     await initHasher();
     const path = options?.path ?? "";
-    // WHY: computed once per materialization and threaded into the allocator —
-    // WHY: per-line reseeding would cost an xxh32 per line for no benefit.
     const pathSeed = xxh32(canonicalAnchorPath(path));
     const prior = options?.prior;
     const persist = options?.persist ?? true;
@@ -543,7 +512,6 @@ export class HashIdentity {
             upsertOptions,
           );
         } catch (error) {
-          // WHY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
           reportDiagnostic("hashline", "Failed to persist hash snapshot:", error);
         }
       }
@@ -559,9 +527,6 @@ export class HashIdentity {
       }
     }
     if (cached) {
-      // WHY: a cache HIT is still a materialization (spec §3.1.3 / §3.2.4 step 3): reversion and
-      // WHY: undo-revert re-adopt an OLDER canonical snapshot, so the authoritative `retired_at` writer
-      // WHY: must run for it too — skipping the upsert left leases from the newer version active forever.
       if (persist && snapshotIO) {
         try {
           await snapshotIO.upsert(
@@ -573,7 +538,6 @@ export class HashIdentity {
             upsertOptions,
           );
         } catch (error) {
-          // WHY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
           reportDiagnostic("hashline", "Failed to re-adopt hash snapshot:", error);
         }
       }
@@ -606,9 +570,9 @@ export class HashIdentity {
 /**
  * The stateless-derivation singleton: content-only and sync anchor derivation, nothing else.
  *
- * WHY: it owns no IO, so no call through it can persist — a persistence-touching caller passes
- * WHY: `snapshotIO: snapshotIOFor(store)` to `hashesFor`/`anchorsForWalk` itself. Keeping the
- * WHY: singleton is what lets the pure helpers stay allocation-free; it is not a store seam.
+ * It owns no IO, so no call through it can persist — a persistence-touching caller passes
+ * `snapshotIO: snapshotIOFor(store)` to `hashesFor`/`anchorsForWalk` itself. Keeping the
+ * singleton is what lets the pure helpers stay allocation-free; it is not a store seam.
  */
 export const defaultHashIdentity = new HashIdentity();
 
@@ -616,7 +580,6 @@ export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<s
   return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);
 }
 
-// WHY: main #47's walk-identity tests import the pure content-only surface by this name;
 export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
   return contentOnlyHashes(content, blockedHashes);
 }
@@ -637,7 +600,6 @@ export async function lineHashes(
   persist?: boolean,
   blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
-  // WHY: the served preview falls back to a pathless call when it holds no path.
   if (path === undefined) return contentOnlyHashes(content, blockedHashes);
   return defaultHashIdentity.hashesFor(content, {
     path,

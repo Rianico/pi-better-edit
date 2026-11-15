@@ -84,7 +84,6 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
   try {
     await rename(legacyPath, `${legacyPath}.bak`);
   } catch (error) {
-    // WHY: best-effort cleanup — the store is already migrated, so a surviving legacy file is never re-imported.
     reportDiagnostic(
       "snapshot-store",
       "Failed to rename legacy hash store after migration:",
