@@ -82,7 +82,7 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
-const OUTLINE_MODE_DESCRIPTION = `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix; "outline" serves only symbol declaration lines as anchors (caller windows are ignored).`;
+const OUTLINE_MODE_DESCRIPTION = `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix; "outline" serves only symbol declaration lines as anchors for orientation in a large file, then read the target window (caller windows are ignored).`;
 const readOffsetWindowSchema = Type.Object(
   {
     offset: Type.Optional(
