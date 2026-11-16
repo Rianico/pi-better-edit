@@ -26,7 +26,7 @@ The prompt-only 150/60 rule is the best aggregate, with no code or schema change
 
 ## Decision
 
-We will keep `read` flat and bounded: `{ file, windows?: [{ offset, limit }] | [{ around_anchor, radius }], mode?: "served" | "verbatim" | "outline" }`. We will refuse both `anchor_from`/`anchor_to` and `mode: "span"`/`span: true`; the outline note remains the span-extent source and `{ offset, limit }` remains the primitive. We will ship the prompt-only 150/60 outline guideline in `prompts/read-guidelines.md`, and leave `prompts/read.md` and the tool schema unchanged.
+We will keep `read` flat and bounded: `{ file, windows?: [{ offset, limit }] | [{ around_anchor, radius }], mode?: "served" | "verbatim" | "outline" }`. We will refuse both `anchor_from`/`anchor_to` and `mode: "span"`/`span: true`; the outline note remains the span-extent source and `{ offset, limit }` remains the primitive. We will ship the prompt-only 150/60 outline guideline in `prompts/read-guidelines.md`, while updating `prompts/read.md`, `prompts/read-snippet.md`, and the tool schema description to introduce the outline orientation workflow.
 
 ### Considered Options
 
@@ -44,6 +44,6 @@ We will keep `read` flat and bounded: `{ file, windows?: [{ offset, limit }] | [
 - The read schema stays one flat payload. No new union member, no new refusal surface, and no AST dependency in admission.
 - The outline note is the only span source. The model composes `{ offset, limit }` from the named extent; the prompt rule bounds the read.
 - The 150/60 rule reduces aggregate tokens and rounds, but it is not uniform. Three tasks regress by +1.3% to +11.6%; the 7:1 leverage is the ship argument. A future corpus that reverses the aggregate reopens the decision.
-- `prompts/read.md` remains Tier-1 lean. Threshold policy belongs in the conditional guidelines, not the every-turn tool description.
+- `prompts/read.md` mentions the general ~200-line outline orientation guideline for visibility, while detailed windowing threshold policy (150-line spans vs 60-line windows) belongs strictly in the conditional guidelines.
 - **Load-bearing assumption:** the model follows the 150/60 guideline and the 150-line threshold generalizes beyond this six-task suite. If a bounded AST slice primitive with a non-AST fallback appears, or a later corpus shows the aggregate reversal, reopen this record.
 - The live spot checks are reported evidence; the committed N=18 measurement is the durable benchmark.
