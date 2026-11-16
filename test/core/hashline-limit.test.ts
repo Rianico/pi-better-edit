@@ -16,10 +16,15 @@ import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
 
-// WHY: the producer pin matches against comment- and literal-blanked source so
-// WHY: neither a `/* … */` block, a `// …` line, nor a quoted/template body quoting
-// WHY: the throw can satisfy it (a real `throw` call is never inside a literal).
-// WHY: The scanner is string-aware (`//` inside a literal never starts a comment).
+/**
+ * The two ceilings this file pins apart: `MAX_HASH_LINES` (the anchor-space bound, whose full
+ * space is scale-infeasible to materialize and trips `MAX_BYTES` first) and
+ * `SERVED_MAX_LINES` (the call-wide served budget, derived from the constant and never from the
+ * anchor space). Boundary runs therefore sit at `SERVED_MAX_LINES` through the real seams, and
+ * the producer bindings are matched against source that is comment- and literal-blanked first,
+ * so neither a block comment, a line comment nor a quoted or template body quoting the throw
+ * can satisfy `stripComments`' pin.
+ */
 function stripComments(code: string): string {
   let out = "";
   let i = 0;
@@ -29,10 +34,6 @@ function stripComments(code: string): string {
     const ch = code[i]!;
     const next = code[i + 1] ?? "";
     if (quote !== null) {
-      // WHY: only a template literal can span lines, so only its body is
-      // WHY: blanked (newlines kept) — a quoted `throw …` line inside one must
-      // WHY: not satisfy the pin, while single/double-quoted code like
-      // WHY: `"E_LARGE_FILE"` stays intact for the pin to match.
       if (blanking) out += ch === "\n" ? "\n" : " ";
       else out += ch;
       if (ch === "\\") {
@@ -50,8 +51,6 @@ function stripComments(code: string): string {
     if (ch === '"' || ch === "'" || ch === "`") {
       quote = ch;
       blanking = ch === "`";
-      // WHY: the opening delimiter is blanked for templates (so the body and
-      // WHY: the delimiter never match pin text) and kept otherwise.
       out += blanking ? '"' : ch;
       i += 1;
       continue;
@@ -74,18 +73,11 @@ function stripComments(code: string): string {
 
 describe("hashline limits", () => {
   it("derives the hash space from the alphabet and hash length", () => {
-    // WHY: the raw space cannot be materialized, so it is pinned algebraically —
-    // WHY: a restated literal here would let the cap drift from the width the
-    // WHY: leases actually enforce. The usable space (minus the reserved
-    // WHY: all-digit subcube) is pinned in the reservation test.
     expect(HASH_SPACE).toBe(62 ** HASH_LEN);
     expect(MAX_HASH_LINES).toBe(USABLE_HASH_SPACE);
   });
 
   it("hashes a bounded line count with unique anchors", () => {
-    // WHY: full-space enumeration is scale-infeasible at width 4, so a bounded
-    // WHY: uniqueness run stands in — it exercises allocation without building
-    // WHY: fourteen million lines.
     const content = Array.from({ length: 50_000 }, (_, i) => `line ${i}`).join("\n");
     const hashes = contentOnlyHashes(content);
     expect(hashes).toHaveLength(50_000);
@@ -93,9 +85,6 @@ describe("hashline limits", () => {
   });
 
   it("formats the hash-space E_LARGE_FILE naming the live limit", () => {
-    // WHY: space exhaustion cannot be triggered (see above), so the error is
-    // WHY: constructed directly — the assertion pins that the formatted copy
-    // WHY: names the live usable-space limit and the live width, not a stale 3.
     const error = new DomainError("E_LARGE_FILE", {
       limitKind: "hash-space",
       limit: USABLE_HASH_SPACE,
@@ -107,13 +96,6 @@ describe("hashline limits", () => {
 
   describe("capacity bindings", () => {
     it("pins the space-exhaustion producer payload and its binding", () => {
-      // WHY: the top-of-space throw cannot be reached (see above), so the
-      // WHY: binding is pinned twice — the exported payload constant equals the
-      // WHY: live limit, and the producer throw site references that constant.
-      // WHY: Inlining a different payload at the throw breaks the source pin.
-      // WHY: The match runs on comment-stripped source (a `/* … */` or `// …`
-      // WHY: line quoting the call cannot satisfy it) and tolerates an oxfmt
-      // WHY: wrap plus trailing comma.
       expect(HASH_SPACE_EXHAUSTED_PAYLOAD).toEqual({
         limitKind: "hash-space",
         limit: USABLE_HASH_SPACE,
@@ -127,36 +109,19 @@ describe("hashline limits", () => {
     });
 
     it("pins the served admission budget binding", () => {
-      // WHY: ordinary multi-thousand-line reads pass under the served budget — the
-      // WHY: seam binding is pinned directly: the read seam passes the memory
-      // WHY: budget, not the anchor-space ceiling. The first pin below refutes a
-      // WHY: hidden re-derivation only through its consequence (a moved value);
-      // WHY: the declaration-shape pin refutes the spelling (a derived
-      // WHY: expression or a re-export stays green on the value assert).
       expect(SERVED_MAX_LINES).toBe(200_000);
       expect(SERVED_MAX_LINES).not.toBe(MAX_HASH_LINES);
       const seam = readFileSync("src/read.ts", "utf-8");
-      // WHY: the budget is CALL-WIDE (spec §4.2) — the read OPENS at `SERVED_MAX_LINES` and hands each
-      // WHY: served file only what the earlier files left, so the binding is pinned in two hops: the
-      // WHY: initializer (the value derives from the constant, never from the anchor space) and the
-      // WHY: per-file seam that spends it.
       expect(/let remainingServedLines = SERVED_MAX_LINES;/.test(seam)).toBe(true);
       expect(/maxLines:\s*remainingServedLines/.test(seam)).toBe(true);
       const budgetSrc = stripComments(readFileSync("src/constants.ts", "utf-8"));
-      // WHY: the declaration is the literal itself — a re-export or a derived
-      // WHY: expression reddens here even while the value assert stays green.
       expect(/^export const SERVED_MAX_LINES = 200_000;$/m.test(budgetSrc)).toBe(true);
-      // WHY: and the budget's source must not reference the anchor space — the
-      // WHY: match runs on comment-stripped source, so the rationale's mention
-      // WHY: of the anchor figures cannot satisfy it.
       expect(/ALPHA|HASH_LEN|HASH_SPACE|USABLE_HASH_SPACE|MAX_HASH_LINES/.test(budgetSrc)).toBe(
         false,
       );
     });
   });
   it("preserves unique hashes at the boundary through the store path", async () => {
-    // WHY: same bounded stand-in through persistence — the seam, not the full
-    // WHY: fourteen-million-line space, is what this exercises.
     const content = Array.from({ length: 5_000 }, (_, i) => `x${i}`).join("\n");
     const hashes = await lineHashes(content, home.testPath);
     expect(hashes).toHaveLength(5_000);
@@ -166,10 +131,6 @@ describe("hashline limits", () => {
 
 describe("read tool line cap", () => {
   it("rejects over-maxLines files with E_LARGE_FILE limitKind lines before hashing", async () => {
-    // WHY: the `lines` limitKind is exercised through the loader with an
-    // WHY: explicit small cap — building `MAX_HASH_LINES + 1` lines is
-    // WHY: scale-infeasible, and the small cap proves the seam enforces the
-    // WHY: limit it is given before any hashing work.
     const content = Array.from({ length: 11 }, () => "x").join("\n");
     await withTempFile("eleven.ts", content, async ({ cwd }) => {
       let caught: unknown;
@@ -186,10 +147,6 @@ describe("read tool line cap", () => {
   });
 
   it("reads a file well within the live seam limit without hashing errors", async () => {
-    // WHY: the real seams pass the served admission budget, so a 20 000-line
-    // WHY: file — an order of magnitude under the budget — must read cleanly.
-    // WHY: This proves the seams admit realistic large files while the budget,
-    // WHY: not the anchor-space ceiling, is the binding cap.
     const content = Array.from({ length: 20_000 }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
@@ -210,11 +167,6 @@ describe("read tool line cap", () => {
   });
 
   it("refuses a CR-only file above the served budget with the line cap's refusal, not the anchor space's", async () => {
-    // WHY: `toLF` rewrites a lone `\r` into a line break, so the count that decides this cap has to be
-    // WHY: the NORMALIZED text's. Counting the raw bytes lets a 200,001-line CR-only file through the
-    // WHY: streaming counter (no LF in the raw bytes) into the loader's own check, which names the
-    // WHY: exact normalized count against the served budget — never the anchor space, which would
-    // WHY: refuse the same read with the same error code and a different reason.
     const content = "x\r".repeat(SERVED_MAX_LINES + 1);
     await withTempFile("cr-only.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
@@ -230,9 +182,6 @@ describe("read tool line cap", () => {
     });
   });
   it("reads a file at the served budget without hashing errors", async () => {
-    // WHY: the read seam's binding cap is the served budget, not the anchor-space ceiling — a
-    // WHY: 14.7M-line fixture is scale-infeasible (and trips MAX_BYTES first), so the boundary run
-    // WHY: sits exactly at SERVED_MAX_LINES through the real tool path.
     const content = Array.from({ length: SERVED_MAX_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
@@ -244,9 +193,6 @@ describe("read tool line cap", () => {
   }, 60_000);
 
   it("rejects an over-budget file without stating a false total", async () => {
-    // WHY: the boundary file is ~2 MB — comfortably under MAX_BYTES but over the
-    // WHY: budget. This is the exposure the widening must not move: admission
-    // WHY: refuses on lines long before the anchor space could matter.
     const over =
       Array.from({ length: SERVED_MAX_LINES + 100 }, (_, i) => `x${i}`).join("\n") + "\n";
     await withTempFile("over.ts", over, async ({ cwd }) => {
@@ -262,8 +208,6 @@ describe("read tool line cap", () => {
       const payload = err.payload as { limitKind: string; limit: number; lineCount?: number };
       expect(payload.limitKind).toBe("lines");
       expect(payload.limit).toBe(SERVED_MAX_LINES);
-      // WHY: the streaming counter reports a trip-instant count, not a total — the
-      // WHY: payload carries no lineCount and the copy says "more than", never a number.
       expect("lineCount" in payload).toBe(false);
       expect(err.message).toContain(
         `more than ${SERVED_MAX_LINES} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit`,
@@ -272,9 +216,6 @@ describe("read tool line cap", () => {
   });
 
   it("reports the exact count on the preloaded path for the same file", async () => {
-    // WHY: the honest distinction — the preloaded gate counts the materialized
-    // WHY: text, so it names the exact total where the streaming path may only say
-    // WHY: "more than". Same bytes, same budget, different surfaces.
     const over =
       Array.from({ length: SERVED_MAX_LINES + 100 }, (_, i) => `x${i}`).join("\n") + "\n";
     await withTempFile("over.ts", over, async ({ cwd }) => {
@@ -300,8 +241,6 @@ describe("read tool line cap", () => {
   });
 
   it("admits a file exactly at the budget", async () => {
-    // WHY: the boundary is exclusive — budget lines read cleanly, over-budget
-    // WHY: refuses. Same ~2 MB scale as the rejection above.
     const at = Array.from({ length: SERVED_MAX_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("at.ts", at, async ({ cwd }) => {
       const prepared = await prepareFile("at.ts", cwd, {});
@@ -310,8 +249,6 @@ describe("read tool line cap", () => {
   });
 
   it("renders distinct messages for the two limitKinds", () => {
-    // WHY: one shape, two ceilings — the copy must tell the served budget
-    // WHY: apart from the anchor-space ceiling.
     const lines = new DomainError("E_LARGE_FILE", {
       limitKind: "lines",
       limit: SERVED_MAX_LINES,
@@ -326,9 +263,6 @@ describe("read tool line cap", () => {
   });
 
   it("verbatim pages a file above the served budget; served still refuses it (one seam)", async () => {
-    // WHY: the seam's binding cap is the served budget — verbatim skips it (no anchors to bound)
-    // WHY: while served refuses on lines. The 14.7M-line anchor-space fixture is scale-infeasible,
-    // WHY: so both halves run at SERVED_MAX_LINES + 1 through the real tool path.
     const content = Array.from({ length: SERVED_MAX_LINES + 1 }, () => "x").join("\n");
     await withTempFile("huge-verbatim.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);

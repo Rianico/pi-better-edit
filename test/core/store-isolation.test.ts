@@ -30,7 +30,6 @@ describe("hash store isolation from the developer's real state", () => {
     expect(settingsRoot()).toBe(workerDir);
     expect(stateRoot()).toBe(join(workerDir!, "state"));
     expect(hashStorePath()).toBe(join(workerDir!, "state", "hash-store.sqlite"));
-    // The HOME-derived locations are exactly what the seam must outrank.
     expect(hashStorePath()).not.toBe(
       join(homedir(), ".local", "state", "pi-better-edit", "hash-store.sqlite"),
     );
@@ -42,8 +41,6 @@ describe("hash store isolation from the developer's real state", () => {
     expect(workerDir).toBeTruthy();
     const storeFile = join(workerDir!, "state", "hash-store.sqlite");
 
-    // Strong form: a sentinel HOME proves the seam outranks the HOME/XDG derivation, so the file
-    // that appears cannot be the developer's real store and cannot be the sentinel's either.
     const sentinelHome = await mkdtemp(join(tmpdir(), "pi-better-edit-sentinel-home-"));
     const previousHome = process.env.HOME;
     const previousXdgState = process.env.XDG_STATE_HOME;
@@ -58,7 +55,6 @@ describe("hash store isolation from the developer's real state", () => {
       expect(hashStorePath()).toBe(storeFile);
       expect(storeFile.startsWith(`${workerDir}${sep}`)).toBe(true);
       expect(statSync(storeFile).size).toBeGreaterThan(0);
-      // Neither retired nor defaulted location may appear under the sentinel home.
       expect(existsSync(join(sentinelHome, ".config", "pi-better-edit"))).toBe(false);
       expect(existsSync(join(sentinelHome, ".local", "state", "pi-better-edit"))).toBe(false);
       expect(existsSync(join(sentinelHome, ".pi", "agent", "extensions", "pi-better-edit"))).toBe(

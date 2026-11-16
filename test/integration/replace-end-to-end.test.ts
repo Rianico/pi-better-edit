@@ -127,8 +127,6 @@ describe("edit tool — end-to-end", () => {
         ctx,
       );
 
-      // The edited line's identity is retired with no live unshifted bound, so its old anchor is
-      // [E_TARGET_LOST] with no rows, never [E_STALE_ANCHOR] (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e2",

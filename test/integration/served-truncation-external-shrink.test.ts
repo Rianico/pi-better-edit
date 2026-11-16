@@ -67,11 +67,8 @@ describe("served-state truncation survives an external shrink (issue #27)", () =
           undefined,
           ctx,
         ),
-        // The shrink deleted the served "a" line, so its lease is retired with the surviving bound
-        // shifted: [E_TARGET_LOST] with no rows (spec §3.1.1 line 89 / §5.3, ADR-0018), not [E_STALE_ANCHOR].
       ).rejects.toThrow(/\[MODEL\] \[E_TARGET_LOST\]/);
 
-      // Target-lost leases nothing, so the served mirror keeps its pre-rejection shape.
       const after = await servedArray(ctx, abs);
       const fPositions = positionsOf(after, fRef);
       expect(fPositions.length).toBeLessThanOrEqual(1);

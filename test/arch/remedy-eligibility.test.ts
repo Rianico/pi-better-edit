@@ -12,19 +12,16 @@ import {
 import { batchAbortFor, batchAbortForMany } from "../../src/edit-response.js";
 
 /**
- * Options-disclosure oracle (ADR-0047). Facts are the default: every rejection
- * renders what happened. A served `Options:` section is the exception, and it is
- * pinned to a curated set, shaped as a list of admissible moves — never a single
- * directive, because one suggestion biases the model's next call.
+ * Options-disclosure oracle (ADR-0047). Facts are the default: every rejection renders what
+ * happened. A served `Options:` section is the exception, and it is pinned to a curated set of
+ * admissible moves — never a single directive, because one suggestion biases the next call.
  *
- * This replaces the remedy-eligibility oracle: the old `remedy` string was
- * declared per code and rendered by no path, so the six defects found in it were
- * invisible and unenforced. An unserved action cannot be kept honest.
+ * This replaces the remedy-eligibility oracle: the old `remedy` string was declared per code and
+ * rendered by no path, so the six defects found in it were invisible and unenforced.
  *
- * Falsifiability: `optionProblems` fails a one-item list, a duplicate, a
- * terminal period, a harmful verb and a preference adverb (negative controls
- * below), and the curated-set check fails any code that declares options
- * without joining the set.
+ * Falsifiability: `optionProblems` fails a one-item list, a duplicate, a terminal period, a
+ * harmful verb and a preference adverb (negative controls below), and the curated-set check
+ * fails any code that declares options without joining the set.
  */
 
 type OptionsCode = "E_SUSPICIOUS_TEXT" | "E_BATCH_ABORT" | "E_UNDO_UNAVAILABLE";
@@ -36,9 +33,6 @@ const OPTIONS_CODES: readonly OptionsCode[] = [
   "E_UNDO_UNAVAILABLE",
 ];
 
-// WHY: two arms for the suspicious code (text vs content) — the branch is the
-// WHY: reason the options are a function there. Two blocks for BATCH_ABORT so
-// WHY: the options line is rendered after both a served block and its absence.
 const OPTIONS_FIXTURES: { [K in OptionsCode]: ErrorPayloadMap[K][] } = {
   E_SUSPICIOUS_TEXT: [
     { target: "edit", path: "src/a.ts", line: 2, hash: "aB3x", servedLine: 1, count: 1 },
@@ -69,11 +63,6 @@ const OPTIONS_FIXTURES: { [K in OptionsCode]: ErrorPayloadMap[K][] } = {
   E_UNDO_UNAVAILABLE: [{ path: "a.py" }],
 };
 
-// WHY: one payload per fact-only code. The assertion is per-code and total —
-// WHY: every non-curated code renders zero `Options:` lines. Distinct arms are
-// WHY: other tests' business; this matrix polices the disclosure set.
-// WHY: ordered arms per code, not one payload each. The #128 lesson: a multi-arm renderer
-// WHY: checked on one arm leaves every other arm unpoliced. Single-arm codes still carry one.
 const FACT_ONLY_FIXTURES: { [K in FreeCode]: ErrorPayloadMap[K][] } = {
   E_BAD_PAYLOAD: [{ message: "probe refused." }, { message: "probe refused.", subject: "read" }],
   E_EMPTY_RANGE: [{}],
@@ -184,12 +173,8 @@ const FACT_ONLY_FIXTURES: { [K in FreeCode]: ErrorPayloadMap[K][] } = {
 
 const FREE_CODES = Object.keys(FACT_ONLY_FIXTURES) as FreeCode[];
 
-// WHY: an intent-guessing suggestion steers the next call, so a fact-only code
-// WHY: must not render an imperative in its own text either.
 const IMPERATIVE = /\b(retry|use|run|execute|omit|declare|choose|merge|pass|send|fix)\b/i;
 
-// WHY: a served option must be non-destructive and non-coercive; "prefer" words
-// WHY: turn a list of choices back into a recommendation.
 const HARMFUL = [
   "delete",
   "destroy",
@@ -378,10 +363,6 @@ describe("options disclosure oracle: facts by default, neutral lists by exceptio
  * leaves the scan the moment it is declared.
  */
 
-// WHY: comment prose talks ABOUT codes and options. Extraction therefore
-// WHY: requires `new DomainError("<code>"`, slices that call's argument list,
-// WHY: reads only the literal bound to `message:`, and strips comments first, so
-// WHY: even a commented-out payload cannot match.
 function skipLiteral(source: string, at: number): number {
   const quote = source[at];
   let index = at + 1;
@@ -533,15 +514,9 @@ function sourceFiles(dir: string): string[] {
   return found;
 }
 
-// WHY: derived from the registry, so the set cannot drift from the declaration it polices.
 const FACT_ONLY_CODES: readonly DomainErrorCode[] = (
   Object.keys(ERROR_REGISTRY) as DomainErrorCode[]
 ).filter((code) => ERROR_REGISTRY[code].options === undefined);
-
-// WHY: E_BAD_PAYLOAD admission text is a separate curated surface (ADR-0036 Option C, ADR-0047 (d)):
-// WHY: the binary Choice A/B wire-shape choice and the required/optional null rule. `analyzeItem`
-// WHY: returns those strings, so this scan cannot see them; test/tools/edit.wire-contract.test.ts
-// WHY: pins them.
 
 describe("fact-only producers carry no imperative", () => {
   const codes = new Set<string>(FACT_ONLY_CODES);
@@ -565,11 +540,6 @@ describe("fact-only producers carry no imperative", () => {
         if (IMPERATIVE.test(text)) offenders.push(`${file} [${code}] ${text}`);
       }
     }
-    // WHY: a scan that quietly stopped reading producers would satisfy the assertion below on an
-    // WHY: empty corpus, so the corpus is pinned too. Measured today: 24 sites carry a literal
-    // WHY: message, across `E_INTERNAL_INVARIANT` and `E_UNKNOWN`. The floor is deliberately below
-    // WHY: that, because a legitimate removal must not fail this test, while a scan that stops
-    // WHY: reading will.
     expect([...perCode.values()].reduce((sum, count) => sum + count, 0)).toBeGreaterThanOrEqual(20);
     expect(perCode.size).toBeGreaterThanOrEqual(2);
     expect(offenders).toEqual([]);

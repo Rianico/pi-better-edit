@@ -1,25 +1,14 @@
 /**
  * #90 — the store janitor: the throttle, the batched GC, and the periodic deep check.
  *
- * WHY this file exists: the open-time sweep is stamp-gated (`src/hash-store.ts`) and the fast path
- * runs no `PRAGMA quick_check` at all (#87c, PR #101), so a poisoned row and page-level damage could
- * both sit in a store that every open accepts. Ticket #90's answer is a PERIODIC item off the
- * tool-call path, and these tests pin each half of it refutably:
- * - THROTTLE: two runs inside the interval delete once, and a backdated record deletes again — with
- *   `now` injected, so the result does not depend on host load or on wall-clock drift.
- * - GC: a foreign-generation row and a terminal lease past the retirement grace go; a
- *   current-generation row, a live lease and a lease still inside the grace stay; the deletes arrive
- *   in statements bounded by the knob, not in one unbounded scan.
- * - EXCLUSION: ONE test asserts BOTH halves — the wiring subscribes exactly `session_start` and
- *   `session_shutdown` and runs the janitor on each, while across an open plus the write a
- *   `read`/`edit`/`undo_last_edit` call performs the janitor issues ZERO statements, prepares no
- *   `PRAGMA quick_check` and records no run. A positive-only assertion would prove the janitor RUNS,
- *   never that it is EXCLUDED, and exclusion is what protects tool-call latency.
- * - DEEP CHECK: damage the header smoke check accepts is detected (`isHealthy` false) and handed to
- *   the open path's own quarantine-and-rebuild, which is what closes #90's detection and healing
- *   clauses; #100's use-time trigger is NOT here, by design.
- * - CHECKPOINT: the janitor owns no checkpoint — the WAL it writes is truncated by the close path
- *   that already owns `wal_checkpoint(TRUNCATE)`.
+ * The open-time sweep is stamp-gated (`src/hash-store.ts`) and the fast path runs no
+ * `PRAGMA quick_check` (#87c, PR #101), so poisoned rows and page damage survive every open.
+ * Ticket #90's answer is a PERIODIC item off the tool-call path: THROTTLE (`now` injected, so
+ * host load cannot move the result), GC (foreign-generation rows and terminal leases past the
+ * grace go, live rows and leases stay, deletes bounded by the knob), EXCLUSION (one test proves
+ * both halves: the wiring subscribes `session_start`/`session_shutdown` while no tool call
+ * prepares or records anything), DEEP CHECK (damage the header smoke check accepts is detected and
+ * handed to the open path's rebuild), and CHECKPOINT (none; the close path truncates the WAL).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { existsSync, statSync } from "node:fs";
@@ -274,8 +263,6 @@ describe("the janitor's GC", () => {
       expect(
         countRows(store.db, "SELECT count(*) n FROM line_lineage WHERE snapshot_id = ?", foreignId),
       ).toBe(0);
-      // The current-generation rows and the lease that names them survive untouched; the lease that
-      // named the foreign generation went with it.
       expect(countRows(store.db, "SELECT count(*) n FROM file_snapshots")).toBe(1);
       expect(
         countRows(
@@ -334,7 +321,6 @@ describe("the janitor's GC", () => {
         servedSnapshotHash: live,
         retiredAt: NOW - VACUUM_RETIRED_PIN_MS - 1,
       });
-      // #160: an ACTIVE lease past the session TTL is expired authority and is removed too.
       plantLease(store.db, {
         path: "/live.ts",
         anchor: "dddd",
@@ -342,7 +328,6 @@ describe("the janitor's GC", () => {
         retiredAt: null,
         updatedAt: NOW - SERVED_TTL_MS - 1,
       });
-      // Exactly at the TTL is still inside the boundary (ADR-0045) and survives.
       plantLease(store.db, {
         path: "/live.ts",
         anchor: "eeee",
@@ -363,8 +348,6 @@ describe("the janitor's GC", () => {
   it("removes a lineage row orphaned by an interrupted write", async () => {
     await withStoreDir("pi-janitor-orphan-", async () => {
       const db = (await loadHashStore()).db;
-      // WHY the FK is off for this insert: an orphan is exactly a row with no snapshot, which the
-      // cascade cannot produce — a crash between a snapshot delete and its lineage delete can.
       db.exec("PRAGMA foreign_keys = OFF");
       db.prepare(
         "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?,?,?,?,?)",
@@ -399,7 +382,6 @@ describe("the janitor's GC", () => {
  * fail ONE test rather than quietly leave both green.
  */
 describe("the exclusion invariant", () => {
-  /** The event names the extension API exposes that a maintenance pass must never ride on. */
   const HOT_PATH_EVENTS = [
     "tool_call",
     "tool_result",
@@ -409,7 +391,6 @@ describe("the exclusion invariant", () => {
     "context",
     "before_provider_request",
   ];
-  /** What the injected pass answers: an ordinary run that found nothing. */
   const RUN: JanitorOutcome = {
     ran: true,
     deleted: { snapshots: 0, lineage: 0, leases: 0, expiredLeases: 0 },
@@ -419,8 +400,6 @@ describe("the exclusion invariant", () => {
   };
 
   it("wires the janitor to the off-hot-path events and executes no janitor statement across an open and a write", async () => {
-    // Half 1 — the WIRING: exactly the two lifecycle events are subscribed, each handler runs the
-    // janitor, and no hot-path event is subscribed at all.
     const subscriptions: Array<{ event: string; handler: () => Promise<void> }> = [];
     const pi = {
       on(event: string, handler: () => Promise<void>) {
@@ -438,10 +417,7 @@ describe("the exclusion invariant", () => {
     expect(run).toHaveBeenCalledTimes(subscriptions.length);
     expect(subscriptions.length).toBeGreaterThan(0);
 
-    // Half 2 — the EXCLUSION, measured on the open a real tool call performs.
     await withStoreDir("pi-janitor-hotpath-", async () => {
-      // The store is seeded, stamped and closed OUTSIDE the trace, so what is traced is the FAST open
-      // a read/edit call performs — not the slow one a brand-new store pays by design.
       const seeded = await loadHashStore();
       plantCurrentSnapshot(seeded, "/edited.ts", "one\ntwo\n");
       shutdownHashStore();
@@ -453,18 +429,12 @@ describe("the exclusion invariant", () => {
       const observed = trace.stop();
 
       expect(observed.janitorDeletes).toEqual([]);
-      // WHY 0 here and 1 on a brand-new store: the fast path runs no `PRAGMA quick_check` at all
-      // (#87c) — the deep check the janitor owns is the only periodic one, and it is not here.
       expect(observed.quickChecks).toBe(0);
-      // The open path's OWN statements, reported so a reader can see what remains and why: the
-      // throttle-gated served-mirror prune (#87c) deletes by `updated_at`, never by generation, and
-      // the stamp-gated generation sweep is skipped entirely on a stamp-matching open.
       console.log(
         `[janitor-hotpath] open-path deletes: ${observed.allDeletes.length} ` +
           `[${observed.allDeletes.join(" | ")}]; janitor deletes: ${observed.janitorDeletes.length}; ` +
           `quick_check prepares: ${observed.quickChecks}`,
       );
-      // The throttle row is the janitor's own trace left in the store: an open never writes it.
       const db = new DatabaseSync(hashStorePath(), { readOnly: true });
       try {
         expect(
@@ -478,11 +448,6 @@ describe("the exclusion invariant", () => {
 });
 
 describe("the periodic deep check", () => {
-  /**
-   * Zero one 4 KiB page in the middle of the store file. The file's LENGTH is untouched, so the
-   * header smoke check the fast path runs still accepts the store — which is exactly the damage class
-   * the janitor's deep pass exists for.
-   */
   async function damagePage(path: string, page: number): Promise<void> {
     const pageSize = statSync(path).size >= 4096 ? 4096 : 512;
     const handle = await open(path, "r+");
@@ -497,8 +462,6 @@ describe("the periodic deep check", () => {
   it("detects damage the fast path accepts and hands the store to the open path's recovery", async () => {
     await withStoreDir("pi-janitor-deep-", async (dir) => {
       const store = await loadHashStore();
-      // A lineage b-tree with its own pages, so a mid-file page is lineage storage rather than a page
-      // the open's own hooks have to read.
       const lines = Array.from({ length: 4_000 }, (_value, index) => `l${index}`).join("\n");
       plantCurrentSnapshot(store, "/big.ts", lines);
       shutdownHashStore();
@@ -521,7 +484,6 @@ describe("the periodic deep check", () => {
       );
       expect(quarantined.length).toBeGreaterThan(0);
 
-      // The recovery is the open path's: the rebuilt store is open, empty and writable.
       const rebuilt = await loadHashStore();
       expect(countRows(rebuilt.db, "SELECT count(*) n FROM file_snapshots")).toBe(0);
       expect(isHealthy(rebuilt.db)).toBe(true);
@@ -535,7 +497,6 @@ describe("the periodic deep check", () => {
       const outcome = await janitorPass({ now: NOW, settings: SETTINGS, db: store.db, cwd: "." });
       expect(outcome.deepCheckFailed).toBe(false);
       expect(outcome.rebuilt).toBe(false);
-      // Nothing was quarantined and the same connection is still the cached one.
       const again = await loadHashStore();
       expect(again.db).toBe(store.db);
     });
@@ -554,7 +515,6 @@ describe("the WAL checkpoint's single owner", () => {
       shutdownHashStore();
       const afterClose = existsSync(walPath) ? statSync(walPath).size : 0;
 
-      // The numbers, printed: the report quotes this run's raw before/after WAL sizes.
       console.log(
         `[janitor-wal] after the janitor run: ${afterJanitor} bytes; after close: ${afterClose} bytes`,
       );

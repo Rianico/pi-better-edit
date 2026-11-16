@@ -77,8 +77,6 @@ describe("regEdit", () => {
       expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       expect(result.details?.diff).toBeDefined();
       expect(result.details?.diff).toContain("BBB");
-      // Re-pointed for I4 (spec §5): the anchored diff now travels in content[0].text, not only in
-      // details.diff — the details field stays byte-identical for TUI presentation clients.
       expect(result.content[0].text).toContain(result.details!.diff);
     });
   });
@@ -110,11 +108,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      // WHY: premise guard — the never-served row below reaches the served-set
-      // WHY: logic only if the served set itself is live-width.
       expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
-      // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
-      // WHY: this fixture reddens (not just its differential) if a flip strands it.
       expect(HASH_RE.test("Zz99")).toBe(true);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const result = await editTool.execute(
@@ -134,10 +128,6 @@ describe("regEdit", () => {
   });
 
   it("refuses the fixture token when served (tier live)", () => {
-    // WHY: drives the fixture token itself — with "Zz99" served, the same
-    // WHY: "Zz99│BBB" row the byte-exact test writes through is refused. At any
-    // WHY: width where Zz99 is not row-shaped this reddens (no refusal), so the
-    // WHY: F1 vacuity cannot recur silently.
     const content = "aaa\nbbb\nccc\n";
     const hashes = contentOnlyHashes(content);
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
@@ -344,9 +334,7 @@ describe("regEdit — robustness", () => {
           undefined,
           ctx,
         );
-        // SPEC §3.6.2: the bytes are on disk, so the tool still reports success…
         expect(result.content[0].text).toContain("Successfully edited");
-        // …along with the warning that store synchronization is deferred.
         expect(result.content[0].text).toContain("Store synchronization deferred");
         const warnings = (result.details as { warnings?: string[] } | undefined)?.warnings;
         expect(warnings?.some((w) => w.includes("Store synchronization deferred"))).toBe(true);
@@ -485,11 +473,6 @@ describe("I4 — model-visible anchored diff", () => {
       expect(modelDiff).toBe(result.details!.diff);
       expect(modelDiff.split("\n")).toContain(" - ... [196 lines deleted] ...");
       expect(modelDiff).not.toContain("│line 100");
-      // WHY: deleted-span counting is the DIFF_REMOVED_CAP / DIFF_REMOVED_EDGE collapse in
-      // WHY: src/edit-diff.ts pushRemovedLines: a deleted span is emitted either in full (at most
-      // WHY: DIFF_REMOVED_CAP anchored rows) or as DIFF_REMOVED_EDGE head rows + the exact-size marker
-      // WHY: + DIFF_REMOVED_EDGE tail rows, never all 200. Only anchored rows are counted here; the
-      // WHY: "--- <path> ---" header row also starts with "-" but is not an anchored row.
       const removedRows = modelDiff.split("\n").filter((line) => /^-[A-Za-z0-9]{4}│/.test(line));
       expect(removedRows.length).toBeLessThanOrEqual(
         Math.max(DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE * 2),

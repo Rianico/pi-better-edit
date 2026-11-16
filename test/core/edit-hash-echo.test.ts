@@ -22,7 +22,6 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    // hash for line 1 placed at candidate 1 with its served content verbatim
     const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canonDigests, 1);
     expect(hit).toMatchObject({ k: 1, hash: hashes[0], servedLine: 1 });
   });
@@ -32,7 +31,6 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    // rows for lines 1-2 reproduced verbatim, submitted as a chain
     const hit = findServedHashEcho(
       [`${hashes[0]}${HASH_SEP}one`, `${hashes[1]}${HASH_SEP}two`],
       served,
@@ -47,7 +45,6 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    // line-1 row submitted where line-2 content is expected: position-agnostic
     const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canonDigests, 2);
     expect(hit).toMatchObject({ k: 1, hash: hashes[0], servedLine: 1 });
   });
@@ -97,11 +94,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    // WHY: premise guard — same vacuity hazard as the prefix tier: the echo
-    // WHY: refusal below is real only if the served set is live-width.
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
-    // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
-    // WHY: this fixture reddens (not just its differential) if a flip strands it.
     expect(HASH_RE.test("Zz99")).toBe(true);
     expect(hashes).not.toContain("Zz99");
     const hit = findServedHashEcho([`Zz99${HASH_SEP}literal`], served, canonDigests, 1);
@@ -109,11 +102,6 @@ describe("findServedHashEcho — evidence, never shape", () => {
   });
 
   it("fires on the fixture token with a diff marker when served (tier live)", () => {
-    // WHY: drives the fixture token itself — "Zz99" served with a matching
-    // WHY: digest must hit in diff-marked form, proving the token is row-shaped
-    // WHY: and the tier consults the served set. At any width where Zz99 is not
-    // WHY: row-shaped this reddens (no hit), so the F1 vacuity cannot recur
-    // WHY: silently.
     const content = "one\ntwo\nthree";
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];

@@ -86,7 +86,6 @@ describe("undo_last_edit restore transaction atomicity", () => {
       const editedHash = snapshotHashFor(EDITED);
 
       const beforeUndo: ServedLease[] = loadLeases(store, sessionKey, path);
-      // The edit's serve bound the untouched line 1 to the EDITED snapshot.
       expect(beforeUndo.find((lease) => lease.anchor === line1Hash)!.served_snapshot_hash).toBe(
         editedHash,
       );
@@ -94,11 +93,9 @@ describe("undo_last_edit restore transaction atomicity", () => {
         (lease) => lease.served_line_number === 2 && lease.anchor !== line2Hash,
       )!.anchor;
 
-      // Seed the retention miss so the adoption's lineage / counter writes are observable.
       evictSnapshot(store, path, pinnedHash);
       const counterBefore = nextCounter(store, path);
 
-      // Induce a failure in the LAST step of the restore transaction: the restored-line re-serve.
       store.db.exec(
         "CREATE TRIGGER undo_atomicity_fail BEFORE INSERT ON served_leases " +
           "BEGIN SELECT RAISE(ABORT, 'induced re-serve failure'); END",
@@ -119,24 +116,18 @@ describe("undo_last_edit restore transaction atomicity", () => {
         store.db.exec("DROP TRIGGER undo_atomicity_fail");
       }
 
-      // §3.6.2: the bytes are already on disk, so the tool reports success + deferred store sync.
       expect(text).toContain("Undone last edit");
       expect(text).toContain("Store synchronization deferred");
       expect(warnings?.some((w) => w.includes("Store synchronization deferred"))).toBe(true);
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);
 
-      // No adopted lineage without leases: the pinned snapshot the restore committed was rolled back.
       expect(lineageCount(store, path, pinnedHash)).toBe(0);
-      // …and the id block the adoption allocated for the restored lines did not leak.
       expect(nextCounter(store, path)).toBe(counterBefore);
 
       const afterUndo = loadLeases(store, sessionKey, path);
-      // No lease rows without the retirement update: the re-serve rolled back with it, so line 1
-      // still holds the lease the edit's serve gave it.
       expect(afterUndo.find((lease) => lease.anchor === line1Hash)!.served_snapshot_hash).toBe(
         editedHash,
       );
-      // …and the retirement update did not commit either: the removed line's lease is still live.
       expect(afterUndo.find((lease) => lease.anchor === editedAnchor)!.retired_at).toBeNull();
     });
   });

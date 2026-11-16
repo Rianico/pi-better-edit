@@ -18,7 +18,6 @@ describe("read prompts serve mode: verbatim", () => {
     expect(guidelines.some((guideline) => guideline.includes("never served"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes('mode: "verbatim"'))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes('mode: "outline"'))).toBe(true);
-    // WHY: image support recovered (PR #52) — the restored contract names the image-attachment return.
     expect(guidelines.some((guideline) => guideline.includes("image attachment"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes("widened"))).toBe(false);
     expect(guidelines.some((guideline) => guideline.includes("re-read"))).toBe(false);

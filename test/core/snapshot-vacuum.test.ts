@@ -29,8 +29,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   const home = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-vacuum-test-"));
   vi.stubEnv("HOME", home);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(home);
@@ -93,12 +91,13 @@ function seedUndoPin(db: DatabaseSync, path: string, snapshotHash: string): void
   ).run(path, snapshotHash, Date.now());
 }
 
-// WHY: (ticket-04b §4) one cut transaction writes TWO `file_undo` rows sharing a
-// WHY: `transaction_id`. The vacuum pin predicate is per (path, snapshot_hash) and never reads
-// WHY: the id — which is exactly why this shape needs its own witness: the mutation is the NEW
-// WHY: row-set a transaction produces (doubled pinned rows), not the predicate. Falsifier: a
-// WHY: predicate narrowed to `transaction_id IS NULL` would evict a pinned transaction member
-// WHY: here, and correlated undo would lose the snapshot its revert adopts.
+/**
+ * (ticket-04b §4) One cut transaction writes TWO `file_undo` rows sharing a `transaction_id`. The
+ * vacuum pin predicate is per (path, snapshot_hash) and never reads the id, which is why this shape
+ * needs its own witness: the mutation is the NEW row-set a transaction produces (doubled pinned
+ * rows), not the predicate. Falsifier: a predicate narrowed to `transaction_id IS NULL` would evict
+ * a pinned transaction member here.
+ */
 function seedUndoTxnPin(db: DatabaseSync, path: string, snapshotHash: string, txnId: string): void {
   db.prepare(
     "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, " +
@@ -197,7 +196,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
 
       const result = vacuumSnapshots(db);
 
-      // 72 MB -> 48 MB: the two oldest versions go, the four newest stay.
       expect(result.evicted).toBe(2);
       expect(versions(db).map((v) => v.path)).toEqual(["/p2.ts", "/p3.ts", "/p4.ts", "/p5.ts"]);
       expect(totalBytes(db)).toBeLessThanOrEqual(VACUUM_GLOBAL_BUDGET_BYTES);
@@ -223,7 +221,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
       const store = await loadHashStore();
       const db = store.db;
       seedBigStore(db);
-      // the oldest version is the pinned one: eviction must skip it and take the next oldest.
       seedLease(db, { path: "/p0.ts", snapshotHash: "hash-0" });
 
       const result = vacuumSnapshots(db);
@@ -258,14 +255,11 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
     });
   });
 
-  // TICKET-04b §4: the vacuum interaction of a cut transaction's correlated undo rows.
   it("pins BOTH files of one cut transaction and evicts only unrelated versions to hold the budget", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const db = store.db;
       seedBigStore(db);
-      // The two oldest versions are the transaction's undo pins; the budget must take the NEXT
-      // oldest two instead of breaking the correlated pair.
       seedUndoTxnPin(db, "/p0.ts", "hash-0", "txn-cut-1");
       seedUndoTxnPin(db, "/p1.ts", "hash-1", "txn-cut-1");
 
@@ -279,9 +273,7 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
         "hash-5",
       ]);
       expect(totalBytes(db)).toBeLessThanOrEqual(VACUUM_GLOBAL_BUDGET_BYTES);
-      // The doubled pin shows up doubled in the accounting — one per member, not one per edit.
       expect(result.pinnedBytes).toBe(2 * BIG_LINES * VACUUM_LINEAGE_BYTES_PER_LINE);
-      // The correlation survived the pass: both rows carry the same transaction id.
       const ids = db
         .prepare("SELECT transaction_id FROM file_undo ORDER BY path")
         .all() as unknown as { transaction_id: string }[];
@@ -293,7 +285,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const db = store.db;
-      // Three transactions x two members: the transaction multiplies pinned rows file by file.
       for (let i = 0; i < BIG_FILES; i++) {
         seedVersion(db, `/p${i}.ts`, `hash-${i}`, BIG_LINES, 1000 * (i + 1));
         seedUndoTxnPin(db, `/p${i}.ts`, `hash-${i}`, `txn-${i >> 1}`);
@@ -331,7 +322,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
       const store = await loadHashStore();
       const db = store.db;
       seedBigStore(db);
-      // an active pin keeps p0; the long-retired p1 pin has lapsed and is evictable.
       seedLease(db, { path: "/p0.ts", snapshotHash: "hash-0" });
       seedLease(db, {
         path: "/p1.ts",
@@ -366,7 +356,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const db = store.db;
-      // each version costs 12 MB of lineage, so the 10 MB per-path window allows only the floor.
       for (let i = 0; i < 5; i++)
         seedVersion(db, "/huge.ts", `huge-${i}`, BIG_LINES, 1000 * (i + 1));
 
@@ -440,8 +429,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
     });
   });
 
-  // WHY: retention must never delete the version the in-flight read is about to lease — the sweep
-  // WHY: runs before `served_leases` exists (spec §3.6.1: identity wins over budget).
   it("keeps the snapshot an in-flight read materialized when every candidate is pinned", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
@@ -472,7 +459,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
       const file = join(home, "served.ts");
       await writeFile(file, "alpha\nbeta\ngamma\n");
       const probe = await readNormFile(file, home, { store, noPersist: true });
-      // The served snapshot is the oldest unpinned row; a sweep here would reach it first.
       seedAnchoredSnapshot(
         db,
         probe.absolutePath,
@@ -486,8 +472,6 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
 
       const norm = await readAndServe(store, file, home, "sessionA");
 
-      // A cache-hit read adopts the committed row: it adds no version, so it owes no retention and
-      // must not evict the in-flight served row (or any other candidate) behind the read's back.
       expect(snapshotCount(db, norm.absolutePath)).toBe(2);
       expect(loadLeases(store, "sessionA", norm.absolutePath).length).toBeGreaterThan(0);
       expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
@@ -529,8 +513,6 @@ describe("retention is owed only by a fresh commit", () => {
         },
       ]);
 
-      // Adoption (the read path on unchanged content) adds no row: it cannot overflow the budget,
-      // and a read must not pay the store-wide pin scan just because the store is already over it.
       expect(versions(db)).toHaveLength(BIG_FILES);
       expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
     });
@@ -554,7 +536,6 @@ describe("retention is owed only by a fresh commit", () => {
         },
       ]);
 
-      // 7 x 12 MB -> 48 MB: the three oldest go; the fresh row stays because it is the in-flight one.
       expect(versions(db).map((v) => v.snapshot_hash)).toEqual([
         "hash-3",
         "hash-4",

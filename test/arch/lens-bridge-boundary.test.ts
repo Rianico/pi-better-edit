@@ -21,8 +21,6 @@ function sourceFilesOutsideIntegration(): string[] {
 
 describe("lens bridge boundary", () => {
   it("keeps every pi-lens reference inside src/integrations/pi-lens", () => {
-    // WHY: pi-lens-ignore: suppression markers are not runtime coupling (same standing as
-    // WHY: eslint-disable comments) — only real pi-lens references count as offenders.
     const offenders = sourceFilesOutsideIntegration().filter((file) =>
       readFileSync(file, "utf-8")
         .split("\n")
@@ -81,8 +79,6 @@ describe("lens bridge boundary", () => {
   });
 
   it("keeps the read payload flat and window-scoped", () => {
-    // WHY: outline mode lifts the window-count cap (it ignores caller windows), so the schema
-    // WHY: is one variant per mode family — both variants stay flat with the same three keys.
     const variants = (readToolSchema as unknown as { anyOf: Array<{ properties: object }> }).anyOf;
     expect(variants).toHaveLength(2);
     for (const variant of variants) {

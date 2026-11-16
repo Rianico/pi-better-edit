@@ -197,8 +197,6 @@ describe("compPreview no-persist guarantee", () => {
       );
       const hashes = await lineHashes(content, absolutePath);
 
-      // Lines 2-3 are unserved; the interior gap renders a diff instead of a rejection (ADR-0024), so
-      // the persistence detector moves to the interior anchors themselves.
       const preview = await compPreview(
         {
           file: "sample.txt",
@@ -209,8 +207,6 @@ describe("compPreview no-persist guarantee", () => {
       );
       expect(preview).toHaveProperty("diff");
 
-      // Had the preview served its hypothetical rows, lines 2-3 would now carry leases and this edit
-      // would resolve. They must not, so the anchors stay unleased and the rejection carries no rows.
       await expect(
         editTool.execute(
           "e1",

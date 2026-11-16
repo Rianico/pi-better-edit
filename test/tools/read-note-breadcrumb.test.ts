@@ -64,7 +64,6 @@ describe("breadcrumb note", () => {
       provider,
       enabled: true,
     });
-    // WHY: the straddle no longer degrades to the class alone; the chain anchors on line 18.
     expect(note.clauses[0]).toContain("method first");
     expect(note.clauses[0]).toContain("(span 10-20)");
   });
@@ -116,8 +115,6 @@ describe("breadcrumb note", () => {
       enabled: true,
     });
     const clause = note.clauses[0] ?? "";
-    // WHY: the operator's objection in #257 — `, lines 10-20` bound to the whole compound chain, so
-    // a reader had to infer which level owned the extent. Parentheses bind it to the innermost name.
     expect(clause).toContain("(span 10-20)");
     expect(clause).not.toContain(", lines ");
     expect(clause).toContain(" > ");
@@ -130,8 +127,6 @@ describe("breadcrumb note", () => {
     ]);
     const note = await selectionRangeNote({
       file: "app.ts",
-      // WHY: the window's last line is 27, past the innermost span's end 20, so the window is not
-      // *in* the named method — only its first line is.
       windows: [{ offset: 18, limit: 10 }],
       totalLines: 50,
       provider,
@@ -167,8 +162,6 @@ describe("breadcrumb note", () => {
     ]);
     const note = await selectionRangeNote({
       file: "app.ts",
-      // WHY: `lastLine == innermost.end` is the boundary the renderer's `<=` decides. Line 20 still
-      // sits inside the span, so the clause reads `in`; only line 21 escapes and reads `starts in`.
       windows: [{ offset: 12, limit: 9 }],
       totalLines: 50,
       provider,
@@ -194,8 +187,6 @@ describe("breadcrumb note", () => {
     });
     const clause = note.clauses[0] ?? "";
     expect(clause).toContain(" > ");
-    // WHY: U+203A is a three-byte glyph with replacement risk in constrained terminal fonts; the
-    // note is machine-facing, so ASCII carries the same meaning at no cost.
     expect(clause).not.toContain("\u203A");
     expect(clause).toMatch(/^[\x20-\x7E]+$/);
   });
@@ -209,8 +200,6 @@ describe("breadcrumb note", () => {
     ]);
     const note = await selectionRangeNote({
       file: "app.ts",
-      // WHY: the last line 18 escapes the innermost span 14-15, so this one string pins the trim,
-      // the ASCII separator, the parenthesized binding and the chosen preposition together.
       windows: [{ offset: 14, limit: 5 }],
       totalLines: 50,
       provider,

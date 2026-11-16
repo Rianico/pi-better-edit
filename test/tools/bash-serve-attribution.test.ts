@@ -1,3 +1,15 @@
+/**
+ * The bash serve attribution invariant (#175, ADR-0048): for every admitted shape, the leases a
+ * serve grants are exactly the file lines whose content it rendered, and no row is ever matched by
+ * content — the geometry comes from the byte counters of the normalized stream.
+ *
+ * The oracle is independent of the implementation it audits: intervals from counters, content
+ * mapping from the shape's own normalization, anchors from `lineHashes` over the materialized
+ * stream, `observed` from the real binary. Every lease claim is probed as one edit in a fresh
+ * directory and a fresh session, so a probe cannot mutate what the next probe reads.
+ *
+ * A refused serve leases nothing, and each control asserts the refusal is the mutation's doing.
+ */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "child_process";
 import { mkdir, readFile, writeFile } from "fs/promises";
@@ -10,8 +22,6 @@ import { useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
 
-// WHY: (#175) local copies of the bash-view-lifecycle idiom — the seam under test grants no
-// WHY: exports for these, so the suite owns its helpers rather than importing producers.
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const tools = new Map<string, unknown>();
@@ -46,15 +56,10 @@ function rowsOf(text: string): string[] {
   return text.split("\n").filter((line) => line.includes("│"));
 }
 
-// WHY: (#175) content after the LAST anchor separator — rows whose text itself contains `│`
-// WHY: still extract exactly, so geometry-mimicking content cannot confuse the oracle.
 function rowContent(row: string): string {
   return row.split("│").slice(1).join("│");
 }
 
-// WHY: (#175) the anchor half of a rendered row — asserted against independently derived
-// WHY: anchors per coordinate, so a row served under the wrong file's anchor is visible even
-// WHY: when the bytes are identical across files.
 function rowAnchor(row: string): string {
   return row.split("│")[0]!;
 }
@@ -75,8 +80,6 @@ async function bashResult(
   )) as { content: Array<{ type: string; text: string }> } | undefined;
 }
 
-// WHY: (#175) the suite's own normalization — the same D9 contract the seams apply, written
-// WHY: out by hand so the oracle never imports the production normalizer it audits.
 function normText(raw: string): string {
   return raw
     .replace(/^\uFEFF/, "")
@@ -95,19 +98,10 @@ function splitNormLines(norm: string): string[] {
   return parts;
 }
 
-/**
- * WHY: (#230) an anchor keys on the MATERIALIZED line: the load path strips a BOM and normalizes
- * WHY: CRLF/CR to LF before hashing (`decodeNormText`, `src/file-content/loader.ts`), so an oracle
- * WHY: that hashed the raw on-disk bytes derived a different anchor for a CRLF or BOM file and
- * WHY: probed a lease the serve never granted. Normalize first, exactly as `normText` does.
- */
 async function diskAnchors(dir: string, file: string, raw: string): Promise<string[]> {
   return lineHashes(normText(raw), join(dir, file));
 }
 
-// WHY: (#175) intervals from COUNTERS only — cumulative byte lengths over the normalized
-// WHY: stream, never content matching. Returns one [lo, hi) per observed line and asserts the
-// WHY: separators are exactly the stream's newlines.
 function observedIntervals(norm: string): Array<{ lo: number; hi: number }> {
   const lines = splitNormLines(norm);
   const out: Array<{ lo: number; hi: number }> = [];
@@ -119,9 +113,6 @@ function observedIntervals(norm: string): Array<{ lo: number; hi: number }> {
     out.push({ lo, hi });
     pos = hi + 1;
   }
-  // WHY: (#175) this scan is a different mechanism from the split walk above — it reads the
-  // WHY: stream's own newline offsets, so a dropped separator, a merged row or an off-by-one
-  // WHY: in the walk fails here instead of hiding behind the same counters.
   const expected: Array<{ lo: number; hi: number }> = [];
   let start = 0;
   for (;;) {
@@ -172,11 +163,6 @@ async function serveOnce(
   return { result, editTool: getTool("edit"), ctx };
 }
 
-// WHY: (#175) one isolated lease probe per (file, line): a fresh directory with byte-identical
-// WHY: files and a fresh session re-serve the SAME observed bytes, then attempt exactly one edit.
-// WHY: Isolation means a successful probe can never mutate the file a later probe reads, and a
-// WHY: fresh session means leases cannot leak between probes — the probe reads the lease set,
-// WHY: never the producer's word for it.
 async function probeLease(
   files: Record<string, string>,
   command: string,
@@ -231,10 +217,7 @@ interface MatrixCase {
   files: Record<string, string>;
   command: string;
   shape: Shape;
-  // WHY: 1-indexed leased lines per file under a SERVE; empty under RAW.
   served: Record<string, number[]>;
-  // WHY: the compound glue literal lives on the record — one owner — so block extents are
-  // WHY: fully derived, never half-hardcoded in the arm. Absent except on `compound` cases.
   glue?: string;
 }
 
@@ -362,8 +345,6 @@ const MATRIX: MatrixCase[] = [
   },
   {
     name: "grep context windows merge",
-    // WHY: (ADR-0048 D3) matches on lines 1 and 2 with `-A 1` overlap, so grep prints one
-    // WHY: contiguous group with no `--`: the lease set is the union, not the union per match.
     files: { "f.txt": "m1\nm2\nx\ny\n" },
     command: "grep -n -A 1 m f.txt",
     shape: "context",
@@ -434,15 +415,12 @@ describe("bash serve attribution invariant (#175)", () => {
     it(`matrix: ${c.name} — two outcomes, geometry, byte identity, bijection`, async () => {
       await withTempDir("attr175-matrix-", async (dir) => {
         await writeFiles(dir, c.files);
-        // WHY: (#175) the oracle is the actual binary, not a hand-written string — independence
-        // WHY: of instrument: the test never trusts the producer's bytes for `observed`.
         const observed = realStdout(dir, c.command);
         const norm = normText(observed);
         const { result } = await serveOnce(dir, c.command, observed, "matrix");
         const expectServe = Object.values(c.served).some((lines) => lines.length > 0);
 
         if (!expectServe) {
-          // WHY: raw branch — pass-through with zero leases anywhere.
           expect(result).toBeUndefined();
           for (const [file, content] of Object.entries(c.files)) {
             const lines = splitNormLines(normText(content));
@@ -460,22 +438,17 @@ describe("bash serve attribution invariant (#175)", () => {
         const rows = rowsOf(text);
         const servedContents = rows.map(rowContent);
 
-        // WHY: (#175) independent geometry per shape — intervals from counters, content mapping
-        // WHY: from the shape's own normalization, never the production parsers.
         const lines = splitNormLines(norm);
         const intervals = observedIntervals(norm);
         expect(intervals).toHaveLength(lines.length);
 
         if (c.shape === "view") {
-          // WHY: a view owns the whole stream: row i IS observed line i, in order.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
           const want = c.served[file]!.map((n) => onDisk[n - 1]!);
           expect(lines).toEqual(want);
           expect(servedContents).toEqual(want);
         } else if (c.shape === "numbered") {
-          // WHY: the `%6d\t` number field is display geometry of fixed width 7 — the content
-          // WHY: starts at a counter-derived offset, never a content match.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
           const want = c.served[file]!.map((n) => onDisk[n - 1]!);
@@ -489,8 +462,6 @@ describe("bash serve attribution invariant (#175)", () => {
           }
           expect(servedContents).toEqual(want);
         } else if (c.shape === "search") {
-          // WHY: `digits(line)+1` is the label width — derived from the LEASED line number
-          // WHY: (a counter), so a row whose text starts `5:foo` cannot shift the split.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
           const leased = c.served[file]!;
@@ -506,8 +477,6 @@ describe("bash serve attribution invariant (#175)", () => {
           }
           expect(servedContents).toEqual(leased.map((n) => onDisk[n - 1]!));
         } else if (c.shape === "contentSet") {
-          // WHY: a reordering fold owns no per-row stream order — every served row must still be
-          // WHY: byte-identical to its disk line, and the multiset must equal the observed set.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
           expect([...servedContents].sort()).toEqual([...lines].sort());
@@ -517,22 +486,12 @@ describe("bash serve attribution invariant (#175)", () => {
             expect(servedContents).toContain(onDisk[n - 1]);
           }
         } else if (c.shape === "triple") {
-          // WHY: `file + ":" + digits(line) + ":"` — both widths from counters (the display
-          // WHY: name length, the leased line digits), so equal bytes across files keep distinct
-          // WHY: intervals and the lease resolves per file, never per content.
-          // WHY: Anchor identity per rendered row: coordinates are recovered in observed order
-          // WHY: by matching declared `file:line:` prefixes (candidates from the declared set,
-          // WHY: never a general parser), then each rendered hash must equal the independently
-          // WHY: derived anchor for that coordinate — independent of content, so a swap under
-          // WHY: identical bytes is visible as a hash mismatch, not hidden by `toContain`.
           const pending: Array<{ file: string; line: number }> = [];
           for (const [file, leased] of Object.entries(c.served)) {
             for (const n of leased) pending.push({ file, line: n });
           }
           const coords: Array<{ file: string; line: number }> = [];
           for (const observedLine of lines) {
-            // WHY: the recovery must be unambiguous — a nesting pair of declared prefixes fails
-            // WHY: loudly here instead of mis-assigning the row to the shorter coordinate.
             expect(
               pending.filter((p) => observedLine.startsWith(`${p.file}:${p.line}:`)),
             ).toHaveLength(1);
@@ -547,7 +506,6 @@ describe("bash serve attribution invariant (#175)", () => {
             onDiskByFile.set(file, await diskLines(dir, file));
             hashesByFile.set(file, await diskAnchors(dir, file, c.files[file]!));
           }
-          // WHY: per-file row counts in render order — every declared coordinate renders once.
           for (const [file, leased] of Object.entries(c.served)) {
             expect(
               coords
@@ -562,17 +520,10 @@ describe("bash serve attribution invariant (#175)", () => {
             expect(rowAnchor(rows[i]!)).toBe(hashesByFile.get(coord.file)![coord.line - 1]);
           }
         } else if (c.shape === "context") {
-          // WHY: (ADR-0048 D3) every match AND context row is served and leased. The row's label is
-          // WHY: `digits(leased line) + one separator`, so the split width comes from the leased line
-          // WHY: number (a counter), never from the content grep reprinted. The separator set is the
-          // WHY: geometry under test: `:` for a match, `-` for context — both are accepted, and both
-          // WHY: must be present, so a seam that leased matches only cannot pass.
           const file = Object.keys(c.files)[0]!;
           const onDisk = await diskLines(dir, file);
           const hashes = await diskAnchors(dir, file, c.files[file]!);
           const leased = c.served[file]!;
-          // WHY: `--` is a group separator, not a row: it is dropped by INDEX here so it can never
-          // WHY: consume a row slot and shift every later coordinate.
           const rowLines = lines
             .map((text, index) => ({ text, index }))
             .filter((entry) => entry.text !== "--");
@@ -588,8 +539,6 @@ describe("bash serve attribution invariant (#175)", () => {
             const iv = intervals[line.index]!;
             expect(norm.slice(iv.lo, iv.lo + width)).toBe(prefix);
             expect(norm.slice(iv.lo + width, iv.hi)).toBe(onDisk[n - 1]);
-            // WHY: the rendered anchor IS the re-read anchor at that coordinate — an independent
-            // WHY: derivation, so a row leased and rendered at the wrong line is visible here.
             expect(rowAnchor(rows[i]!)).toBe(hashes[n - 1]);
             expect(servedContents[i]).toBe(onDisk[n - 1]);
             separators.push(prefix.slice(-1));
@@ -597,12 +546,7 @@ describe("bash serve attribution invariant (#175)", () => {
           expect(separators).toContain(":");
           expect(separators).toContain("-");
         } else if (c.shape === "compound") {
-          // WHY: block extents derived from LENGTHS — the glue literal length plus each block's
-          // WHY: re-read disk-slice byte length — then every slice is asserted against the re-read
-          // WHY: disk bytes and the extents must tile the stream exactly. Equal bytes in different
-          // WHY: blocks keep different intervals by construction, never by content matching.
           const onDisk = await diskLines(dir, "f.txt");
-          // WHY: the glue literal comes from the case record — the arm derives everything else.
           const glue = c.glue!;
           const block1 = `${onDisk[0]}\n${onDisk[1]}\n`;
           const block2 = `${onDisk[4]}\n${onDisk[5]}\n`;
@@ -612,15 +556,11 @@ describe("bash serve attribution invariant (#175)", () => {
           expect(glue.length + block1.length + block2.length).toBe(norm.length);
           expect(servedContents).toEqual([onDisk[0], onDisk[1], onDisk[4], onDisk[5]]);
         } else if (c.shape === "raw") {
-          // WHY: unreachable — raw cases return early above; the arm exists so the final
-          // WHY: `satisfies never` stays total over `Shape` and a new shape breaks typecheck.
           throw new Error("raw cases return early");
         } else {
           throw new Error(`unhandled shape ${c.shape satisfies never}`);
         }
 
-        // WHY: (#175) byte identity + bijection — every served row equals the independently
-        // WHY: re-read disk line, and the probed lease set equals exactly the declared set.
         for (const [file, leased] of Object.entries(c.served)) {
           const onDisk = await diskLines(dir, file);
           const total = onDisk.length;
@@ -639,8 +579,6 @@ describe("bash serve attribution invariant (#175)", () => {
       await writeFiles(dir, files);
       const command = "cat f.txt";
       const observed = realStdout(dir, command);
-      // WHY: control first — the unmutated bytes serve, so the refusal below is the mutation's
-      // WHY: doing and not a dead path that refuses everything.
       const control = await serveOnce(dir, command, observed, "neg-ctl");
       expect(control.result).toBeDefined();
       const mutated = `${observed.slice(0, 1)}X${observed.slice(2)}`;
@@ -655,10 +593,6 @@ describe("bash serve attribution invariant (#175)", () => {
 
   it("G1 twin dot-root: recursive spellings are ambiguous too", async () => {
     await withTempDir("attr175-g1dot-", async (dir) => {
-      // WHY: `admitted` displays are `path.join`-normalized (`a`) while bash echoes the operand
-      // WHY: spelling (`./a` for a `.` root) — a pre-filter comparing those two strings never
-      // WHY: examines a candidate, so the guard would be inert for dot roots. Candidates are
-      // WHY: resolved, never display-matched.
       const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
       await writeFiles(dir, files);
       const command = "grep -rn x .";
@@ -670,8 +604,6 @@ describe("bash serve attribution invariant (#175)", () => {
       expect(await probeLease(files, command, observed, "a:1:b.txt", 3, "g1dot")).toBe(false);
     });
     await withTempDir("attr175-g1dotctl-", async (dir) => {
-      // WHY: dot-root control — one admitted split still serves. The phantom `./a:1:b.txt`
-      // WHY: candidate resolves nowhere and is skipped, never refused: a throw is not ambiguity.
       const files = { a: "b.txt:3:x\n", "other.txt": "q\n" };
       await writeFiles(dir, files);
       const command = "grep -rn x .";
@@ -684,10 +616,6 @@ describe("bash serve attribution invariant (#175)", () => {
   });
 
   it("triple ordering: descending rows for one file fail closed; ascending serves", async () => {
-    // WHY: (serve-seam rule, one served row per file line) rows within a file arrive contiguous
-    // WHY: and ascending for every admitted `grep`/`rg` shape — the check runs AFTER the repeat
-    // WHY: dedupe (`grep -n pat a a` repeats a coordinate legitimately), so only a reordering
-    // WHY: wrapper fails closed here, with zero leases.
     const files = { "a.txt": "l1\nl2\n", "b.txt": "l3\n" };
     await withTempDir("attr175-tord-", async (dir) => {
       await writeFiles(dir, files);
@@ -710,10 +638,6 @@ describe("bash serve attribution invariant (#175)", () => {
 
   it("G1 twin: the ambiguous triple fails closed; single-split control still serves", async () => {
     await withTempDir("attr175-g1-", async (dir) => {
-      // WHY: (ADR-0048 D1 — bash serve admission) never content matching, no other-file anchor bleed — file `a` line 1
-      // WHY: (`b.txt:3:x`) and file `a:1:b.txt` line 3 (`x`) produce the identical stdout row
-      // WHY: `a:1:b.txt:3:x`, so serving it under either coordinate witnesses bytes bash never
-      // WHY: anchored to that file. Fail closed with zero leases.
       await writeFiles(dir, { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" });
       const command = "grep -n x a 'a:1:b.txt'";
       const observed = realStdout(dir, command);
@@ -742,8 +666,6 @@ describe("bash serve attribution invariant (#175)", () => {
       ).toBe(false);
     });
     await withTempDir("attr175-g1ctl-", async (dir) => {
-      // WHY: adjacent control — only one split resolves into the admitted set, so the row is
-      // WHY: unambiguous and still serves. Proves the guard is not a blanket multi-file refusal.
       const files = { a: "b.txt:3:x\n", "other.txt": "q\n" };
       await writeFiles(dir, files);
       const command = "grep -n x a other.txt";
@@ -757,12 +679,6 @@ describe("bash serve attribution invariant (#175)", () => {
 
   it("G2: descending and duplicate search rows fail closed; ascending serves", async () => {
     const files = { "f.txt": "l1\nl2\nl3\n" };
-    // WHY: (serve-seam rule, one served row per file line — ADR-0048, bash serve admission,
-    // WHY: states the no-bleed invariant, not an ordering clause) the printed
-    // WHY: number is a LABEL whose order is proven by the stream, not by matching content —
-    // WHY: descending or repeated labels own no disjoint ordered intervals and no lease↔row
-    // WHY: bijection, even when every row byte-matches disk. Real grep/rg on one file always
-    // WHY: print ascending, so no served call regresses.
     await withTempDir("attr175-g2-", async (dir) => {
       await writeFiles(dir, files);
       expect(
@@ -789,10 +705,6 @@ describe("bash serve attribution invariant (#175)", () => {
   });
 
   it("count is the single exempt shape: number witnessed, rows in file order, all leased", async () => {
-    // WHY: (#175) `wc -l` prints the NUMBER, not the content — no observed interval exists for a
-    // WHY: row. The closed exemption: count == survivor fold length, file-order render, every
-    // WHY: counted row leased. The total switch below makes a sixth ViewOp kind a type error,
-    // WHY: so no new op can silently join the exemption.
     function exemptKind(op: ViewOp): "count" | "other" {
       switch (op.kind) {
         case "count":
@@ -824,7 +736,6 @@ describe("bash serve attribution invariant (#175)", () => {
       const { result } = await serveOnce(dir, command, observed, "count");
       expect(result).toBeDefined();
       const rows = rowsOf(result!.content[0]!.text);
-      // WHY: file-order render of the counted fold: dup@1 before uniq@3.
       expect(rows.map(rowContent)).toEqual(["dup", "uniq"]);
       for (let n = 1; n <= 3; n++) {
         expect(await probeLease(files, command, observed, "f.txt", n, "count")).toBe(n !== 2);
@@ -833,8 +744,6 @@ describe("bash serve attribution invariant (#175)", () => {
   });
 
   it("prefix pin: corrupted second block keeps block 1 leases, raw tail unleased", async () => {
-    // WHY: (ADR-0039 D4) a failing block halts the peel — the proven prefix keeps its leases
-    // WHY: (each proven before its own first lease) and the failing block plus remainder stay raw.
     await withTempDir("attr175-prefix-", async (dir) => {
       const files = { "f.txt": L6 };
       await writeFiles(dir, files);
@@ -843,7 +752,6 @@ describe("bash serve attribution invariant (#175)", () => {
       const { result } = await serveOnce(dir, command, bad, "prefix");
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      // WHY: exactly one anchored view block (the verified prefix); the corrupt tail stays raw.
       expect(rowsOf(text).map(rowContent)).toEqual(["l1", "l2"]);
       expect(text.includes("CORRUPT")).toBe(true);
       expect(await probeLease(files, command, bad, "f.txt", 1, "prefix")).toBe(true);
@@ -851,7 +759,6 @@ describe("bash serve attribution invariant (#175)", () => {
       expect(await probeLease(files, command, bad, "f.txt", 6, "prefix")).toBe(false);
     });
     await withTempDir("attr175-prefix0-", async (dir) => {
-      // WHY: corrupted FIRST block — nothing was proven, so the whole command is raw, zero leases.
       const files = { "f.txt": L6 };
       await writeFiles(dir, files);
       const command = "printf \"h\\n\"; sed -n '1,2p' f.txt; sed -n '5,6p' f.txt";
@@ -877,7 +784,6 @@ describe("bash serve attribution invariant (#175)", () => {
       expect(rows).toHaveLength(2);
       const hashesA = await diskAnchors(dir, "a.txt", files["a.txt"]!);
       const anchorA = hashesA[0]!;
-      // WHY: a's anchor authorizes a — and the same bytes never authorize b.
       const ok = await editTool.execute(
         "e1",
         { file: "a.txt", edits: [{ anchor_from: anchorA, anchor_to: anchorA, text: "A" }] },
@@ -895,9 +801,6 @@ describe("bash serve attribution invariant (#175)", () => {
       const { editTool, ctx } = await serveOnce(dir, command, observed, "xfile2");
       const hashesA = await diskAnchors(dir, "a.txt", files["a.txt"]!);
       const anchorA = hashesA[0]!;
-      // WHY: the other-file direction — a's anchor against b is refused, even with equal bytes.
-      // WHY: `E_FOREIGN_ANCHOR` (not unknown): the lease exists but is bound to a's path.
-      // WHY: (see edit.foreign-attribution.test.ts for the code's own pin).
       await expect(
         editTool.execute(
           "e0",

@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-// The build script's comment claims the esbuild target tracks `engines.node`;
-// this pins the coupling so the two majors cannot drift silently.
 describe("build target tracks engines.node", () => {
   it("TARGET's major equals the engines.node floor major", () => {
     const buildScript = readFileSync("scripts/build-dist.mjs", "utf8");

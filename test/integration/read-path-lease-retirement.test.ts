@@ -25,7 +25,6 @@ describe("read-path materialization retires absent leases on a snapshot cache hi
     await withTempFile("revert.txt", CONTENT_A, async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
 
-      // 1. Materialize A, then serve B so B's unique anchor holds an active lease.
       await readTool.execute("r0", { file: "revert.txt" }, undefined, undefined, ctx);
       await writeFile(path, CONTENT_B, "utf-8");
       const readB = await readTool.execute("r1", { file: "revert.txt" }, undefined, undefined, ctx);
@@ -40,12 +39,9 @@ describe("read-path materialization retires absent leases on a snapshot cache hi
 
       expect(rows<LeaseRow>(activeSql, path).some((lease) => lease.anchor === hashB)).toBe(true);
 
-      // 2. Revert the file to A and re-read it: A's snapshot is a cache hit, but the served
-      //    content is A, so B's unique anchor must be retired.
       await writeFile(path, CONTENT_A, "utf-8");
       await readTool.execute("r2", { file: "revert.txt" }, undefined, undefined, ctx);
 
-      // 3. No active lease may carry an anchor absent from A's lineage.
       const anchorsA = rows<{ anchor: string }>(
         "SELECT ll.anchor AS anchor FROM line_lineage ll " +
           "JOIN file_snapshots fs ON fs.snapshot_id = ll.snapshot_id " +

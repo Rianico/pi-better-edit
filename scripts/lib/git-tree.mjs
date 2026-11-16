@@ -3,12 +3,12 @@
  * Helpers for the install-surface checks: build a git-checkout-shaped tree from the tracked
  * files of this working copy, and drive git on it.
  *
- * WHY: pi installs a git source by cloning it, running `git clean -fdx`, and then running the
- * package manager with devDependencies omitted. A tree built from the tracked files plus the
- * untracked-but-not-ignored ones reproduces the shape `git clean -fdx` leaves behind — no
- * ignored build output, no node_modules — and carries the working-tree content of every file
- * a clone of this branch would contain, so a check can run against the changes being
- * validated rather than against the last commit.
+ * pi installs a git source by cloning it, running `git clean -fdx`, and then running the
+ * package manager with devDependencies omitted. A tree built from the tracked files plus
+ * the untracked-but-not-ignored ones reproduces the shape `git clean -fdx` leaves behind
+ * — no ignored build output, no node_modules — and carries the working-tree content of
+ * every file a clone of this branch would contain, so a check runs against the changes
+ * being validated rather than against the last commit.
  */
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";

@@ -10,7 +10,6 @@ describe("strict hashline contract", () => {
   it("does not fold internal ASCII whitespace into the anchor (ADR-0013)", async () => {
     const hashes = await lineHashes("a b", home.testPath);
     const hashes2 = await lineHashes("ab", home.testPath);
-    // WHY: the canon folds the space; the anchor keys on the raw line, so the two differ.
     expect(canon("a b")).toBe(canon("ab"));
     expect(hashes[0]).not.toBe(hashes2[0]);
   });

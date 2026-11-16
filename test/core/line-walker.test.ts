@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import { visibleLineTotal, walkLines } from "../../src/file-content/line-walker.js";
 import { splitLines, visLines } from "../../src/utils.js";
 
-// WHY: the oracle is the codebase's own line decomposition, never a hand-written expectation and
-// WHY: never a private idea of what a line is: `splitLines` counts the lines the anchors are assigned
-// WHY: to and `visLines` the lines a read shows, so a walk that disagrees with either is the defect.
 const ORACLE_CASES = [
   "",
   "\n",
@@ -26,8 +23,6 @@ const ORACLE_CASES = [
   "  \n\t\n",
   "no trailing",
   "one\nline",
-  // WHY: a BOM is the first line's first character, not a line break: the loader strips it before the
-  // WHY: walk, so what reaches the walk is a plain leading character and nothing more.
   "\uFEFFa\nb\n",
 ] as const;
 
@@ -56,10 +51,6 @@ describe("walkLines — the line decomposition", () => {
   });
 
   it("treats a terminal newline's trailing entry as the sentinel it is, not a line", () => {
-    // WHY: the one place raw `split("\n")` and the walk disagree, and they must: "a\nb\n" is two
-    // WHY: lines plus the empty entry a terminal newline leaves, which `splitLines` counts away,
-    // WHY: `visLines` never shows, and the anchors are never assigned to. The walk counts the lines
-    // WHY: its callers count — that is what keeps one line space one line space.
     expect("a\nb\n".split("\n")).toEqual(["a", "b", ""]);
     expect(splitLines("a\nb\n")).toEqual(["a", "b"]);
     expect(walkLines("a\nb\n", [fullRange(2)]).ranges[0]).toEqual(["a", "b"]);

@@ -54,7 +54,6 @@ function makeReadTool(): Tool {
   register(pi as never);
   const tool = tools.get("read");
   if (tool === undefined) throw new Error("bench: the read tool did not register");
-  // WHY: the served-state hooks run on session start; without them the read has no store context.
   return {
     execute: (id, params, signal, onUpdate, ctx) => {
       void sessionStart?.({ type: "session_start", reason: "startup" }, ctx);
@@ -70,8 +69,6 @@ const ctxFor = (cwd: string) => ({
 });
 
 const dir = await mkdtemp(join(tmpdir(), "pi-bench-adopt-"));
-// WHY: the whole sandbox, not just the override — the retired-source walk reads $HOME and
-// WHY: $XDG_CONFIG_HOME and deletes their `.corrupt-*` dumps (#190).
 Object.assign(process.env, sandboxEnv(dir));
 const path = join(dir, "big.txt");
 await writeFile(path, CONTENT, "utf-8");
@@ -80,8 +77,6 @@ const tool = makeReadTool();
 const ctx = ctxFor(dir);
 let request = 0;
 
-// WHY: a page read is the read this ticket measures — the builtin read tool asks for a bounded page,
-// WHY: and the page is the work an adoption must keep. `PAGE` is the same request every run makes.
 const PAGE = { file: "big.txt", windows: [{ offset: 1, limit: 2_000 }] };
 
 async function read(label: string, params: Record<string, unknown> = PAGE): Promise<number> {
@@ -118,8 +113,6 @@ const fixed = (value: number) => `${value.toFixed(1)} ms`;
 console.log(`fixture: ${LINES.toLocaleString()} lines, ${(CONTENT.length / 1e6).toFixed(2)} MB\n`);
 
 const cold = await read("cold");
-// WHY: a page-sized read must not resolve the file's remaining anchors; the whole-file read below
-// WHY: checks that it still renders (it retains every line before truncating by design).
 console.log(`${"first read (cold materialization)".padEnd(34)} ${fixed(cold).padStart(8)}`);
 
 const adopt = await samples("unchanged adoption (page)", async () => {});
@@ -140,8 +133,6 @@ const replace = await samples("atomic replace, then adopt", async () => {
 
 let mutations = 0;
 const changed = await samples("one-line content change", async () => {
-  // WHY: every sample writes new bytes (a plain edit, no mtime restore), so each one pays the
-  // WHY: content-hash path — the cost ADR-0043 deliberately leaves alone.
   await writeFile(path, CONTENT.replace("line 50000 ", `line 50000_${mutations++}`), "utf-8");
 });
 

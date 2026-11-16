@@ -17,9 +17,6 @@ describe("constants", () => {
   });
 
   it("MAX_READ_WINDOWS is exactly 16", () => {
-    // WHY: the ONE place a literal belongs. Every behavioural pin derives from this constant, so a
-    // WHY: 16 -> N bump leaves them all green; the spec publishes the cap in the tool schema, so
-    // WHY: raising it has to be a deliberate edit here as well.
     expect(MAX_READ_WINDOWS).toBe(16);
   });
 });

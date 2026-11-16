@@ -77,8 +77,6 @@ vi.mock("fs/promises", async (importOriginal) => {
 let tmpHome: string;
 
 beforeAll(async () => {
-  // WHY: the `fs/promises` mock below replaces `mkdir` with fixture state for the module
-  // under test, so the fixture creates its own parent through the unmocked `node:fs` seam.
   mkdirSync(join(process.cwd(), ".tmp"), { recursive: true });
   tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "hash-store-open-errors-"));
   vi.stubEnv("HOME", tmpHome);
@@ -168,9 +166,6 @@ describe("hash store open error handling", () => {
         content: "x\n",
       });
     }).toThrow(/locked/);
-    // WHY: the deliberate contention budget of #87b — 8 attempts (BUSY_MAX_ATTEMPTS) before the
-    // WHY: original error propagates, where the old fixed 4-attempt loop spent 4. The budget block in
-    // WHY: src/hash-store.ts states the arithmetic; this pins the attempt count that reaches here.
     expect(state.runCalls - callsBefore).toBe(8);
   });
 });

@@ -2,29 +2,13 @@
 /**
  * Prints the tool prompts exactly as the model receives them, grouped by tool and surface.
  *
- * WHY the loaders: the served text is not the file. `edit` is constant-is-source
- * (`src/payload-contract.ts`, with `prompts/edit*.md` as generated mirrors), while `read` and
- * `undo_last_edit` are file-is-source. Reading `prompts/` directly would show the mirrors for
- * one tool and the truth for the others; calling `loadP`/`loadGuide` is the only view that is
- * true for all three, and it is the same seam the extension registers. This tool therefore
- * *executes* the prompt path instead of parsing it.
+ * It reads through `loadP`/`loadGuide` because the served text is not the file: `edit` is
+ * constant-is-source with generated mirrors under `prompts/`, while `read` and `undo_last_edit`
+ * are file-is-source. A resolve hook maps the ESM `.js` specifier to its `.ts` sibling so Node's
+ * type stripping loads the real module graph. Report, not gate: the pass/fail authority stays
+ * with the tests.
  *
- * WHY the resolve hook: `src/prompts.ts` imports `./payload-contract.js` (the ESM build
- * spelling), which Node's type stripping does not rewrite to `.ts`. The hook maps a failed
- * `.js` specifier to its `.ts` sibling so the real module graph loads without a bundler or tsx.
- *
- * Report, not gate: the header states the `edit` description budget (the < 800 cap lives in
- * `test/core/gemma-tool-calling.test.ts`), mirror parity, and the ADR-0021 prohibition on
- * prose that names the literal flag. Those facts are printed so a prompt change can be read
- * and judged; the pass/fail authority stays with the tests.
- *
- * Usage:
- *   node scripts/served-prompts.mjs                       # all tools, human report
- *   node scripts/served-prompts.mjs read edit             # only these tools
- *   node scripts/served-prompts.mjs --surface guidelines  # one surface per tool
- *   node scripts/served-prompts.mjs --format json         # machine-readable
- *   node scripts/served-prompts.mjs --format markdown     # paste-ready
- *   node scripts/served-prompts.mjs --no-text             # headings and counts only
+ *   node scripts/served-prompts.mjs [read edit] [--surface guidelines] [--format json|markdown]
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { registerHooks } from "node:module";
@@ -33,10 +17,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PROMPTS_DIR = join(ROOT, "prompts");
-const EDIT_DESCRIPTION_CAP = 800; // `expect(EDIT_DESCRIPTION.length).toBeLessThan(800)`
+const EDIT_DESCRIPTION_CAP = 800;
 
-// WHY: the report is meant to be piped (`| head`, `| jq`). A consumer that closes early raises EPIPE
-// WHY: on stdout; treat that as the reader's stop, not a tool failure.
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (error) => {
     if (error.code === "EPIPE") process.exit(0);

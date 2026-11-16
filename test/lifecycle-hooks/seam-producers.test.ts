@@ -73,8 +73,6 @@ async function withHarness(
 ): Promise<void> {
   await withTempDir(prefix, async (dir) => {
     const harness = setupIntegrationTest(dir);
-    // WHY: the observer registries are module-global and `register` already attached the shipped
-    // WHY: adapter, so clearing first leaves exactly the two probes this file asserts on.
     clearMutatedFileObserversForTests();
     clearServedSpanObserversForTests();
     timeline.length = 0;

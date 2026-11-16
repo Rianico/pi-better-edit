@@ -98,7 +98,6 @@ const janitor = runJanitor({
   settings: { ...STORE_JANITOR_DEFAULTS, intervalMs: 1, batchSize: 4_096 },
 });
 const gcMs = performance.now() - gcStarted;
-// WHY: at the parent commit the janitor has no compaction step at all; the report says "absent".
 const compacted = janitor.compacted ?? { ran: false, reason: "absent", reclaimedBytes: 0 };
 checkpoint(db);
 const afterJanitor = await fileBytes();

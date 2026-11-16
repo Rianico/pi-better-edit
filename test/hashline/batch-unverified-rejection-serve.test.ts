@@ -1,3 +1,14 @@
+/**
+ * Batch-buffer rejection serving, by fault injection. `shiftedBufferRejection`'s E_UNVERIFIED_RANGE
+ * arm is reached by the retirement window (`lease-resolve.ts`) when an earlier item deleted one
+ * bound's line and the surviving bound stays live and unshifted. Its rows and first offending line
+ * are SERVED coordinates (`lease.servedLineNumber`), already current-file lines, so the rowless
+ * rewrite must not re-map them through `baselineLineOf`. The mock throws on the grown 18-line
+ * buffer, naming served lines 5-8. E_STALE_ANCHOR has no refutable coverage: it is unreachable here
+ * — its only row-carrying producer, `makeStaleAnchorRejection`, has no caller in src/, and the one
+ * live site in a batch carries `servedRows: []`. The arm stays for forward compatibility and would
+ * re-anchor its headline like `E_STALE_RANGE` if a row-carrying producer ever appears.
+ */
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { readEnvelope } from "../../src/error-envelope.js";
@@ -13,12 +24,6 @@ import {
   withTempFile,
 } from "../support/fixtures";
 
-// WHY: (F4) fault injection for the E_UNVERIFIED_RANGE arm of `shiftedBufferRejection`. That arm is
-// WHY: reached by the retirement window (`lease-resolve.ts`) when an earlier item deleted one
-// WHY: bound's line and the surviving bound stays live and unshifted. Its rows and first offending
-// WHY: line are SERVED coordinates (lease.servedLineNumber), already current-file lines, so the
-// WHY: rowless rewrite must NOT re-map them through `baselineLineOf` (that would double-map). The
-// WHY: mock throws once the buffer is the grown (18-line) buffer, naming served lines 5-8.
 vi.mock("../../src/hashline/lease-resolve.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/hashline/lease-resolve.js")>();
   const { makeServedRejection, UNVERIFIED_HEADLINE } =
@@ -114,14 +119,11 @@ describe("unverified-range rejection inside a changed batch buffer (served-or-ab
       expect(readEnvelope(caught)?.servedRows ?? []).toEqual([]);
       expect(message).not.toContain("Current range (fresh read):");
       expect(message).toContain("none grant leases and none were recorded as served");
-      // WHY: served coordinates are already current-file lines — the read is named 5-8, never the
-      // WHY: double-mapped buffer lines (which would land on 2-4 after the grow).
       expect(message).toContain(
         "An anchored read of current-file lines 5-8 would serve that range.",
       );
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
 
-      // WHY: the rejection left the served record untouched, so the standalone edit still applies.
       const result = await editTool.execute(
         "e2",
         { file: "sample.ts", edits: [deleteRender] },
@@ -136,12 +138,3 @@ describe("unverified-range rejection inside a changed batch buffer (served-or-ab
     });
   });
 });
-
-// WHY: (F4) the E_STALE_ANCHOR arm of `shiftedBufferRejection` has no refutable coverage because it
-// WHY: is provably unreachable through the batch-buffer path: its only row-carrying producer,
-// WHY: `makeStaleAnchorRejection` (serve-render.ts), has no caller in src/ — the registry pins it as
-// WHY: a producer only via direct unit tests. The one live `E_STALE_ANCHOR` site inside a batch,
-// WHY: the foreign-source fallback in `foreignRejection`, carries `servedRows: []`, so it never
-// WHY: reaches `shiftedBufferRejection` (which requires a non-empty `servedRows`). The arm is kept
-// WHY: for forward-compatibility: if a row-carrying `E_STALE_ANCHOR` producer is ever added, the
-// WHY: arm already re-anchors its headline and offending line like `E_STALE_RANGE`.

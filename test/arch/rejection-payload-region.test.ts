@@ -24,25 +24,16 @@ function servedLineRe(): RegExp {
 }
 
 /**
- * Seam oracle (ADR-0018 decision 4, spec D5): every rejection payload's rows
- * are derivable from the submitted anchors' live mapping, never from a lookup
- * in the file's current bytes.
+ * Seam oracle (ADR-0018 decision 4, spec D5): every rejection payload's rows are derivable from the
+ * submitted anchors' live mapping, never from a lookup in the file's current bytes. The caller names
+ * the live window from test knowledge of served coordinates, and this file never imports the content
+ * lookup, so a window placed by such a lookup cannot satisfy the window check.
  *
- * The caller names the live window from test knowledge of served coordinates
- * (hardcoded per scenario); this file never imports the content lookup, so a
- * window placed by such a lookup cannot satisfy the window check. `fileHashes`
- * are the current on-disk hashes; each row must reproduce them exactly.
- * Payload shape is disjoint by code: a target-lost, unknown-anchor, or foreign-anchor
- * payload carries zero rows and no `Current range` heading of either form; the range-family codes
- * (`E_STALE_RANGE`, `E_UNVERIFIED_RANGE`) carry rows under the exact `Current range (fresh read):`
- * heading with no retry hint; every other payload carries rows under `Current range:` with a retry
- * hint.
- * (04b §12.1, ADR-0021 d4) §D6's payload-shape phrasing is superseded in part: the code alone
- * selects the remedy, and row presence is a payload detail, not a discriminator. The one
- * exception within the range family is the FOREIGN leased wrap (`E_STALE_RANGE`/
- * `E_UNVERIFIED_RANGE` re-wrapped by `foreignLeasedWrap`), which keeps the code but renders zero
- * rows and no heading — asserted by the settled-shape arm below, which is also the falsifier
- * this header comment previously lacked.
+ * Payload shape is disjoint by code (ADR-0021 d4: the code alone selects the remedy): target-lost,
+ * unknown-anchor and foreign-anchor carry zero rows and no `Current range` heading of either form;
+ * the range family carries rows under `Current range (fresh read):` with no retry hint; every other
+ * code carries rows under `Current range:` with a retry hint. The FOREIGN leased wrap keeps the code
+ * but renders no rows and no heading — the settled-shape arm below is its falsifier.
  */
 function assertLivePayload(args: {
   error: unknown;
@@ -142,7 +133,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).toMatch(/\[E_STALE_RANGE\]/);
       const disk = await readFile(path, "utf-8");
       expect(disk).toBe("alpha\nBETA\ngamma\n");
-      // Served coordinates 1-3 prove no shift; window is hardcoded, never searched.
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
       const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
@@ -181,8 +171,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).toMatch(/\[E_TARGET_LOST\]/);
       const disk = await readFile(path, "utf-8");
       expect(disk).toBe("alpha\nBETA\ngamma\nbeta\n");
-      // Unidentifiable: no window exists, so rows must be empty. Headline names
-      // the served coordinate (2), never the re-added line (4).
       expect(msg).not.toContain("Current range:");
       expect(msg).not.toMatch(servedLineRe());
       expect(msg).toMatch(new RegExp(`line 2 in ${path}`));
@@ -230,8 +218,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const l3Ref = extractHash(text.split("\n").find((l) => l.includes("│l3"))!);
       const l7Ref = extractHash(text.split("\n").find((l) => l.includes("│l7"))!);
 
-      // Every row of the window was served; one interior line then drifts on disk. ADR-0024 keeps this
-      // fail-closed — it accepts only interior rows no serve ever covered.
       const drifted = content.replace("l5\n", "L5X\n");
       await writeFile(path, drifted, "utf-8");
 
@@ -250,8 +236,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const msg = (caught as Error).message;
       expect(msg).toMatch(/E_STALE_RANGE/);
       expect(await readFile(path, "utf-8")).toBe(drifted);
-      // Rebased window 3-7 from the two served bounds; every row in it was served, so the diagnosis is
-      // the identity one — never `never-served` (ADR-0024).
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
       expect((caught as { details?: { cause: string } }).details?.cause).not.toBe("never-served");
@@ -371,7 +355,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const gammaRef = extractHash(text.split("\n").find((l) => l.includes("│gamma"))!);
-      // Overlapping spans abort before any mutation; the later span's window is served.
       const overlap = (await editTool
         .execute(
           "e1",
@@ -392,9 +375,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
       const diskHashes = await currentHashes("alpha\nbeta\ngamma\n", path);
       const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
-      // Later span beta-gamma (lines 2-3) is served; rows reproduce on-disk bytes.
       expect(servedLines).toEqual([`${diskHashes[1]}│beta`, `${diskHashes[2]}│gamma`]);
-      // A later item naming a retired identity aborts with its own code plus the trailer.
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
       const staleItem = (await editTool
         .execute(
@@ -419,11 +400,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     });
   });
 
-  /**
-   * A malformed payload the registry cannot construct (e.g. a target-lost
-   * carrying rows): plain field bags, never `DomainError`, so the check proves
-   * the shape rather than the class.
-   */
   function plantedError(args: {
     code: string;
     message: string;
@@ -450,8 +426,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     const misplaced: ServedRow = { position: 0, hash: hashes[2]! };
     const planted = plantedError({
       code: "E_STALE_RANGE",
-      // WHY: the planted payload wears the right heading for its code, so the check fails on the
-      // WHY: misplaced row rather than on the heading shape.
       message: `[MODEL] [E_STALE_RANGE] line 2 differs.\nCurrent range (fresh read):\n${misplaced.hash}│alpha`,
       servedRows: [misplaced],
       servedBlock: `${misplaced.hash}│alpha`,
@@ -512,7 +486,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
-      // Delete the tail bound: head (line 1) stays live and unshifted, tail is gone.
       await writeFile(path, "alpha\ngamma\n", "utf-8");
       let caught: unknown;
       try {
@@ -529,7 +502,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const msg = (caught as Error).message;
       expect(msg).toMatch(/\[E_UNVERIFIED_RANGE\]/);
       expect(await readFile(path, "utf-8")).toBe("alpha\ngamma\n");
-      // Fresh read of the named window (served lines 1-2, clamped): rows, no retry hint.
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
       expect(msg).not.toContain("No action is required");
@@ -543,7 +515,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         liveEnd: 2,
         expectedCode: "E_UNVERIFIED_RANGE",
       });
-      // The fresh-read rows are leased through the normal seam: deciding from them writes.
       const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(2);
       const retryFrom = servedLines[0]!.split("│")[0]!;
@@ -567,7 +538,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
-      // Both leased identities are gone: the named window identifies nothing.
       await writeFile(path, "ONE\nTWO\n", "utf-8");
       let caught: unknown;
       try {
@@ -606,7 +576,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const text = getText(first);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const gammaRef = extractHash(text.split("\n").find((l) => l.includes("│gamma"))!);
-      // Shift the survivor (beta 2 -> 3) and delete the other bound: no unshifted survivor.
       await writeFile(path, "ZERO\nalpha\nbeta\n", "utf-8");
       let caught: unknown;
       try {
@@ -626,7 +595,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).not.toContain("Current range:");
       expect(msg).not.toContain("Current range (fresh read):");
       expect(msg).not.toMatch(servedLineRe());
-      // The headline names the lease-derived served coordinate (3), never a content match.
       expect(msg).toMatch(new RegExp(`line 3 in ${path}`));
       expect((caught as { details?: { cause: string } }).details?.cause).toBe("retirement");
       const diskHashes = await currentHashes(await readFile(path, "utf-8"), path);
@@ -648,7 +616,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const text = getText(first);
       const l9Ref = extractHash(text.split("\n").find((l) => l.includes("│l9"))!);
       const l10Ref = extractHash(text.split("\n").find((l) => l.includes("│l10"))!);
-      // The named window (served lines 9-10) no longer overlaps the 4-line file.
       await writeFile(path, "l1\nl2\nl3\nl4\n", "utf-8");
       let caught: unknown;
       try {
@@ -740,11 +707,6 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes("a\nb\nc\nd\n", join(cwd, "source.txt"));
       const ht = await lineHashes("1\n2\n3\n", join(cwd, "target.txt"));
-      // Retire one served interior identity IN TOOL so the leased span is stale, then aim a
-      // foreign copy at the stale span: the engine re-wraps the leased rejection for the
-      // foreign file. The v1 recipe of edit.foreign-attribution.test.ts, witnessed here through
-      // the TOOL seam (editTool.execute) rather than the engine seam — E8 through the entry
-      // point that reaches the wrap.
       await editTool.execute(
         "e1",
         { file: "source.txt", edits: [{ anchor_from: hs[0]!, anchor_to: hs[0]!, text: "B" }] },
@@ -784,26 +746,18 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         servedRows: ServedRow[];
         servedBlock: string;
       };
-      // Settled shape (amendment): code preserved · servedRows [] · servedBlock "" · headline
-      // names refFile · no `Current range` heading of either form.
-      // WHY: red-first mutation that turned this assertion RED: reverting `foreignLeasedWrap` to
-      // WHY: the bare leased pass-through (ticket-04 remediation-2, HEAD-src witness
-      // WHY: /tmp/ticket04-remed2/red-raw-v2.log failure 1 — message lacked the file name).
       expect(err.code).toBe("E_UNVERIFIED_RANGE");
       expect(err.servedRows).toEqual([]);
       expect(err.servedBlock).toBe("");
       expect(err.message).toContain("source.txt");
       expect(err.message).not.toContain("Current range");
       expect(err.message).not.toMatch(servedLineRe());
-      // Nothing was written to either file by the refused call.
       await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe("B\nb\nc\nd\n");
       await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe("1\n2\n3\n");
     });
   });
 
   it("negative control: a shifted survivor still serving fails the check", async () => {
-    // The survivor shifted, so the sound code is target-lost with no rows. A payload that
-    // serves rows for the shifted window (the old disjunction's wrong-range write) must fail.
     const disk = "ZERO\nalpha\nbeta\n";
     const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({

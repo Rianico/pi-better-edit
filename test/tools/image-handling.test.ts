@@ -42,10 +42,7 @@ describe("read tool image delegation", () => {
       const [image] = images;
       expect(image?.mimeType).toBe("image/png");
       expect(image?.data.length).toBeGreaterThan(0);
-      // WHY: the image block is the builtin's own shape — exactly these keys, nothing served.
       expect(Object.keys(image ?? {}).sort()).toEqual(["data", "mimeType", "type"]);
-      // WHY: interception on `prepared.kind === "image"` keeps image bytes out of the served
-      // WHY: path — a lone image read owes no snapshot id.
       expect(JSON.stringify(result.details ?? {})).not.toContain("snapshotId");
     });
   });
@@ -72,8 +69,6 @@ describe("read tool image delegation", () => {
       await writeFile(pngPath, minimalPng);
 
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: one file per call — the image delegates to the builtin and the text reads alone;
-      // WHY: the text section keeps its own header and rows either way.
       const text = getText(
         await readTool.execute("r1", { file: "hello.txt" }, undefined, undefined, ctx),
       );

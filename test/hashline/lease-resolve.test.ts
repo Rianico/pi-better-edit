@@ -1,3 +1,13 @@
+/**
+ * Lease identity is authoritative for edit resolution: a bound resolves through its
+ * lease's rebased coordinate and never through content, so a retired lease is stale
+ * at the coordinate it was served at, not at the line its text re-appeared on. The
+ * fast path needs `S_from === C ∧ S_to === C ∧ S_from === S_to`; otherwise the span
+ * is rebased and re-verified against the served window, and any window that grew,
+ * collapsed, or lost a lease fails closed as a stale range.
+ * Ref: docs/spec/content-addressed-line-identity-mvcc.md
+ * Ref: docs/spec/stale-identity-reject-and-serve.md
+ */
 import { describe, it, expect, beforeAll } from "vitest";
 import { resEdit, type HEdit } from "../../src/hashline/resolve";
 import {
@@ -68,14 +78,10 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   });
 
   it("rebases even when the content anchor moved to a colliding line", () => {
-    // The leased identity lives at 3; the anchor string now renders on line 2.
-    // Resolution consults no content: the answer stays the rebased coordinate.
     expect(resolveLineIdentity(lease({ lineId: 7 }), src)).toEqual({ kind: "line", line: 3 });
   });
 
   it("fails closed when a retired lease still has a live content anchor (Probe E)", () => {
-    // `retired_at` set -> stale decision naming the lease coordinate, never a content match.
-    // Contract change (D5): the stale line is `servedLineNumber` (7), not the re-added line (2).
     expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
       line: 7,
@@ -83,7 +89,6 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   });
 
   it("fails closed when a live lease has no lineage coordinate", () => {
-    // Contract change (D5): no content lookup names the stale line; both read 99.
     expect(resolveLineIdentity(lease({ lineId: 99 }), src)).toEqual({
       kind: "stale",
       line: 99,
@@ -91,7 +96,6 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   });
 
   it("fails closed when a retired lease is absent from the content", () => {
-    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> stale, never a content question.
     expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
       line: 7,
@@ -194,7 +198,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     }
     expect(caught).toBeInstanceOf(DomainError);
     expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
-    // No targeted range is knowable, so there is nothing to serve as fresh anchors.
     expect(caught?.message).not.toContain("Current range:");
     expect((caught as DomainError).servedRows).toEqual([]);
   });
@@ -219,11 +222,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   });
 
   it("takes the O(1) fast path on a uniform snapshot even when the content anchor is ambiguous", () => {
-    // Duplicate canon: `uniqueAnchorLine` cannot place "AAAA", yet both leases were served from the
-    // snapshot on disk, so the spec predicate (S_from === C ∧ S_to === C ∧ S_from === S_to) holds.
-    // The non-spec `=== content` clause used to route this off the fast path into a fail-closed
-    // rebase rejection (spec §3.5). The interior line is leased too (#151): the fast path runs the
-    // same whole-window identity gate, so an interior row the session holds no lease for fails closed.
     const src = source({
       leases: {
         AAAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }),
@@ -258,7 +256,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       served: ["AAAA", "BBBB"],
       source: src,
     });
-    // The lease path resolves the served coordinates itself — no content-resolution fallback.
     expect(result.status).toBe("fast");
     expect(result.resolved.hash_bounds.map((bound) => bound.line)).toEqual([1, 2]);
   });
@@ -317,7 +314,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     try {
       resolveLeasedEdit({
         edit,
-        // The retired lease's anchor is gone from the content entirely (line deleted externally).
         snapshot: { fileHashes: ["QQQQ", "BBBB"], fileLines: ["q", "b"] },
         served: ["AAAA", "BBBB"],
         source: src,
@@ -328,7 +324,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(caught).toBeInstanceOf(DomainError);
     expect((caught as DomainError).code).toBe("E_UNVERIFIED_RANGE");
     expect(caught?.message).not.toMatch(/E_STALE_ANCHOR/);
-    // Fresh read: the named window is served for the model to decide from (no retry hint).
     expect(caught?.message).toContain("Current range (fresh read):");
     expect(caught?.message).not.toContain("Retry with these anchors");
     expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
@@ -382,8 +377,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       positions: { 1: 1, 2: 2 },
       currentSnapshotHash: "C",
     });
-    // A serve truncated both mirror rows away; the leases still name the served window, so the gate
-    // runs on the lease coordinates and fails closed on the missing rows instead of a NaN window.
     expect(() =>
       resolveLeasedEdit({
         edit,
@@ -395,11 +388,6 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   });
 
   it("heals reversed anchors on the fast path and reports the swap for narration", () => {
-    // Anchors carry no order: reversal is a property of the resolved lines of the
-    // `anchor_from`/`anchor_to` slot pair, so the lease path swaps the lines and
-    // returns the heal for the caller to narrate as `[W_REVERSED_ANCHORS]`.
-    // WHY: the served window is the leases' own record — the served snapshot held the two anchors
-    // WHY: the other way round, so the identity gate runs over the whole window the heal names.
     const src = source({
       leases: {
         AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 3 }),
@@ -454,8 +442,6 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
   });
 
   it("heals a lease-resolved reversal and narrates [USER] [W_REVERSED_ANCHORS]", () => {
-    // WHY: the served snapshot held the two anchors in the opposite order (#151): the leases name
-    // WHY: those served window rows, and the identity gate accepts the healed rigid remap.
     const crossed: LeaseSpanSource = {
       currentSnapshotHash: "S",
       leaseFor: (anchor) =>
@@ -479,8 +465,6 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
   });
 
   it("rejects a retired lease absent from the content with [MODEL] [E_UNVERIFIED_RANGE] and a fresh read", () => {
-    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> unverified fresh read, never E_STALE_ANCHOR,
-    // even when the anchor string is gone from the content entirely.
     const staleContent = "alpha\nBETA";
     const staleHashes = contentOnlyHashes(staleContent);
     const oldBeta = "OLD";
@@ -678,8 +662,6 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
       { position: 1, hash: hashes[1] },
       { position: 2, hash: hashes[2] },
     ]);
-    // WHY: the rows are the current on-disk range, so they are served as a fresh read with no
-    // WHY: blind-retry mandate (issue #149).
     expect(err.message).toContain("Current range (fresh read):");
     expect(err.message).not.toContain("Retry with these anchors");
   });
@@ -735,7 +717,6 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     try {
       resolveLeasedEdit({
         edit: resEdit({ anchor_from: "BBBB", anchor_to: "BBBB", text: "X" }),
-        // The retired text re-appears at line 4, but the payload must not place a window there.
         snapshot: { fileHashes: ["A1", "A2", "A3", "BBBB"], fileLines: ["a1", "a2", "a3", "beta"] },
         served: ["A1", "BBBB"],
         source: src,
@@ -806,8 +787,6 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
   });
 
   it("fails closed to [E_TARGET_LOST] when the named window collapses against a short file", () => {
-    // The survivor reads live+unshifted in the fake source, but the served window (lines 10-11)
-    // collapses against the 4-line file — the guard fails closed instead of serving nothing.
     const survivor = lease({ lineId: 10, servedSnapshotHash: "S", servedLineNumber: 10 });
     const dead = lease({ lineId: 11, servedSnapshotHash: "S", servedLineNumber: 11, retiredAt: 3 });
     const src = source({

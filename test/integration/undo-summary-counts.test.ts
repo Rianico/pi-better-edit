@@ -37,7 +37,6 @@ describe("undo_last_edit summary counts (#173)", () => {
       "undo_counts_bigdelete.txt",
       TWENTY_LINES,
       (readLines) => [
-        // Delete lines 3..16 (14 lines, beyond the 6-line removal cap) and add one line.
         {
           anchor_from: extractHash(readLines[2]!),
           anchor_to: extractHash(readLines[15]!),
@@ -50,7 +49,6 @@ describe("undo_last_edit summary counts (#173)", () => {
           "Removed 1 line(s) that were added and restored 14 line(s) that were removed.",
         );
         const metrics = (undone.details as { metrics?: Record<string, number> }).metrics;
-        // The undo restores the 14 lines the edit removed and drops the 1 line it added.
         expect(metrics?.added_lines).toBe(14);
         expect(metrics?.removed_lines).toBe(1);
       },

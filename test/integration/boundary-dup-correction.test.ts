@@ -28,7 +28,6 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
         ctx,
       );
       const content = await readFile(path, "utf-8");
-      // pure edit: trailing "}" duplicates the line after range → preserved verbatim
       expect(content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n}\n");
     });
   });
@@ -99,7 +98,6 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
         ctx,
       );
       const content = await readFile(path, "utf-8");
-      // replacement 2 braces + original 2 braces = 4 braces
       expect(content).toBe("function a() {\n  const x = 2;\n}\n}\n}\n}\nafter();\n");
     });
   });

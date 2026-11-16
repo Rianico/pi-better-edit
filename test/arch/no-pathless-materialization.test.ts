@@ -39,10 +39,6 @@ function calleeName(callee: unknown): string | undefined {
 
 describe("file materialization always carries a path (ticket-06 C5/C9)", () => {
   it("C5: no pathless hashesFor/hashesForSync/lineHashes call in production sources", () => {
-    // WHY: the pathless overloads are gone — every file materialization passes
-    // WHY: the canonical absolute path. The explicit content-only API is
-    // WHY: `contentOnlyHashes` (never scanned here); `fileHashesFor` always
-    // WHY: takes the path first. A flagged call is a read/write-agreement hole.
     const offenders: string[] = [];
     for (const file of tsFiles("src")) {
       const code = readFileSync(file, "utf-8");
@@ -60,9 +56,6 @@ describe("file materialization always carries a path (ticket-06 C5/C9)", () => {
   });
 
   it("C9: allocation base indices come only from the two derivation owners", () => {
-    // WHY: `% HASH_SPACE` is the index-forming operation — it may appear only in
-    // WHY: `contentBaseIndex`/`fileBaseIndex`, and the legacy `>>> 14` confinement
-    // WHY: only in the content-only one. Anything else computes anchors ad hoc.
     const moduloSites: string[] = [];
     const shiftSites: string[] = [];
     for (const file of tsFiles("src")) {

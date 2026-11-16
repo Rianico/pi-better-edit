@@ -93,17 +93,11 @@ describe("read tool — TUI renderers for the {file} payload", () => {
 
     tool.renderResult(result, { expanded: true }, recordingTheme, context);
 
-    // WHY: the remap lets the builtin resolve getLanguageFromPath("notes.ts") and highlight via
-    // WHY: ANSI, so it does not wrap each body line in theme.fg("toolOutput", ...).
     expect(calls).not.toContain("toolOutput");
   });
 
   it("qualifies the windows serve claim with the served default (fix 2)", () => {
     const tool = readTool();
-    // WHY: the flat shape (ADR-0041 D1) carries its own `windows` description — the serve
-    // WHY: claim lives on the call's windows array, not a nested file target.
-    // WHY: outline mode lifts the window-count cap (it ignores caller windows), so the schema
-    // WHY: is one variant per mode family — the serve claim lives on the capped variant's array.
     const variants = (
       tool.parameters as unknown as {
         anyOf: Array<{ properties: { windows: { description: string } } }>;
@@ -160,7 +154,6 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     const line = call.render(80).join("\n");
     expect(line).toContain("notes.txt");
-    // WHY: whole-file reads render the bare path — no range, no window count.
     expect(line).not.toMatch(/:\d/);
     expect(line).not.toContain("windows)");
     expect(args).toEqual({ file: "notes.txt" });
@@ -174,7 +167,6 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     const call = tool.renderCall(args, theme, context);
 
-    // WHY: the builtin renders `:offset-(offset+limit-1)`, so offset 3 limit 5 shows `:3-7`.
     const line = call.render(80).join("\n");
     expect(line).toContain("notes.txt");
     expect(line).toContain(":3-7");
@@ -190,8 +182,6 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     const call = tool.renderCall(args, theme, context);
 
-    // WHY: ADR-0041 D5 — recorded transcripts render: `file ?? path ?? files?.[0]?.file`, so the
-    // WHY: history entry shows the first file's path even though the shape is retired.
     const line = call.render(80).join("\n");
     expect(line).toContain("old.txt");
     expect(line).not.toContain("new.txt");
@@ -210,8 +200,6 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     const line = tool.renderCall(args, theme, context).render(80).join("\n");
 
-    // WHY: ADR-0041 D4 — the builtin has no multi-window chrome, so the call line carries the
-    // WHY: count itself; a range is never fabricated from two windows.
     expect(line).toContain("a.txt");
     expect(line).toContain("(2 windows)");
     expect(line).not.toContain(":2-5");
@@ -224,7 +212,6 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     const line = tool.renderCall(args, theme, context).render(80).join("\n");
 
-    // WHY: an anchor window has no offset/limit to project — bare path, no range, no count.
     expect(line).toContain("a.txt");
     expect(line).not.toMatch(/:\d/);
     expect(line).not.toContain("windows)");

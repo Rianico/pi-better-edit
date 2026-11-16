@@ -87,8 +87,6 @@ describe("multi-edit batch WAL commit", () => {
       const counterBefore = nextId(store, path);
       const snapshotsBefore = snapshotCount(store, path);
 
-      // edit[1] (lines 1..3) strictly nests edit[0] (line 2): both anchors of edit[1]
-      // survive edit[0], so only an explicit span check can reject the batch.
       const editPromise = editTool.execute(
         "e1",
         {
@@ -146,9 +144,6 @@ describe("multi-edit batch WAL commit", () => {
   });
 
   it("rejects a batch whose spans overlap only after an external shift, before any mutation", async () => {
-    // `dup` and `  dup` share one canon, so the fresh hashing pass hands the shifted duplicate the
-    // anchor the model still holds for the line that moved; only the leased `line_id` says which
-    // occurrence the model is allowed to write.
     const content = "alpha\ndup\nbeta\ngamma\n";
     const shifted = "  dup\nalpha\ndup\nbeta\ngamma\n";
     await withTempFile("shift-overlap.txt", content, async ({ cwd, path }) => {
@@ -168,8 +163,6 @@ describe("multi-edit batch WAL commit", () => {
       const store = await loadHashStore();
       const undoBefore = undoCount(store, path);
 
-      // External insert at the top: the leased `dup` line shifts to 3 while its presentation anchor
-      // now also sits on the inserted line 1.
       await writeFile(path, shifted, "utf-8");
 
       const editPromise = editTool.execute(
@@ -187,14 +180,10 @@ describe("multi-edit batch WAL commit", () => {
       );
 
       await expect(editPromise).rejects.toThrow(/\[MODEL\] \[E_BATCH_ABORT\]/);
-      // Rebased to the leased identity the spans nest (3-3 inside 2-4); the shift is what makes them
-      // overlap, and no edit of the batch may reach the file.
       const rejection = await editPromise.catch((error: unknown) => error as Error);
       expect(rejection.message).toContain("- edit[0]: lines 3-3");
       expect(rejection.message).toContain("- edit[1]: lines 2-4 (overlaps edit[0]: lines 3-3)");
       expect(await readFile(path, "utf-8")).toBe(shifted);
-      // No item reached the persist stage: no undo entry was written and no snapshot of a mutated
-      // batch result was materialized.
       expect(undoCount(store, path)).toBe(undoBefore);
       expect(snapshotId(store, path, "  dup\nalpha\nX\nbeta\ngamma\n")).toBeUndefined();
     });
@@ -219,9 +208,6 @@ describe("multi-edit batch WAL commit", () => {
 
       await writeFile(path, shifted, "utf-8");
 
-      // `dupRef` is the FIRST occurrence of the duplicate canon on disk (the inserted line 1), but the
-      // leased `line_id` it names lives at line 3. The batch span gate must use the leased coordinate:
-      // 3-3 nests inside 2-4, so the whole batch aborts instead of applying at the first occurrence.
       const editPromise = editTool.execute(
         "e1",
         {
@@ -242,8 +228,6 @@ describe("multi-edit batch WAL commit", () => {
       expect(rejection.message).not.toContain("lines 1-1");
       expect(await readFile(path, "utf-8")).toBe(shifted);
 
-      // Control: the same anchor, applied on its own, lands on the leased occurrence — the duplicate
-      // canon at line 3 changes while the first occurrence at line 1 keeps its bytes.
       await editTool.execute(
         "e2",
         {
@@ -287,7 +271,6 @@ describe("multi-edit batch WAL commit", () => {
 
       expect(await readFile(path, "utf-8")).toBe(edited);
       expect(lineageIds(store, path, edited)).toEqual([1, 2, 6, 4, 5]);
-      // Exactly one fresh id was allocated for the one inserted line.
       expect(nextId(store, path)).toBe(7);
     });
   });
@@ -330,7 +313,6 @@ describe("multi-edit batch WAL commit", () => {
       );
 
       expect(await readFile(path, "utf-8")).toBe(original);
-      // Cache hit: no counter movement, no new file_snapshots row, canonical id adopted.
       expect(nextId(store, path)).toBe(counterAfterForward);
       expect(snapshotCount(store, path)).toBe(snapshotsAfterForward);
       expect(snapshotId(store, path, original)).toBe(canonicalId);
@@ -361,7 +343,6 @@ describe("multi-edit batch WAL commit", () => {
       expect(retired).toBeDefined();
       expect(retired!.retired_at).not.toBeNull();
 
-      // Every active lease still references a line present in the committed lineage.
       const lineage = lineageRows(store, path, snapshotHashFor(await readFile(path, "utf-8")));
       const active = leases.filter((lease) => lease.retired_at === null);
       expect(active.length).toBeGreaterThan(0);
@@ -384,9 +365,6 @@ describe("multi-edit batch WAL commit", () => {
       const lines = anchorRows(getText(r1));
       const aaa = extractHash(lines[0]!);
 
-      // edit[1] carries a `HASH│` prefix, so `resEdit` throws; with more than one item the parse loop
-      // keeps that diagnostic's own code and appends the atomicity trailer — never `E_BATCH_ABORT`,
-      // which would send the model hunting for coordinate overlap instead of fixing the anchor.
       const rejection = (await editTool
         .execute(
           "e1",
@@ -451,7 +429,6 @@ describe("multi-edit batch WAL commit", () => {
       expect(rejection.message).toContain("edit[1] (reject-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // The rejection carries the inner fresh-read block once under the shared contract.
       expect(rejection.message).toContain("Current range (fresh read):");
       expect(rejection.message).not.toContain("Retry with these anchors");
       expect(rejection.message.match(/\bCurrent range\b/g) ?? []).toHaveLength(1);
@@ -461,10 +438,6 @@ describe("multi-edit batch WAL commit", () => {
   });
 
   it("resolves a chained batch's later edit through the working buffer's in-memory line identity", async () => {
-    // edit[0] replaces `alpha` with `dup`, so the working buffer holds three byte-identical `dup`
-    // lines. Re-diffing that buffer against S_latest cannot tell which `dup` carries line_id 2 and
-    // retires it; the working buffer's own identity map still names it, so edit[1] must resolve
-    // through those in-memory identities and land on the leased line 2.
     const content = "alpha\ndup\ndup\n";
     await withTempFile("chain.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -496,8 +469,6 @@ describe("multi-edit batch WAL commit", () => {
         positionsSpy.mockRestore();
       }
 
-      // In-memory identity resolution: the intermediate `dup\ndup\ndup` buffer is never re-diffed
-      // against S_latest, only the baseline content the spans and working-buffer map are read from.
       expect(reDiffed).not.toContain("dup\ndup\ndup\n");
       expect(reDiffed).toContain("alpha\ndup\ndup\n");
       expect(getText(editRes)).toContain("Successfully edited");

@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 /**
- * Measures the cost pi pays to import the extension entry, for the TypeScript source and for
- * the built artifact, with the cache state named.
+ * Measures the cost pi pays to import the extension entry — the TypeScript source and the
+ * built artifact — with the cache state named.
  *
- * WHY: the reason the artifact is the entry on both install surfaces is module-import cost,
- * and jiti caches transforms in the OS temporary directory, so a number without its cache
- * state is meaningless. The measurement is pi's own instrumentation (`PI_TIMING=1` prints
- * `<entry> module import: <ms>` for the extensions timing namespace), driven through the real
- * CLI with `--no-extensions -e <entry>` so only the entry under test is loaded.
- *
- * WHY min-of-runs: a single sample sits inside the noise band (observed spread of ~150 ms on
- * this machine), so the budget is enforced against the minimum of the measured samples with
- * the first warm-up sample discarded, and the whole spread is printed.
- *
+ * Module-import cost is why the artifact is the entry on both install surfaces, and jiti
+ * caches transforms in the OS temporary directory, so a number without its cache state is
+ * meaningless. pi's own instrumentation (`PI_TIMING=1`) drives the real CLI via
+ * `--no-extensions -e <entry>`. The budget is enforced against the minimum sample, warm-up
+ * discarded: one sample sits inside the noise band (~150 ms observed here), and the whole
+ * spread is printed.
  * Usage: node scripts/measure-import.mjs [--runs 3] [--pi pi] [--max-artifact-ms 600]
  */
 import { spawnSync } from "node:child_process";
@@ -55,8 +51,6 @@ function resolvePiBinary(explicit) {
     .filter((candidate) => existsSync(candidate));
   const external = candidates.find((candidate) => !candidate.startsWith(localBin));
   if (external === undefined) {
-    // WHY: the repo's pinned devDependency pi is a different runtime and prints no timing line,
-    // so falling back to it fails later with a misleading "printed no module import timing".
     throw new Error(`no pi on PATH outside ${localBin}; install pi or set PI_BIN`);
   }
   return external;
@@ -150,7 +144,6 @@ function measure({ pi, target, home, cold, runs }) {
       }
       return { state: "cold", samples };
     }
-    // One priming run, then runs + 1 samples with the first (warm-up) sample discarded.
     measureOnce({ pi, entry: target.entry, home, cacheDir });
     const collected = [];
     for (let run = 0; run < runs + 1; run += 1) {

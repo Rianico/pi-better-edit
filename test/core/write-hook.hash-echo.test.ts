@@ -45,8 +45,6 @@ async function servedPreviewForFile(
   const { fmtRegion } = await import("../../src/hashline/apply.js");
   const lines = splitLines(prepared.normalized);
   const hashes = prepared.fileHashes;
-  // WHY: the guard's evidence is derived from the leases a serve grants (#151), so the fixture must
-  // WHY: serve through the real read seam — a mirror-only row records no canon and stays silent.
   await createSessionHandle(sessionKey, prepared.absolutePath, store).recordEpoch({
     rows: hashes.map((hash, position) => ({ position, hash })),
     lineCount: hashes.length,
@@ -85,7 +83,6 @@ describe("write served hash guard", () => {
     const canonDigests = canonDigestsForLines(["# Notes", "body"]);
     const hit = findServedHashEcho(splitLines("Ab33│# Notes\nbody\n"), served, canonDigests, 1);
     expect(hit).toMatchObject({ line: 1, hash: "Ab33", servedLine: 1 });
-    // served prefix with differing content stays silent
     expect(
       findServedHashEcho(splitLines("Cd44│wrong line\nAb33│wrong line\n"), served, canonDigests, 1),
     ).toBeUndefined();
@@ -188,7 +185,6 @@ describe("write served hash guard", () => {
       await expect(
         servedHashEchoDenial(io, path, "Zz99│literal text\n", cwd, "s1"),
       ).resolves.toBeUndefined();
-      // Ab3 without canon data stays silent even at the same line
       await expect(
         servedHashEchoDenial(io, path, "Ab33│hello\n", cwd, "s1"),
       ).resolves.toBeUndefined();
@@ -202,10 +198,8 @@ describe("write served hash guard", () => {
       const path = join(cwd, "notes.md");
       await writeFile(path, "line\n", "utf-8");
       const previewText = await servedPreviewForFile(path, cwd, "sess");
-      // general refuses the verbatim preview
       const refused = await servedHashEchoDenial(io, path, previewText, cwd, "sess");
       expect(refused).toMatch(/\[E_SUSPICIOUS_TEXT\]/);
-      // literal allows the same bytes through
       const allowed = await servedHashEchoDenial(
         io,
         path,
@@ -234,7 +228,6 @@ describe("write served hash guard", () => {
       expect(reason).not.toContain("Nothing was written");
       expect(reason).toContain('declare mode: "literal" to write the lines verbatim');
       expect(reason).not.toContain("Re-read");
-      // the guard message must not become a paste source
       const firstRow = previewText.split("\n")[0]!;
       expect(reason).not.toContain(firstRow);
     });

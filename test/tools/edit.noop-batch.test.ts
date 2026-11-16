@@ -22,9 +22,6 @@ describe("edit noop-loop guard in multi-item calls", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\neee\n", path);
       await doRead(ctx, readTool, "sample.ts");
 
-      // WHY: the first item names a different range on every submission, so its
-      // WHY: slot keeps resetting while the second item's slot accumulates —
-      // WHY: only per-slot tracking lets the sibling loop trip.
       const firstVariants: Array<[string, string]> = [
         [hashes[0]!, "aaa"],
         [hashes[2]!, "ccc"],
@@ -67,8 +64,6 @@ describe("edit noop-loop guard in multi-item calls", () => {
 
       expect(rejection.message).toContain("[E_NOOP_LOOP]");
       expect(rejection.code).toBe("E_NOOP_LOOP");
-      // The looping sibling is named once, by the envelope — the inner
-      // diagnostic no longer repeats it.
       expect(countOccurrences(rejection.message, "edit[1]")).toBe(1);
       expect(rejection.message).toContain("edit[1] (sample.ts) failed");
       expect(rejection.message).not.toContain("edit[0]");
@@ -156,8 +151,6 @@ describe("edit noop-loop guard in multi-item calls", () => {
       await editTool.execute("e1", payload, undefined, undefined, ctx);
       await editTool.execute("e2", payload, undefined, undefined, ctx);
 
-      // WHY: an applied edit clears the guard, so both sibling slots restart —
-      // WHY: a partial clear would leave one slot armed and reject below.
       await editTool.execute(
         "e3",
         {

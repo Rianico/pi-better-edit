@@ -26,9 +26,10 @@ type Tool = {
   ): Promise<{ content: Array<{ text?: string }> }>;
 };
 
-// WHY: the outline serves lines 1, 2, 5, 9 and 14, so it records folds 3-4, 6-8 and 10-13. Tests
-// WHY: serve the `render` body (5-8) with an explicit anchored read; the `tail` body (10-13) stays
-// WHY: genuinely unread.
+/**
+ * The outline serves lines 1, 2, 5, 9 and 14, so it records folds 3-4, 6-8 and 10-13. Tests serve the
+ * `render` body (5-8) with an explicit anchored read; the `tail` body (10-13) stays genuinely unread.
+ */
 const SAMPLE = `const A = 1;
 function first() {
   return A;
@@ -52,13 +53,11 @@ const SYMBOLS: readonly OutlineSymbol[] = [
   { name: "END", kind: "constant", line: 14 },
 ];
 const LINES = SAMPLE.split("\n");
-// WHY: the size-changing preceding item: line 1 grows by four lines, shifting every later item.
 const GROWN = "const A = 1;\n// a\n// b\n// c\n// d";
 const WITHOUT_RENDER = [...LINES.slice(0, 4), ...LINES.slice(8)].join("\n");
 
 function setup(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
-  // WHY: a variable, as in outline-fold-gate.test.ts: `outline` is an optional provider capability.
   const provider = { enclosingChain: async () => null, outline: async () => SYMBOLS };
   regRead(pi, { spanProvider: provider });
   regEdit(pi);
@@ -76,7 +75,6 @@ function setup(cwd: string) {
   };
   const edit = (edits: unknown[]) =>
     editTool.execute("e", { file: "sample.ts", edits }, undefined, undefined, ctx);
-  /** The anchor served for 1-based line `n` of SAMPLE. */
   const at = (n: number) => {
     const anchor = anchors.get(LINES[n - 1]!);
     expect(anchor, `line ${n} served`).toBeDefined();
@@ -101,7 +99,6 @@ describe("outline fold after an explicit served read (batch coordinates)", () =>
     await withTempFile("sample.ts", SAMPLE, async ({ cwd, path }) => {
       const { read, edit, at } = setup(cwd);
       await read({ mode: "outline" });
-      // WHY: both bounds are outline declaration rows; the folded `render` interior (6-8) sits between.
       const deleteRender = { anchor_from: at(5), anchor_to: at(9), text: LINES[8] };
       const refused = await rejection(edit([deleteRender]));
       expect(refused.code).toBe("E_STALE_RANGE");
@@ -131,7 +128,6 @@ describe("outline fold after an explicit served read (batch coordinates)", () =>
       const { read, edit, at } = setup(cwd);
       await read({ mode: "outline" });
       await read({ windows: [{ offset: 5, limit: 4 }] });
-      // WHY: the third item spans the genuinely unread `tail` body, so the whole call is refused.
       const refused = await rejection(
         edit([
           { anchor_from: at(1), anchor_to: at(1), text: GROWN },
@@ -140,8 +136,6 @@ describe("outline fold after an explicit served read (batch coordinates)", () =>
         ]),
       );
       expect(refused.code).toBe("E_STALE_RANGE");
-      // WHY: the refusal names the unread interior in current-file coordinates, never the shifted
-      // WHY: temporary batch positions, and never the served `render` body.
       expect(refused.message).toContain("line 10-13");
       expect(refused.message).toContain("is hidden by an outline fold");
       expect(refused.message).toContain("NOTHING was written");

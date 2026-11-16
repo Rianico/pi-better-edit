@@ -131,9 +131,6 @@ describe("diff rows serve chained edits", () => {
       const l1Ref = diffLines.find((l) => l.startsWith(" ") && l.includes("│l1"))!.slice(1, 5);
       const xRef = diffLines.find((l) => l.startsWith("+") && l.includes("│X"))!.slice(1, 5);
 
-      // Pipeline now records dense serves inside the mutation seam, so
-      // the diff rows are valid anchors even without invoking the
-      // tool_result handler (old seam required handler).
       const chained = await editTool.execute(
         "e2",
         { file: "sample.ts", edits: [{ anchor_from: l1Ref, anchor_to: xRef, text: "A\nB" }] },

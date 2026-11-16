@@ -1,15 +1,12 @@
 /**
  * Baseline generator for the comment gate (docs/agents/verification-standards.md).
  *
- * `--check` (default) recomputes every violation and reports the delta between the tree and
+ * `--check` recomputes every violation and reports the delta against
  * `test/arch/comment-gate-baseline.json`; `--update` rewrites that file from source. Growth is
- * made impossible by construction rather than by comparison: this CLI writes only the `entries`
- * array, never reads or writes the test file, and its ceiling lives in the test as a literal, so
- * `--update` cannot raise it.
- *
- * Classification is the shared predicate (`scripts/comment-gate-predicate.mjs`), the same module
- * the oxlint plugin imports; only the structural facts come from a second parser, and the arch
- * suite pins that both layers classify one fixture corpus identically.
+ * impossible by construction, not by comparison: this CLI writes only the `entries` array, never
+ * reads or writes the test file, and the ceiling lives there as a literal, so `--update` cannot
+ * raise it. Classification is the shared predicate; only the structural facts come from a second
+ * parser, and the arch suite pins that both layers classify one fixture corpus identically.
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,16 +21,41 @@ import {
   parseBaselineEntries,
 } from "./comment-gate-predicate.mjs";
 
+/**
+ * Empty collectors and entry lists, typed at module scope: an inline `@type` inside a function body
+ * would itself be a `bodyDoc` violation, which is this file's own rule.
+ * @returns {Array<readonly [number, number]>}
+ */
+function emptyRanges() {
+  return [];
+}
+
+/** @returns {number[]} */
+function emptyLines() {
+  return [];
+}
+
+/** @returns {Array<{ path: string, text: string, occurrence: number }>} */
+function emptyEntries() {
+  return [];
+}
+
 /** Repo root, derived from this file's own location so the CLI is cwd-independent. */
 export const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
  * The canonical scan scope: the files `.oxlintrc.json` actually runs the rule on, and nothing
- * else. That is every root-level source file plus `src/**`, minus the `overrides` entries that
- * switch the rule off (`test/**`, `scripts/**`, `*.test.ts`, `*.spec.ts`) and minus gitignored
- * build output. The arch suite recomputes through this same constant; never change one alone.
+ * else. That is every root-level source file plus `src/**`, `test/**` and `scripts/**` — the rule
+ * covers the tests and the gate's own tooling too, so a comment there answers to the same grammar
+ * as a comment in `src/`. Gitignored build output stays excluded. The arch suite recomputes
+ * through this same constant; never change one alone.
  */
-export const SCAN_PATTERNS = ["*.{ts,tsx,mjs,js}", "src/**/*.{ts,tsx,mjs,js}"];
+export const SCAN_PATTERNS = [
+  "*.{ts,tsx,mjs,js}",
+  "src/**/*.{ts,tsx,mjs,js}",
+  "test/**/*.{ts,tsx,mjs,js}",
+  "scripts/**/*.{ts,mjs,js}",
+];
 
 /** Extensions the rule runs on. */
 export const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
@@ -82,7 +104,8 @@ export function collectSourceFiles(root = REPO_ROOT) {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.isFile() && hasSourceExtension(entry.name)) files.push(entry.name);
   }
-  walkDirectory(join(root, "src"), "src", files);
+  for (const directory of ["src", "test", "scripts"])
+    walkDirectory(join(root, directory), directory, files);
   return files.sort(compareText);
 }
 
@@ -118,10 +141,8 @@ function walkAst(node, visit) {
  */
 export function analysisFor(code, path) {
   const ast = parse(code, { sourceType: "module", plugins: parserPlugins(path) });
-  /** @type {Array<readonly [number, number]>} */
-  const functionBodies = [];
-  /** @type {number[]} */
-  const guardLines = [];
+  const functionBodies = emptyRanges();
+  const guardLines = emptyLines();
   walkAst(ast, (node) => {
     if (FUNCTION_KINDS.includes(node.type)) {
       const body = node.body;
@@ -266,8 +287,7 @@ function check(root, current) {
  */
 function update(root, current) {
   const raw = readBaseline(root);
-  /** @type {Array<{ path: string, text: string, occurrence: number }>} */
-  let previous = [];
+  let previous = emptyEntries();
   if (raw !== null) {
     const parsed = parseBaselineEntries(raw);
     if (!parsed.ok)

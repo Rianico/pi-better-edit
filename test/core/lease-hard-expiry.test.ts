@@ -68,7 +68,6 @@ function plantSnapshot(store: HashStore, path: string, content: string): string 
   return snapshotHash;
 }
 
-/** A committed snapshot row with one lineage row, the shape a real materialization leaves. */
 function plantVersion(db: DatabaseSync, path: string, hash: string, createdAt: number): number {
   const row = db
     .prepare(
@@ -118,9 +117,9 @@ describe("the canonical lease hard-expiry boundary (ADR-0045)", () => {
   it("expires strictly past the TTL: exactly TTL and just inside still resolve", () => {
     const active = (updatedAt: number) => ({ retired_at: null, updated_at: updatedAt });
 
-    expect(isExpiredActiveLease(active(CUTOFF), NOW)).toBe(false); // exactly TTL
-    expect(isExpiredActiveLease(active(CUTOFF + 1), NOW)).toBe(false); // just inside
-    expect(isExpiredActiveLease(active(CUTOFF - 1), NOW)).toBe(true); // just outside
+    expect(isExpiredActiveLease(active(CUTOFF), NOW)).toBe(false);
+    expect(isExpiredActiveLease(active(CUTOFF + 1), NOW)).toBe(false);
+    expect(isExpiredActiveLease(active(CUTOFF - 1), NOW)).toBe(true);
   });
 
   it("leaves retired leases to their own grace, whatever their updated_at", () => {
@@ -144,12 +143,12 @@ describe("janitor GC of expired active leases", () => {
           retiredAt,
         });
 
-      lease("aaaa", CUTOFF); // exactly TTL — still resolvable
-      lease("bbbb", CUTOFF + 1); // just inside
-      lease("cccc", CUTOFF - 1); // just outside the TTL — deleted
-      lease("dddd", CUTOFF - 1_000_000, GRACE_CUTOFF + 1); // retired inside grace — kept
-      lease("eeee", NOW, GRACE_CUTOFF - 1); // retired past grace — deleted
-      lease("ffff", NOW, GRACE_CUTOFF); // exactly at the grace boundary — kept
+      lease("aaaa", CUTOFF);
+      lease("bbbb", CUTOFF + 1);
+      lease("cccc", CUTOFF - 1);
+      lease("dddd", CUTOFF - 1_000_000, GRACE_CUTOFF + 1);
+      lease("eeee", NOW, GRACE_CUTOFF - 1);
+      lease("ffff", NOW, GRACE_CUTOFF);
 
       const outcome = runJanitor({ db, now: NOW, settings: SETTINGS });
 
@@ -193,7 +192,6 @@ describe("janitor GC of expired active leases", () => {
         proto.prepare = originalPrepare;
       }
 
-      // 5 rows at batchSize 2 is 3 statements, all bounded, none unbounded.
       expect(statements).toHaveLength(3);
       expect(statements.every((sql) => sql.endsWith("LIMIT ?)"))).toBe(true);
       expect(anchorsOf(db)).toEqual([]);
@@ -233,7 +231,6 @@ describe("the grant path treats an expired active lease as absent", () => {
         expect(source.leaseFor(expired)).toBeUndefined();
         expect(source.leaseFor(live)).toBeDefined();
 
-        // An anchor window centres on a lease: with none, it warns instead of resolving.
         const warned = await readTool.execute(
           "r1",
           { file, windows: [{ around_anchor: expired, radius: 1 }] },
@@ -243,7 +240,6 @@ describe("the grant path treats an expired active lease as absent", () => {
         );
         expect(getText(warned)).toContain(`Anchor '${expired}' not found`);
 
-        // The edit fails closed: the anchor no longer names a line this session can resolve.
         await expect(
           editTool.execute(
             "e1",
@@ -269,8 +265,6 @@ describe("the grant path treats an expired active lease as absent", () => {
       );
       const anchors = anchorRows(getText(read)).map((row) => row.split("│")[0]!);
       const store = await loadHashStore();
-      // WHY: the store is worker-scoped, so other tests' leases are still present. Name THIS
-      // WHY: file's lease path by an anchor the read just served.
       const leasePath = (
         store.db
           .prepare("SELECT file_path FROM served_leases WHERE anchor = ? LIMIT 1")
@@ -294,8 +288,6 @@ describe("the grant path treats an expired active lease as absent", () => {
         absolutePath: leasePath,
         content: CONTENT,
       });
-      // Retirement is a different terminal state: the row is returned (with its retiredAt) so the
-      // resolver can judge it; it is not silently dropped by the TTL rule.
       expect(source.leaseFor(retired)?.retiredAt).toBe(now);
       expect(source.leaseFor(inside)?.retiredAt).toBeNull();
     });
@@ -321,8 +313,6 @@ describe("vacuum and the hard-expiry predicate", () => {
 
       const result = vacuumSnapshots(db);
 
-      // The expired leases contribute no pin at all, so the per-path window (10) keeps 10 and
-      // evicts the two oldest.
       expect(result.pinnedBytes).toBe(0);
       expect(result.evicted).toBe(2);
       const remaining = (
@@ -354,8 +344,6 @@ describe("vacuum and the hard-expiry predicate", () => {
 
       const result = vacuumSnapshots(db);
 
-      // The oldest version's lease is unexpired, so it contributes a live pin and survives the
-      // window; the next two oldest unpinned versions are evicted instead.
       expect(result.pinnedBytes).toBeGreaterThan(0);
       const remaining = (
         db.prepare("SELECT snapshot_hash FROM file_snapshots").all() as {

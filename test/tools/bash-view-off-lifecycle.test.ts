@@ -243,8 +243,6 @@ describe("bash view off-switch lifecycle", () => {
       );
 
       expect(result?.content[0]?.text.startsWith("[Bash view: ")).toBe(true);
-      // WHY the file and not the console: with no `ui` surface there is no in-TUI notice, but
-      // WHY the terminal belongs to Pi's renderer, so the notice is recorded instead of printed.
       expect(
         readDiagnostics()
           .map((record) => record.message)

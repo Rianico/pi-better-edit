@@ -22,7 +22,6 @@ describe("C5 payload contract seam — single source", () => {
 
   it("edit.ts schema re-exports are deprecated", () => {
     const editContent = readFileSync("src/edit.ts", "utf8");
-    // shallow check: deprecated marker near the schema re-export block
     expect(editContent).toMatch(/@deprecated/i);
   });
 

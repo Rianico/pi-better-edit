@@ -17,13 +17,12 @@ beforeAll(async () => {
 
 /**
  * Body of a top-level `function <name>(...)` declaration, brace-matched from its opening `{`.
- * WHY: "this write exists exactly once" is a structural promise no runtime call can observe, so
- * WHY: the guard reads the module text.
+ * "This write exists exactly once" is a structural promise no runtime call can observe, so the guard
+ * reads the module text.
  */
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`function ${name}(`);
   if (start < 0) throw new Error(`no function ${name} in module`);
-  // WHY: an inline object type in the parameter list carries `{` before the real body brace.
   let parens = 0;
   let cursor = source.indexOf("(", start);
   for (; cursor < source.length; cursor++) {
@@ -77,22 +76,15 @@ describe("serve recording — one shared writer for the mirror and the lease gra
     const plain = functionBody(session, "recordServesInner");
     const truncated = functionBody(session, "recordServesTruncatedInner");
 
-    // both serve paths delegate their write to exactly one shared writer, `writeServeRecord`
     const shared = calledHelpers(plain).filter((name) => calledHelpers(truncated).includes(name));
     expect(shared).toEqual(["writeServeRecord"]);
     const writer = shared[0]!;
 
-    // the writer is defined once and owns the whole write: the mirror half + the lease grant. Canon
-    // evidence needs no step here at all (#151): it is derived from the leases this writer grants.
     expect(session.match(new RegExp(`function ${writer}\\(`, "g"))).toHaveLength(1);
     const writerBody = functionBody(session, writer);
     expect(writerBody).toContain("withStore(");
     expect(writerBody).not.toContain("canon");
 
-    // the one mirror writer (#103), now one level deeper: the mirror steps — `patchServed(` and
-    // displaced-hash retirement via `displacedHashes(`/`addRetiredAnchors(` — live in exactly one
-    // body, `writeServeMirrorInner`, which BOTH `writeServeRecord` and the in-transaction seam
-    // `recordServedMirrorInTransaction` call.
     expect(session.match(/function writeServeMirrorInner\(/g)).toHaveLength(1);
     const mirrorBody = functionBody(session, "writeServeMirrorInner");
     const seamBody = functionBody(session, "recordServedMirrorInTransaction");
@@ -106,12 +98,10 @@ describe("serve recording — one shared writer for the mirror and the lease gra
     );
     expect(mirrorOwners).toEqual([mirrorBody]);
 
-    // the lease grant happens only in `writeServeRecord`, never in the shared mirror half or the seam
     expect(writerBody).toContain("grantLeasesForRows(");
     expect(mirrorBody).not.toContain("grantLeasesForRows");
     expect(seamBody).not.toContain("grantLeasesForRows");
 
-    // neither serve path keeps its own copy of those steps
     for (const body of [plain, truncated]) {
       expect(body).not.toContain("withStore");
       expect(body).not.toContain("displacedHashes");
@@ -135,12 +125,9 @@ describe("serve recording — one shared writer for the mirror and the lease gra
       const hashes = await materializedLineHashes(content, path);
       const rows = hashes.map((hash, position) => ({ position, hash }));
 
-      // A mirror-only serve grants no lease, so no canon evidence exists anywhere. There is nothing
-      // to read back a canon text from: `served.canons` is written by no v7 code path (#151).
       recordServes(store, "mirror-only", path, rows);
       expect(await createSessionHandle("mirror-only", path, store).loadCanonDigests()).toEqual([]);
 
-      // A serve that names its content hash grants the leases the evidence is derived from.
       const handle = createSessionHandle("leased", path, store);
       await handle.recordDiff(rows, { contentHash: snapshotHashFor(content) });
       await handle.recordDiff(rows, { contentHash: snapshotHashFor(content) });

@@ -141,14 +141,12 @@ describe("resolveEffectiveLensModeWithSource", () => {
     process.env[LENS_BRIDGE_ENV_VAR] = "  OFF  ";
     expect(resolveEffectiveLensModeWithSource(projectDir)).toEqual({ mode: "off", source: "env" });
 
-    // An env value outside the enum is ignored by the ladder, so the file's rung stays the source.
     process.env[LENS_BRIDGE_ENV_VAR] = "bogus";
     expect(resolveEffectiveLensModeWithSource(projectDir)).toEqual({
       mode: "on",
       source: "project",
     });
 
-    // The value half is the contract `resolveEffectiveLensMode` has always had.
     expect(resolveEffectiveLensMode(projectDir)).toBe(
       resolveEffectiveLensModeWithSource(projectDir).mode,
     );

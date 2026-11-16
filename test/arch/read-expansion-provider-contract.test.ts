@@ -13,7 +13,6 @@ import { describe, expect, it } from "vitest";
 const EXPANSION_DIR = join("src", "read-expansion");
 const CONTRACT_FILE = join(EXPANSION_DIR, "provider-contract.ts");
 
-/** Every module that implements, composes or consumes the provider seam. */
 const PROVIDER_MODULES = [
   "ast-provider.ts",
   "ast-span.ts",
@@ -24,7 +23,6 @@ const PROVIDER_MODULES = [
   "read-provider.ts",
 ];
 
-/** Each contract declaration, by the shape the seam must keep. */
 const CONTRACT_DECLARATIONS = [
   "export interface SpanProvider",
   "export type SpanWindow",
@@ -56,9 +54,6 @@ describe("provider contract seam", () => {
 
   it("keeps provider-answer details internal", () => {
     const source = readFileSync(CONTRACT_FILE, "utf-8");
-    // WHY a shape regex: a literal `export interface X` check ignores every other exported
-    // spelling — `export type`, `export class`, a re-export list — so the guard would stay green
-    // while the answer detail leaked. Pin the export keyword, the declaration form, the identifier.
     expect(source).not.toMatch(
       /\bexport\s+(interface|type|class)\s+(EnclosingSpan|AnchorWindow)\b/,
     );

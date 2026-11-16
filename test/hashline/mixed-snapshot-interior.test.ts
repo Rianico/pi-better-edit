@@ -1,3 +1,10 @@
+/**
+ * The #151 scoping-note reproducer: paged reads leave a served mirror whose interior belongs to an
+ * older snapshot than its boundaries, and an externally rewritten interior line that happens to hash
+ * to the same 4-char anchor. With the mirror hash tier retired (#10) only the canon tier rejected
+ * such a span, so this file pins the replacement: the span rejects with NO canon evidence at all,
+ * because the interior check is a lease-identity question, not a content question.
+ */
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { applyEdit } from "../../src/hashline/apply";
@@ -22,27 +29,18 @@ function lease(partial: Partial<LeaseIdentityView> & { lineId: number }): LeaseI
 }
 
 describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
-  /**
-   * The reproducer from #151 scoping note §1. Paged reads leave a served mirror whose interior
-   * belongs to an older snapshot than its boundaries, and the externally rewritten interior line
-   * happens to hash to the same 4-char anchor — so the mirror hash tier (retired, #10) could not see
-   * the drift. Before #151 the canon tier was the only thing rejecting this span, which is why the
-   * span must still reject with NO canon evidence at all: the interior check is a lease-identity
-   * question, not a content question.
-   */
   it("rejects the span with [E_STALE_RANGE] with no canon evidence supplied", () => {
     const servedLines = Array.from({ length: 10 }, (_, i) => `row ${i + 1}`);
-    const servedHashes = contentOnlyHashes(servedLines.join("\n")); // S0 read of lines 1-10
+    const servedHashes = contentOnlyHashes(servedLines.join("\n"));
     const diskLines = [...servedLines];
     diskLines[4] = "row 5 rewritten externally";
-    const diskHashes = contentOnlyHashes(diskLines.join("\n")); // S1 on disk
+    const diskHashes = contentOnlyHashes(diskLines.join("\n"));
     // SAFETY: inject the collision. Without it the anchor rotates and the hash tier alone catches
     // SAFETY: the drift, so a stale-mirror test would pass for the wrong reason and prove nothing.
     diskHashes[4] = servedHashes[4]!;
 
     const served: (string | null)[] = [...servedHashes];
     const leases = new Map<string, LeaseIdentityView>();
-    // The partial re-read of lines 1 and 10 re-leases only the boundaries, under S1 = C.
     leases.set(
       servedHashes[0]!,
       lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }),
@@ -51,8 +49,6 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
       servedHashes[9]!,
       lease({ lineId: 10, servedSnapshotHash: "C", servedLineNumber: 10 }),
     );
-    // The interior keeps its S0 leases; line 5's identity is gone from S1's lineage, so
-    // materialization retired it and its anchor now names a line that no longer exists.
     for (const i of [1, 2, 3, 5, 6, 7, 8]) {
       leases.set(
         servedHashes[i]!,
@@ -96,8 +92,6 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
     expect(err.message).toContain("Current range (fresh read):");
-    // WHY: the interior lease is terminal, so the diagnosis is `retirement` — the same cause the
-    // WHY: boundary rule reports for a retired bound (spec §5.3), not a drift verdict.
     expect(err.details.cause).toBe("retirement");
   });
 });

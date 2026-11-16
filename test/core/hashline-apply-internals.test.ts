@@ -358,7 +358,6 @@ describe("boundary-dup pure edit (via applyEdit)", () => {
       undefined,
       { filePath: home.testPath },
     );
-    // pure edit: the replacement is applied verbatim, not treated as noop via stripping
     expect(result.content).not.toBe(content);
     expect(result.content).toContain("class A {");
   });

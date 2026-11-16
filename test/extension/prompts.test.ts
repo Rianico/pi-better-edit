@@ -1,3 +1,12 @@
+/**
+ * The shipped prompt surfaces, pinned as served: the read/edit tool prompts, the
+ * `prompts/edit-guidelines.md` artifact, and the payload-contract constants behind them.
+ *
+ * These assertions read the RAW shipped file, never the exported constant: `loadGuide` answers a
+ * bundle path with the constant itself, so a comparison through it is the constant against itself and
+ * can never fail. The `literal` flag is evidence-gated (ADR-0021 decision 6) — taught only by the
+ * `[E_SUSPICIOUS_TEXT]` refusal — so no shipped prompt may name it.
+ */
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -71,8 +80,6 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents pagination support", () => {
-    // The published schema is strictly the flat `{ file, windows?, mode? }` shape (ADR-0041), so the
-    // continuation the prompt teaches is the header's shown range plus the next `windows` offset.
     expect(readPrompt).toContain(
       "continue from the next unshown line with `windows: [{ offset, limit }]`",
     );
@@ -80,8 +87,6 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents file-kind handling", () => {
-    // WHY: image support recovered (PR #52) — PNG/JPG read as image attachments for multimodal
-    // WHY: models, while binary/directory stay rejected.
     expect(readPrompt).toMatch(/PNG\/JPG/);
     expect(readPrompt).toMatch(/image attachment/);
     expect(readPrompt).toMatch(/Binary/);
@@ -113,11 +118,6 @@ describe("prompt guidelines", () => {
   });
 
   it("edit-guidelines.md is single-sourced from payload-contract", () => {
-    // WHY: (04b-rem2 R1, E21) `loadGuide` answers this path with the constant itself, so a
-    // WHY: comparison through it is the constant against itself and can never fail. The SHIPPED
-    // WHY: artifact is READ and parsed here — same rules the guide loader applies to real files —
-    // WHY: and pinned against the constant, and the tool prompt is pinned against the FILE.
-    // WHY: M10 (diverge only prompts/edit-guidelines.md) reddens this test.
     const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
     const fileLines = raw
       .split("\n")
@@ -130,10 +130,6 @@ describe("prompt guidelines", () => {
   });
 
   it("the reject-and-serve guideline states the rowless changed-buffer exception", () => {
-    // WHY: (F1) the same-file reject-and-serve guarantee is scoped: a refusal raised after an
-    // WHY: earlier item of the call already changed the buffer serves no rows. The raw shipped
-    // WHY: file AND the served constant both carry the exception, so the model-facing surface
-    // WHY: never re-promises rows it withholds.
     const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
     expect(raw).toContain("serves no rows and names the current-file lines");
     expect(
@@ -142,13 +138,6 @@ describe("prompt guidelines", () => {
   });
 
   it("the batch guideline states the pre-rename guarantee, not a whole-call atomicity the cut cannot honor (04b-rem P3-4)", () => {
-    // WHY: the retired sentence claimed "the call is atomic (any failure writes nothing)" —
-    // WHY: FALSE for a foreign cut whose rollback is defeated inside the two-rename window. The
-    // WHY: replacement scopes the promise to what IS guaranteed (validation before the first
-    // WHY: rename writes nothing) and states the ordered-commit/repair story for the rest.
-    // WHY: (04b-rem2 R1) both assertions read the RAW shipped file — the artifact operand —
-    // WHY: never the constant; the parsed equality in the single-sourced test above pins
-    // WHY: file == constant == tool prompt with real reachability.
     const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
     expect(raw).not.toContain("the call is atomic (any failure writes nothing)");
     expect(raw).toContain("every edit validates BEFORE the first rename");
@@ -266,19 +255,12 @@ describe("anchor file binding (#145)", () => {
 
 describe("EDIT_DESCRIPTION null rule (ticket-75)", () => {
   it("scopes the absent rule to optional fields, the nested reference file included", () => {
-    // WHY: (ticket-75) the always-loaded surface stated the rule for the item's four fields only,
-    // WHY: while `text_ref.file` refused an explicit null — a model-facing surface that over-claims
-    // WHY: is the #67 class of defect, so the claim itself is pinned as served.
     expect(EDIT_DESCRIPTION).toContain("null optional field");
     expect(EDIT_DESCRIPTION).toContain("reads as absent");
   });
 });
 
 describe("prompts carry no literal-declaration prose (ADR-0021 section 6)", () => {
-  // WHY: ADR-0021 decision 6 makes the disclosure evidence-gated: the flag is taught only by the
-  // WHY: `[E_SUSPICIOUS_TEXT]` refusal, and "`prompts/` carry zero `literal` mentions". No test
-  // WHY: pinned that invariant, so a well-meaning guidance edit could re-teach the escape silently
-  // WHY: (it did, in #179). The scan is the pin; the control below proves it can fail.
   const namesLiteralDeclaration = (text: string): boolean => /\bliteral\b/i.test(text);
 
   it("keeps every shipped prompt file free of the flag", () => {

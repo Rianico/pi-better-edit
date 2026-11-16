@@ -85,8 +85,6 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         ctx,
       );
       const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
-      // WHY: the served anchor the lease materializes from must be a live-width
-      // WHY: token — a hardcoded width here would pass while the stack moved on.
       expect(bravoHash).toHaveLength(HASH_LEN);
 
       await editTool.execute(
@@ -124,10 +122,8 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         store.db.exec("DROP TRIGGER lease_read_atomic_fail");
       }
 
-      // No snapshot/lineage without its leases.
       expect(snapshotExists(store, path, ORIGINAL)).toBe(false);
       expect(lineageCount(store, path, ORIGINAL)).toBe(0);
-      // …and no leases without their lineage.
       expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, ORIGINAL)).toEqual([]);
     });
   });
@@ -168,16 +164,13 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         store.db.exec("DROP TRIGGER lease_edit_atomic_fail");
       }
 
-      // §3.6.2: the bytes are already on disk — success plus deferred sync, never a file rollback.
       expect(text).toContain("Successfully edited");
       expect(text).toContain("Store synchronization deferred");
       expect(warnings?.some((w) => w.includes("Store synchronization deferred"))).toBe(true);
       expect(await readFile(path, "utf-8")).toBe(EDITED);
 
-      // No snapshot/lineage without its leases …
       expect(snapshotExists(store, path, EDITED)).toBe(false);
       expect(lineageCount(store, path, EDITED)).toBe(0);
-      // … and no leases without their lineage (the serve-mirror recording grants no leases).
       expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED)).toEqual([]);
     });
   });
@@ -229,7 +222,6 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         store.db.exec("DROP TRIGGER lease_read_notx3_fail");
       }
 
-      // The leases committed with the snapshot — they were never in the mirror transaction.
       const leases = leasesForSnapshot(store, sessionKeyFor(ctx), path, ORIGINAL);
       expect(leases.length).toBe(3);
       for (const lease of leases) {
@@ -239,11 +231,6 @@ describe("lease grant inside the materialization transaction (#116)", () => {
   });
 
   it("edit serve-mirror failure rolls the whole commit back: leases and mirror are one transaction", async () => {
-    // CAND-3: the served mirror write moved INTO the materialization transaction. Before, a
-    // mirror failure left the diff leases committed without their mirror (false E_STALE_RANGE
-    // at the boundary gate); the test pinned that torn survivor state. Now the failure aborts
-    // the one `BEGIN IMMEDIATE`, so snapshot, lineage, leases and mirror roll back together and
-    // the edit reports deferred store synchronization instead.
     await withTempFile("lease_edit_notx3.txt", ORIGINAL, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
@@ -280,7 +267,6 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       expect(text).toContain("Successfully edited");
       expect(text).toContain("Store synchronization deferred");
 
-      // The mirror failure rolled the grant back with it: no leases without their mirror rows.
       expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED)).toEqual([]);
       expect(snapshotExists(store, path, EDITED)).toBe(false);
     });
@@ -320,12 +306,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         store.db.exec("DROP TRIGGER lease_deferred_fail");
       }
 
-      // §3.6.2: success for the bytes on disk plus the deferred-sync warning — never a rollback.
       expect(text).toContain("Successfully edited");
       expect(text).toContain("Store synchronization deferred");
       expect(await readFile(path, "utf-8")).toBe(EDITED);
 
-      // Recovery: a re-read re-materializes from disk and the next edit succeeds.
       const r2 = await readTool.execute(
         "r2",
         { file: "lease_deferred.txt" },

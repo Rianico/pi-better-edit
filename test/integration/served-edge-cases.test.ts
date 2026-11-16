@@ -37,8 +37,6 @@ describe("served-state edge cases for edit", () => {
       const secondText = getText(second);
       const l7Ref = extractHash(secondText.split("\n").find((l) => l.includes("│l7"))!);
 
-      // The interior 4-6 were never served: the two leased bounds pin the span, so it applies as-is
-      // (ADR-0024) instead of paying a rejection-and-resend round trip.
       const applied = await editTool.execute(
         "e1",
         { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
@@ -60,12 +58,8 @@ describe("served-state edge cases for edit", () => {
       const aRef = extractHash(text.split("\n").find((l) => l.includes("│a"))!);
       const dRef = extractHash(text.split("\n").find((l) => l.includes("│d"))!);
 
-      // External rewrite: `c` (line 3) becomes content already served elsewhere (`b`).
       await writeFile(path, "a\nb\nb\nd\n", "utf-8");
 
-      // MVCC rebase semantics: patience pairing retires BOTH contested lines (`b` at served line 2
-      // and `c` at served line 3), so the first served line whose immutable `line_id` is gone is
-      // line 2 — that is the line the edit is refused on. Anchor spelling is not authoritative.
       let rejected: Error | undefined;
       try {
         await editTool.execute(
@@ -80,7 +74,6 @@ describe("served-state edge cases for edit", () => {
       }
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 2/);
-      // Reject-and-serve: the served rows are the current on-disk range, so the retry needs no read.
       const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines.map((l) => l.split("│")[1])).toEqual(["a", "b", "b", "d"]);
 
@@ -135,7 +128,6 @@ describe("served-state edge cases for edit", () => {
 
       const hashes = await lineHashes(content, home.testPath);
 
-      // A boundary anchor absent from `served_leases` carries no rows — re-read for fresh anchors.
       let rejected: Error | undefined;
       try {
         await editTool.execute(

@@ -5,10 +5,12 @@ import { fmtReadPreview } from "../../src/read";
 import { hashStorePath } from "../../src/hash-store.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
-// WHY: the structural proof that verbatim allocates no anchors: the preview's lazy hash entry point
-// WHY: is replaced with a thrower, so a verbatim read that completes could not have hashed a row.
-// WHY: `hashesFor` is a prototype method reached directly on the singleton below, so a spy on the
-// WHY: instance covers the loader half while this mock covers the preview half.
+/**
+ * The structural proof that verbatim allocates no anchors: the preview's lazy hash entry point is
+ * replaced with a thrower, so a verbatim read that completes could not have hashed a row.
+ * `hashesFor` is a prototype method reached directly on the singleton below, so a spy on the instance
+ * covers the loader half while this mock covers the preview half.
+ */
 vi.mock("../../src/hashline/hash-identity.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/hashline/hash-identity.js")>();
   return {
@@ -21,12 +23,12 @@ vi.mock("../../src/hashline/hash-identity.js", async (importOriginal) => {
 
 const home = useTestHome();
 
-// WHY (#89): the store-file-absence assertion below needs a store dir that is fresh per CALL — what
-// WHY: the HOME-derived path inside withTempFile gives. The worker-wide setupFiles seam points at one
-// WHY: dir shared by every test in this file, so opt out for the duration of that test.
-// WHY process.env rather than vi.stubEnv: the file-level useTestHome() stubs HOME/XDG through
-// WHY: vi.stubEnv and owns their unstub in afterAll, so vi.unstubAllEnvs() here would drop them
-// WHY: mid-file.
+/**
+ * The store-file-absence assertion below needs a store dir that is fresh per call (#89), which the
+ * `HOME`-derived path inside `withTempFile` gives. The worker-wide setupFiles seam points at one dir
+ * shared by every test in this file. It writes `process.env` rather than `vi.stubEnv` because the
+ * file-level `useTestHome()` owns those stubs and unstubs them in `afterAll`.
+ */
 async function withoutStoreSeam(run: () => Promise<void>): Promise<void> {
   const previous = process.env.PI_BETTER_EDIT_CONFIG_DIR;
   process.env.PI_BETTER_EDIT_CONFIG_DIR = "";

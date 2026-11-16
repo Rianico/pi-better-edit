@@ -231,9 +231,6 @@ describe("mapStableHashes — edge cases", () => {
     });
 
     expect(result).toHaveLength(4);
-    // WHY: identity is byte-exact, so `a\r` is not `a`. The product never reaches this state:
-    // WHY: `decodeNormText` normalizes BOM and line endings on BOTH sides before hashing, so the
-    // WHY: reuse asserted below is what the seam sees.
     expect(result[0]).not.toBe(oldHashes[0]);
     expect(result[1]).not.toBe(oldHashes[1]);
     expect(result[2]).not.toBe(oldHashes[2]);
@@ -441,8 +438,6 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
       hashes: oldHashes,
     });
 
-    // WHY: the trailing spaces are bytes, so `x  ` and `x` are different lines; `y` is untouched
-    // WHY: and keeps its hash.
     expect(result[0]).not.toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
   });

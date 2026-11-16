@@ -6,17 +6,19 @@ import { withTempFile, setupIntegrationTest, useTestHome, getText } from "../sup
 
 useTestHome();
 
-// WHY: the sub-row contract pins bytes, not shapes - every non-ASCII byte below
-// WHY: is written as a unicode escape so the file stays ASCII-only and a pasted
-// WHY: glyph can never silently satisfy an assertion.
+/**
+ * The sub-row contract pins bytes, not shapes: every non-ASCII byte below is written as a unicode
+ * escape so the file stays ASCII-only and a pasted glyph can never silently satisfy an assertion.
+ */
 const SEP = "\u2502";
 const CARET = "\u25B2";
 const GUTTER = `     ${SEP}`;
 const CONTENT_ROW = /^[-+ ][A-Za-z0-9]{4}/;
-// WHY: the pinned shape is start, one non-space, four word chars, separator -
-// WHY: written with an explicit class because the linter owns string escapes;
-// WHY: so the class is equivalent here, and the separator half holds by construction:
-// WHY: subRowsOf selects exactly the GUTTER-prefixed lines.
+/**
+ * The pinned shape is start, one non-space, four word chars, then the separator. Written with an
+ * explicit class because the linter owns string escapes, so the class is equivalent here and the
+ * separator half holds by construction: `subRowsOf` selects exactly the `GUTTER`-prefixed lines.
+ */
 const ROW_SHAPE = /^\S[A-Za-z0-9_]{4}/;
 const DISCLOSURE_RE = /the replaced line had|the written line adds/;
 
@@ -54,16 +56,13 @@ describe("edit invisible-code-point sub-rows", () => {
       const minusIdx = lines.findIndex((row) => row.startsWith("-") && row.includes("a\u000Bb"));
       expect(minusIdx).toBeGreaterThanOrEqual(0);
       expect(bodyOf(lines[minusIdx]!)).toBe("a\u000Bb");
-      // The removed sub-row sits between the minus row and the plus row.
       expect(lines[minusIdx + 1]).toBe(
         `${GUTTER} ${CARET} [col 2: U+000B LINE TABULATION removed]`,
       );
       const plus = lines[minusIdx + 2]!;
       expect(plus.startsWith("+")).toBe(true);
       expect(bodyOf(plus)).toBe("a b");
-      // The plus row is clean, so no second sub-row follows it.
       expect(lines[minusIdx + 3]?.startsWith(GUTTER) ?? false).toBe(false);
-      // Caret offset for column 2 is exactly one space past the gutter.
       const caretPos = lines[minusIdx + 1]!.indexOf(CARET);
       expect(caretPos - GUTTER.length).toBe(1);
       expect(await readFile(path, "utf-8")).toBe("a b\nccc\n");
@@ -132,7 +131,6 @@ describe("edit invisible-code-point sub-rows", () => {
       const added = subs.filter((line) => line.endsWith("added]"));
       expect(removed).toHaveLength(2);
       expect(added).toHaveLength(2);
-      // Each side names only its own code points: no 1:1 pairing across the block.
       expect(removed.join("\n")).toContain("U+00A0 NO-BREAK SPACE");
       expect(removed.join("\n")).toContain("U+200B ZERO WIDTH SPACE");
       expect(removed.join("\n")).not.toContain("U+2000");
@@ -141,7 +139,6 @@ describe("edit invisible-code-point sub-rows", () => {
       expect(added.join("\n")).toContain("U+0080 PADDING CHARACTER");
       expect(added.join("\n")).not.toContain("U+00A0");
       expect(added.join("\n")).not.toContain("U+200B");
-      // Every sub-row immediately follows its own annotated row.
       for (const sub of subs) {
         const prev = lines[lines.indexOf(sub) - 1] ?? "";
         if (sub.endsWith("removed]")) expect(prev.startsWith("-")).toBe(true);
@@ -297,7 +294,6 @@ describe("edit invisible-code-point sub-rows", () => {
       expect(undone.isError).toBeFalsy();
       const text = getText(undone);
       expect(text).toContain("Undone last edit");
-      // The restored row carries the code point back, so the undo diff annotates it.
       const undoDiff = undone.details?.diff ?? "";
       expect(undoDiff).toContain(`${GUTTER} ${CARET} [col 2: U+00A0 NO-BREAK SPACE added]`);
       expect(text).not.toMatch(DISCLOSURE_RE);

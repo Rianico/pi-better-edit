@@ -9,10 +9,6 @@ import {
   bashBanner,
 } from "../../src/bash-view-banner.js";
 
-// WHY: the bash seams' bracket roots and page labels are frozen text (#150, read-chrome): the kind
-// WHY: word carries the completeness claim, so the suite pins each literal byte-identically and guards
-// WHY: that every call site imports the builder instead of re-declaring the text. An edited literal
-// WHY: here means the contract moved.
 describe("bash banner freeze (#150)", () => {
   it("pins the frozen root and label literals byte-identically", () => {
     expect(BASH_SEARCH_ROOT).toBe("[Bash search (anchors)]");
@@ -27,8 +23,6 @@ describe("bash banner freeze (#150)", () => {
   });
 
   it("declares no banner literal outside the single definition site", () => {
-    // WHY: the pin's name promises every module, so the scan walks every `.ts` file under `src/`
-    // WHY: except the definition site itself — a future copy-paste in any new seam fails here.
     const root = fileURLToPath(new URL("../../src", import.meta.url));
     const files: string[] = [];
     const walk = (dir: string): void => {
@@ -39,8 +33,6 @@ describe("bash banner freeze (#150)", () => {
       }
     };
     walk(root);
-    // WHY: only the bracketed forms are frozen chrome — the bare labels are ordinary prose words
-    // WHY: (`Bash view setting` names a config key), so the pin guards how they are assembled.
     const literals = [
       BASH_SEARCH_ROOT,
       BASH_FILE_LIST_ROOT,

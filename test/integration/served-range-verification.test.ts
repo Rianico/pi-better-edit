@@ -100,9 +100,6 @@ describe("served-state range verification for edit", () => {
       expect(await readFile(path, "utf-8")).toBe("X\nY\n");
 
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
-      // Pipeline now records dense serves for the successful retry (X/Y),
-      // so the old serve anchors (for alpha/BETA/gamma) are no longer
-      // served. The stale retry must be rejected and requires a fresh read.
       await expect(
         editTool.execute(
           "e3",
@@ -113,7 +110,6 @@ describe("served-state range verification for edit", () => {
         ),
       ).rejects.toThrow(/E_STALE_RANGE|E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
-      // Fresh read re-serves and then edit succeeds
       const freshRead = await readTool.execute(
         "r3",
         { file: "sample.ts" },
@@ -287,9 +283,6 @@ describe("served-state range verification for edit", () => {
         rejected = error as Error;
       }
       expect(rejected).toBeDefined();
-      // The beta lease is retired (its line entity is gone) while alpha stays live and unshifted,
-      // so the boundary rule serves the named window as a fresh read to decide from
-      // (never [E_STALE_ANCHOR]; spec §3.1.1 line 89 / §5.3).
       expect(rejected!.message).toMatch(/\[MODEL\] \[E_UNVERIFIED_RANGE\]/);
       expect(rejected!.message).not.toMatch(/E_STALE_ANCHOR/);
       expect(rejected!.message).toContain("Current range (fresh read):");
@@ -320,7 +313,6 @@ describe("served-state range verification for edit", () => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
 
-      // No serve ever leased these anchors, so the boundary lookup is empty.
       await expect(
         editTool.execute(
           "e1",

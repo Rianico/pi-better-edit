@@ -41,8 +41,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   const home = await mkdtemp(join(await getWritableTempRoot(), "silent-catch-121-"));
   vi.stubEnv("HOME", home);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(home);
@@ -82,9 +80,6 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
 
   it("lease grant failure logs once and keeps the serve (best-effort)", async () => {
     await withTempHome(async () => {
-      // WHY: the lease grant is the best-effort step of a serve record (#151): the mirror row is
-      // WHY: already committed, so a failed grant must log with context and leave the serve intact.
-      // WHY: The injection point is the SQL itself — a trigger aborts only lease writes.
       const store = await loadHashStore();
       store.db.exec(
         "CREATE TRIGGER lease_boom BEFORE INSERT ON served_leases " +
@@ -175,8 +170,6 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
         ctx,
       );
 
-      // WHY: CAND-3 folded the undo's retire/adopt/mirror writes into one restore transaction; the
-      // injection aborts the mirror UPDATE so the whole transaction (and its log) exercises that path.
       const store = await loadHashStore();
       store.db.exec(
         "CREATE TRIGGER undo_mirror_boom BEFORE UPDATE OF hashes ON served " +

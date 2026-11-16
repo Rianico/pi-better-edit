@@ -2,20 +2,20 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// WHY: `adr new` allocates the next number by scanning the worktree it runs in. Two branches
-// WHY: opened from the same trunk each see the same sequence, so each concludes the same gap is
-// WHY: free and each mints the same number; no reviewer can eyeball that across a diff. That is
-// WHY: exactly what happened in #48: two records numbered 0027, authored on the same day on
-// WHY: separate branches, one of them citing the other as a deliberate gap fill, and a later
-// WHY: ADR-0028 citation aimed at the wrong one. Uniqueness is mechanical, so it is pinned here
-// WHY: rather than trusted.
+/**
+ * `adr new` allocates the next number by scanning the worktree it runs in, so two branches opened from
+ * the same trunk see the same sequence and each mints the same number — invisible across a diff. That
+ * is what happened in #48: two records at 0027, one of them cited by ADR-0028, and a later citation
+ * pointed at the wrong one. Uniqueness is mechanical, so it is pinned here rather than trusted.
+ */
 const ADR_DIR = join("docs", "adr");
 const FILE_RE = /^(\d{4})-(.+)\.md$/;
 const H1_RE = /^#\s*ADR-(\d{4})\b/;
 
-// WHY: 0013 is the first record that declares its number in the H1; 0001-0010 predate the
-// WHY: convention and carry a bare title. New records follow 0013, so the declaration is
-// WHY: required from here on — otherwise a stale H1 has nothing to disagree with.
+/**
+ * 0013 is the first record that declares its number in the H1; 0001-0010 predate the convention and
+ * carry a bare title, so the declaration is required from here on.
+ */
 const FIRST_DECLARING_NUMBER = 13;
 
 type Adr = { file: string; number: number; declared: number | null };

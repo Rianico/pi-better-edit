@@ -1,18 +1,13 @@
 /**
  * `harness/no-comments` — the settled comment grammar, as a deterministic CI gate.
  *
- * Grammar and baseline keying live in `scripts/comment-gate-predicate.mjs`, shared with the
- * baseline generator so the rule and its suppression file cannot drift.
+ * Grammar and baseline keying live in `scripts/comment-gate-predicate.mjs`, shared with the baseline
+ * generator so the rule and its suppression file cannot drift.
  *
- * Allowed: SAFETY:, TODO(#<issue>):, HACK:, `Ref: docs/<repo-path>`, `Ref: https://<link>`,
- * `Ref: http://<link>`, strict Gherkin (Given|When|Then|And|But + space, Feature:|Scenario:), and
- * `/** *\/` documentation at module scope within 12 lines. `Ref:` is the only citation tag: it
- * takes a target, so a tag with nothing to follow is prose.
- * Rejected: prose, a `/** *\/` block whose text carries a `WHY:` or `Invariant:` tag, an in-body
- * `/** *\/`, an over-cap block, and a `SAFETY:` run that does not guard a cast or non-null assertion.
- *
- * Provenance: docs/agents/verification-standards.md. ADR pending (Stage 6) — no record for this
- * grammar exists yet, so no ADR number is cited here.
+ * Allowed: SAFETY:, TODO(#<issue>):, HACK:, `Ref: docs/<repo-path>` or `Ref: <link>`, strict Gherkin,
+ * and `/** *\/` documentation at module scope within 12 lines. `Ref:` is the only citation tag and it
+ * takes a target; a block carrying a retired tag token is prose, as are an in-body block, an over-cap
+ * block, and a `SAFETY:` run that guards nothing. Provenance: docs/agents/verification-standards.md.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";

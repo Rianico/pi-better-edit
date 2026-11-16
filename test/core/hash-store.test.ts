@@ -27,8 +27,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-hashstore-test-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(tmpHome);
@@ -458,8 +456,6 @@ describe("hash-store — schema versioning", () => {
       await put(store, "/keep.ts", "x\n", ["XYZZ"]);
       shutdownHashStore();
 
-      // WHY: simulates a v10 store — the column and its index do not exist, while the snapshot it
-      // WHY: carries (and any lease naming it) must survive the additive migration untouched.
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       db.exec("DROP INDEX IF EXISTS idx_snapshots_path_stat");
       db.exec("ALTER TABLE file_snapshots DROP COLUMN stat_key");
@@ -495,7 +491,6 @@ describe("hash-store — anchor_generation rename (issue #20)", () => {
       const store = await loadHashStore();
       await put(store, "/live.ts", "x\n", ["XYZZ"]);
       shutdownHashStore();
-      // WHY: simulates the pre-rename merged build — old column name, old 2-part key, stamped 3.
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       db.exec("ALTER TABLE file_snapshots RENAME COLUMN anchor_generation TO canon_version");
       db.exec("ALTER TABLE file_undo RENAME COLUMN anchor_generation TO canon_version");
@@ -517,14 +512,10 @@ describe("hash-store — anchor_generation rename (issue #20)", () => {
         "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at, canon_version) VALUES (?,?,?,?,?,?,?,?,?)",
       ).run("/old.ts", "old", "", "\n", '["UVWW"]', "new", "3:deadbeef", Date.now(), 3);
       db.close();
-      // WHY: (#87c) a pre-rename release wrote no open stamp either, so the simulation is only honest
-      // WHY: with the stamp gone: the reopen must take the SLOW path, which is the one that sweeps the
-      // WHY: pre-rename rows this test asserts are gone.
       const preStamp = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       preStamp.exec("PRAGMA user_version = 0");
       preStamp.exec("DELETE FROM meta WHERE key = 'store_stamp'");
       preStamp.close();
-      // WHY: the pre-rename store still opens — the guarded rename preserves stamped values.
       const reopened = await loadHashStore();
       const snapCols = (
         reopened.db.prepare("PRAGMA table_info(file_snapshots)").all() as { name: string }[]
@@ -536,7 +527,6 @@ describe("hash-store — anchor_generation rename (issue #20)", () => {
       expect(snapCols).not.toContain("canon_version");
       expect(undoCols).toContain("anchor_generation");
       expect(undoCols).not.toContain("canon_version");
-      // WHY: generation-gated behavior intact — the live row hits, pre-rename rows miss/sweep.
       expect(getSnapshot(reopened, "/live.ts", "x\n")).toEqual(["XYZZ"]);
       expect(getSnapshot(reopened, "/old.ts", "old")).toBeUndefined();
       expect(getUndoEntry(reopened, "/old.ts")).toMatchObject({
@@ -557,7 +547,6 @@ describe("hash-store — anchor_generation rename (issue #20)", () => {
             .get("/old.ts") as { n: number }
         ).n,
       ).toBe(0);
-      // WHY: idempotent across re-opens — the live row survives every later sweep.
       shutdownHashStore();
       const again = await loadHashStore();
       expect(getSnapshot(again, "/live.ts", "x\n")).toEqual(["XYZZ"]);
@@ -686,8 +675,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         ]) {
           expect(indexes).toContain(idx);
         }
-        // The vacuum pin probe filters on all four; losing the hash column (or the covering order)
-        // silently turns each snapshot's probe back into a full scan of the path's leases.
         expect(
           (
             db.prepare("PRAGMA index_info(idx_leases_file_snapshot)").all() as Array<{
@@ -767,8 +754,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         "VALUES ('/a.ts', 'old', '', '\n', '[\"abcc\"]', 'new', 'v1:aaaa', 111)",
     ).run();
   }
-  // Static statements instead of interpolating `table`: the identifiers are a closed union, but the
-  // SQL-injection rule cannot see that a loop variable came from a literal tuple.
   const V7_SELECT_ALL: Record<(typeof V7_TABLES)[number], string> = {
     file_snapshots: "SELECT * FROM file_snapshots ORDER BY rowid",
     line_id_counters: "SELECT * FROM line_id_counters ORDER BY rowid",
@@ -786,7 +771,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     return rows;
   }
 
-  /** Reproduces an un-restarted v6 process opening a v7 store: it drops and recreates the legacy shells and rewrites meta.version = '6'. */
   function simulateV6VersionFlap(db: DatabaseSync): void {
     db.exec("DROP TABLE IF EXISTS snapshots");
     db.exec("DROP TABLE IF EXISTS undo");
@@ -834,16 +818,12 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         .prepare("SELECT next_id FROM line_id_counters WHERE path = '/a.ts'")
         .get() as { next_id: number };
       const survivors = v7Rows(db);
-      // A v6 process can keep writing to its compatibility shell after the flap.
       db.prepare(
         "INSERT INTO served (session_id, path, hashes, reported, retired, canons, snapshotId, updated_at) " +
           "VALUES ('s2', '/b.ts', '[]', NULL, NULL, '[]', NULL, 5)",
       ).run();
       db.close();
 
-      // WHY: generation discipline — unknown-generation snapshot/lineage/lease state is
-      // WHY: swept at open (it can never verify), while undo, counters, and session
-      // WHY: metadata survive untouched.
       expect(survivors).toEqual({
         ...seeded,
         file_snapshots: [],
@@ -864,10 +844,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       seedV7Rows(db);
       const seeded = v7Rows(db);
       db.close();
-      // WHY: (#87c) the seeded rows are anchor state of an unknown generation, and what removes them is
-      // WHY: the sweep — which a matching stamp now skips. A store holding such rows is by definition
-      // WHY: not the store its stamp describes, so the seeding moves the stamp with them; the repeated
-      // WHY: opens below then find the fast path, which is the idempotence this test pins.
       db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       db.exec("PRAGMA user_version = 0");
       db.close();
@@ -885,9 +861,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       for (const table of V7_TABLES) {
         expect(tables.filter((name) => name === table)).toEqual([table]);
       }
-      // WHY: the open-time sweep is idempotent — the first open removes the
-      // WHY: unknown-generation anchor state, later opens find nothing to delete,
-      // WHY: and non-anchor state is untouched throughout.
       expect(survivors).toEqual({
         ...seeded,
         file_snapshots: [],
@@ -944,8 +917,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       shutdownHashStore();
 
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      // Legacy v6 undo history waiting to be migrated, plus a served table that
-      // predates the retired/canons/snapshotId columns.
       db.prepare(
         "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) " +
           "VALUES ('/legacy.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",

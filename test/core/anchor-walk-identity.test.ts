@@ -1,3 +1,10 @@
+/**
+ * The walk's anchors are the served contract: the identity plan is seeded from the file's own absolute
+ * path, so derivation is a pure function of (path, content) and the recorded anchors below are stable
+ * across runs and stores. A served page must therefore hand out exactly the anchors the whole-content
+ * call produces — never the content-only spelling, which the file-scoped edit pipeline would refuse as
+ * foreign.
+ */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 import { loadHashStore } from "../../src/hash-store.js";
@@ -18,23 +25,15 @@ import {
 
 useTestHome();
 
-// WHY (#89): PATH is a fixed constant and a test below persists a real snapshot for it, so with the
-// WHY: worker-wide setupFiles seam any test shuffled ahead of it reads that cached plan
-// WHY: (plan.assign undefined); clearing the seam puts every call back on its own HOME-repointed store.
 beforeAll(() => {
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
 });
 
-// WHY: the served contract pins the file-scoped assignment at a fixed path — derivation is a pure
-// WHY: function of (path, content), so these five width-4 anchors for PATH below are stable across
-// WHY: runs and across stores. They were captured from the file-seeded derivation (the pre-walk
-// WHY: 3-char `Wot…EaX` oracle belonged to the content-only world and cannot survive file scoping).
 const RECORDED = ["KHW1", "YD16", "vlIB", "DYgm", "jEaJ"] as const;
-// WHY: the anchors are the served contract — an edit resolves the file through them — so the walk that
-// WHY: now assigns them has to produce the array the whole-content call produces, element for element.
-// WHY: This file repeats every ninth line: identical lines canon to one hash, so the assignment has to
-// WHY: probe for a free anchor, which is the collision path a rewritten algorithm (or a different line
-// WHY: space, which is how this was found — one extra sentinel anchor) silently changes.
+/**
+ * Nine distinct canons over 4000 lines: identical canons land on one slot, so an array this long and
+ * this distinct can only come out of probing for the next free slot 3991 times.
+ */
 const COLLIDING = `${Array.from({ length: 4000 }, (_, index) => `line ${index % 9}`).join("\n")}\n`;
 const PATH = "/anchor-identity.ts";
 
@@ -48,8 +47,6 @@ describe("the anchors a served read hands out", () => {
   it("are the ones recorded before this walk existed", async () => {
     const source = "a\nb\nc\nd\ne\n";
     const plan = await defaultHashIdentity.anchorsForWalk(source, { path: PATH, persist: false });
-    // WHY (#89): pin the precondition, or the `??` below quietly passes on the cached array. The
-    // file's seam opt-out keeps the store fresh per call, so no sibling test can leave one here.
     expect(plan.cached).toBeUndefined();
     expect(plan.cached ?? walkAssigned(source, plan.assign!)).toEqual([...RECORDED]);
     expect(fileHashesFor(PATH, source)).toEqual([...RECORDED]);
@@ -59,8 +56,6 @@ describe("the anchors a served read hands out", () => {
 describe("the walk assigns the anchors the whole-content assignment produces", () => {
   it("agrees line for line, in order and in length, on a file that collides", async () => {
     const oracle = fileHashesFor(PATH, COLLIDING);
-    // 4000 lines of nine distinct canons: identical canons land on one slot, so an anchor array this
-    // long and this distinct can only come out of probing for the next free slot 3991 times.
     expect(new Set(splitLines(COLLIDING)).size).toBe(9);
     expect(new Set(oracle).size).toBe(oracle.length);
     const plan = await defaultHashIdentity.anchorsForWalk(COLLIDING, {
@@ -112,9 +107,6 @@ describe("the walk assigns the anchors the whole-content assignment produces", (
         .split("\n")
         .filter((row) => /^[A-Za-z0-9]{4}│/.test(row));
       expect(rows).toHaveLength(12);
-      // WHY: the served page is seeded from the file's own absolute path, so the whole-content
-      // WHY: oracle is derived for that same path — never the content-only spelling, which the
-      // WHY: file-scoped edit pipeline would refuse as foreign.
       expect(rows.map((row) => row.slice(0, 4))).toEqual(
         fileHashesFor(path, COLLIDING).slice(1, 13),
       );

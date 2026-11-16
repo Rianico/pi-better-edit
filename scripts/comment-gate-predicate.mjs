@@ -1,43 +1,34 @@
 /**
- * Settled comment grammar, in one module, for every consumer.
+ * Settled comment grammar, in one module, for every consumer: the gate and the baseline generator
+ * each adapt their own parser into the same `AstFacts`, and the classification below is shared, so
+ * the suppression file and the rule that reads it cannot drift.
  *
- * The gate (`scripts/oxlint-plugin-comment-gate.js`) and the baseline generator
- * (`scripts/comment-gate-baseline.mjs`) must agree on what a violation is, or the
- * suppression file and the rule that reads it are two sources of truth. Both import
- * this module: the plugin adapts oxlint's `sourceCode` into `AstFacts`, the generator
- * adapts `@babel/parser` into the same shape, and the classification below is shared.
- *
- * Provenance: docs/agents/verification-standards.md (the gate's enforcement site).
- * The governance record is pending (Stage 6); this header cites no ADR number because
- * no record for this grammar exists yet.
- *
- * Baseline key (canonical, `baselineKey`): `(path, text, occurrence)` where `path` is
- * repo-relative POSIX, `text` is the comment's raw `value` with no normalization, and
- * `occurrence` is the 0-based index of that exact text among the file's *violations*,
- * in source order. Counting violations rather than all comments keeps a key stable when
- * an allowed duplicate with the same text appears beside a rejected one.
+ * Provenance: docs/agents/verification-standards.md. Baseline key (`baselineKey`):
+ * `(path, text, occurrence)` — repo-relative path, the comment's raw `value`, and the 0-based
+ * index of that exact text among the file's VIOLATIONS, so a key stays stable when an allowed
+ * duplicate with the same text sits beside a rejected one.
  */
 
 /**
  * Tags that make a `//` or `/* *\/` comment carry a reason instead of prose. ANCHORED: the tag must
  * OPEN the text it is matched against, because an unanchored alternation let a tag anywhere in a
- * sentence satisfy the gate — `// fall through … (WHY: never break the view)` passed without being
- * a reason, which is the whole failure this gate exists to prevent.
+ * sentence satisfy the gate — a mid-sentence `(why: never break the view)` passed without being a
+ * reason, which is the whole failure this gate exists to prevent.
  *
  * `Ref:` is the SOLE source-citation tag, and it takes a resolvable target: a repo-relative doc or
- * record path, or an absolute `http(s)` link. The `WHY:`, `Invariant:`, `See ADR-` and
- * `via https://` arms are gone by owner decision: a reason that needs a tag needs a citation a
- * reader can follow, and a bare tag was the shape that let unreviewable prose through.
+ * record path, or an absolute `http(s)` link. The `WHY` and `Invariant` tokens, `See ADR-` and
+ * `via https://` are gone by owner decision: a reason that needs a tag needs a citation a reader
+ * can follow, and a bare tag was the shape that let unreviewable prose through.
  */
 export const ALLOWLIST_RE =
   /^(?:SAFETY:|TODO\(#\d+\):|HACK:|Ref: (?:docs\/[\w./-]+|https?:\/\/\S+))/;
 
 /**
  * A `/** *\/` block carrying a retired tag as TEXT. Containment, not anchoring, and on purpose: a
- * docblock has no tag position to anchor to, and a `WHY:`/`Invariant:` inside one is precisely the
- * escape hatch the `//` rule closes — without this arm a block would become the place a stolen
- * reason goes to live. The fix is the same either way (delete the tag, or cite a record with
- * `Ref:`), so it shares the `prose` key instead of adding a rule kind.
+ * docblock has no tag position to anchor to, and a retired token inside one is precisely the escape
+ * hatch the `//` rule closes — without this arm a block would become the place a stolen reason goes
+ * to live. The fix is the same either way (delete the tag, or cite a record with `Ref:`), so it
+ * shares the `prose` key instead of adding a rule kind.
  */
 export const RETIRED_TAG_RE = /(?:WHY|Invariant):/;
 
@@ -123,6 +114,26 @@ export function isAllowedText(rawValue) {
   if (trimmed === "") return true;
   if (hasTagAtStart(trimmed)) return true;
   return GHERKIN_STEP_RE.test(trimmed) || GHERKIN_HEADING_RE.test(trimmed);
+}
+
+/**
+ * A thrown value's message, for a failure `reason` string. `String` covers the non-`Error` throw,
+ * which the previous inline annotation reported as `undefined`.
+ * @param {unknown} error
+ */
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A `#!` line on line 1 is the interpreter directive, not a comment. Babel records it as
+ * `interpreter`; oxlint surfaces it as a `Shebang` comment (or as a line comment carrying the `!`),
+ * so without this the two layers would disagree about the first line of every executable script.
+ * @param {{ type: string, value: string, loc: { start: { line: number } } }} comment
+ */
+function isShebang(comment) {
+  if (comment.type === "Shebang") return true;
+  return comment.type === "Line" && comment.loc.start.line === 1 && comment.value.startsWith("!");
 }
 
 /** @param {{ type: string, value: string }} comment */
@@ -228,6 +239,7 @@ export function collectViolations(comments, facts) {
   const occurrences = new Map();
   const violations = [];
   for (const comment of comments) {
+    if (isShebang(comment)) continue;
     const verdict = classifyComment(comment, facts, safetyLines);
     if (verdict === null) continue;
     const text = comment.value;
@@ -262,7 +274,7 @@ export function parseBaselineEntries(raw) {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    return { ok: false, reason: `not valid JSON (${/** @type {Error} */ (error).message})` };
+    return { ok: false, reason: `not valid JSON (${messageOf(error)})` };
   }
   const entries = parsed?.entries;
   if (!Array.isArray(entries)) {

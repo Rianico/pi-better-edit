@@ -13,18 +13,18 @@ import {
   useTestHome,
 } from "../support/fixtures.js";
 
-// TICKET-04b: a `text_ref` naming another served file with `mode: "cut"` succeeds as a CORRELATED
-// MULTI-FILE TRANSACTION: the target insert and the source retirement mutate TWO files under one
-// transaction. These tests drive the tool's own seam (normReq + assertReq, then `execute`), so
-// every claim is witnessed through the entry point that reaches it.
-//
-// Guard history (deletion documented here, per the rework ruling): ticket-04 item (iv) refused a
-// foreign `mode: "cut"` in the engine pre-pass ("A foreign-source reference supports mode: copy
-// today..."). That refusal existed because the pre-pass collapsed every foreign reference to a
-// COPY-shaped literal with no retirement target â€” enabling cut without a transaction would have
-// reported success and LEFT THE SOURCE BEHIND. Ticket-04b supplies the missing half (the ordered
-// two-file commit of ADR-0028), so the refusal is deleted deliberately in this commit; the tests
-// below are its replacement witnesses, and `edit.wire-contract.test.ts` keeps the copy-path pins.
+/**
+ * Ticket-04b: a `text_ref` naming another served file with `mode: "cut"` succeeds as a correlated
+ * multi-file transaction â€” the target insert and the source retirement mutate two files under one
+ * ordered commit (docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md), and
+ * these tests drive the tool's own seam (normReq + assertReq, then `execute`).
+ *
+ * Guard history: ticket-04 item (iv) refused a foreign `mode: "cut"` in the engine pre-pass, because
+ * the pre-pass collapsed every foreign reference to a copy-shaped literal with no retirement target â€”
+ * enabling cut without a transaction would have reported success and left the source behind. That
+ * refusal is deleted here deliberately; these tests are its replacement witnesses, and
+ * `edit.wire-contract.test.ts` keeps the copy-path pins.
+ */
 useTestHome();
 
 beforeAll(async () => {
@@ -40,10 +40,12 @@ function admit(raw: unknown): NormalizedEditRequest {
 const SOURCE_BEFORE = "a\nb\nc\nd\n";
 const TARGET_BEFORE = "1\n2\n3\n";
 
-// WHY: the preview witness's oracle: a full serialization of every store table a live cut
-// WHY: touches (plus the id counter and session meta). Row sets are sorted so the comparison is
-// WHY: order-insensitive; the content is order-SENSITIVE where it matters (`updated_at`,
-// WHY: `retired_at`, `line_id_counters.next_id` all change on any store write).
+/**
+ * The preview witness's oracle: a full serialization of every store table a live cut touches, plus
+ * the id counter and session meta. Row sets are sorted so the comparison is order-insensitive; the
+ * content is order-SENSITIVE where it matters â€” `updated_at`, `retired_at` and
+ * `line_id_counters.next_id` all change on any store write.
+ */
 function dumpStoreState(db: DatabaseSync): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const table of [
@@ -100,7 +102,6 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await cutSpan(cwd, [hs[1]!, hs[2]!], ht[0]!);
       expect(isMutationSuccess(result), "the foreign-source cut must succeed").toBe(true);
-      // In-place: the target span [ht0,ht0] (line `1`) is replaced by the cut bytes.
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\nd\n");
     });
@@ -116,8 +117,6 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       expect(isMutationSuccess(result)).toBe(true);
       if (!isMutationSuccess(result)) return;
       const text = result.toolResult.content.map((c) => c.text).join("\n");
-      // Supersedes ticket-04's target-only served set for the CUT path: the model must see fresh
-      // anchors for the retired source as well as the inserted target.
       expect(text).toContain("Successfully edited 2 file(s)");
       const paths = result.toolResult.details.servedByPath?.map((e) => e.path) ?? [];
       expect(paths).toEqual(["target.txt", "source.txt"]);
@@ -132,19 +131,12 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       await serveBoth(cwd);
       const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
       const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
-      // Disturb the leased interior of the source only â€” the same recipe as the attribution tests.
       await writeFile(join(cwd, "source.txt"), "a\nB\nc\nd\n", "utf-8");
       const result = await cutSpan(cwd, [hs[1]!, hs[2]!], ht[0]!);
       expect(isMutationFailure(result), "the drifted leased span must refuse").toBe(true);
       if (!isMutationFailure(result)) return;
-      // Refuse for the DRIFT, not for the retired item-(iv) shape refusal. The drifted line IS a
-      // bound anchor here, so the leased arm surfaces `E_UNVERIFIED_RANGE` (the rows-ABSENT wrap
-      // naming the foreign file) â€” the interior-drift-with-live-bounds recipe of
-      // `edit.foreign-attribution.test.ts` is the `E_STALE_RANGE` twin. The cause is OBSERVED,
-      // not assumed: the refusal itself must name the file that drifted.
       expect(result.code).toBe("E_UNVERIFIED_RANGE");
       expect(result.message).toContain("source.txt");
-      // The pre-pass read saw `b` at line 2, the re-resolve saw `B`: refuse before ANY write.
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_BEFORE);
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\nB\nc\nd\n");
     });
@@ -205,8 +197,6 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await cutSpan(cwd, [hs[1]!, hs[1]!], ht[0]!);
       expect(isMutationSuccess(result)).toBe(true);
-      // One convention, no third path: the retirement re-serializes through the source's own
-      // detected ending, exactly like every other write through `writeAtomic`.
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\r\nc\r\n");
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\n2\n3\n");
     });
@@ -219,11 +209,6 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
       const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const store = await loadHashStore();
-      // WHY: the store-side witness for the preview path (ticket-04b falsifiers): the oracle is
-      // WHY: the table-state comparison itself â€” every row of every store table the live cut
-      // WHY: mutates (snapshots + lineage + leases + served mirror + undo + intent) captured
-      // WHY: before and after. A preview that wrote ANYTHING store-side reddens here even if
-      // WHY: the files stay untouched.
       const stateBefore = dumpStoreState(store.db);
       const result = await execute(
         admit({
@@ -249,8 +234,6 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
         "the preview must still compute the target-side result",
       ).toBe(true);
       if (!isMutationSuccess(result)) return;
-      // The preview shows the TARGET-ONLY insert: the source retirement lives in the commit
-      // path's second plan, which preview never runs.
       expect(result.result).toBe("1\na\nb\n3\n");
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_BEFORE);
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_BEFORE);

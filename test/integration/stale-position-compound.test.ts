@@ -30,7 +30,6 @@ describe("stale-position compound edits", () => {
         ctx,
       );
 
-      // The pre-edit anchor for line 5 no longer resolves: its line identity was retired.
       await expect(
         editTool.execute(
           "e2",
@@ -44,8 +43,6 @@ describe("stale-position compound edits", () => {
         ),
       ).rejects.toThrow(/E_TARGET_LOST/);
 
-      // Re-pointed for I4 (spec §5): the model-visible anchored diff carries the fresh anchor for
-      // the modified row, so a follow-up edit chains with no intermediate read.
       const freshHash = (result.content[0].text as string)
         .split("\n")
         .find((line: string) => line.startsWith("+") && line.includes("│E"))!

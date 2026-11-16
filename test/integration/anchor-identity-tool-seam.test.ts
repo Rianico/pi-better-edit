@@ -130,14 +130,11 @@ describe("anchor identity at the tool seam: raw-byte anchors, lease-surviving fo
         ctx,
       );
 
-      // The anchor edit1's own diff served for the line it wrote — the anchor the model holds
-      // when the formatter runs.
       const pushRow = (edit1.details.diff as string)
         .split("\n")
         .find((row) => row.startsWith("+") && row.includes("out.push(it.name);"))!;
       const preRewriteRef = extractHash(pushRow.slice(1));
 
-      // Whitespace-only relative to what edit1 wrote: the same lines, re-indented.
       await writeFile(abs, RENDER_LINTED, "utf-8");
 
       const edit2: any = await editTool.execute(
@@ -177,8 +174,6 @@ describe("anchor identity at the tool seam: raw-byte anchors, lease-surviving fo
         const refs = await hashRefs(readTool, "nbsp.ts", ctx, ["a\u00A0b"]);
         const nbspRef = refs["a\u00A0b"]!;
 
-        // NBSP -> space: the line's bytes change, its canon does not. A canon-keyed allocator
-        // cannot tell the written line from the line it replaced.
         const result: any = await editTool.execute(
           "e1",
           {
@@ -201,12 +196,9 @@ describe("anchor identity at the tool seam: raw-byte anchors, lease-surviving fo
           .split("\n")
           .find((row) => row.includes('const s = "a b";'))!;
 
-        // WHY: measured before the fix — both serves handed back a probe spelling while the line's
-        // WHY: own content derived a different anchor. The written line's identity is its own bytes.
         expect(extractHash(diffRow.slice(1))).toBe(derived[1]);
         expect(extractHash(readRow)).toBe(derived[1]);
         expect(extractHash(readRow)).not.toBe("AAAA");
-        // The byte change is a real identity change, so the anchor moves with it.
         expect(extractHash(readRow)).not.toBe(nbspRef);
       },
     );
@@ -225,8 +217,6 @@ describe("anchor identity at the tool seam: raw-byte anchors, lease-surviving fo
 
       await writeFile(abs, "func hello() {\n    }\n", "utf-8");
 
-      // The merged line is a different line entity, so the served lease is retired with no live
-      // unshifted bound: the refusal is [E_TARGET_LOST] with no rows (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e1",

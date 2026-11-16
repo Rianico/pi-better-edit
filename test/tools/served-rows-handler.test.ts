@@ -100,8 +100,6 @@ describe("served-rows tool_result handler", () => {
       expect(result).toBeDefined();
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(1);
-      // Re-pointed for I4 (spec §5): the model-visible text is the summary line, a blank line, then
-      // the anchored diff — and the handler reproduces exactly the tool's own content text.
       expect(content[0]!.text).toMatch(/^Successfully edited [^\n]*\n\n/);
       expect(content[0]!.text).toMatch(/^[ +-][A-Za-z0-9]{4}│/m);
       expect(content[0]!.text).toBe(editResult.content[0]!.text);
@@ -177,9 +175,6 @@ describe("served-rows tool_result handler", () => {
         expect(served).toEqual(originalHashes);
       }
 
-      // Re-served unchanged anchors must re-lease against the restored snapshot (a cache hit),
-      // not the newest materialization the pre-undo edit produced. The middle anchor is not
-      // asserted here: the undo blocked-hash rotation rotates it (undo usability is #82's slice).
       const unchanged = [originalHashes[0]!, originalHashes[2]!];
       const restored = loadLeases(store, "test-session", filePath).filter((lease) =>
         unchanged.includes(lease.anchor),

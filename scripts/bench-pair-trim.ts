@@ -1,17 +1,14 @@
 /**
- * Ticket #163 benchmark: the cost of a one-region change to a large file, before/after the
+ * Ticket #163 benchmark: the cost of a one-region change to a large file, before and after the
  * unchanged-boundary trim in patience pairing (ADR-0044). Dev-only, not gated — run
  * `node scripts/bench-pair-trim.mjs`.
  *
- * Two numbers are recorded:
- * - end-to-end: a 100k-line file is materialized, then one line is rewritten (a plain edit, not a
- *   tool call) and the following READ is timed — that read is the cache-miss fallback that hashes
- *   the file and runs patience pairing against the previous snapshot;
- * - pairing alone: `pairSnapshots` over the same two snapshots, with `{ trim: false }` (the full
- *   scan the shortcut replaces) against the default (trimmed) path, in the same process.
+ * Two numbers are recorded: end-to-end, where one line of a 100k-line file is rewritten (a plain
+ * write, not a tool call) and the following READ is timed — the cache-miss fallback that hashes the
+ * file and runs patience pairing against the previous snapshot; and pairing alone, `pairSnapshots`
+ * over the same two snapshots with `{ trim: false }` against the trimmed default.
  *
- * Anchor stability is checked on every sample: the anchors of every unchanged line must be
- * identical before and after the rewrite; only the edited line may move.
+ * Anchor stability is checked on every sample: unchanged lines keep their anchor, the edited one moves.
  */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -74,8 +71,6 @@ const median = (values: number[]): number => {
 };
 
 const dir = await mkdtemp(join(tmpdir(), "pi-bench-pair-"));
-// WHY: the whole sandbox, not just the override — the retired-source walk reads $HOME and
-// WHY: $XDG_CONFIG_HOME and deletes their `.corrupt-*` dumps (#190).
 Object.assign(process.env, sandboxEnv(dir));
 const path = join(dir, "big.txt");
 const baseContent = BASE.join("\n") + "\n";
@@ -101,14 +96,12 @@ async function read(): Promise<number> {
 
 const anchorsOf = (content: string): Promise<string[]> => lineHashes(content, path);
 
-// Materialize the base content; this cold read is the "first materialization" reference row.
 const firstMaterialization = await read();
 const baseAnchors = await anchorsOf(baseContent);
 
 const readTimes: number[] = [];
 let unstable = 0;
 for (let sample = 0; sample < SAMPLES; sample++) {
-  // Fixed-width rewrites keep the size equal; only the bytes of one line (and the stat identity) move.
   const tag = String.fromCharCode(97 + sample).repeat(4);
   const changed = [...BASE];
   changed[EDITED] = `line ${EDITED} lorem ipsum dolor sit amet consectetur ${tag}`;

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+/**
+ * The observer registry is module-global, so every test must leave it empty for the next file in the
+ * same worker: a leaked observer would fire inside an unrelated test case. `afterEach` is the only
+ * place that clearing happens.
+ */
+
 import {
   addServedSpanObserver,
   clearServedSpanObserversForTests,
@@ -19,8 +25,6 @@ function note(
 }
 
 afterEach(() => {
-  // SAFETY: the observer registry is module-global, so every test must leave it empty for the next
-  // SAFETY: file in the same worker — a leaked observer would fire inside unrelated test cases.
   clearServedSpanObserversForTests();
 });
 

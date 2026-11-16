@@ -209,7 +209,7 @@ the *content* is **convention**. The grammar is not this sentence: it is `ALLOWL
 `GHERKIN_HEADING_RE` in `scripts/comment-gate-predicate.mjs`, shared with the baseline generator that owns the
 suppression file, and the tags named here — `SAFETY:`, `TODO(#<digits>):`, `HACK:` — are **among others** in it.
 `Ref:` is the only citation tag and it takes a target: `Ref: docs/<repo-path>`, or `Ref: https://<link>` /
-`Ref: http://<link>`. `WHY:`, `Invariant:`, `See ADR-` and `via https://` are retired — a reason that is worth
+`Ref: http://<link>`. The `WHY` and `Invariant` tags, `See ADR-` and `via https://` are retired — a reason that is worth
 keeping is worth a record to follow, and a tag with nothing behind it was prose wearing a label. A `/** */`
 block is judged structurally instead: module scope only, at most 12 lines, and block TEXT that carries a retired
 tag is prose like any other. An enumeration in a doc decays; the path and the symbol

@@ -3,17 +3,15 @@ import { readFile } from "node:fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
 /**
- * No-error-on-success oracle (spec section 6, item 3: NO ERROR ON
- * SUCCESS, review-ruled form). The predicate is "the call was not
- * refused" — a resolved call — and not `appliedCount > 0`: a
- * noop-with-warnings call applies nothing yet is not an error, so the
- * `W_NOOP` notice and the never-served hint would slip past the count
- * guard. Every resolved call below carries no `[E_*]` token in its
- * content or warnings, and a healed reversal carries
+ * No-error-on-success oracle (spec section 6, item 3: NO ERROR ON SUCCESS, review-ruled form).
+ * The predicate is "the call was not refused" — a resolved call — and not `appliedCount > 0`:
+ * a noop-with-warnings call applies nothing yet is not an error, so the `W_NOOP` notice and
+ * the never-served hint would slip past the count guard. Every resolved call below carries no
+ * `[E_*]` token in its content or warnings, and a healed reversal carries
  * `[USER] [W_REVERSED_ANCHORS]`.
  *
- * Falsifiability: `assertNoErrorOnSuccess` fails planted success text
- * holding an `[E_*]` token (see the negative control below).
+ * Falsifiability: `assertNoErrorOnSuccess` fails planted success text holding an `[E_*]` token
+ * (see the negative control below).
  */
 
 const ERROR_TOKEN = /\[E_[A-Z0-9_]+\]/;
@@ -94,8 +92,6 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
         text: getText(first),
         ...(warnings !== undefined ? { warnings } : {}),
       });
-      // The second identical resend applies nothing yet warns: the count
-      // guard would miss it, the not-refused predicate still holds it.
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
       const text = getText(second);
       expect(text).toContain("No changes made");

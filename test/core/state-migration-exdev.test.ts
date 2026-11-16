@@ -1,10 +1,8 @@
 /**
- * The cross-device fallback and the marker's honesty (#190).
- *
- * WHY this is a separate file: reproducing `EXDEV` means intercepting `renameSync`, and the mock
- * below replaces `node:fs` for everything this file's module graph imports. Keeping it in its own
- * file keeps that blast radius off the ordinary migration suite, which asserts real filesystem
- * behaviour.
+ * The cross-device fallback and the marker's honesty (#190). Reproducing `EXDEV` means
+ * intercepting `renameSync`, and the mock below replaces `node:fs` for everything this file's
+ * module graph imports, so it lives in its own file to keep that blast radius off the
+ * ordinary migration suite.
  *
  * What these pin:
  *  1. `rename` across filesystems is not a lost move — the bytes are copied and the source removed;
@@ -117,7 +115,6 @@ describe("a rename across filesystems", () => {
     expect(existsSync(join(retired, "hash-store.json"))).toBe(false);
     expect(await readFile(join(stateRoot(), "diagnostics.log"), "utf-8")).toContain('"old"');
     expect(existsSync(join(retired, "diagnostics.log"))).toBe(false);
-    // The copy is a completed move, so the pass may record itself as done.
     expect(existsSync(markerPath())).toBe(true);
   });
 });
@@ -135,7 +132,6 @@ describe("a move that fails outright", () => {
     expect(existsSync(markerPath())).toBe(false);
     expect(reports.some((line) => /could not (?:move|copy)/.test(line))).toBe(true);
 
-    // A fresh process (same directories, no marker) must try again rather than trust the half pass.
     control.renameFailure = null;
     control.copyFailure = null;
     migrateLegacyState(report);

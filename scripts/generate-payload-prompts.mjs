@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// Generate prompts/edit.md, edit-snippet.md, edit-guidelines.md from payload-contract single source.
-// Run: npx tsx scripts/generate-payload-prompts.mjs  (or node with --loader tsx)
+/**
+ * Generates prompts/edit.md, edit-snippet.md and edit-guidelines.md from the single
+ * source of truth in `src/payload-contract.ts`.
+ * Run: npx tsx scripts/generate-payload-prompts.mjs  (or node with --loader tsx)
+ */
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

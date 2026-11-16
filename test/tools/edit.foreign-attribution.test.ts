@@ -11,10 +11,13 @@ import {
   useTestHome,
 } from "../support/fixtures.js";
 
-// REMEDIATION-2 item A: a foreign-source reference that fails under a LEASED code must render its
-// rows SERVED or ABSENT — never unattributable foreign rows under the target-side fresh-read
-// heading. These tests drive the same seam pair the tool uses (normReq + assertReq, then the
-// engine `execute`), so each refusal is witnessed through the entry point that reaches it.
+/**
+ * A foreign-source reference that fails under a leased code must render its rows
+ * SERVED or ABSENT — never unattributable foreign rows under the target-side
+ * fresh-read heading (REMEDIATION-2 item A). These tests drive the seam pair the
+ * tool uses (normReq + assertReq, then the engine `execute`), so each refusal is
+ * witnessed through the entry point that reaches it.
+ */
 useTestHome();
 
 beforeAll(async () => {
@@ -34,10 +37,13 @@ type ForeignFailure = {
   targetBytes: string;
 };
 
-// Fixture: `source.txt` served, a disturbance that invalidates part of its served state, then a
-// `target.txt` edit whose text_ref names a stale span of the foreign file. The leased shapes are
-// red-first verified against the pre-fix tree: the pass-through returned the leased code with the
-// FOREIGN file's fresh rows rendered under `Current range (fresh read):` and no file name.
+/**
+ * Fixture: `source.txt` served, a disturbance that invalidates part of its served
+ * state, then a `target.txt` edit whose text_ref names a stale span of the foreign
+ * file. The leased shapes were red-first verified against the pre-fix tree, where the
+ * pass-through rendered the FOREIGN file's rows under `Current range (fresh read):`
+ * with no file name.
+ */
 async function foreignLeasedFailure(
   disturb: (cwd: string, hs: string[]) => Promise<[string, string]>,
   expectSourceAfter: string,
@@ -80,8 +86,6 @@ async function foreignLeasedFailure(
       sourceBytes: await readFile(join(cwd, "source.txt"), "utf-8"),
       targetBytes: await readFile(join(cwd, "target.txt"), "utf-8"),
     };
-    // Pin the disturbance landed: refusing with the source already back at its served bytes
-    // would make the failure hollow.
     expect(failure.sourceBytes).toBe(expectSourceAfter);
   });
   return failure;
@@ -96,7 +100,6 @@ async function retireByEdit(cwd: string, edit: { from: string; to: string; text:
     cwd,
     { sessionKey: TEST_SESSION_ID },
   );
-  // Pin the fixture itself: if the retirement did not land, the leased failure below is fake.
   expect(isMutationSuccess(retired), "fixture retirement must succeed").toBe(true);
 }
 
@@ -109,11 +112,8 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
       },
       "B\nb\nc\nd\n",
     );
-    // §0 exact-code pins hold: the leased code passes through unchanged.
     expect(code).toBe("E_UNVERIFIED_RANGE");
-    // (a) the foreign failure names the foreign path.
     expect(message).toContain("source.txt");
-    // (b) rows not in the served set are ABSENT: no fresh-read heading, no row glyphs at all.
     expect(message).not.toContain("Current range (fresh read)");
     expect(message).not.toContain("│");
     expect(sourceBytes).toBe("B\nb\nc\nd\n");
@@ -121,12 +121,6 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
   });
 
   it("E_STALE_RANGE names the foreign file and renders no foreign rows", async () => {
-    // WHY: an EXTERNAL same-length rewrite of one interior line kills that line's identity without
-    // WHY: moving anything: the boundaries stay live at their served coordinates, but the interior
-    // WHY: served line `b` is retired in the fresh snapshot, so `verifyRebasedSpan` fails closed
-    // WHY: with [E_STALE_RANGE] (served-verification.ts:362, the recipe of the target-side
-    // WHY: served-range-verification.test.ts:15-44). A pure shift is NOT enough: the foreign
-    // WHY: pre-pass rebases it back into agreement and the copy succeeds.
     const { code, message, sourceBytes, targetBytes } = await foreignLeasedFailure(
       async (cwd, hs) => {
         await writeFile(join(cwd, "source.txt"), "a\nB\nc\nd\n", "utf-8");

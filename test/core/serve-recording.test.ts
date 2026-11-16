@@ -18,8 +18,6 @@ import {
 import { apply, execEdits } from "../../src/mutation-engine/pipeline.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 
-// WHY: the engine seam takes the admission-normalized request (ticket-01 union) — wire
-// WHY: fixtures go through the same admission boundary the tool uses.
 function req(input: unknown): NormalizedEditRequest {
   const normalized = normReq(input);
   assertReq(normalized);
@@ -77,8 +75,6 @@ describe("planServeRecording — pure recording policy", () => {
 });
 
 describe("recordDiff — persistence through served-state", () => {
-  // WHY: these fake rows have no materialized snapshot; "" names none, so no lease is granted
-  // WHY: and the assertions stay about the legacy served mirror.
   const NO_SNAPSHOT = snapshotHashFor("");
   it("records plain rows when no line count is provided, keeping the unchanged prefix", async () => {
     await withTempHome(async (home) => {
@@ -414,9 +410,6 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
       const seed = await readNormFile("dup.ts", home, { store });
       const handle = createSessionHandle("s1", seed.absolutePath, store);
       await handle.record(seed.fileHashes.map((hash, position) => ({ position, hash })));
-      // WHY: a real `read` names the snapshot it served, so every row is leased (spec §3.1.2). A
-      // WHY: hand-seeded mirror row without a contentHash grants no lease and now fails closed with
-      // WHY: [E_STALE_ANCHOR] instead of content-resolving (ADR-0016, issue #96).
       await handle.recordEpoch({
         rows: seed.fileHashes.map((hash, position) => ({ position, hash })),
         lineCount: seed.fileHashes.length,
@@ -508,11 +501,6 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
       );
       expect(second.appliedCount).toBe(1);
       expect(second.result).toContain("const d = 40;");
-      // WHY: the injected rotation writes mirror rows whose anchors hold no lease, and canon
-      // WHY: evidence is derived from leases (#151) — with no evidence the scan stays silent and the
-      // WHY: plain hash-equality verdict stands, so the unverifiable rotation is reported, never
-      // WHY: silently suppressed. The suppression rule itself is pinned in `test/core/drift.test.ts`
-      // WHY: with real canon digests ("suppresses hash-rotated duplicates whose canon survives").
       expect(second.driftNotice).toBeDefined();
       const legacyLines = second.result.split("\n");
       if (legacyLines.at(-1) === "") legacyLines.pop();
@@ -558,7 +546,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const path = join(home, "revert.txt");
       const original = "alpha\nbravo\ncharlie\n";
       const originalHashes = await materializedLineHashes(original, path);
-      // a later snapshot for the same path must not steal the identity of the served content
       await materializedLineHashes("alpha\nBRAVO\ncharlie\n", path);
 
       const handle = createSessionHandle(SESSION, path, store);
@@ -612,12 +599,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const pathB = join(home, "b.ts");
       const lineA = "} = verification ?? {};";
       const lineB = "clearServedRefusals(absolutePath);";
-      // File A's own allocation names its anchor; file B is served under the SAME anchor string,
-      // which is the same-anchor collision across two files that the process-global hash->canon
-      // map used to leak through.
       const anchor = (await materializedLineHashes(lineA, pathA))[0]!;
-      // WHY: canon evidence is derived from the leases a serve grants (#151), never from a stored canon
-      // WHY: array, so each file is served against the snapshot that actually holds its own line.
       await upsertSnapshotFor({
         path: pathA,
         snapshotHash: snapshotHashFor(lineA),
@@ -641,7 +623,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       });
 
       expect(await loadCanonDigests(SESSION, pathA)).toEqual([canonDigest(lineA)]);
-      // WHY: pre-#149 this read back file A's line — a false [E_STALE_RANGE] on the next edit of B.
       expect(await loadCanonDigests(SESSION, pathB)).toEqual([canonDigest(lineB)]);
     });
   });
@@ -706,7 +687,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const hashesA = await materializedLineHashes(contentA, path);
       const handle = createSessionHandle(SESSION, path, store);
 
-      // read A: snapA materializes and leases its anchors
       await handle.recordEpoch({
         rows: hashesA.map((hash, position) => ({ position, hash })),
         lineCount: hashesA.length,
@@ -716,8 +696,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       });
       const idsA = new Map(loadLeases(store, SESSION, path).map((l) => [l.anchor, l.line_id]));
 
-      // edit to B: the edit path's post-write commit materializes snapB authoritatively,
-      // which retires A's leases; the dense diff serve then leases B's anchors
       const contentB = "alpha\nBRAVO\ncharlie\n";
       const hashesB = await materializedLineHashes(contentB, path);
       await upsertSnapshotFor(
@@ -744,7 +722,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
           .map((lease) => lease.anchor),
       ).toEqual(hashesB);
 
-      // serve A again (cyclic edit bar->foo, or undo revert): snapA is a cache hit, zero new ids
       await handle.recordDiff(
         hashesA.map((hash, position) => ({ position, hash })),
         {
@@ -781,7 +758,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       });
       const idsA = new Map(loadLeases(store, SESSION, path).map((l) => [l.anchor, l.line_id]));
 
-      // the edit that undo reverts
       const contentB = "alpha\nBRAVO\ncharlie\n";
       const hashesB = await materializedLineHashes(contentB, path);
       await handle.recordDiff(
@@ -793,7 +769,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
         },
       );
 
-      // undo restores A; its snapshot is a cache hit so no new ids are issued
       await handle.recordLeases(
         hashesA.map((hash, position) => ({ position, hash })),
         snapshotHashFor(contentA),
@@ -828,7 +803,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       });
       const idsA = new Map(loadLeases(store, SESSION, path).map((l) => [l.anchor, l.line_id]));
 
-      // edit A -> B: the post-edit diff serve materializes snapB and retires A's leases
       const contentB = "alpha\nBRAVO\ncharlie\n";
       const first = await apply(
         req({
@@ -842,7 +816,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       expect(await readFile(path, "utf-8")).toBe(contentB);
       const hashesB = await materializedLineHashes(contentB, path);
 
-      // edit B -> A: snapA is a cache hit, so the diff serve must re-bind A's leases to snapA
       const second = await apply(
         req({
           file: "cyclic-pipeline.txt",
@@ -910,8 +883,6 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
         { store, sessionKey: SESSION },
       ).catch((error: unknown) => error)) as Error;
 
-      // The failing item keeps its OWN code — the unleased anchor is what the model must fix — plus
-      // the atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(
@@ -923,7 +894,6 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       expect(leases.map((lease) => lease.anchor)).toEqual(hashes);
       expect(leases.map((lease) => lease.retired_at)).toEqual([null, null, null]);
 
-      // 0 stale retries: the model can immediately retry with the anchors it already holds.
       const retried = await apply(
         req({
           file: "nothing.txt",

@@ -9,8 +9,6 @@ import { fileSnap, prepareFile, statKeyOf } from "../../src/file-content/index.j
 import { findStatSnapshotFor, snapshotHashFor } from "../../src/snapshot-store";
 
 const CONTENT_A = "alpha\nbravo\ncharlie\ndelta\n";
-// WHY: same byte length, same line count, every line's canon different — the change a stat identity
-// that failed to advance would otherwise hide (ADR-0043's fallback).
 const CONTENT_B = "alphA\nbravO\ncharliE\ndeltA\n";
 
 interface SnapshotRow {
@@ -66,7 +64,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
         ctx,
       );
 
-      // Same bytes, same anchors, same epoch: the second read is the first read's file version.
       expect(getText(second)).toBe(getText(first));
       expect((second.details as { snapshotId?: string }).snapshotId).toBe(
         (first.details as { snapshotId?: string }).snapshotId,
@@ -76,8 +73,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       expect(row?.snapshot_hash).toBe(snapshotHashFor(CONTENT_A));
       expect(row?.stat_key).toBe(statKeyOf(await stat(canonicalPath)));
 
-      // The stat lookup names the committed snapshot, and the epoch it reports is the one
-      // `fileSnap` would produce — no content re-hash on the adoption path.
       const store = await loadHashStore();
       const matched = await findStatSnapshotFor(canonicalPath, row!.stat_key!);
       expect(matched?.snapshotHash).toBe(snapshotHashFor(CONTENT_A));
@@ -119,7 +114,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
 
       expect(prepared.lineTotals.split).toBe(6000);
       expect(prepared.statAdoption).toBeDefined();
-      // WHY: 20 anchors for the page, not 6001 for the file — the walk this ticket removes.
       expect(prepared.fileHashes).toHaveLength(20);
       expect(prepared.served).toHaveLength(20);
       expect(prepared.fileHashes).toEqual(
@@ -144,10 +138,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       const anchorsA = servedHashes(first);
       expect(anchorsA).toEqual(await expectedAnchors(path, CONTENT_A));
 
-      // Rewrite with the same size and the same mtime: only ctime moved, so a stat lookup would miss.
-      // Forge the missing increment (the coarse-timestamp filesystem this test stands in for) by
-      // stamping the OLD snapshot with the file's CURRENT identity. Now the stat key matches a
-      // snapshot the bytes no longer agree with — the canon check is the only thing left.
       await writeFile(path, CONTENT_B, "utf-8");
       await utimes(canonicalPath, before.atime, before.mtime);
       const lyingKey = statKeyOf(await stat(canonicalPath));
@@ -168,7 +158,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       expect(anchorsB).not.toEqual(anchorsA);
       expect(getText(second)).toContain("alphA");
 
-      // The fallback materialized B and stamped the identity it observed, so the next read is fast.
       const rowB = (await snapshotRows(path)).find(
         (row) => row.snapshot_hash === snapshotHashFor(CONTENT_B),
       );
@@ -195,7 +184,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       await utimes(canonicalPath, new Date(), new Date(Date.now() + 5_000));
       const touchedKey = statKeyOf(await stat(canonicalPath));
 
-      // The old identity no longer names this file version: the stat path cannot adopt.
       expect(touchedKey).not.toBe(before?.stat_key);
       expect(await findStatSnapshotFor(canonicalPath, touchedKey)).toBeUndefined();
 
@@ -209,7 +197,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       expect(getText(second)).toBe(getText(first));
       expect(servedHashes(second)).toEqual(await expectedAnchors(path, CONTENT_A));
 
-      // Content-hash adoption stamped the observed version; the next read takes the stat path.
       const store = await loadHashStore();
       expect((await snapshotRows(path))[0]?.stat_key).toBe(touchedKey);
       const prepared = await prepareFile(path, cwd, {
@@ -347,7 +334,6 @@ describe("stat-identity snapshot adoption (ADR-0043)", () => {
       });
       expect(prepared.statAdoption).toBeDefined();
       const all = await expectedAnchors(path, lines.join("\n") + "\n");
-      // Each window's served anchors are its own lines, sliced from the one page walk.
       expect(prepared.served.map((row) => row.hash)).toEqual([
         ...all.slice(1, 4),
         ...all.slice(11, 15),

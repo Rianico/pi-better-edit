@@ -14,8 +14,6 @@ import { DIFF_PREVIEW_CONTEXT } from "../../src/constants.js";
 import { lineHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import { useTestHome } from "../support/fixtures.js";
 
-// WHY: the engine seam's input is the admission-normalized request (ticket-01 union) — these
-// WHY: fixtures hand the wire payload through the same admission boundary the tool uses.
 function req(input: unknown): NormalizedEditRequest {
   const normalized = normReq(input);
   assertReq(normalized);
@@ -94,9 +92,6 @@ describe("MutationEngine — deep seam", () => {
       expect(isMutationSuccess(result)).toBe(true);
       if (!isMutationSuccess(result)) return;
       const file = result.raw;
-      // WHY: pin the single-projection claim: the preview result's diff text equals what
-      // WHY: `genDiff` produces for the same inputs at the preview pane's context — no
-      // WHY: synthesized empty diff is left behind the projection.
       const projected = genDiff(
         file.originalNormalized,
         file.result,

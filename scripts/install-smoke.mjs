@@ -1,23 +1,13 @@
 #!/usr/bin/env node
 /**
- * End-to-end install smoke for both install surfaces.
+ * End-to-end install smoke for both install surfaces, driven through the real pi CLI rather
+ * than a model of it: a git source (served locally by `git daemon`) that clones, runs
+ * `git clean -fdx` and installs with devDependencies omitted, so `prepare` must build the
+ * artifact from scratch; a `pnpm pack` tarball whose entry must already be inside it and load
+ * with no bundler in the dependency tree; and an `update` that rebuilds the artifact.
  *
- * WHY (ADR-0027): the artifact has to be the extension entry on the git source and on the
- * packed tarball, and pi drops a manifest entry whose path does not exist without a message.
- * So this drives the real pi CLI, not a model of it:
- *
- *   git surface     pi installs a git URL (served locally by `git daemon`), which clones the
- *                   repo, runs `git clean -fdx` — deleting the gitignored artifact — and runs
- *                   the package manager with devDependencies omitted, so `prepare` must build
- *                   the artifact from scratch.
- *   tarball surface `pnpm pack` produces the tarball; the entry must already be inside it, and
- *                   the extracted package must load with no bundler in its dependency tree.
- *   update          a new commit on the git source, then `pi update`, which resets, cleans and
- *                   re-runs the install; the rebuilt artifact must carry the new code.
- *
- * Each run then drives pi in RPC mode and asserts: no extension-load error, exactly one
- * extension resolved from the package, its registered command present, and the resolved
- * extension path is the artifact.
+ * Each run asserts no extension-load error, exactly one extension resolved from the package,
+ * its registered command present, and the resolved extension path is the artifact (ADR-0007).
  *
  * Usage: node scripts/install-smoke.mjs [--keep] [--pi <binary>]
  */
@@ -255,10 +245,6 @@ async function main() {
         );
       }
     }
-    // WHY: a real dependency install, not an install performed inside the package. npm runs no
-    // lifecycle script for a tarball dependency, so the artifact can only have come from the
-    // tarball, and a plain install (no --legacy-peer-deps) is what exercises
-    // peerDependenciesMeta: none of the three host packages may reach the consumer's tree.
     const consumerProject = join(scratch, "consumer");
     mkdirSync(consumerProject, { recursive: true });
     writeFileSync(
@@ -314,8 +300,6 @@ async function main() {
     });
 
     const marker = `smoke-marker-${Date.now().toString(36)}`;
-    // WHY: the marker goes on the entry, not on a bundled module — esbuild drops an unused
-    // export of a bundled module, and the rebuild has to be observable in the artifact.
     const sourceEntry = join(source, "index.ts");
     writeFileSync(
       sourceEntry,

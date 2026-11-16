@@ -16,7 +16,6 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     const _srcFiles = readdirSync("src", { recursive: true } as unknown as {
       recursive: boolean;
     }) as unknown as string[];
-    // fallback: use manual walk if recursive not supported
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const entry of readdirSync(dir, {
         withFileTypes: true,
@@ -41,7 +40,6 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
         content.includes('from "../../src/served-state') ||
         content.includes("served-state.js")
       ) {
-        // allow comments that mention served-state
         const lines = content
           .split("\n")
           .filter((l) => l.includes("from") && l.includes("served-state"));
@@ -62,7 +60,6 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     expect(typeof handle.markDriftReported).toBe("function");
     expect(typeof handle.clearDrift).toBe("function");
     expect(typeof handle.retire).toBe("function");
-    // store lifecycle not exposed on handle
     expect((handle as unknown as Record<string, unknown>).withStore).toBeUndefined();
     expect((handle as unknown as Record<string, unknown>).withBusyRetry).toBeUndefined();
   });
@@ -77,11 +74,9 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
   it("Memory adapter still justifies the seam (store can be injected)", async () => {
     const { MemorySnapshotStore } = await import("../../src/store.js");
     const { DatabaseSync } = await import("node:sqlite");
-    // MemorySnapshotStore is the test adapter; handle injection is verified by existing integration tests
     const mem = new MemorySnapshotStore();
     expect(typeof mem.get).toBe("function");
     expect(typeof mem.put).toBe("function");
-    // verify handle can be constructed with a custom store without throwing on creation
     const db = new DatabaseSync(":memory:");
     const { ensureServedSchema } = await import("../../src/served-session/session.js");
     ensureServedSchema(db);
@@ -95,9 +90,6 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     const store = await import("../../src/snapshot-store");
     expect(typeof store.vacuumSnapshots).toBe("function");
     const sessionSource = readFileSync("src/served-session/session.ts", "utf-8");
-    // WHY: the sweep is pure `file_snapshots` / `line_lineage` retention (spec §3.6.1); its budget
-    // WHY: constants and its DELETE statements belong to the store that owns those tables, while
-    // WHY: the session module keeps only session/lease concerns.
     expect(sessionSource).not.toContain("VACUUM_");
     expect(sessionSource).not.toContain("export function vacuumSnapshots");
     expect(sessionSource).not.toContain("DELETE FROM file_snapshots WHERE snapshot_id = ?");

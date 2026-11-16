@@ -32,9 +32,6 @@ describe("resEdit", () => {
   });
 
   it("rejects a 3-char anchor at the resolve seam with no compatibility path", () => {
-    // WHY: the width flip must not leave a compat path — a 3-char token is
-    // WHY: malformed at width 4 even though it was valid at width 3, while a
-    // WHY: live-width token resolves.
     const stale: HTEdit = { anchor_from: "aB3", anchor_to: "aB3", text: "x" };
     expect(() => resEdit(stale)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
     expect(() => resEdit(stale)).toThrow(/4-char/);

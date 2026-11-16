@@ -1,3 +1,15 @@
+/**
+ * The page is the only witness that can see whether the text was split: the rendered bytes
+ * are identical either way. So the array primitives record every call with the frames that
+ * made it, then delegate — recording rather than throwing, because the best-effort handlers
+ * downstream would swallow a throw and the witness would pass for the wrong reason.
+ * The audit parses `src/file-content/*` and `src/read.ts` with `@babel/parser` and counts
+ * two spellings of a line split: `X.split(<LF literal>)`, and a bare or member-form call to
+ * `splitLines`/`visLines`. Comments, string contents and regex literals cannot hide a match
+ * or invent one. Every other spelling reads as zero by design — a computed property, an
+ * aliased callee, a wrapped argument, a non-LF separator such as `path.split("/")` — and the
+ * per-file allowance is the deliberate friction that makes a new split state its reason.
+ */
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
@@ -7,11 +19,6 @@ import { MAX_HASH_LINES } from "../../src/hashline/hash-identity.js";
 import { decodeNormText } from "../../src/file-content/loader.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
-// WHY: a page is the only witness that can see whether the text was split: the rendered bytes are
-// WHY: identical either way. So the array primitives record every call, with the frames that made it,
-// WHY: and then delegate — recording instead of throwing, because a throw would be swallowed by the
-// WHY: best-effort handlers downstream (the snapshot store's lineage write, for one) and the witness
-// WHY: would pass for the wrong reason. The frames are what tell a legitimate caller from the page path.
 interface SplitCall {
   name: string;
   frames: string[];
@@ -48,8 +55,6 @@ function callsFromSnapshotStore(): SplitCall[] {
 }
 
 describe("the witness's own mock", () => {
-  // WHY: the control that keeps the rest honest: these mocks have to record AND still return the real
-  // WHY: lines, or every assertion below would pass without observing anything at all.
   it("records the primitives it replaces and still delegates to them", () => {
     splitCalls.length = 0;
     expect(utils.splitLines("a\nb\n")).toEqual(["a", "b"]);
@@ -144,14 +149,6 @@ describe("the served page never materializes the line array", () => {
       await expect(run({ windows: [{ offset: 9, limit: 1 }] })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
       );
-      // WHY: these two primitives have plenty of other callers in the program — lifecycle hooks, edit
-      // WHY: responses, the mutation engine — and the claim here is a partition: in a served read they
-      // WHY: are called by the snapshot store's lineage write and by nothing else on the read path.
-      // WHY: It is not a claim that a split happened: when nothing line-materializes, 0 = 0 is the right
-      // WHY: answer, and the store stopping its own split is not this witness's business. What makes the
-      // WHY: negative half falsifiable is the revert control — building the page from `visLines` reddens
-      // WHY: these assertions (recorded in the commit that introduced them) — and what keeps the recorder
-      // WHY: itself honest is the control at the top of this file.
       expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
     });
   });
@@ -169,8 +166,6 @@ describe("the served page never materializes the line array", () => {
   });
 
   it("keeps the total header for a windowed read of an empty file", async () => {
-    // WHY: the empty marker row carries a phantom position; ranging it would print `lines 1-1 of 0`.
-    // WHY: Nothing was shown, so the header stays the total — the same header the whole-file read gets.
     await withTempFile("empty.txt", "", async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute(
@@ -185,8 +180,6 @@ describe("the served page never materializes the line array", () => {
   });
 
   it("refuses a preloaded file over the anchor cap without materializing its lines", async () => {
-    // WHY: a preloaded file skips the decode that counts newlines mid-stream, so this refusal is the
-    // WHY: loader's own line count — the one place a second split could creep back in unnoticed.
     const text = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
     await withTempFile("huge.ts", text, async ({ cwd }) => {
       splitCalls.length = 0;
@@ -201,9 +194,6 @@ describe("the served page never materializes the line array", () => {
   }, 300_000);
 
   it("refuses a CR-only file over the cap before anything anchors it", async () => {
-    // WHY: `toLF` turns a lone `\r` into a line break, so the cap's count is the normalized text's; this
-    // WHY: file is only over the cap after normalization, and the refusal has to happen here — in the
-    // WHY: loader, without a line array — not later inside the anchor space.
     await withTempFile("cr-only.ts", "x\r".repeat(MAX_HASH_LINES + 1), async ({ cwd }) => {
       splitCalls.length = 0;
       const { readTool, ctx } = setupReadTest(cwd);
@@ -215,9 +205,6 @@ describe("the served page never materializes the line array", () => {
   }, 300_000);
 
   it("refuses a CR-only preloaded file at the cap, before it can reach the anchor space", async () => {
-    // WHY: the preloaded route skips the decode that counts newlines mid-stream, so it is the loader's
-    // WHY: own count that has to see the normalized line space: an LF fixture cannot tell the two apart
-    // WHY: because raw and normalized counts agree on it.
     const text = "x\r".repeat(MAX_HASH_LINES + 1);
     await withTempFile("cr.ts", text, async ({ cwd }) => {
       splitCalls.length = 0;
@@ -232,8 +219,6 @@ describe("the served page never materializes the line array", () => {
   }, 300_000);
 });
 
-// WHY: the second half of the witness: the primitive is adopted by both seams only if it stays
-// WHY: ignorant of them. Comments may name what the walk avoids; the CODE may not mention it.
 describe("the walk is mode-agnostic", () => {
   it("names no render mode, anchor, hash, snapshot or store", () => {
     const names = namedValues("src/file-content/line-walker.ts");
@@ -247,47 +232,7 @@ describe("the walk is mode-agnostic", () => {
   });
 });
 
-// WHAT THIS AUDIT COVERS, and what it does not.
-//
-// It PARSES the files the page itself is built in — `src/file-content/*` (derived from the directory, so
-// a file added there is audited without anyone registering it) plus `src/read.ts` — with
-// `@babel/parser`, the same instrument two other arch tests use, and walks the AST. Formatting,
-// comments, string contents and regex literals therefore cannot hide a match or invent one; an earlier
-// revision of this audit used a hand-written lexer and needed three patches in two rounds for exactly
-// those.
-//
-// It counts the two ways this codebase turns text into a line array:
-//   * `X.split(<newline literal>)` — `"\n"`, `'\n'`, a lone-quasi `` `\n` `` or `/\n/` — however it is
-//     laid out, including a chain wrapped across lines (`content\n  .split("\n")`, which this repo's own
-//     formatter emits); and
-//   * a call to `splitLines(...)`/`visLines(...)`, bare or as a member (`deps.visLines(normalized)`, which
-//     this repo has) — naming them is fine: `index.ts` re-exports `visLines`, calling one is not.
-//
-// It does NOT count, and does not claim to:
-//   * any other spelling of a line split than a literal member access whose argument is the LF literal:
-//     a computed property (`t["split"]("\n")`), a detached or aliased callee (`t.split.bind(t)`,
-//     `const { split } = t`, `String.prototype.split.call(t, "\n")`, `Reflect.apply(...)`), a wrapped
-//     argument (`"\n" as const`, `...["\n"]`) or another newline encoding (`"\r\n"`, `/\r?\n/`) reads
-//     as zero. That is a CLASS, not a list to finish: an audit over a language construct has a boundary,
-//     and this is where this one is stated. Widening it to bare identifiers would instead count
-//     `split(sep)` for paths, which is the false alarm this guard cannot afford;
-//   * the FILE'S TEXT specifically: only the argument is read — `path.split("/")` is not counted (right)
-//     and neither would `rendered.split("\n")` be distinguished from the text's (wrong, but that is
-//     what the allowance below is for);
-//   * shared machinery outside the register: `src/prompts.ts` (on the read path through `read.ts`, and
-//     already holding a wrapped line split), `utils.ts` (where the primitives are defined),
-//     `hashline/*` (the edit path's whole-content hashing) and `snapshot-store/*` (the lineage write
-//     that legitimately keeps a line array, bounded by the anchor-space ceiling). Those modules are
-//     covered only for the PRIMITIVES, at runtime, by the recording witness above: any call to
-//     `splitLines`/`visLines` during a real read is recorded with the frames that made it, whichever
-//     file that is. An inline `text.split("\n")` in one of them would be missed by both — accepted
-//     rather than growing into an import-graph rule that reddens on the edit path.
-//
-// The allowance is the deliberate friction: a new line split in an audited file must be added here with
-// its reason, which is the moment to ask whether the page should be materializing lines at all.
 const ALLOWED_LINE_SPLITS: Record<string, number> = {
-  // Two splits of output this file has already RENDERED: a preview string and a withheld marker's body.
-  // Nothing checks the receivers are those two — only the count is the guard.
   "src/file-content/preview.ts": 2,
 };
 
@@ -354,8 +299,6 @@ function lineSplitsInSource(code: string): string[] {
     if (callee?.type === "MemberExpression" || callee?.type === "OptionalMemberExpression") {
       const property = callee.property as AstNode | undefined;
       const name = property?.type === "Identifier" ? property.name : undefined;
-      // The member form of the primitives — `deps.visLines(normalized)`, which this repo has — is the
-      // same call as the bare form, so both count; so does an optional chain (both are AST shapes).
       if (
         (name === "split" && isNewlineLiteral(args[0])) ||
         name === "splitLines" ||
@@ -412,8 +355,6 @@ function importsInSource(code: string): string[] {
       const callee = node.callee as AstNode | undefined;
       const args = (node.arguments as unknown[] | undefined) ?? [];
       const first = args[0] as { type?: string; value?: string } | undefined;
-      // Babel reads `import("x")` as a CallExpression whose callee IS the `import` keyword (an
-      // `ImportExpression` only appears when the parser is asked to create them), so both shapes count.
       const reaches =
         callee?.type === "Import" || (callee?.type === "Identifier" && callee.name === "require");
       if (reaches && first?.type === "StringLiteral") found.push(String(first.value));
@@ -446,9 +387,6 @@ describe("the read path holds no split of the file's text", () => {
   });
 });
 
-// WHY: the instrument's own tests. What this audit reads is the thing most likely to rot — an earlier
-// WHY: revision lost a real split to a `//` inside a URL and needed a lexer to recover it — so the reader
-// WHY: is pinned here rather than trusted, and its blind spot is asserted AS a blind spot.
 describe("the audit's reader", () => {
   it("sees a split through a wrapped chain, a template separator and a regex separator", () => {
     expect(

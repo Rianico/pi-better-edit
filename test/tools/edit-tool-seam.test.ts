@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
 
-// TDD red: C1 demands a deep EditTool module behind a narrow seam
-// and a TuiPresenter adapter that owns the Framework (pi-tui) boundary.
-
 describe("C1 deepening — Edit Tool seam", () => {
   it("exposes deep EditTool module with execute/preview interface", async () => {
     const mod = await import("../../src/edit-tool.js");
@@ -13,7 +10,6 @@ describe("C1 deepening — Edit Tool seam", () => {
     expect(tool).toHaveProperty("preview");
     expect(typeof tool.execute).toBe("function");
     expect(typeof tool.preview).toBe("function");
-    // graded surface: EditTool must not leak TUI types
     const editToolSource = readFileSync("src/edit-tool.ts", "utf-8");
     expect(editToolSource).not.toContain("pi-tui");
     expect(editToolSource).not.toContain("Markdown");
@@ -32,7 +28,6 @@ describe("C1 deepening — Edit Tool seam", () => {
     const src = readFileSync("src/tui-presenter.ts", "utf-8");
     expect(src).toContain("makeRenderCall");
     expect(src).toContain("makeRenderResult");
-    // TuiPresenter is the only place that should import pi-tui
     expect(src).toContain("pi-tui");
   });
 
@@ -40,12 +35,10 @@ describe("C1 deepening — Edit Tool seam", () => {
     const editSrc = readFileSync("src/edit.ts", "utf-8");
     expect(editSrc).toContain("createEditTool");
     expect(editSrc).toContain("createTuiPresenter");
-    // edit.ts must no longer define makeRenderCall/makeRenderResult inline
     const definesMakeRenderCall = /^function makeRenderCall/m.test(editSrc);
     const definesMakeRenderResult = /^function makeRenderResult/m.test(editSrc);
     expect(definesMakeRenderCall).toBe(false);
     expect(definesMakeRenderResult).toBe(false);
-    // deep module imports must be narrow
     expect(editSrc).not.toContain("buildAppliedText");
     expect(editSrc).not.toContain("fmtCall");
   });

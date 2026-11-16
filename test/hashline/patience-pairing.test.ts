@@ -1,3 +1,10 @@
+/**
+ * Patience pairing: unique pins form the backbone, the changed middle is trimmed, and
+ * each recursion spends a proportional slice of the scan budget. The differential
+ * against an untrimmed pairing is the correctness oracle; the 2x floor on a one-line
+ * change is a tripwire for the trim being bypassed, not a performance budget, so it
+ * stays loose enough to survive a loaded, instrumented host.
+ */
 import { describe, expect, it } from "vitest";
 import {
   assertMonotonicPairing,
@@ -212,9 +219,6 @@ describe("pairSnapshots — budget guard", () => {
     const prev = descs(["H", ...run, "T"]);
     const curr = descs(["H", ...run, "T"]);
 
-    // WHY: the top-level interval costs 84, leaving 16 < 80 for the duplicate middle run,
-    // WHY: so the two unanimous pins still pair while the over-budget rigid run is retired
-    // WHY: instead of being zipped; the default scaled budget aligns all 42 lines.
     expect(asPairs(pairSnapshots(prev, curr, { scanBudget: 100 }))).toEqual([
       [1, 1],
       [42, 42],
@@ -376,8 +380,6 @@ describe("pairSnapshots — unchanged boundary trim (issue #163)", () => {
         Array.from({ length: Math.floor(rng() * 13) }, () => alphabet[Math.floor(rng() * 5)]!);
       const prev = descs(draw());
       const curr = descs(draw());
-      // WHY: shared boundaries are what the trim acts on; force them often so the differential
-      // WHY: is not dominated by corpora the shortcut never touches.
       const shared = Math.floor(rng() * Math.min(prev.length, curr.length));
       for (let i = 0; i < shared; i++) {
         const token = `s${i}`;
@@ -397,8 +399,6 @@ describe("pairSnapshots — unchanged boundary trim (issue #163)", () => {
 
     const pairing = pairSnapshots(prev, curr);
 
-    // The boundary canon is duplicated, so the trim cannot prove which copy survived and stands
-    // down. The engine then handles it: B is a unique pin, and the identical A run is a rigid zip.
     expect(asPairs(pairing)).toEqual([
       [1, 1],
       [2, 2],
@@ -442,7 +442,6 @@ describe("pairSnapshots — unchanged boundary trim (issue #163)", () => {
     const changed = [...lines.slice(0, 10_000), "changed", ...lines.slice(10_001)];
     const prev = descs(lines);
     const curr = descs(changed);
-    // WHY: warm both paths on a tiny corpus first, so the ratio measures the trim and not JIT.
     pairSnapshots(descs(uniqueRun(50)), descs(uniqueRun(50)));
     pairSnapshots(descs(uniqueRun(50)), descs(uniqueRun(50)), { trim: false });
 
@@ -458,10 +457,6 @@ describe("pairSnapshots — unchanged boundary trim (issue #163)", () => {
     const full = quickest(() => pairSnapshots(prev, curr, { trim: false }));
     const trimmed = quickest(() => pairSnapshots(prev, curr));
 
-    // WHY 2x and not the measured 4-6x: this is a tripwire for the shortcut being BYPASSED (ratio
-    // WHY ~1 at the parent commit), not a performance budget. Coverage instrumentation slows the
-    // WHY trimmed path's O(n) uniqueness maps disproportionately on a loaded host, so a tighter
-    // WHY ratio flakes without catching anything the 2x floor misses.
     expect(trimmed).toBeLessThan(full / 2);
     expect(asPairs(pairSnapshots(prev, curr))).toEqual(
       asPairs(pairSnapshots(prev, curr, { trim: false })),

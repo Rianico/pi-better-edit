@@ -4,9 +4,11 @@ import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// WHY: the registry owns every header: codes appear bracketed in comments and
-// WHY: quoted as union members / producers in code. Both shapes normalize to
-// WHY: `[E_*]` / `[W_*]`; bare identifiers (EDIT_DESCRIPTION, W_OK) never match either.
+/**
+ * The registry owns every header: codes appear bracketed in comments and quoted as union members or
+ * producers in code. Both shapes normalize to `[E_*]` / `[W_*]`; bare identifiers (EDIT_DESCRIPTION,
+ * W_OK) never match either.
+ */
 const codeRe = /\[[EW]_[A-Z0-9_]+\]|"[EW]_[A-Z0-9_]+"/g;
 
 function collectCodes(dir: string): Set<string> {

@@ -293,6 +293,11 @@ const CORPUS: readonly Shape[] = [
     rules: [],
   },
   {
+    shape: "a shebang is an interpreter directive, not a comment",
+    code: "#!/usr/bin/env node\nconst a = 1;\n",
+    rules: [],
+  },
+  {
     shape: "bare prose",
     code: "// plain prose that explains nothing\nconst a = 1;\n",
     rules: ["prose"],
@@ -379,6 +384,18 @@ describe("comment gate baseline", () => {
     expect(parsed.entries.length).toBeLessThanOrEqual(EXPECTED_MAX_LEGACY_COMMENTS);
   });
 
+  it("treats a shebang as the interpreter directive, not a comment", () => {
+    const facts = { functionBodies: [], guardLines: [], sourceLines: ["#!/usr/bin/env node"] };
+    const typed = {
+      type: "Shebang",
+      value: "/usr/bin/env node",
+      loc: { start: { line: 1 }, end: { line: 1 } },
+    };
+    expect(collectViolations([typed], facts)).toEqual([]);
+    const folded = { ...typed, type: "Line", value: "!/usr/bin/env node" };
+    expect(collectViolations([folded], facts)).toEqual([]);
+  });
+
   it("writes exactly the bytes the committed file holds", () => {
     expect(serializeBaseline(current)).toBe(raw);
   });
@@ -388,9 +405,9 @@ describe("comment gate baseline", () => {
     expect(files).toContain("index.ts");
     expect(files).toContain("vitest.config.ts");
     expect(files).toContain("src/mutation-engine/pipeline.ts");
-    expect(files.filter((path) => path.startsWith("test/") || path.startsWith("scripts/"))).toEqual(
-      [],
-    );
+    expect(files).toContain("test/arch/comment-gate.test.ts");
+    expect(files).toContain("scripts/comment-gate-baseline.mjs");
+    expect(files.filter((path) => path.startsWith("node_modules/"))).toEqual([]);
   });
 
   it("passes --check on the committed tree", () => {

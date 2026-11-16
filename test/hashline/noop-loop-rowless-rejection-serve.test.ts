@@ -15,11 +15,6 @@ import {
   withTempFile,
 } from "../support/fixtures";
 
-// WHY: (F3) the noop-loop guard records the rows it renders from the batch buffer into the
-// WHY: persistent served mirror at buffer positions. Inside a batch whose earlier item changed the
-// WHY: buffer, those rows are not guaranteed current-file rows, so the third identical noop must be
-// WHY: served-or-absent like the other changed-buffer rejections: no rows shown, none recorded, no
-// WHY: lease, prior served record kept, and a bounded current-file read named instead.
 useTestHome();
 
 type Tool = {
@@ -55,9 +50,6 @@ describe("noop-loop rejection inside a changed batch buffer (served-or-absent)",
       const mirror = createSessionHandle(TEST_SESSION_ID, path);
       const servedBefore = await mirror.load();
 
-      // WHY: item 0 grows line 1 (changing the buffer for the later items); item 1 is the identical
-      // WHY: noop the guard counts; item 2 always rejects, so calls 1 and 2 abort after item 1 and
-      // WHY: roll the grow back (the file and every anchor stay valid).
       const batch = {
         file: "sample.ts",
         edits: [
@@ -92,10 +84,8 @@ describe("noop-loop rejection inside a changed batch buffer (served-or-absent)",
         "An anchored read of current-file lines 3-3 would serve that range.",
       );
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
-      // WHY: the rejection left the persistent served record exactly as the read wrote it.
       expect(await mirror.load()).toEqual(servedBefore);
 
-      // WHY: no buffer rows were recorded, so a standalone edit of the served range still applies.
       const result = await editTool.execute(
         "e4",
         { file: "sample.ts", edits: [{ anchor_from: at(3), anchor_to: at(3), text: "CCC" }] },

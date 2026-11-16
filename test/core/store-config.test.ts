@@ -300,7 +300,6 @@ describe("resolveStoreJanitorSettingsWithSources — the rung each key came from
       batchSize: { value: 7, source: "project" },
     });
 
-    // The value-only view is the same ladder, so the two views must agree key for key.
     const resolved = resolveStoreJanitorSettingsWithSources(projectDir, warn);
     expect(resolveStoreJanitorSettings(projectDir, warn)).toEqual({
       mode: resolved.mode.value,

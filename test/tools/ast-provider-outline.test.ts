@@ -22,9 +22,6 @@ interface FakeSpec {
   readonly error?: boolean;
 }
 
-// WHY the auto-append: real scope nodes carry their declared name as a named child, so the
-// fake answers `childForFieldName("name")` exactly like the runtime adapter does. Nodes without
-// a name (wrappers, bodies, documentation) answer no field, which is also the real behavior.
 function node(spec: FakeSpec): MutableNode {
   const leaf: MutableNode | undefined =
     spec.name === undefined
@@ -76,7 +73,6 @@ function fakeProvider(root: MutableNode) {
 }
 
 describe("ast outline: TypeScript declaration lines", () => {
-  // Lines below are 1-indexed in comments; `start` rows are 0-indexed.
   function typescriptRoot(): MutableNode {
     const versionValue = node({ type: "string", start: 1 });
     const versionDecl = node({
@@ -281,8 +277,6 @@ describe("ast outline: TypeScript declaration lines", () => {
     const root = node({ type: "program", start: 0, end: 2, children: [namespace] });
     await withTempFile("app.ts", "", async ({ path }) => {
       primeAllGrammars();
-      // WHY: namespace members are module API like the enum next door, while function-body
-      // locals are not; the TypeScript suite pins the local exclusion through `inner`.
       expect(await fakeProvider(root).outline(path)).toEqual([
         { name: "N", kind: "namespace", line: 1 },
         { name: "FLAG", kind: "constant", line: 2 },
@@ -411,10 +405,6 @@ describe("ast outline: Go, Rust, and Python declaration lines", () => {
     });
     await withTempFile("shapes.py", "", async ({ path }) => {
       primeAllGrammars();
-      // WHY `__init__` stays a method: tranche 1 relabels only the TypeScript `constructor`
-      // keyword form; dunder-constructor mapping is an open product question (see manual notes).
-      // WHY no `VERSION` row: the Python grammar has no `const` signal, so every module
-      // assignment would qualify as a constant; that heuristic needs a product decision first.
       expect(await fakeProvider(root).outline(path)).toEqual([
         { name: "Rectangle", kind: "class", line: 5 },
         { name: "__init__", kind: "method", line: 8 },
@@ -438,8 +428,6 @@ describe("ast outline: empty-list fallback", () => {
       readTextFile: async () => undefined,
     });
     expect(await unreadable.outline("app.ts")).toEqual([]);
-    // WHY `runtimeAvailable: false`: declining before the fetch keeps this unit test offline;
-    // a fetch failure declines the same way through `grammar_unavailable`.
     const declined = createAstSpanProvider({
       runtimeAvailable: async () => false,
       readTextFile: reader("export class A {}"),
@@ -512,8 +500,6 @@ export default function main(): void {}
 
   it("pins the TypeScript declaration lines end to end", async () => {
     await withTempFile("app.ts", source, async ({ path }) => {
-      // WHY inside withTempFile: the grammar cache path derives from HOME, which the fixture
-      // repoints, so the primed bytes land where the provider looks without a network fetch.
       primeGrammarForTests(
         "typescript",
         gunzipSync(
@@ -538,8 +524,6 @@ export default function main(): void {}
     });
   });
   it("pins the Go declaration lines end to end", async () => {
-    // WHY a real parse: the `type_spec` struct/interface split and the `const_spec` file-level
-    // gate are supplement strings, so only a real grammar proves they match the pinned Go grammar.
     const source = `package shapes
 
 // Doc for Point.
@@ -586,8 +570,6 @@ func run() {
   });
 
   it("pins the Rust declaration lines end to end", async () => {
-    // WHY a real parse: `struct_item`, `enum_item`, and the file-level `const_item` gate are
-    // supplement strings, so only a real grammar proves they match the pinned Rust grammar.
     const source = `/// Doc for Point.
 pub struct Point {
     pub x: i32,
@@ -634,8 +616,6 @@ pub type Alias = i32;
   });
 
   it("pins the Python declaration lines end to end", async () => {
-    // WHY a real parse: the class/method/function rows and the assignment exclusion rest on the
-    // Python table's node strings, so only a real grammar proves them against the pinned grammar.
     const source = `"""Module docs."""
 
 VERSION = "1.0"
@@ -662,8 +642,6 @@ def create():
         ),
       );
       const provider = createAstSpanProvider({ readTextFile: reader(source) });
-      // WHY no `VERSION` row: the Python grammar has no `const` signal, so every module
-      // assignment would qualify as a constant; that heuristic needs a product decision first.
       expect(await provider.outline(path)).toEqual([
         { name: "Rectangle", kind: "class", line: 6 },
         { name: "__init__", kind: "method", line: 9 },

@@ -5,21 +5,15 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * The pull-request-free shape floor, pinned against the miss that motivated it.
+ * The pull-request-free shape floor, pinned against the miss that motivated it: a lane ran
+ * `pnpm run verify` green and failed CI on an invented `### Tooling` heading, because the one
+ * rule that reads a section heading was reachable from `ledger` mode alone — and `ledger`
+ * needs `--pr`, which cannot exist before a pull request does.
  *
- * A lane ran `pnpm run verify` green and then failed CI on its first push. The ledger it
- * pushed carried an invented `### Tooling` heading beside a 107-word entry. The word budget
- * fired under `ticket`; the heading did not, because `check_sections` was reachable from
- * `ledger` mode alone — and `ledger` needs `--pr`, which cannot exist before a pull request
- * does. So the one rule that reads a section heading was unreachable in the only window
- * where the mistake is made, and `verify` ran no ledger check at all.
- *
- * These cases pin the closure of both gaps: `ticket` runs the whole floor, `ledger` still
- * reports the same finding exactly once, and `pnpm run verify` runs the floor first, so a
- * malformed ledger fails before lint/format/typecheck/coverage spend their minutes.
- *
- * NOT pinned here, deliberately: the eleven section names themselves. They live in
- * `KNOWN_SECTIONS` in the gate, and a second copy in this file would be a tautology.
+ * These cases pin both gaps closed: `ticket` runs the whole floor, `ledger` reports the same
+ * finding exactly once, and `verify` runs the floor first, so a malformed ledger fails before
+ * lint/format/typecheck/coverage spend their minutes. The eleven section names are NOT pinned
+ * here: they live in `KNOWN_SECTIONS` in the gate.
  */
 
 const GATE = "scripts/changelog-gate.py";
@@ -57,8 +51,6 @@ function gate(args: string[]): GateRun {
 
 const hasPython = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
 
-// Same escape hatch as the sibling gate test: a missing interpreter must not silently turn
-// this file into a skip, so it fails unless the operator opts out explicitly.
 const skipForMissingPython = !hasPython && process.env["CHANGELOG_GATE_ALLOW_SKIP"] === "1";
 
 describe.skipIf(skipForMissingPython)("changelog-gate ticket mode", () => {
@@ -109,8 +101,6 @@ describe.skipIf(skipForMissingPython)("changelog-gate ticket mode", () => {
     ]);
 
     expect(status).toBe(1);
-    // Exactly one: the floor is one definition reached by both phases, not two copies that
-    // double-report the same heading.
     expect(output.match(/\[section-integrity\]/g)).toHaveLength(1);
     expect(output).toContain("unknown section '### Tooling'");
   });

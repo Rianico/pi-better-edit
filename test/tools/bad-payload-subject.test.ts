@@ -21,9 +21,6 @@ import {
   withTempFile,
 } from "../support/fixtures.js";
 
-// WHY (#86, OPTION B): one E_BAD_PAYLOAD code reaches the model from three registered tools. The
-// WHY: header the model reads is composed inside the DomainError constructor, so the invoking tool
-// WHY: must be IN the payload before construction — a later render point does not exist.
 beforeAll(async () => {
   await initHasher();
 });
@@ -46,11 +43,7 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
         readTool.execute("r1", {}, undefined, undefined, ctx),
       );
       expect(text).toContain("[E_BAD_PAYLOAD]");
-      // WHY: under D1 the empty call fails schema validation before admission runs, so the
-      // WHY: refusal carries the framework's validation wording — still stamped with the
-      // WHY: read tool's own registered name, never an edit-tool name.
       expect(text).toContain('Schema validation failed for tool "read"');
-      // The defect this ticket removes: a bad read call told the model to fix an edit.
       expect(text).not.toContain("edit");
     });
   });
@@ -58,8 +51,6 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
   it("stamps a lone read refusal with the same read name", async () => {
     await withTempDir("bad-payload-read-nul-", async (cwd) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: one file per call — the null-byte path is refused as the call's own failure, stamped
-      // WHY: with the read name (never an edit name).
       const failure = await readTool
         .execute("r1", { file: "nul\u0000byte.ts" }, undefined, undefined, ctx)
         .then(
@@ -92,8 +83,6 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
       );
       expect(text).toContain("[E_INTERNAL_INVARIANT]");
       expect(text).toContain("The undo_last_edit invariant failed:");
-      // WHY: the model reads `undo_last_edit` in its tool list; a `The undo payload` clause would
-      // WHY: name a tool that does not exist.
       expect(text).not.toContain("The undo payload");
       expect(text).not.toContain("Fix the payload fields and retry.");
     });
@@ -104,8 +93,6 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const h = await lineHashes(content, path);
-      // WHY: the single-line-span refusal is raised deep in the engine (hashline/apply), so the
-      // WHY: engine must carry the RAW payload message back; a rendered string cannot be split.
       const text = await modelVisibleText(() =>
         editTool.execute(
           "e1",
@@ -121,7 +108,6 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
       expect(text).toContain("[E_BAD_PAYLOAD]");
       expect(text).toContain("The edit payload is not valid:");
       expect(text).not.toContain("The payload is not valid:");
-      // WHY: a re-split of the rendered header would emit it twice; the raw payload message is used.
       expect(text.match(/\[E_BAD_PAYLOAD\]/g)?.length).toBe(1);
     });
   });
@@ -129,8 +115,6 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
   it("stamps the execute-level edit refusal for a payload that skips prepareArguments", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const tool = buildToolDef();
-      // WHY: pi calls prepareArguments first, so this stamp is reachable only by a direct call —
-      // WHY: pinned here rather than left as unwitnessed defence.
       const text = await modelVisibleText(() =>
         tool.execute(
           "e1",
@@ -154,8 +138,6 @@ describe("E_BAD_PAYLOAD renders the neutral wording with no subject (#86)", () =
     );
     expect(unstamped.message).not.toContain("edit");
     expect(unstamped.message).not.toContain("The read payload");
-    // WHY: facts only — the payload message names the invalid field, and ADR-0047 serves no
-    // WHY: options for this code.
     expect(ERROR_REGISTRY.E_BAD_PAYLOAD.options).toBeUndefined();
   });
 
@@ -165,8 +147,6 @@ describe("E_BAD_PAYLOAD renders the neutral wording with no subject (#86)", () =
     expect(isPayloadSubject("write")).toBe(false);
     expect(isPayloadSubject("")).toBe(false);
     expect(isPayloadSubject(undefined)).toBe(false);
-    // WHY: only a cast or a plain-JS caller reaches these lines, so the malformed "The  payload"
-    // WHY: render and a named tool that does not exist both stay unreachable.
     const empty = new DomainError("E_BAD_PAYLOAD", {
       message: "probe refused.",
       subject: "" as never,
@@ -218,8 +198,6 @@ describe("the subject survives the undo correlated arm (#86)", () => {
       const pre = "l1\nl2\n";
       const post = "l1\nchanged\n";
       await writeFile(target, post, "utf-8");
-      // WHY: the arm only runs for a correlated row, so the crafted state is a row carrying the
-      // WHY: transaction id — written through the store's own public upsert, never raw SQL.
       upsertUndo(await loadHashStore(), target, {
         content: pre,
         bom: "",
@@ -233,9 +211,6 @@ describe("the subject survives the undo correlated arm (#86)", () => {
 
       const { ctx, undoTool } = setupIntegrationTest(cwd);
       clearDiagnostics();
-      // SAFETY: the arm's own catches convert every unexpected failure into the E_UNKNOWN envelope,
-      // SAFETY: so the injected failure stands for any E_BAD_PAYLOAD the arm's body could raise.
-      // SAFETY: `onBeforeUndoWrites` is the documented fault-injection seam for that body.
       const text = await modelVisibleText(() =>
         undoTool.execute("u1", { path: "target.txt" }, undefined, undefined, {
           ...ctx,
@@ -246,16 +221,11 @@ describe("the subject survives the undo correlated arm (#86)", () => {
       );
       expect(text).toContain("[E_BAD_PAYLOAD]");
       expect(text).toContain("The undo_last_edit payload is not valid: injected inside the arm.");
-      // WHY: the landmine — the arm's E_UNKNOWN conversion must not replace the subject.
       expect(text).not.toContain("[E_UNKNOWN]");
-      // WHY: the arm keeps its operator trace even when it returns a payload-shaped refusal.
-      // WHY: the arm keeps its operator trace even when it returns a payload-shaped refusal;
-      // WHY: the trace is a diagnostics record now, never a write to the terminal's frame.
       const trace = readDiagnostics().find((record) =>
         record.message.includes("Unexpected failure in correlated undo:"),
       );
       expect(trace?.error?.message).toContain("injected inside the arm.");
-      // WHY: the injected failure aborted the revert, so the post image is still on disk.
       await expect(readFile(target, "utf-8")).resolves.toBe(post);
     });
   });

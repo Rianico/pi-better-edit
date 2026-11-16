@@ -84,11 +84,9 @@ describe("fmtReadPreview — windows", () => {
       undefined,
       home.testPath,
     );
-    // WHY: one window is a page, and a page is named by its header (read.ts), never a section header.
     expect(result.text).not.toContain("[Lines ");
     expect(result.shownRange).toEqual({ startLine: 11, endLine: 12 });
     expect(result.served.map((row) => row.position)).toEqual([10, 11]);
-    // WHY: a window that fit the shared budget is not a truncated result, so no metadata is owed.
     expect(result.truncation).toBeUndefined();
   });
 
@@ -105,7 +103,6 @@ describe("fmtReadPreview — windows", () => {
       home.testPath,
     );
     expect(result.text).toContain("Offset 99 is beyond end of file (12 lines total)");
-    // WHY: a window past EOF has no line range to name, so its section carries the message alone.
     expect(result.text).not.toContain("[Lines 99");
     expect(result.served.map((row) => row.position)).toEqual([0]);
   });
@@ -126,9 +123,7 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(result.text).toContain("[Read budget exhausted; this window is not shown.");
     expect(result.served.map((row) => row.position)).toEqual([0, 1, 2]);
-    // WHY: the budget really did cut a requested window away, so the tool owes truncated: true.
     expect(result.truncation?.truncated).toBe(true);
-    // WHY: windows are discrete slices, so no root offset can paginate the request as one stream.
     expect(result.nextOffset).toBeUndefined();
   });
 
@@ -142,15 +137,11 @@ describe("fmtReadPreview — windows", () => {
       2,
     );
     expect(result.truncation?.truncated).toBe(true);
-    // WHY: there is no footer (spec §4.4) — the truncation shows in `details`, and the request is not
-    // WHY: one stream, so no scalar offset is offered for it either.
     expect(result.text).not.toContain("to continue");
     expect(result.nextOffset).toBeUndefined();
   });
 
   it("names a lines-truncated section by the rows it showed, not the rows it asked for", async () => {
-    // WHY: the shared line budget cuts the SECOND section to one row; a header over the requested
-    // WHY: range would claim `5-6` while only line 5 was laid down — and a lines stop has no marker.
     const result = await fmtReadPreview(
       TWELVE,
       {
@@ -187,11 +178,9 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(windowed.text).toContain("exceeds 200B");
     expect(windowed.text).toContain("│short two");
-    // WHY: the window named lines 1-2; a "use offset=3" cue would offer a page it never asked for.
     expect(windowed.text).not.toContain("to continue");
     expect(windowed.nextOffset).toBeUndefined();
 
-    // The same range read alone IS a page, so its header names the range it showed.
     const single = await fmtReadPreview(
       content,
       { offset: 1, limit: 2 },
@@ -252,7 +241,6 @@ describe("read tool — windows", () => {
         ctx,
       );
       const byLine = anchorsByLine(getText(readResult));
-      // Both anchors come from different windows: the leases granted by one read must cover them.
       const edited = await editTool.execute(
         "e1",
         {
@@ -288,7 +276,6 @@ describe("read tool — windows", () => {
       );
       expect(getText(readResult)).toContain("[Lines 1-3 of 12 total]");
       const byLine = anchorsByLine(getText(readResult));
-      // Lines 2-3 appear in both windows; their anchors must resolve against the lease granted once.
       const edited = await editTool.execute(
         "e1",
         {
@@ -320,7 +307,6 @@ describe("read tool — windows", () => {
         undefined,
         ctx,
       );
-      // An empty array falls back to a full read, so it owes the full-read contract: drift cleared.
       expect(await session.driftReported()).toEqual(new Set());
 
       await session.markDriftReported(["abcc"]);

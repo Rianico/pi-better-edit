@@ -336,8 +336,6 @@ describe("never-served hint with no lease state (spec D6)", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],
     };
-    // No verification cluster at all: the shape-only scan runs against an empty
-    // served set, so the hint must not depend on lease state.
     const result = applyEdit(content, edit, undefined, hashes);
     expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
     expect(result.neverServedCount).toBe(1);
@@ -352,8 +350,6 @@ describe("never-served hint with no lease state (spec D6)", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],
     };
-    // NOTE: the mirror is absent, not explicitly `undefined` — one value to the seam, and
-    // `exactOptionalPropertyTypes` permits only the absent spelling.
     const result = applyEdit(content, edit, undefined, hashes, { filePath: "a.txt" });
     expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
     expect(result.neverServedCount).toBe(1);

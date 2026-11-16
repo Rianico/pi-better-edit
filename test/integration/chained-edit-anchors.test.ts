@@ -145,8 +145,6 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      // The first edit retired beta's line identity, so reusing its anchor is target-lost
-      // (retired leased identity with no live unshifted bound), not a stale anchor (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e2-stale",

@@ -1,7 +1,7 @@
 /**
  * Runs `scripts/bench-pair-trim.ts` through the real source: esbuild bundles the TS entry, node
- * executes the bundle from `.tmp/` (gitignored, inside the repo so bare imports resolve). Dev-only
- * (ticket #163, ADR-0044). Usage: `node scripts/bench-pair-trim.mjs`.
+ * executes the bundle from `.tmp/` (gitignored, inside the repo so bare imports resolve). Dev-only.
+ * Usage: `node scripts/bench-pair-trim.mjs`.
  */
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
