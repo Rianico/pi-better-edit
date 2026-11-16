@@ -24,6 +24,7 @@ import {
   DEFAULT_WINDOW_LIMIT,
   OUTLINE_IGNORED_WINDOWS_WARNING,
   admitReadRequest,
+  guardWindowsArray,
   normalizeReadPayload,
   planWindows,
   type AdmittedRequest,
@@ -81,7 +82,7 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
-const OUTLINE_MODE_DESCRIPTION = `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix; "outline" serves only symbol declaration lines as anchors (caller windows are ignored).`;
+const OUTLINE_MODE_DESCRIPTION = `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix; "outline" serves only symbol declaration lines as anchors for orientation in a large file, then read the target window (caller windows are ignored).`;
 const readOffsetWindowSchema = Type.Object(
   {
     offset: Type.Optional(
@@ -393,8 +394,17 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     parameters: readToolSchema,
     // SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload
     // SAFETY: falls through to schema validation, which is exactly where it must be refused.
-    prepareArguments: (args: unknown) =>
-      normalizeReadPayload(args as RawReadParams) as unknown as Static<typeof readToolSchema>,
+    // WHY: (#272) the union validator reports the outline variant's missing `mode` beside a rejected
+    // WHY: `windows`, so the guard runs BEFORE it and the model reads the window contract instead.
+    prepareArguments: (args: unknown) => {
+      try {
+        const prepared = normalizeReadPayload(args as RawReadParams);
+        guardWindowsArray(prepared);
+        return prepared as unknown as Static<typeof readToolSchema>;
+      } catch (error) {
+        throw withPayloadSubject(error, "read");
+      }
+    },
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {

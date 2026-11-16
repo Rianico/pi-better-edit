@@ -1,1 +1,1 @@
-Read a file via `file`, `windows?`, `mode?`; default returns HASH│content rows for editing, `mode: "verbatim"` returns plain text, `mode: "outline"` returns declaration lines as anchors; batch ranges via `windows`
+Read a file via `file`, `windows?`, `mode?`; default returns HASH│content rows for editing. `mode: "verbatim"` returns plain text. `mode: "outline"` returns declaration lines as anchors for large-file orientation; then read the target `windows`.
