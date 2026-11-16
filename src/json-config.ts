@@ -1,26 +1,14 @@
 /**
- * The settings-file seam — WHERE the file lives, HOW it is read and HOW it is written, shared by
- * every settings owner that keeps keys in it.
- *
- * WHY this module owns the file and not each settings owner: the scopes, the precedence order and
- * the preserving atomic write are ONE contract, and a second hand-rolled copy of any of them is how
- * two ladders over one file drift apart. Owners keep their own KEYS (`lens.bridge`, `store.*`) and
- * import everything else from here.
- *
- * Shape: `{ "$schema": <CONFIG_SCHEMA_ID>, ...owner keys... }` — documented by
- * `schemas/pi-better-edit.json`, whose root `additionalProperties` stays `true` so an owner's keys
- * need no schema change to be written, only to be validated.
- *
- * The LOCATIONS are not spelled here: `src/config-dir.ts` names every path (current and retired),
- * because the arch guard pins one naming module and an adoption chain that re-derived a retired
- * path would read a file nobody meant it to. This module owns the ladder over those paths.
- *
- * Absence is never an error. A missing file reads as "not configured"; so does a file that exists
- * but cannot be read or parsed. The difference is only whether anyone is TOLD: `readConfigObject`
- * takes an optional `onWarn` for callers whose setting is load-bearing (the store path warns, so a
- * dropped knob cannot silently change what the store does), and stays silent when the caller passes
- * none (the bridge path keeps reading total, because a hand-edited file must never make a read
- * noisy). Nothing here throws on the read side.
+ * The settings-file seam: WHERE the file lives, HOW it is read and written, for every settings
+ * owner. WHY one owner: the scopes, the precedence order and the preserving atomic write are ONE
+ * contract, and a hand-rolled copy is how two ladders over one file drift apart; owners keep only
+ * their own KEYS (`lens.bridge`, `store.*`).
+ * Shape `{ "$schema": <CONFIG_SCHEMA_ID>, ...owner keys... }` per `schemas/pi-better-edit.json`,
+ * whose root `additionalProperties` stays `true`: an owner's key needs no schema change to be
+ * written, only to be validated.
+ * Absence is never an error: missing, unreadable and unparseable all read as "not configured",
+ * and nothing here throws on the read side; the difference is only whether anyone is TOLD, which
+ * `readConfigObject`'s optional `onWarn` decides — the store path warns, the bridge stays silent.
  */
 import {
   accessSync,
@@ -147,16 +135,13 @@ function nearestExistingAncestor(path: string): string | undefined {
  * Serve a file left at a retired location, and retire it once the new one holds its keys (#190).
  *
  * WHY every retired source is renamed, not just the one that won: the chain is ordered, so the
- * losers are history the moment the winner's keys are adopted; leaving one behind makes a later
- * edit to it silently do nothing. WHY a renamed source keeps its bytes (`.bak`) rather than being
- * deleted: the same convention the store's own retirements use, and it leaves the operator's
- * hand-written file recoverable.
+ * losers are history once the winner's keys are adopted, and a later edit to one left behind would
+ * silently do nothing. A renamed source keeps its bytes (`.bak`), as the store's retirements do.
  *
  * WHY a failed adoption still returns the object: settings must keep working when the destination
- * is, say, read-only — the write is the only part that can fail, and the read side never depends
- * on it. A project tree that refuses the write is the same case: the old keys serve and nothing is
- * renamed — but there the attempt is SKIPPED rather than made and reported (`isWritable`), because a
- * read-only checkout would otherwise pay a failed write, and a warning, on every session.
+ * is read-only — the write is the only part that can fail, and the read side never depends on it.
+ * The project scope SKIPS the attempt instead (`isWritable`), because a read-only checkout would
+ * otherwise pay a failed write, and a warning, on every session.
  */
 function adoptRetiredConfig(
   scope: ConfigScope,
@@ -168,10 +153,6 @@ function adoptRetiredConfig(
   for (const source of sources) {
     const retired = readConfigObject(source);
     if (retired === undefined) continue;
-    // SAFETY: the project scope skips the write BEFORE attempting it. The design promises the skip,
-    // SAFETY: so there is nothing to report: a warning here would be the same noise per session the
-    // SAFETY: skip exists to remove. The global scope keeps attempt-and-report, because a global
-    // SAFETY: destination that refuses the write means the user's settings were not carried over.
     if (scope === "project" && !isWritable(dirname(newPath))) return retired;
     adoptSettings(newPath, retired, source, sources);
     return retired;
@@ -187,9 +168,6 @@ function adoptSettings(
 ): void {
   try {
     updateConfigFile(newPath, () => settings);
-    // WHY: the re-read — the atomic write is only as good as the file it leaves behind, and the
-    // WHY: rename below is irreversible for the retired source — a file that does not parse must
-    // WHY: not be marked as adopted.
     if (readConfigObject(newPath) === undefined) {
       throw new Error(`the adopted file does not parse: ${newPath}`);
     }
@@ -198,7 +176,6 @@ function adoptSettings(
     }
     reportInfo("json-config", `adopted settings ${source} → ${newPath}`);
   } catch (error: unknown) {
-    // SAFETY: the read side keeps working from the retired object; only the move is reported.
     reportWarning("json-config", `could not adopt settings ${source} → ${newPath}:`, error);
   }
 }
@@ -239,9 +216,6 @@ function readConfigObject(
   try {
     raw = readFileSync(path, "utf-8");
   } catch (error: unknown) {
-    // SAFETY: an absent config means "not configured", so the caller falls through the precedence
-    // SAFETY: ladder; any OTHER read failure is a file someone meant to be read, so a caller that
-    // SAFETY: cares is told while a caller that does not still reads it as "not configured".
     if (!isMissingFile(error)) onWarn?.(`cannot read config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -249,8 +223,6 @@ function readConfigObject(
   try {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
-    // SAFETY: a hand-edited file can be unparseable mid-write; reading it as "not configured" keeps
-    // SAFETY: the read total and lets the next save rewrite the file from the canonical shape.
     onWarn?.(`cannot parse config ${path}: ${reasonOf(error)}`);
     return undefined;
   }
@@ -265,15 +237,14 @@ function readConfigObject(
 /**
  * Replace the file at `path` with `update(existing)`. The update function receives the existing
  * object and returns the full next object, so keeping a key it does not own is the default rather
- * than something each writer has to remember; a non-object or unparseable existing file is an empty
+ * than something each writer must remember; a non-object or unparseable existing file is an empty
  * one, which is what makes the next save rewrite it from the canonical shape.
  *
- * `$schema` is this seam's OWN key: an existing non-empty string survives (a deliberate editor-time
- * choice belongs to the user), anything else is replaced by `CONFIG_SCHEMA_ID`. It is written first,
- * so the head of the file is the same for every writer.
+ * `$schema` is this seam's OWN key: an existing non-empty string survives (a deliberate choice
+ * belongs to the user), anything else becomes `CONFIG_SCHEMA_ID`, written first for every writer.
  *
- * Creates the parent directory as needed and replaces the file atomically (sibling temp file +
- * rename, same filesystem). Throws only what the filesystem throws.
+ * Creates the parent directory as needed and replaces the file atomically (sibling temp file plus
+ * rename, same filesystem); throws only what the filesystem throws.
  */
 export function updateConfigFile(
   path: string,
@@ -282,9 +253,6 @@ export function updateConfigFile(
   const existing = readConfigObject(path) ?? {};
   const existingSchema = existing.$schema;
   const updated = update(existing);
-  // WHY: `$schema` is rebuilt FIRST and skipped out of the caller's object rather than spread and
-  // WHY: overwritten — the head of the written file is then the same for every writer, and only this
-  // WHY: seam decides the value.
   const next: Record<string, unknown> = {
     $schema:
       typeof existingSchema === "string" && existingSchema.length > 0
@@ -297,9 +265,6 @@ export function updateConfigFile(
 
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
-  // SAFETY: the temp file is a sibling of the target inside the directory just created (same
-  // SAFETY: filesystem), so renameSync replaces the target atomically; the pid suffix keeps
-  // SAFETY: concurrent writers from clobbering each other's staging file.
   const tempPath = `${path}.tmp-${process.pid}`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
@@ -307,10 +272,7 @@ export function updateConfigFile(
   } catch (error: unknown) {
     try {
       unlinkSync(tempPath);
-    } catch {
-      // SAFETY: best-effort cleanup after a failed write — the original error is the actionable one,
-      // SAFETY: and an orphaned .tmp-<pid> sibling is inert.
-    }
+    } catch {}
     throw error;
   }
 }

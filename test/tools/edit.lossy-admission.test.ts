@@ -1,3 +1,13 @@
+/**
+ * A file whose bytes do not survive the UTF-8 decode/encode round-trip is not losslessly
+ * line-addressable: anchors derive from the DECODED text, so an edit would rewrite the lossy
+ * form. Admission refuses with a typed error rather than a silent U+FFFD. The witnesses:
+ *   1. target lossy  — refusal, file bytes untouched, zero undo rows;
+ *   2. foreign lossy — the cut refuses, neither file is touched;
+ *   3. legal U+FFFD  — the BYTES round-trip (EF BF BD is valid UTF-8), so the edit applies and
+ *      no disclosure warning rides along: the oracle is the round-trip, not the old
+ *      "decoded text contains U+FFFD" heuristic, which could not tell the two apart.
+ */
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,15 +23,6 @@ import {
   useTestHome,
 } from "../support/fixtures.js";
 
-// TICKET-04b REMEDIATION, ruling 1 (P2-2/P2-3 amended): a file whose bytes do not survive the
-// UTF-8 decode/encode round-trip is NOT losslessly line-addressable — anchors are derived from
-// the DECODED text, so an edit would rewrite the lossy form. The honest answer at admission is a
-// typed refusal, not a silent U+FFFD. The witness set:
-//   1. target lossy   → refusal, file bytes untouched, ZERO undo rows (Option-A consistent);
-//   2. foreign lossy  → the cut refuses, NEITHER file is touched;
-//   3. legal U+FFFD   → the BYTES round-trip (EF BF BD is valid UTF-8), so the edit APPLIES and
-//      no disclosure warning rides along — this is the round-trip oracle, not the old
-//      "decoded text contains U+FFFD" heuristic, which could not tell the two apart.
 useTestHome();
 
 beforeAll(async () => {
@@ -34,8 +35,6 @@ function admit(raw: unknown): NormalizedEditRequest {
   return canonical as NormalizedEditRequest;
 }
 
-// "alpha\n<0xff>\nbeta\n": the middle line's byte 0xFF is not a UTF-8 start sequence, so decode
-// replaces it with U+FFFD and the re-encode differs from the original — the round-trip fails.
 const LOSSY_BYTES = Buffer.concat([
   Buffer.from("alpha\n"),
   Buffer.from([0xff]),
@@ -97,7 +96,6 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       );
       if (!isMutationFailure(result)) return;
       expect(result.code).toBe("E_LOSSY_TEXT");
-      // The cause is OBSERVED, not assumed: the refusal names the member that broke the round-trip.
       expect(result.message).toContain("lossy.txt");
       expect(await readFile(join(cwd, "lossy.txt"))).toEqual(LOSSY_BYTES);
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_BEFORE);
@@ -106,8 +104,6 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
 
   it("a legal U+FFFD CHARACTER round-trips and edits normally — the oracle is the BYTES", async () => {
     await withTempDir("lossy-legit-replacement-", async (cwd) => {
-      // EF BF BD is valid UTF-8 for U+FFFD; the old decode-heuristic could not tell this file
-      // apart from a corrupt one, and a heuristic admission guard would refuse it — wrongly.
       await writeFile(join(cwd, "rep.txt"), "x\n\uFFFD\ny\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "rep.txt" }, undefined, undefined, ctx);
@@ -131,17 +127,12 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
     });
   });
 
-  // REMEDIATION-2 R4: the INTERSECTION the single-feature cases miss — a file that is BOTH
-  // BOM-prefixed AND carries a legal U+FFFD. The BOM makes the decoded text start with U+FEFF;
-  // the FFFD triggers SUSPICION, so the round-trip oracle actually runs and must compare the
-  // WHOLE byte image. Mutation refuted: N6 (strip the BOM at the oracle site) makes the
-  // comparison mismatch on exactly this file and the edit is wrongly refused.
   it("a BOM-prefixed file that ALSO contains a legal U+FFFD edits normally — the oracle compares the whole byte image", async () => {
     await withTempDir("lossy-bom-replacement-", async (cwd) => {
       const bytes = Buffer.concat([
-        Buffer.from([0xef, 0xbb, 0xbf]), // UTF-8 BOM
+        Buffer.from([0xef, 0xbb, 0xbf]),
         Buffer.from("alpha\n"),
-        Buffer.from([0xef, 0xbf, 0xbd]), // legal U+FFFD (valid UTF-8)
+        Buffer.from([0xef, 0xbf, 0xbd]),
         Buffer.from("\nbeta\n"),
       ]);
       await writeFile(join(cwd, "bomrep.txt"), bytes);

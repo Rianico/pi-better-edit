@@ -1,26 +1,23 @@
-import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 /**
- * `GLOSSARY.md` bans three synonyms the resolution seams used to carry (#101):
- * `anchor identity` (identity belongs to a line's `line_id`), `range staleness` (canonical:
- * `served-range staleness`), and `echo` for served feedback rows (canonical only inside
- * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
- * #108 freeze is served-qualified only: `findServedHashEcho`, `ServedHashEchoError`,
- * `ServedHashEcho`, `servedHashEchoDenial` stay frozen; the model-facing refusal
- * code is `E_SUSPICIOUS_TEXT` (renamed per ADR-0019, no alias); the surface-qualified
- * `findEditHashEcho` / `EditHashEchoError` are retired (#125).
+ * `GLOSSARY.md` bans three synonyms the resolution seams used to carry (#101): `anchor identity`
+ * (identity is a line's `line_id`), `range staleness` (canonical `served-range staleness`), and
+ * `echo` for served feedback rows (canonical only inside `served hash echo`). The guard keeps the
+ * rename from creeping back in (#108, #114) across `src/`, test titles and the binding docs.
+ *
+ * Every scope strips the canonical family first — `findServedHashEcho`, `ServedHashEchoError`,
+ * `ServedHashEcho`, `servedHashEchoDenial`, `E_SUSPICIOUS_TEXT` (renamed per ADR-0019, no
+ * alias), the glossary phrase, the quoted shell-builtin homonym, and a cited `docs/*.md` path
+ * whose file exists — then asserts no bare `/echo/i` remains. `findEditHashEcho` /
+ * `EditHashEchoError` are retired (#125) and must not reappear.
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
-  // WHY (C1): the traversal lives in recurseDir; this wrapper states only
-  // its predicate (src/, .ts) and keeps its signature for existing callers.
   return allFiles(dir, ".ts", out);
 }
 
-// WHY (C1): the single directory recursion. Pure traversal — NO file
-// selection lives here; every caller states its own extension/scope
-// predicate, so sharing this cannot mirror producer into pin or reverse.
 function recurseDir(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
@@ -41,17 +38,8 @@ function matching(pattern: RegExp): string[] {
   return files.filter((file) => pattern.test(readFileSync(file, "utf-8")));
 }
 
-// No file allowlist: every `src/**/*.ts` file must contain no `/echo/i` once the
-// canonical tokens below are stripped (#125 removed the `src/write-hook.ts`
-// exemption — the hook now names only the canonical served hash echo family).
 const CANONICAL_ALLOWLIST = new Set<string>([]);
 
-// Canonical `served hash echo` family (#108 served-qualified freeze, #114 reuses for all
-// three scopes): stripping these tokens (longest first so `findServedHashEcho`
-// does not leave a suffix and `ServedHashEchoError` does not leave `Error` over
-// `ServedHashEcho`) plus the glossary phrase `served hash echo` leaves only
-// non-canonical uses. Surface-qualified `findEditHashEcho` / `EditHashEchoError`
-// are retired (#125) and must not reappear.
 const CANONICAL_TOKENS = [
   "servedHashEchoDenial",
   "ServedHashEchoError",
@@ -65,19 +53,10 @@ function stripCanonical(text: string): string {
   for (const token of CANONICAL_TOKENS) {
     out = out.split(token).join("");
   }
-  // Allow the glossary phrase `served hash echo` (any case, space/hyphen/underscore
-  // separated) when it names the canonical error condition.
   out = out.replace(/served[\s\-_]*hash[\s\-_]*echo/gi, "");
-  // Allow the mandated literal-declaration human line, which names the served
-  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit);
-  // the tier task codes it as `[W_LITERAL_BYPASS]`; the served wording is capitalized
-  // ("Served-echo …") and the registry owns the header, so the strip is case-insensitive.
   out = out.replace(/served-echo check bypassed by literal declaration/gi, "");
-  // Allow the shell-builtin homonym, quoted only (double quotes, single quotes, or backticks):
-  // spelling names both the static-print builtin and the avoided synonym for served feedback,
-  // so a quoted mention names the builtin while a bare mention — or an identifier carrying the
-  // letters — still fails below. Matching pairs only; mixed quotes are not a quoted form.
   out = out.replace(/"echo"|'echo'|`echo`/gi, "");
+  out = out.replace(/docs\/[\w./-]+\.md/gi, (literal) => (existsSync(literal) ? "" : literal));
   return out;
 }
 
@@ -88,10 +67,6 @@ function filesWithNonCanonicalEcho(): string[] {
     .filter((file) => /echo/i.test(stripCanonical(readFileSync(file, "utf-8"))));
 }
 
-// Scope 2 — test titles (#114): only lines that name a test (`it`/`test`/`describe`)
-// are checked, so local variables and fixture content stay out of scope. Canonical
-// allowlist: same `CANONICAL_TOKENS` plus the glossary phrase `served hash echo`
-// (via `stripCanonical`); a title naming the canonical condition stays green.
 function testTitleViolations(): string[] {
   const out: string[] = [];
   for (const file of allFiles("test", ".ts")) {
@@ -108,32 +83,7 @@ function testTitleViolations(): string[] {
   return out;
 }
 
-// Scope 3 — binding domain docs (#114): `GLOSSARY.md` plus `docs/adr/**.md` whole
-// files. Canonical allowlist: same `CANONICAL_TOKENS` plus the glossary phrase
-// `served hash echo` (via `stripCanonical`) plus the glossary `_Avoid_:` lines
-// themselves (they must name the banned synonym to define the ban, e.g.
-// `_Avoid_: display, show, echo` and `_Avoid_: hash echo ..., anchor echo`);
-// prose naming the canonical condition stays green. Accepted records that predate
-// the T-rename keep their original codes as historical quotes (see ADR-0019) and
-// are exempt here per file and per code; `src/` keeps zero tolerance via the src scope.
 //
-// Guard policy B (maintainer decision 2026-09-19: keep the per-file carve-out,
-// recorded and shrink-only):
-// - decisionAuthority: maintainer decision 2026-09-19
-// - reason: accepted records predate the T-rename and retain original codes as
-//   historical quotes, never rewritten (see ADR-0019)
-// - narrowScope: scope 3 binding-docs check only; `src/` keeps zero tolerance;
-//   each listed file is exempt only for its declared retired codes
-// - owner: edit maintainer
-// - reviewTrigger: any proposal to add or widen an entry, or any retirement
-//   that quotes a retired code
-// - removalCondition: delete an entry when its file no longer quotes every
-//   declared retired code; retire the baseline when no entries remain
-// `GLOSSARY.md`, `README.md`, `src/`, and `docs/spec/` stay fully checked:
-// no entry may name them. Only the listed records are exempt, and only for
-// the retired codes they declare. Growth without a declared retired code
-// cannot pass: a file outside the baseline gets no stripping, and an entry
-// with an empty code list strips nothing.
 type HistoricalBaselineEntry = {
   file: string;
   retiredCodes: string[];
@@ -154,8 +104,6 @@ const HISTORICAL_BASELINE_POLICY = {
     "delete an entry when its file no longer quotes every declared retired code; retire the baseline when no entries remain",
 };
 
-// Retired per HISTORICAL_BASELINE_POLICY.removalCondition when 0001-0050 were archived:
-// no active files in docs/adr/ quote the retired codes.
 const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [];
 
 function baselineByFile(): Map<string, HistoricalBaselineEntry> {
@@ -175,14 +123,10 @@ function bindingDocsViolations(): string[] {
   const docs = ["GLOSSARY.md", ...allFiles("docs/adr", ".md")];
   return docs.filter((file) => {
     const text = readFileSync(file, "utf-8");
-    // Strip `_Avoid_:` definition lines: the glossary must name the banned term
-    // to ban it. Only those lines are exempt; prose elsewhere stays checked.
     const withoutAvoid = text
       .split("\n")
       .filter((line) => !/^\s*_Avoid_:/.test(line))
       .join("\n");
-    // Retired surface-qualified names may appear in revision notes that document
-    // their retirement (#125); they stay forbidden in `src/` via the src scope.
     const withoutRetired = withoutAvoid
       .split("findEditHashEcho")
       .join("")
@@ -195,14 +139,32 @@ function bindingDocsViolations(): string[] {
   });
 }
 
+describe("path allowance — a cited record is provenance, not vocabulary", () => {
+  it("allows the banned token inside a cited docs/ record path", () => {
+    const cited = "// Ref: docs/.archive_adrs/0009-bounded-hash-echo-guard.md";
+    expect(/echo/i.test(stripCanonical(cited))).toBe(false);
+    const linked = "per [the guard](../../docs/.archive_adrs/0009-bounded-hash-echo-guard.md)";
+    expect(/echo/i.test(stripCanonical(linked))).toBe(false);
+  });
+
+  it("flags a path-shaped decoy that backs no record", () => {
+    const decoy = "// Ref: docs/.archive_adrs/9999-no-such-record-echo.md";
+    expect(/echo/i.test(stripCanonical(decoy))).toBe(true);
+  });
+
+  it("still flags the same token as prose", () => {
+    const prose =
+      "// WHY: the echo of a served row names the feedback, which is banned vocabulary.";
+    expect(/echo/i.test(stripCanonical(prose))).toBe(true);
+  });
+});
+
 describe("GLOSSARY.md terminology — forbidden synonyms stay out of src/", () => {
   it("names no `anchor identity`: identity belongs to a line_id, not a presentation anchor", () => {
     expect(matching(/anchor identity|AnchorIdentity/)).toEqual([]);
   });
 
   it("names no `range staleness`: the canonical term is served-range staleness", () => {
-    // The canonical `served-range staleness` cause value (GLOSSARY.md glossary) is exempt:
-    // only the bare synonym stays banned.
     const violations = files.filter((file) => {
       const stripped = readFileSync(file, "utf-8").replace(/served-range staleness/gi, "");
       return /range staleness/i.test(stripped);
@@ -211,10 +173,6 @@ describe("GLOSSARY.md terminology — forbidden synonyms stay out of src/", () =
   });
 
   it("names served feedback as serve, not the avoided synonym, tree-wide (canonical family stripped)", () => {
-    // Whole-tree: strip the canonical `served hash echo` family, then assert no
-    // `/echo/i` remains. Reintroducing any renamed identifier (`buildRangeEcho`,
-    // `buildRangeEchoBlock`, `recordEcho`, `recordEchoServes`, `echoRows`, `echo`)
-    // fails here.
     expect(filesWithNonCanonicalEcho()).toEqual([]);
   });
 
@@ -230,8 +188,6 @@ describe("GLOSSARY.md terminology — forbidden synonyms stay out of src/", () =
       "EditHashEchoError",
     );
     expect(readFileSync("src/hashline/resolve.ts", "utf-8")).toContain("resolveLineIdentity");
-    // The canonical `served-range staleness` term stays named in the verification module; the
-    // glossary list wraps, so accept the wrap between the hyphenated head and `staleness`.
     expect(readFileSync("src/served-session/serve-render.ts", "utf-8")).toMatch(
       /served-range[\s*]+staleness/,
     );
@@ -256,22 +212,12 @@ describe("quoted homonym strip stays narrow (option c)", () => {
 
 describe("GLOSSARY.md terminology — forbidden synonyms stay out of test titles/", () => {
   it("keeps test titles free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Title-only: strip the canonical `served hash echo` family, then assert no
-    // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
-    // rows by the avoided synonym fails here; titles naming the canonical
-    // condition (`E_SUSPICIOUS_TEXT`, `findServedHashEcho`, `served hash echo`) stay green.
     expect(testTitleViolations()).toEqual([]);
   });
 });
 
 describe("GLOSSARY.md terminology — forbidden synonyms stay out of binding docs/", () => {
   it("keeps the binding domain docs free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Whole-file over live binding docs (`GLOSSARY.md` + ADRs): strip the
-    // canonical `served hash echo` family, then assert no `/echo/i` remains.
-    // Prose calling served rows by the avoided synonym fails here; prose
-    // naming the canonical condition stays green. Listed records are exempt
-    // per file and per code above (they keep original codes as quotes, never
-    // rewritten); all other files stay fully checked.
     expect(bindingDocsViolations()).toEqual([]);
   });
 });
@@ -372,32 +318,16 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
 });
 
 /**
- * ticket-07 — the retired wire spellings get a witness.
- * WHY: 05's doc rewrite had no witness in the suite: README.md/GLOSSARY.md could
- * reintroduce a retired spelling (this header names `replace_with` in prose as
- * the example) with every test green — demonstrated by planting the spelling
- * and watching the arch suite stay green. This block is the ban half (absence)
- * plus the presence half (E25): the five corrected facts asserted as text, so a
- * rewrite that DELETES the corrected sentences fails too. The ban's CODE below
- * builds every needle dynamically and contains none of the banned strings as
- * literals; only this header names one in prose (verified: grepping this file
- * for the three spellings finds this header alone).
- * Judgement recorded (R3): camelCase, hyphenated and upper-case variants are
- * DIFFERENT tokens and out of this ban's contract — decided, not missed. The
- * `op` class IS closed to decorated key shapes in BOTH scopes — markers
- * `" ' ` * _` and curly quotes around `op`, any non-letter prefix (`-`, `(`,
- * `>`, `#`, `[`, own-line, `**`/`*` emphasis): the scope scans whole-file
- * text and carved files mask only leading-marker WHY:/SAFETY: comment lines
- * (without trailing live code) before the same whole-file predicate runs. A
- * colon-less mention (table value cell) is not key-shaped and stays outside.
- * Presence is pinned VERBATIM (R4): each added fragment raises the cost of a
- * legitimate doc rewrite — that cost is disclosed, not hidden.
- * SYMMETRY (I1/J4): the guard enumerates THREE sets — scope members, needle
- * members, carve-out members — and pins ALL THREE (ban test pins scope, pin
- * test pins needles, carve-out pin below pins exemptions, self-test
- * shape-pins `op`). Deliberately unpinned: camel/hyphen/upper variants
- * (different tokens, out of contract — see above). No silent asymmetry.
- * Shape copied from terminology-foreign-source.test.ts.
+ * ticket-07 — the retired wire spellings get a witness: the ban half asserts absence in README,
+ * GLOSSARY, prompts, src, scripts and docs/reference, and the presence half pins the corrected
+ * sentences as text, so a rewrite that deletes them fails too. The needles below are built
+ * dynamically; no banned spelling appears as a literal here.
+ *
+ * The `op` class is closed to decorated key shapes in both scopes: markers around `op` and any
+ * non-letter prefix count as key-shaped, while a colon-less mention (a table value cell) is
+ * outside the contract. Camel, hyphen and upper-case variants are different tokens, out of the
+ * contract. Scope is an allow-list; the carve-out is shrink-only, and the exemption masks only
+ * leading-marker comment lines with no live code after them.
  */
 const RETIRED_WIRE_NEEDLES = [
   ["replace", "with"].join("_"),
@@ -405,48 +335,12 @@ const RETIRED_WIRE_NEEDLES = [
   ["delete", "source"].join("_"),
 ];
 
-// WHY: key-shaped, never bare — a colon-less mention is not a key. Prose like
-// "no `op` field" must stay green; only a payload key trips this. Markers
-// `" ' ` * _` and curly quotes may decorate `op`; any non-letter may prefix
-// it. The quiet arms below pin each tightening, one per shape. Every shape
-// was probed in node before encoding (see report for the probe table).
 const OP_KEY_NEEDLE =
   /(^|[^A-Za-z_])["'`*_\u201c\u201d\u2018\u2019]*op["'`*_\u201c\u201d\u2018\u2019]*\s*:/;
 
-// WHY (E26): each carve-out states its reason as a fact about the artifact.
-// (a1) src/edit.ts documents the removal: `replaceWithSchema` REMOVED, no
-// fold for the retired spelling. (a2) src/hashline/apply.ts sweep note names
-// the retired spellings it swept. The exemption is COMMENT-anchored, not
-// substring-anchored: leading-marker WHY:/SAFETY: comment lines are masked
-// before the same whole-file predicate runs (pinned by the arm below). A live
-// spelling on any other line — including a code line with a trailing WHY:
-// note — still reddens. Masked lines are invisible by design: a documenting
-// comment ABOUT a live alias on a leading-marker line is textually
-// indistinguishable from the sanctioned sweep note.
-// `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
-// SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, GLOSSARY.md
-// (the taught contract), prompts/*.md (model instructions), src/**/*.ts
-// (shipped code), scripts/ (model-facing strings on declared entry points
-// (package.json scripts — scripts/ is NOT in the shipped files list) —
-// the benchmark prompt taught the retired shape from here).
-// OUT by default: every tracked path not listed IN (the mechanism is an allow-list).
-// OUT: docs/** historical/archive records: spec, adr, articles,
-// .archive_issues (a superseded tuple-payload note still names the retired
-// key) -- but NOT docs/agents/*.md, which are LIVE agent instructions
-// (issue-tracker, triage-labels, domain), nor docs/spec/, which holds the
-// LIVE architecture spec agents are pointed at;
-// CHANGELOG.md (release history);
-// repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
-// this guard's own prose (not shrink-only, so no re-assertion is owed).
-// THE GUARD'S STATED CONTRACT: per-file membership, per surface.
-const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
+const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts"]);
 
 function retiredWireScope(): string[] {
-  // WHY (J1/J2): extension-independent — the helper matches by endsWith, so
-  // ext "." matches NOTHING (verified: "x.py".endsWith(".") is false) and
-  // would make any assertion over its walk vacuous. The walk uses "" (every
-  // path ends with "") and filters compiled artifacts; a new scripts/ file
-  // of ANY extension is then a member unless carved.
   return [
     "README.md",
     "GLOSSARY.md",
@@ -470,11 +364,6 @@ function retiredWireViolations(): string[] {
 }
 
 function walkFiles(dir: string): string[] {
-  // WHY (R1/R2): the pins' OWN recursive walk — deliberately NOT allFiles /
-  // srcFiles. Producer and pins must not share fate: contracting the producer
-  // reddens the pins, and contracting this walk leaves the producer's ban
-  // intact to redden on the plant. No single edit outside the pins' own
-  // bodies shrinks both sides at once.
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
@@ -486,35 +375,24 @@ function walkFiles(dir: string): string[] {
 
 describe("retired wire spellings stay banned and corrected facts stay present (ticket-07)", () => {
   it("names no retired wire spelling in README, CONTEXT, prompts, src or scripts (carve-outs excluded)", () => {
-    // WHY: non-empty is not coverage (E21, E25 on the scope itself) — a
-    // merely non-empty scope can be silently disarmed. Required members are
-    // pinned: shrinking to src/ alone must redden; a legitimate rename is
-    // fixed in one line.
     const scope = retiredWireScope();
     expect(scope.length).toBeGreaterThan(0);
     for (const required of ["README.md", "GLOSSARY.md"]) expect(scope).toContain(required);
-    // WHY (R1, per-file membership per surface): each surface is pinned
-    // member-by-member from the pins' own walk — one surviving member can no
-    // longer satisfy a surface. Carve-outs skipped (the loop would redden on
-    // src/edit.ts otherwise).
     for (const f of walkFiles("prompts").filter((f) => f.endsWith(".md")))
       if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
     for (const f of walkFiles("src").filter((f) => f.endsWith(".ts")))
       if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
     for (const f of walkFiles("scripts").filter((f) => !f.endsWith(".pyc")))
-      if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f); // every script a member or carve-out
+      if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
     for (const f of walkFiles("docs/reference").filter((f) => f.endsWith(".md")))
       expect(scope).toContain(f);
-    expect(scope).toContain("scripts/runtime-edge-test.mjs"); // the motivated artifact, pinned BY NAME (model-facing strings on a declared entry point)
-    expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
-    expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts", "src/hashline/apply.ts"]); // J4: carve-out set pinned against addition
+    expect(scope).toContain("scripts/runtime-edge-test.mjs");
+    expect(scope).not.toContain("src/edit.ts");
+    expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts"]);
     expect(retiredWireViolations()).toEqual([]);
   });
 
   it("pins the needle set's members: all three retired spellings stay banned", () => {
-    // WHY (I1, SYMMETRY): scope members pinned and needle members pinned —
-    // the two enumerations agree about deserving pinning. Trimming this set
-    // must redden (acceptance mutates the enumeration itself).
     expect(RETIRED_WIRE_NEEDLES).toEqual([
       ["replace", "with"].join("_"),
       ["copy", "from"].join("_"),
@@ -523,9 +401,6 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
   });
 
   it("composition: retiredWireViolations lists planted bytes through the real loop", () => {
-    // WHY (R3): F6 witnessed the detector; this witnesses the COMPOSITION.
-    // Neutralising the scope×predicate loop (return []) must redden THIS arm.
-    // The fixture is written, asserted, and deleted inside this test.
     const fixture = "scripts/__retired-wire-fixture.tmp";
     writeFileSync(fixture, "anchor_from\n" + ["replace", "with"].join("_") + "\n");
     try {
@@ -536,32 +411,15 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
   });
 
   it("keeps the carve-outs needed: each still documents the removal it excuses", () => {
-    // WHY: shrink-only honesty — the moment a file stops documenting the
-    // removal, its carve-out is a hole and must be removed. Specific tokens,
-    // not bare words: generic "retired" also names parameters elsewhere in
-    // apply.ts, so the arm pins the sweep note's own token plus the spelling.
-    // Substance disclosure (R7): the pin quotes the note's distinctive
-    // substance — `named wire fields` occurs once, at apply.ts:452. Rewording
-    // the note's other words needs no test change; dropping the substance
-    // clause or a named spelling needs the reason updated.
     const edit = readFileSync("src/edit.ts", "utf-8");
     expect(edit).toContain("REMOVED");
     expect(edit).toContain(["replace", "with"].join("_"));
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toMatch(/WHY:.*named wire fields/);
-    expect(apply).toContain(["copy", "from"].join("_"));
-    expect(apply).toContain(["delete", "source"].join("_"));
+    expect(apply).not.toContain(["copy", "from"].join("_"));
+    expect(apply).not.toContain(["delete", "source"].join("_"));
   });
 
-  it("carved files carry the spellings only inside leading-marker WHY:/SAFETY: comment lines", () => {
-    // WHY (I2/I3/R5): exemption anchored to comment LINES. A leading-marker
-    // WHY:/SAFETY: line is masked ONLY when no live code follows its `*/` —
-    // ` * WHY: compat */ const x = "replace_with";` reddens (D8). Masked
-    // lines are invisible by design (see residual below); everything else,
-    // including trailing-WHY: code lines and own-line `op` keys, reddens.
-    // Failure names file:line. Residual, stated: a documenting comment ABOUT
-    // a live alias with no trailing code stays exempt (indistinguishable
-    // from the sanctioned note).
+  it("carved files carry the spellings only inside a leading-marker comment line", () => {
     for (const file of RETIRED_WIRE_CARVE_OUT) {
       const lines = readFileSync(file, "utf-8").split("\n");
       const masked = (line: string): boolean =>
@@ -578,11 +436,6 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
   });
 
   it("planted-term self-test: the scanner sees planted bytes and stays quiet otherwise", () => {
-    // WHY: a text guard that cannot be seen failing proves nothing. These arms
-    // run the REAL per-file predicate over fixtures of the scanned bytes —
-    // neutralising the detector reddens this test, not just a human's manual
-    // run. One fixture per `op`-key shape the detector claims to catch, and
-    // one quiet arm per newly-tightened shape.
     const clean = readFileSync("README.md", "utf-8");
     expect(needsRetiredWire(clean)).toBe(false);
     expect(needsRetiredWire(clean + "\n" + ["replace", "with"].join("_"))).toBe(true);
@@ -603,8 +456,6 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(needsRetiredWire('> op: "replace"')).toBe(true);
     expect(needsRetiredWire("### op: replace")).toBe(true);
     expect(needsRetiredWire('the payload key `op`: "replace" is retired')).toBe(true);
-    // WHY: the colon-less table cell is not key-shaped — outside the key
-    // contract (probed false; the key contract requires the colon).
     expect(needsRetiredWire('| `op` | "replace" |')).toBe(false);
     expect(needsRetiredWire("there is no `op` field and no verbs")).toBe(false);
     expect(needsRetiredWire("a legacy key, an `op` field")).toBe(false);

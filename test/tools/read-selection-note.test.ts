@@ -1,6 +1,3 @@
-// WHY the mocks below answer `{ spans: [...] }`: the seam now returns an innermost-first chain
-// anchored on the window's first line. Single-level chains render exactly as the old single span,
-// so no expectation moved — only the answer shape did.
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -67,8 +64,6 @@ function clearLog(): void {
   for (const path of [selectionRangeLogPath(), `${selectionRangeLogPath()}.1`]) {
     rmSync(path, { force: true });
   }
-  // WHY: the retired name is cleared too — a leftover would be adopted by the next write and add a
-  // WHY: row this suite never asked for.
   const retired = join(dirname(selectionRangeLogPath()), "read-expansion.log");
   for (const path of [retired, `${retired}.1`]) rmSync(path, { force: true });
   resetSelectionRangeLogStateForTests();
@@ -145,7 +140,6 @@ describe("selection-range note: exact window plus a header clause", () => {
       expect(getText(result)).not.toContain("│");
       expect(headerOf(result)).toContain("(verbatim, lines 7-7 of ");
       expect(headerOf(result)).toContain('; in section "Language" (span 5-13))]');
-      // WHY: the clause is chrome, not a row — the served window is still exactly one line.
       expect(
         getText(result)
           .split("\n")

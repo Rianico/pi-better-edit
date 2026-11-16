@@ -72,7 +72,7 @@ import {
   resolveSelectionRangeMode,
   resolveSelectionRangeModeWithSource,
 } from "./selection-range-config.js";
-// WHY: Facade re-export for callers still importing preview directly
+/** Re-exported so callers that import the preview formatter through this module keep working. */
 export { fmtReadPreview } from "./file-content/preview.js";
 
 const R_DESC = loadP("../prompts/read.md");
@@ -95,9 +95,6 @@ const readOffsetWindowSchema = Type.Object(
       }),
     ),
   },
-  // WHY: the union's two members must stay disjoint: both offset properties are optional, so without
-  // WHY: this an `{ around_anchor }` window would also satisfy the offset member and slip past the
-  // WHY: anchor's own length check at the seam.
   { additionalProperties: false },
 );
 
@@ -119,11 +116,13 @@ const readAnchorWindowSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * The union's two members must stay disjoint: both offset properties are optional, so an
+ * `{ around_anchor }` window would satisfy the offset member and skip the anchor's length check.
+ */
 const readWindowSchema = Type.Union([readAnchorWindowSchema, readOffsetWindowSchema]);
 
-// WHY: one file per call (ADR-0041 D1): `file` names it, `windows` scopes it, `mode` renders
-// WHY: it. Parallel reads are parallel tool calls — there is no outer array and no per-file mode.
-// WHY: A payload without `file` fails validation before admission runs.
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 export const readToolSchema = Type.Union(
   [
     Type.Object({
@@ -155,10 +154,8 @@ export const readToolSchema = Type.Union(
   { description: OUTLINE_MODE_DESCRIPTION },
 );
 
-// WHY: the builtin renderers key on `file_path ?? path` plus `offset`/`limit`; our payload
-// WHY: field is `file` (ADR-0041 D1/D4), but recorded history (`files`-shaped per ADR-0040, or a
-// WHY: legacy `file`/`path` caller per ADR-0040 D3) must still render, so the seam accepts every
-// WHY: key. The D5 fallback order is exactly `file ?? path ?? files?.[0]?.file`.
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
+// Ref: docs/.archive_adrs/0040-read-payload-single-shape.md
 type ReadRenderWindowTarget = {
   offset?: number;
   limit?: number;
@@ -170,10 +167,10 @@ type ReadRenderArgs = {
   path?: string;
   windows?: ReadonlyArray<ReadRenderWindowTarget>;
   mode?: string;
-  /** Retired outer shape (ADR-0040): history tolerance only, never produced anymore. */
+  /** Retired outer shape (docs/.archive_adrs/0040-read-payload-single-shape.md): history tolerance only, never produced anymore. */
   files?: ReadonlyArray<{ file?: string }>;
 };
-/** Project the flat single-file payload onto the builtin renderer's keys (ADR-0041 D4/D5).
+/** Project the flat single-file payload onto the builtin renderer's keys (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D4/D5).
  * Path is the call's own `file`, falling back through recorded-history shapes for rendering
  * only. A range is derived only from exactly one simple `{ offset, limit }` window; anything
  * else (multi-window, `around_anchor`) leaves the range absent rather than fabricating one.
@@ -254,9 +251,9 @@ type OrderedOutcome =
   | { kind: "file"; entry: FileResult }
   | { kind: "image"; blocks: RoutedContent[] };
 /**
- * WHY: the page header names the range this read actually rendered (#149, read-chrome): the shown
- * WHY: range, the file's total, and — when the byte budget cut the page — where it stopped. A page
- * WHY: covering the whole file states the count alone, because a range would only restate it.
+ * The page header names the range this read actually rendered (#149, read-chrome): the shown
+ * range, the file's total, and — when the byte budget cut the page — where it stopped. A page
+ * covering the whole file states the count alone, because a range would only restate it.
  */
 function fileHeader(entry: PreparedTarget): string {
   const shown = entry.prepared.shownRange;
@@ -315,7 +312,7 @@ function servedRowsOf(entry: PreparedTarget): ServedRow[] {
 }
 
 /**
- * The whole file's anchors for a content-hash materialization (ADR-0043).
+ * The whole file's anchors for a content-hash materialization (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md).
  *
  * A stat-adopted page resolved only the anchors it served, so an entry that must fall back to content
  * hashing re-derives the rest through the usual cache path. That is the rare race — its snapshot lost
@@ -328,8 +325,6 @@ async function fullHashesFor(
   const prepared = entry.prepared;
   if (prepared.fileHashes.length === prepared.lineTotals.split) return prepared.fileHashes;
   const hashStore = store ?? (await loadHashStore());
-  // WHY: not persisted here — the caller's single batch transaction is the only writer allowed to
-  // WHY: materialize this read (spec §3.1.2); a pre-write would split the snapshot from its leases.
   return lineHashes(
     prepared.normalized,
     prepared.absolutePath,
@@ -339,21 +334,16 @@ async function fullHashesFor(
   );
 }
 
-// WHY: the provider is optional so the shipped entry point (`regRead(pi)`) performs no expansion
-// WHY: until a parser ticket injects one; a null answer is likewise today's exact read.
+/**
+ * The span provider is optional: without one no expansion happens, and a provider that answers
+ * `null` leaves the read exactly as it would be without it.
+ */
 export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvider }): void {
   const spanProvider = options?.spanProvider;
-  // WHY: session_start warms the grammars off the read path; a read still waits only its budget.
   pi.on?.("session_start", (_event, ctx) => {
     if (ctx.cwd === undefined || resolveSelectionRangeMode(ctx.cwd) === "off") return;
     void spanProvider?.prefetch?.(ctx.cwd);
   });
-  // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
-  // WHY: `file_path ?? path` plus `offset`/`limit`. Our payload field is `file` (ADR-0041 D1), so
-  // WHY: project it for rendering only — the call line shows the filename, and `args` is never
-  // WHY: mutated. The `file ?? path ?? files?.[0]?.file` fallback is permanent tolerance for
-  // WHY: recorded transcripts (ADR-0040 D3/D5), not dead code.
-  // WHY: Pi reuses lastComponent; its builtin needs the Text behind our wrapper.
   const readCallBases = new WeakMap<Component, Component>();
   const builtinReadDef = createReadToolDefinition("");
   const builtinRenderCall = builtinReadDef.renderCall as any;
@@ -364,10 +354,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
-    // SAFETY: the builtin renderers are keyed on `file_path ?? path` plus `offset`/`limit`;
-    // SAFETY: projectReadRenderArgs derives the path from the flat `file` (D4) and the range
-    // SAFETY: from a single simple window, without mutating the caller's `args`. Multi-window reads
-    // SAFETY: get their count appended below — the builtin has no chrome for them.
     renderCall: (args: ReadRenderArgs, theme, context) => {
       const projected = projectReadRenderArgs(args);
       const lastComponent = context.lastComponent;
@@ -377,9 +363,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           ? (readCallBases.get(lastComponent) ?? lastComponent)
           : lastComponent,
       });
-      // WHY: 1:1 honesty (ADR-0041 D4) — the builtin renders `read <path>[:start-end]` but has no
-      // WHY: multi-window chrome, so the call line carries the count itself. Single anchor-window and
-      // WHY: whole-file reads render the bare path (no range is ever fabricated).
+      // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
       if (projected.windowsCount === undefined) return call;
       const suffix = ` (${projected.windowsCount} windows)`;
       const suffixWidth = visibleWidth(suffix);
@@ -400,7 +384,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
     renderResult: (result, options, theme, context) => {
       // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
       // SAFETY: carry a retired shape that `Static<TParams>` does not model; the projection keys on
-      // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (ADR-0041 D5).
+      // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D5).
       const args = context.args as ReadRenderArgs;
       return builtinRenderResult(result, options, theme, {
         ...context,
@@ -408,12 +392,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
       });
     },
     parameters: readToolSchema,
-    // WHY: recorded flat payloads (`path`/`offset`/`limit`) reach execute through replay, and the
-    // WHY: model-facing schema deliberately stays the canonical `{ file, windows, mode }` shape.
-    // SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload
-    // SAFETY: falls through to schema validation, which is exactly where it must be refused.
-    // WHY: (#272) the union validator reports the outline variant's missing `mode` beside a rejected
-    // WHY: `windows`, so the guard runs BEFORE it and the model reads the window contract instead.
     prepareArguments: (args: unknown) => {
       try {
         const prepared = normalizeReadPayload(args as RawReadParams);
@@ -430,38 +408,24 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
         const cwd = ctx.cwd as string;
         const sessionCtx = ctx as { sessionManager?: { getSessionId(): string } };
         abortIf(signal);
-        // WHY: spec §4.3 resolves `around_anchor` against the target file's active lineage for the
-        // WHY: session and carries NO mode qualifier, so the store opens for an anchor window whether or
-        // WHY: not the target serves rows. A call naming neither a served target nor an anchor window
-        // WHY: still opens nothing, so the read that serves nothing pays nothing.
+        // Ref: docs/spec/search-and-read-evolution.md
         const needsStore =
           request.mode !== "verbatim" ||
           request.windows?.some((window) => window.kind === "anchor") === true;
         const store = needsStore ? await loadHashStore() : undefined;
         const ordered: OrderedOutcome[] = [];
-        // WHY: delegation, not reimplementation — the builtin owns image bytes, so this repo only
-        // WHY: routes `prepared.kind === "image"` to it. Built lazily so a text-only call pays nothing
-        // WHY: and its path stays untouched.
         let builtinImageRead: ReturnType<typeof createReadTool> | undefined;
         const readImageViaBuiltin = async (absolutePath: string) => {
           builtinImageRead ??= createReadTool(cwd);
           return builtinImageRead.execute(_toolCallId, { path: absolutePath }, signal);
         };
-        // WHY: spec §4.2 — the read draws on the call's 200,000-line served budget, so a file that
-        // WHY: cannot afford what is left is refused inline instead of every prepared anchor,
-        // WHY: normalized text and hash staying alive until the return.
         let remainingServedLines = SERVED_MAX_LINES;
 
-        // WHY: one file per call (ADR-0041 D1) — no fan-out loop, no sibling fallbacks: the single
-        // WHY: target below is the call, so its outcome is the call's outcome.
         {
           const target = request;
           abortIf(signal);
           const mode = request.mode;
-          // WHY: outline mode derives its own window set from the tranche-1 AST seam: one
-          // WHY: single-line window per declaration line, so the standard serve seam below leases
-          // WHY: declaration lines only (ADR-0004) with no new storage or projection layers.
-          // WHY: Caller windows are ignored — the mode defines the coverage.
+          // Ref: docs/adr/0016-outline-mode-point-anchors.md
           let outlineOffsets: Array<{ kind: "offset"; offset: number; limit: number }> | undefined;
           if (mode === "outline") {
             const outlineOf = (
@@ -484,11 +448,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             }));
           }
           const requested = outlineOffsets ?? target.windows;
-          // WHY: the served cap bounds the anchor space a read materializes; a verbatim file serves no
-          // WHY: anchors, so it carries no cap here (the decode gate is the served path's).
           const cap = mode !== "verbatim" ? { maxLines: remainingServedLines } : {};
-          // WHY: an anchor window must resolve BEFORE the file is prepared (its offset is not known
-          // WHY: yet), so the file is read once here and handed to the seam below — never twice.
           const wantsAnchor =
             outlineOffsets === undefined &&
             target.windows?.some((window) => window.kind === "anchor") === true;
@@ -498,8 +458,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 displayPath: target.file,
               })
             : undefined;
-          // WHY: decode once and share it — an anchor window resolves against these bytes and an
-          // WHY: expansion measures its span against the same visible line count.
           let resolvedText: NormText | undefined;
           if (preloaded !== undefined && preloaded.kind === "text") {
             resolvedText = await decodeNormText(target.file, cwd, {
@@ -509,10 +467,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             });
           }
           let resolver: AnchorResolver | undefined;
-          // WHY: resolution is lineage-scoped, not mode-scoped (spec §4.3): the store now opens for an
-          // WHY: anchor window of a verbatim target too, so this guard is the safety net for a window
-          // WHY: whose file could not be loaded as text — that window falls through to the same §4.3
-          // WHY: "not found" warning instead of dereferencing a store that is not there.
           if (store !== undefined && resolvedText !== undefined) {
             resolver = {
               sessionKey: sessionFromContext(sessionCtx, resolvedText.absolutePath).sessionKey,
@@ -521,16 +475,11 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               store,
             };
           }
-          // WHY: an empty outline is the anchor-omitted precedent: the file still prepares (for its
-          // WHY: header counts) but serves no rows, naming the miss in one warning line.
           const plan: WindowPlan =
             outlineOffsets !== undefined
               ? {
                   windows: outlineOffsets.map(({ offset, limit }) => ({ offset, limit })),
                   warnings: [
-                    // WHY: caller windows are ignored in outline mode — the mode defines the
-                    // WHY: coverage — so a non-empty caller list is named in one `[Window warning: ...]`
-                    // WHY: line, the anchor-miss shape, instead of dropping silently.
                     ...(target.windows !== undefined && target.windows.length > 0
                       ? [OUTLINE_IGNORED_WINDOWS_WARNING]
                       : []),
@@ -539,29 +488,16 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                   omittedAll: outlineOffsets.length === 0,
                 }
               : planWindows(target, resolver);
-          // WHY: expansion is mode-independent (D11/D19): served adds leases, verbatim adds none;
-          // WHY: the note is chrome, so its setting is resolved before the file is prepared, and
-          // WHY: the lookup itself runs after preparation, where the served window and total are known.
           const noteMode =
             spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0
               ? resolveSelectionRangeModeWithSource(cwd, (reason) =>
                   reportWarning("read-expansion", reason),
                 )
               : undefined;
-          // WHY: single-window reads render as one §4.4 page (a header, no sub-banner, no
-          // WHY: continuation token): the flattening unified the old page chrome onto the header-only
-          // WHY: shape, a visible change for `files`-shaped singles that rendered the bounded-ask
-          // WHY: sub-banner at base. Multi-window reads keep their per-section headers.
           const singlePage =
             requested?.length === 1 && requested[0]?.kind === "offset"
               ? { offset: requested[0].offset, limit: requested[0].limit }
               : undefined;
-          // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
-          // WHY: `noPersist` defers the authoritative materialization until the served windows are
-          // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
-          // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
-          // WHY: the note needs the file's visible total, and the header needs the finished clause
-          // WHY: before it renders, so the text is loaded and decoded once here and handed on.
           const noteWanted =
             noteMode?.value === "on" &&
             spanProvider !== undefined &&
@@ -593,8 +529,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                   enabled: true,
                 })
               : undefined;
-          // WHY: a failed lookup is the only silence worth recording, and it owes exactly one row
-          // WHY: naming the file, the source, and the refusal reason — never one row per window.
           if (note?.failure !== undefined && noteMode !== undefined) {
             recordProviderFailure(
               {
@@ -622,25 +556,16 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               : plan.windows !== undefined
                 ? { windows: plan.windows }
                 : {}),
-            // WHY: the served cap stays the served budget (independent of the anchor space): the paged
-            // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
-            // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
             maxLines: remainingServedLines,
             ...(plan.windows !== undefined && plan.windows.length > 1 && note !== undefined
               ? { noteClauses: note.clauses }
               : {}),
             ...(mode !== "verbatim" && store !== undefined ? { store } : {}),
             noPersist: true,
-            // WHY: outline renders through the served anchor pipeline; only verbatim is hashless.
             render: mode === "verbatim" ? "verbatim" : "served",
-            // WHY: outline windows are server-derived single-line rows, not caller fan-out, so the
-            // WHY: caller-window count cap does not apply (the shared byte/line budgets still do).
             ...(outlineOffsets !== undefined ? { derivedWindows: true } : {}),
           });
           if (prepared.kind === "image") {
-            // WHY: the interception point — the image never becomes a `results` entry, so no image
-            // WHY: content enters the served / hash / snapshot / lease paths below. The lone image
-            // WHY: delegates directly to the builtin and returns its image block.
             const imageResult = await readImageViaBuiltin(prepared.absolutePath);
             return imageResult;
           }
@@ -667,9 +592,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                   }),
             },
           });
-          // WHY: a served file draws the WHOLE file's line count off the call's budget, not its page —
-          // WHY: the paged walk retained one anchor per hashed line, which is what the budget bounds.
-          // WHY: A verbatim file takes no cap and so draws nothing.
           if (mode !== "verbatim") remainingServedLines -= prepared.lineTotals.split;
         }
         const results: FileResult[] = ordered.flatMap((outcome) =>
@@ -680,9 +602,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           if (entry.mode === "verbatim" || entry.plan.omittedAll) continue;
           const adopted = entry.prepared.statAdoption;
           if (adopted !== undefined) {
-            // WHY: (ADR-0043) the epoch names the same bytes `fileSnap` would describe — the checksum
-            // WHY: comes from the stat-matched snapshot, so adoption does not re-hash the content just
-            // WHY: to state which version it read.
+            // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
             entry.snapshotId = adopted.snapshotId;
             continue;
           }
@@ -704,8 +624,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           (entry) => entry.truncation !== undefined,
         )?.truncation;
         const anyTruncated = firstTruncation !== undefined;
-        // WHY: a text-only call keeps the one joined text section byte-identical; with an image
-        // WHY: present the blocks aggregate in request order around the builtin's own blocks.
         const content: RoutedContent[] = ordered.every((outcome) => outcome.kind === "file")
           ? [{ type: "text", text: results.map(sectionText).join("\n\n") }]
           : routedContent(ordered);
@@ -717,13 +635,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
         const servedEntries = preparedFiles.filter(
           (entry) => entry.mode !== "verbatim" && !entry.plan.omittedAll,
         );
-        // WHY: a verbatim-only call shares admission/normalization but must not touch served state —
-        // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
         if (servedEntries.length === 0) {
-          // WHY: an empty outline serves no rows, so it records no folds — but it still clears folds a
-          // WHY: previous outline read left behind, or a stale record could fail a later span closed on
-          // WHY: coordinates from another snapshot. Best-effort like the materialization above: a missed
-          // WHY: clear degrades to the same fail-closed refusal the gate would give anyway.
           const emptyOutline = preparedFiles.find(
             (entry) => entry.mode === "outline" && entry.plan.omittedAll,
           );
@@ -757,16 +669,9 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           sessionCtx,
           servedEntries[0]!.prepared.absolutePath,
         ).sessionKey;
-        // WHY: the materialization (spec §3.1.2 steps 4-6): the file's snapshot + lineage +
-        // WHY: retirement + served leases commit in ONE `BEGIN IMMEDIATE`, so a read can never lease
-        // WHY: anchors without its snapshot.
-        // WHY: Best-effort — a store failure never fails the read; the next call re-materializes.
+        // Ref: docs/spec/content-addressed-line-identity-mvcc.md
         try {
-          // WHY: (ADR-0043) a stat-matched page already names a committed snapshot: adopting it on the
-          // WHY: same identity commits the leases and mirror a materialization owns without hashing the
-          // WHY: content or splitting its lines again. A `false` (the row lost a race with a vacuum or a
-          // WHY: re-stamp) folds the entry back into the content-hash batch below, which is the only
-          // WHY: writer allowed to decide what this content's identity is.
+          // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
           const unmatched: PreparedTarget[] = [];
           for (const entry of servedEntries) {
             const adopted = entry.prepared.statAdoption;
@@ -798,8 +703,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 options: {
                   retireLeases: true,
                   leases: { sessionKey, rows: servedRowsOf(entry) },
-                  // WHY: stamp the version this read actually observed, so the next read of an
-                  // WHY: unchanged file adopts on stat identity instead of content hashing again.
                   ...(entry.prepared.statKey !== undefined
                     ? { statKey: entry.prepared.statKey }
                     : {}),
@@ -809,26 +712,15 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             await upsertSnapshotsFor(enrollments);
           }
         } catch (error) {
-          // SAFETY: best-effort post-read materialization — the preview rows are already computed
-          // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
-          // SAFETY: to the fail-closed path the next edit would take anyway.
           reportDiagnostic("read", "Failed to commit read-path snapshot materialization:", error);
         }
         for (const entry of servedEntries) {
           const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);
           const isFullRead = entry.plan.windows === undefined && entry.truncation === undefined;
-          // WHY: one file per call, so a session-write failure for the lone file stays the call's
-          // WHY: failure — the single-file contract pins it, exactly as the base multi-file code did
-          // WHY: for lone reads.
-          // WHY: mirror-only — the leases already committed in the transaction above, so no
-          // WHY: `contentHash` is passed and no third transaction remains on the read path. Canon
-          // WHY: evidence needs no write at all: it is derived from those leases (#151).
           await session.recordEpoch({
             rows: servedRowsOf(entry),
             lineCount: entry.prepared.lineTotals.visible,
-            // WHY: (ADR-0043) a stat-adopted page holds only the anchors it served. A full read
-            // WHY: resolved every line (its one range is the whole file), so the array is whole exactly
-            // WHY: then; a partial read never consumes these hashes, so it passes none.
+            // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
             ...(isFullRead ? { fullReadHashes: entry.prepared.fileHashes } : {}),
             ...(isFullRead && entry.snapshotId !== undefined
               ? { snapshotId: entry.snapshotId }
@@ -836,26 +728,16 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             isFullRead,
           });
           if (isFullRead) await session.clearDrift();
-          // WHY: outline mode serves only declaration lines, so the gaps between the served rows are
-          // WHY: unserved folds the edit seam must not silently erase (tranche 3 fold-gate). They are
-          // WHY: recorded here, beside the mirror write, in the read snapshot's coordinates; a later
-          // WHY: served read that fills the folded lines disarms the gate via the mirror-null check.
-          // WHY: A full (non-outline) read cannot reach this branch, and it clears the whole session-meta
-          // WHY: row through `clearDrift` above — folds never outlive a full re-read.
           if (entry.mode === "outline") {
             const servedLines = servedRowsOf(entry)
               .map((row) => row.position + 1)
               .sort((a, b) => a - b);
             await session.recordOutlineFolds(outlineFoldRanges(servedLines));
           }
-          // WHY: fire-and-forget by design — the seam snapshots its observers and isolates each one, so
-          // WHY: this read's return value and timing are unchanged whether or not an observer is attached.
           notifyServedSpans({
             filePath: entry.prepared.absolutePath,
             spans: servedRowsToSpans(entry.prepared.served),
             source: "read",
-            // WHY: the verbatim normalized bytes let the mirror hash caller evidence in memory instead
-            // WHY: of re-reading the file; the anchored preview is never the source of a line hash.
             content: entry.prepared.normalized,
           });
         }

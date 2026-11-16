@@ -121,10 +121,6 @@ describe("bash-classifier span matrix", () => {
   });
 
   it("fails closed on post-view and multi-cd chains (D1 order-soundness)", () => {
-    // WHY: bash resolves each `cd` against the directory in effect at that point:
-    // WHY: `cat f && cd sub` viewed `./f` (the `cd` ran too late), and
-    // WHY: `cd a && cd b && cat f` viewed `a/b/f` (chained `cd`s compose) — so a
-    // WHY: single out-of-order `baseDir` would lease a path never viewed.
     expect(reasonOf("cat f.txt && cd sub")).toBe("post-view-cd");
     expect(reasonOf("cd a && cd b && cat f")).toBe("multi-cd");
     expect(reasonOf("cd sub && cd .. && cat f")).toBe("multi-cd");
@@ -168,9 +164,6 @@ function compoundOf(command: string): Extract<BashClass, { kind: "pureCompound" 
 }
 
 describe("bash-classifier compound glue segments", () => {
-  // WHY: (ADR-0039 D6 + F2-as-restated) glue is admitted only inside a compound beside an
-  // WHY: admitted block. A lone print keeps its own decline, and glue-only chains fail closed
-  // WHY: to `no-view` because glue locates blocks and with no block there is nothing to locate.
   it("still declines lone prints and glue-only chains", () => {
     expect(reasonOf('printf "hi"')).toBe("unsupported-command:printf");
     expect(reasonOf("export A=b")).toBe("non-literal-command");
@@ -200,8 +193,6 @@ describe("bash-classifier compound glue segments", () => {
         { kind: "view", filePath: "f", ops: [] },
       ],
     });
-    // WHY: a QUOTED glob is static (the shell never expands it) — only unquoted `*` is dynamic
-    // WHY: and `literalValue` already rejects that before glue is attempted. Predictable admit.
     expect(compoundOf('echo "a*b" && cat f')).toEqual({
       kind: "pureCompound",
       segments: [
@@ -244,9 +235,6 @@ describe("bash-classifier fail-closed matrix", () => {
   });
 
   it("fails closed on compound AndOr operands without crashing", () => {
-    // WHY: `unbash` types AndOr.commands as Command[] but parses ANY statement kind into it;
-    // WHY: a `cd x && for …; do …; done` chain pushed a For node into the walk and threw
-    // WHY: `Cannot read properties of undefined (reading 'some')` out of the tool_result hook.
     for (const command of [
       "cd . && for f in a; do echo $f; done",
       "cd . && if true; then cat f; fi",
@@ -263,15 +251,11 @@ describe("bash-classifier fail-closed matrix", () => {
       expect(() => classifyBashCommand(command)).not.toThrow();
       expect(reasonOf(command)).toBe("compound-andor-operand");
     }
-    // WHY: the guard must not sweep up the admitted chain shapes beside it.
     expect(viewOf("cd sub && cat f").filePath).toBe("f");
     expect(reasonOf("cat f && cat g")).toBe("multi-view");
   });
 
   it("passes through unsafe chain segments", () => {
-    // WHY: (ADR-0039 D6) a literal print beside a view is glue in an admitted compound — the
-    // WHY: envelope (separately) verifies the predicted bytes against observed stdout, and the
-    // WHY: lifecycle still declines this shape until then, so no lease exists yet.
     expect(compoundOf("echo hi && cat f")).toEqual({
       kind: "pureCompound",
       segments: [
@@ -280,8 +264,6 @@ describe("bash-classifier fail-closed matrix", () => {
       ],
     });
     expect(reasonOf("make && cat f")).toBe("unsupported-command:make");
-    // WHY: (ADR-0039 D6) trailing glue is the same admitted shape — position-agnostic, verified
-    // WHY: against observed stdout by the envelope, declined by default until then.
     expect(compoundOf("cat f && echo done")).toEqual({
       kind: "pureCompound",
       segments: [
@@ -299,13 +281,8 @@ describe("bash-classifier fail-closed matrix", () => {
   });
 
   it("fails closed on non-silent or non-deterministic `;` chains", () => {
-    // WHY: only a strictly silent prefix is admitted; a view, an unknown
-    // WHY: command, a background job, or a non-literal `cd` in prefix position
-    // WHY: is not the deterministic shape this decision authorises.
     expect(reasonOf("cat f; cat g")).toBe("multi-statement");
     expect(reasonOf("cat f; cd sub")).toBe("multi-statement");
-    // WHY: (ADR-0039 D6) a `;`-chain print prefix is glue, not an unknown command — the chain
-    // WHY: stays deterministic (static bytes + a terminal view), so it classifies as a compound.
     expect(compoundOf("echo hi; cat f")).toEqual({
       kind: "pureCompound",
       segments: [
@@ -315,24 +292,15 @@ describe("bash-classifier fail-closed matrix", () => {
     });
     expect(reasonOf("cd a; cd b; cat f")).toBe("multi-cd");
     expect(reasonOf("cd $D; cat f")).toBe("non-literal-command");
-    // WHY: `cd --`/`cd -P` consume the word as an option and cd to `$HOME`,
-    // WHY: so it must never become a `baseDir` (ADR-0033 D1 order-soundness).
     expect(reasonOf("cd --; cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd -P; cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd d; cat f &")).toBe("background");
-    // WHY: the search branch inherits the `;` chain ruling verbatim (see the search matrix
-    // WHY: below): a silent prefix plus a terminal search is the same deterministic shape as
-    // WHY: `cd d; cat f`, so it is admitted rather than denied.
     expect(searchOf("cd d; grep -n x f").baseDir).toBe("d");
-    // WHY: `unbash` reports `;` and a newline as the same statement boundary, so
-    // WHY: the separator text is what keeps a newline script out of the gate.
     expect(reasonOf("cd d\ncat f")).toBe("multi-statement");
     expect(reasonOf("cd d & cat f")).toBe("multi-statement");
   });
 
   it("keeps the silent set closed outside prefix position", () => {
-    // WHY: `pwd` is admitted only as a `;`-chain prefix — a bare `pwd` or an
-    // WHY: `&&` chain keeps exactly the R3 silent set.
     expect(reasonOf("pwd")).toBe("unsupported-command:pwd");
     expect(reasonOf("pwd && cat f")).toBe("unsupported-command:pwd");
     expect(reasonOf("cd d && pwd && cat f")).toBe("unsupported-command:pwd");
@@ -366,15 +334,11 @@ describe("bash-classifier fail-closed matrix", () => {
 
   it("passes through search and transform pipelines", () => {
     expect(searchOf("grep -n pat f").program).toBe("grep");
-    // WHY: `rg pat` has no file operand (it would search the cwd recursively), so the search
-    // WHY: selector refuses it and the segment falls through to the unsupported-command reason.
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
     expect(reasonOf("cat f | sort | head")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | head -5 | cat")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f |& head")).toBe("unsupported-pipeline");
     expect(reasonOf("cat a b | head")).toBe("unsupported-pipeline");
-    // WHY: (ADR-0049 M1) `cat a b` is an admitted MULTI-file view now, so the still-refused two-operand
-    // WHY: shapes are the ones carrying an option or a `--` among the operands.
     expect(reasonOf("cat a b -A")).toBe("unsupported-command:cat");
     expect(reasonOf("paste a b")).toBe("unsupported-command:paste");
   });
@@ -434,7 +398,6 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(searchOf("rg -n -i pattern f.ts").lineNumbered).toBe(true);
     expect(searchOf('grep "a b" f.ts').pattern).toBe("a b");
     expect(searchOf("grep 'a b' f.ts").pattern).toBe("a b");
-    // WHY: a `-`-leading pattern is legal only behind the `--` separator (spec §3.3).
     expect(searchOf("grep -- -pat f.ts")).toEqual({
       program: "grep",
       pattern: "-pat",
@@ -445,12 +408,10 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(searchOf("cd sub && grep x f").baseDir).toBe("sub");
   });
   it("accepts the five Tier-1 flag shapes (spec §3.2 expansion)", () => {
-    // WHY: (a) boundary flags — word/line match do not touch the `^\d+:` row geometry.
     expect(searchOf("grep -w pat f").lineNumbered).toBe(false);
     expect(searchOf("grep --word-regexp pat f").pattern).toBe("pat");
     expect(searchOf("grep -x pat f").filePath).toBe("f");
     expect(searchOf("grep --line-regexp pat f").program).toBe("grep");
-    // WHY: (b) match limit — `-m N` takes its value as the next argument, `--max-count=N` attached.
     expect(searchOf("grep -m 3 pat f")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -459,7 +420,6 @@ describe("bash-classifier search matrix (I1a)", () => {
     });
     expect(searchOf("grep --max-count=3 pat f").pattern).toBe("pat");
     expect(searchOf("rg -m 1 pat f").program).toBe("rg");
-    // WHY: (c) bundled shorts — every letter admitted, with `m` closing the cluster and eating `3`.
     expect(searchOf("grep -in pat f").lineNumbered).toBe(true);
     expect(searchOf("grep -iF pat f").lineNumbered).toBe(false);
     expect(searchOf("grep -wF pat f").pattern).toBe("pat");
@@ -470,7 +430,6 @@ describe("bash-classifier search matrix (I1a)", () => {
       filePath: "f",
       lineNumbered: true,
     });
-    // WHY: (d) post-operand flags — between the pattern and the file, and after the file.
     expect(searchOf("grep pat -i f")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -480,21 +439,18 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(searchOf("grep pat f -n").lineNumbered).toBe(true);
     expect(searchOf("rg pat -i f").program).toBe("rg");
     expect(searchOf("grep pat f -w").filePath).toBe("f");
-    // WHY: `--` ends flag parsing, so the trailing `-n` here is the *file* operand, not a flag.
     expect(searchOf("grep pat -- -n")).toEqual({
       program: "grep",
       pattern: "pat",
       filePath: "-n",
       lineNumbered: false,
     });
-    // WHY: (e) colour — only the `never` value is admitted, and only in the `=` spelling.
     expect(searchOf("grep --color=never pat f").lineNumbered).toBe(false);
     expect(searchOf("grep --colour=never pat f").pattern).toBe("pat");
     expect(searchOf("rg --color=never pat f").program).toBe("rg");
   });
 
   it("fails closed on malformed values, attached short values and unknown cluster letters", () => {
-    // WHY: `-m`/`--max-count` values must be strictly positive integer literals (spec §3.2).
     for (const command of [
       "grep -m0 pat f",
       "grep -m 0 pat f",
@@ -509,8 +465,6 @@ describe("bash-classifier search matrix (I1a)", () => {
     ]) {
       expect(reasonOf(command)).toBe("unsupported-command:grep");
     }
-    // WHY: a cluster is decomposed letter by letter — a digit or an unknown letter anywhere,
-    // WHY: and `m` anywhere but last, are not flags this gate admits.
     for (const command of [
       "grep -n5 pat f",
       "grep -inQ pat f",
@@ -520,7 +474,6 @@ describe("bash-classifier search matrix (I1a)", () => {
     ]) {
       expect(reasonOf(command)).toBe("unsupported-command:grep");
     }
-    // WHY: colour escapes wrap the digits, so every value but `never` stays raw bash.
     for (const command of [
       "grep --color pat f",
       "grep --color=always pat f",
@@ -539,15 +492,8 @@ describe("bash-classifier search matrix (I1a)", () => {
       "grep --invert-match pat f",
       "grep -o pat f",
       "grep --only-matching pat f",
-      // WHY: (ADR-0048 D3) the value-separate context spellings are admitted now — see the
-      // WHY: context admission block below; the attached and rg-unnamed spellings stay here.
       "grep -l pat f",
       "grep -L pat f",
-      // WHY: `--max-count` is admitted only in the attached `=N` spelling — spec §3.2 admits a
-      // WHY: separate-argument value for the short `-m` alone, and its fail-closed list names
-      // WHY: this very shape ("bare `--max-count`"). Ticket #82 §4 lists the pin below as a
-      // WHY: positive case; §2 is the normative admitted surface, so the conservative reading
-      // WHY: wins and this stays denied (see the completion report's P2 issue).
       "grep --max-count 3 pat f",
       "grep -q pat f",
       "grep -s pat f",
@@ -585,28 +531,16 @@ describe("bash-classifier search matrix (I1a)", () => {
     for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:rg");
   });
   it("denies attached context flags, filename/formatting flags, and a non-literal operand", () => {
-    // WHY: `-A2` is an attached context flag; admitting it would emit rows whose line-number geometry
-    // WHY: is absent (`--` group separators and bare context rows instead of `^(\d+):`).
     expect(reasonOf("grep -A2 pat f")).toBe("unsupported-command:grep");
     expect(reasonOf("grep -B3 pat f")).toBe("unsupported-command:grep");
     expect(reasonOf("grep -C1 pat f")).toBe("unsupported-command:grep");
-    // WHY: the filename flags add or drop a `file:` prefix, so the first parsed field would be a path or
-    // WHY: the pattern instead of the line number the anchors index by.
     expect(reasonOf("grep --with-filename pat f")).toBe("unsupported-command:grep");
     expect(reasonOf("grep --no-filename pat f")).toBe("unsupported-command:grep");
-    // WHY: colour escapes (with or without a value) wrap the digits, so `^(\d+):` no longer matches the
-    // WHY: bytes the disk witness would be compared against.
     expect(reasonOf("grep --color pat f")).toBe("unsupported-command:grep");
     expect(reasonOf("grep --color=auto pat f")).toBe("unsupported-command:grep");
-    // WHY: a backtick operand is expanded by bash before grep reads a byte, so the file this classifier
-    // WHY: resolved is not the file that runs — the non-literal gate, not the flag allowlist, is the lock.
     expect(reasonOf("grep `cmd` f")).toBe("non-literal-command");
-    // WHY: rg's context and filename flags widen the same geometry (`-A2` group separators,
-    // WHY: `--with-filename` path prefix), so they fail closed on the rg allowlist rather than grep's.
     expect(reasonOf("rg -A2 pat f")).toBe("unsupported-command:rg");
     expect(reasonOf("rg --with-filename pat f")).toBe("unsupported-command:rg");
-    // WHY: positive control — the allowlisted line-number flag still admits, so the rows above
-    // WHY: discriminate on flag shape rather than on search being refused wholesale.
     expect(searchOf("grep -n pat f")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -616,23 +550,18 @@ describe("bash-classifier search matrix (I1a)", () => {
   });
 
   it("denies structural shapes, globs, and non-single-file operands", () => {
-    // WHY: zero or two-plus operands break the `^(\\d+):` stdout geometry (stdin search, or
-    // WHY: filename prefixes), so only exactly one file operand is admitted.
     expect(reasonOf("grep")).toBe("unsupported-command:grep");
     expect(reasonOf("grep pat")).toBe("unsupported-command:grep");
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
-    // WHY: globs, tildes and expansions never reach the selector — `stageShape` refuses them.
     expect(reasonOf("grep pat *.ts")).toBe("non-literal-command");
     expect(reasonOf("grep pat ~/f.ts")).toBe("non-literal-command");
     expect(reasonOf("grep $P f")).toBe("non-literal-command");
     expect(reasonOf("grep $(cat p) f")).toBe("non-literal-command");
-    // WHY: structural shapes (spec §3.2): pipelines, redirections, subshells, compounds, jobs.
     expect(reasonOf("grep pat f > out.txt")).toBe("non-literal-command");
     expect(reasonOf("grep pat f && cat g")).toBe("multi-view");
     expect(reasonOf("grep pat f || cat g")).toBe("non-and-chain");
     expect(reasonOf("grep pat f &")).toBe("background");
     expect(reasonOf("grep pat f; cat g")).toBe("multi-statement");
-    // WHY: a search chained with a view breaks the exactly-one-target rule, exactly as two views do.
     expect(reasonOf("grep pat f && head -2 g")).toBe("multi-view");
     expect(recursiveOf("cd d && grep -r x .").baseDir).toBe("d");
   });
@@ -654,16 +583,12 @@ describe("withSearchLineNumbers injection (I1a)", () => {
     expect(withSearchLineNumbers("grep -n pat f")).toBe("grep -n pat f");
     expect(withSearchLineNumbers("grep --line-number pat f")).toBe("grep --line-number pat f");
     expect(withSearchLineNumbers("rg --line-number pat f")).toBe("rg --line-number pat f");
-    // WHY: a bundled `-in` carries `n`, so the injection is skipped exactly as for a bare `-n`.
     expect(withSearchLineNumbers("grep -in pat f")).toBe("grep -in pat f");
     expect(withSearchLineNumbers("grep -nm 3 pat f")).toBe("grep -nm 3 pat f");
-    // WHY: a post-operand `-n` is a flag position too (spec §3.2) — the search is numbered already.
     expect(withSearchLineNumbers("grep pat f -n")).toBe("grep pat f -n");
   });
 
   it("rewrites the Tier-1 flag shapes with the line-number flag after the program name", () => {
-    // WHY: the injection is a pure splice at the program-name offset (spec §3.3), so a
-    // WHY: post-operand flag keeps its position and the search still emits `LINE:content`.
     expect(withSearchLineNumbers("grep pat -i f")).toBe("grep -n pat -i f");
     expect(withSearchLineNumbers("grep pat f -n")).toBe("grep pat f -n");
     expect(withSearchLineNumbers("grep -w pat f")).toBe("grep -n -w pat f");
@@ -754,8 +679,6 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
       filePath: "f",
       lineNumbered: false,
     });
-    // WHY: flags are admitted at any position before `--` (Tier-1 shape (d)), and `-e` is
-    // WHY: a flag — between pattern-slot and file, and after the file, alike.
     expect(searchOf("grep -i -e pat f").pattern).toBe("pat");
     expect(searchOf("grep -e pat -i f")).toEqual({
       program: "grep",
@@ -769,21 +692,18 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
       filePath: "f",
       lineNumbered: false,
     });
-    // WHY: the point of `-e`: a `-`-leading value is the pattern, no `--` required.
     expect(searchOf("grep -e -pat f")).toEqual({
       program: "grep",
       pattern: "-pat",
       filePath: "f",
       lineNumbered: false,
     });
-    // WHY: a consumed `-e` value is never re-parsed as a flag — `-n` here is the pattern.
     expect(searchOf("grep -e -n f")).toEqual({
       program: "grep",
       pattern: "-n",
       filePath: "f",
       lineNumbered: false,
     });
-    // WHY: `--` still ends flag parsing, so the file may itself be `-n`.
     expect(searchOf("grep -e pat -- -n")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -867,12 +787,8 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
 
   it("fails closed on `-e`-as-cluster misreadings and `-e`+`-m` collisions", () => {
     for (const command of [
-      // WHY: a token starting `-e` is the attached form, so `-emi` is pattern `mi` (admitted
-      // WHY: multi-file, pinned positively below); these start with another letter, where `m`
-      // WHY: anywhere but last still fails closed.
       "grep -me pat f",
       "grep -iem pat f",
-      // WHY: bad `-m` values still fail with `-e` present.
       "grep -e pat -m 0 f",
       "grep -e pat -m3 f",
       "grep -e pat -nm3 f",
@@ -893,20 +809,15 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
     expect(withSearchLineNumbers("grep -e pat f")).toBe("grep -n -e pat f");
     expect(withSearchLineNumbers("grep -epat f")).toBe("grep -n -epat f");
     expect(withSearchLineNumbers("grep -e pat -m 3 f")).toBe("grep -n -e pat -m 3 f");
-    // WHY: `-ne`/`-ine` already carry `n`, so the injection skips byte-identically.
     expect(withSearchLineNumbers("grep -ne pat f")).toBe("grep -ne pat f");
     expect(withSearchLineNumbers("grep -ine pat f")).toBe("grep -ine pat f");
-    // WHY: `-e -n` is NOT numbered (`-n` is the pattern), so the splice still applies.
     expect(withSearchLineNumbers("grep -e -n f")).toBe("grep -n -e -n f");
-    // WHY: denied `-e` shapes pass through the rewriter byte-identical.
     expect(withSearchLineNumbers("grep -e a -e b f")).toBe("grep -e a -e b f");
   });
 });
 
 describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
   it("admits -n -e RANGEp [-e RANGEp …] and merges at parse", () => {
-    // WHY: disjoint ranges survive parse sorted and separate; the D3/D9
-    // WHY: serve-time gates (not the classifier) decide their fate.
     expect(viewOf("sed -n -e '1p' -e '10p' f")).toEqual({
       filePath: "f",
       ops: [
@@ -914,17 +825,14 @@ describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
         { kind: "range", from: 10, to: 10 },
       ],
     });
-    // WHY: overlap merges to the union — no gap, nothing unprinted is added.
     expect(viewOf("sed -n -e '1,5p' -e '3,7p' f")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 1, to: 7 }],
     });
-    // WHY: adjacency merges ([1,3]+[4,5] prints exactly 1..5, contiguous).
     expect(viewOf("sed -n -e '1,3p' -e '4,5p' f")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 1, to: 5 }],
     });
-    // WHY: unsorted input is sorted at parse; containment collapses inward.
     expect(viewOf("sed -n -e '10,12p' -e '1,2p' f")).toEqual({
       filePath: "f",
       ops: [
@@ -940,17 +848,14 @@ describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
       filePath: "f",
       ops: [{ kind: "range", from: 1, to: 10 }],
     });
-    // WHY: a three-spec chain bridges through the middle spec.
     expect(viewOf("sed -n -e '1,2p' -e '5,6p' -e '3,4p' f")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 1, to: 6 }],
     });
-    // WHY: a single -e pair is the degenerate multi-range shape.
     expect(viewOf("sed -n -e '5p' f")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 5, to: 5 }],
     });
-    // WHY: the legacy spelling keeps working byte-identically (contract).
     expect(viewOf("sed -n '20,128p' f")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 20, to: 128 }],
@@ -959,7 +864,6 @@ describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
       filePath: "f",
       ops: [{ kind: "range", from: 5, to: 5 }],
     });
-    // WHY: no-file multi-range is the pipeline filter position (parseFilterStage).
     expect(viewOf("cat f | sed -n -e '3,7p' -e '5,9p'")).toEqual({
       filePath: "f",
       ops: [{ kind: "range", from: 3, to: 9 }],
@@ -967,35 +871,24 @@ describe("bash-classifier sed multi-range -e matrix (Tier-2 item 7)", () => {
   });
 
   it("fails the whole stage closed on any unparseable spec (never partial)", () => {
-    // WHY: mixed valid+garbage denies the stage even though '1p' alone is fine.
     expect(reasonOf("sed -n -e '1p' -e 's/a/b/p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -e '/re/p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -e '1,5w out' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -e '1,5d' f")).toBe("unsupported-command:sed");
-    // WHY: reversed ranges fail closed in BOTH spellings (strict-print spirit;
-    // WHY: legacy `10,1p` was previously admitted by the parser and died at
-    // WHY: serve time — now it is denied at parse; recorded choice).
     expect(reasonOf("sed -n -e '10,1p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n '10,1p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '5p' -e '10,1p' f")).toBe("unsupported-command:sed");
-    // WHY: `;`-joined multi-range stays raw — `;` is not in the strict regex,
-    // WHY: so the single PROG is unparseable and the stage is denied whole.
     expect(reasonOf("sed -n -e '1p;2p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n '1p;2p' f")).toBe("unsupported-command:sed");
-    // WHY: shape hazards — dangling -e, mixed legacy+-e, file-not-last,
-    // WHY: two files, -e without -n, -n without pairs.
     expect(reasonOf("sed -n -e '1p' -e f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n '5p' -e '6p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' f -e '2p'")).toBe("unsupported-command:sed");
-    // WHY: (ADR-0049 M1) two files are a multi-file view now, so an unparseable spec is what closes the
-    // WHY: whole stage — never a partial range set.
     expect(reasonOf("sed -n -e '1p' -e 'oops' f g")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -e '2p' f g -e '3p'")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -e '1p' -e '2p' f")).toBe("unsupported-command:sed");
     expect(reasonOf("sed -n -e '1p' -- f")).toBe("unsupported-command:sed");
-    // WHY: pipeline position denies with the pipeline reason, not the command one.
     expect(reasonOf("cat f | sed -n -e '1p' -e 'oops'")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | sed -n -e '9,2p'")).toBe("unsupported-pipeline");
   });
@@ -1021,7 +914,6 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
       baseDir: "sub",
       lineNumbered: true,
     });
-    // Unnumbered shape is unchanged (no marker key — Tier-1 toEqual literals keep passing).
     expect(viewOf("cat f.txt")).toEqual({ filePath: "f.txt", ops: [] });
   });
 
@@ -1043,17 +935,14 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
   });
 
   it("fails closed on every other cat/nl spelling", () => {
-    // cat: every other flag, doubled flags, longs, attached values, missing/extra operands.
     expect(reasonOf("cat -A f")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -b f")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -E f")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -n -n f")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -n")).toBe("unsupported-command:cat");
     expect(reasonOf("cat --number f")).toBe("unsupported-command:cat");
-    // WHY: (ADR-0049 M1) `cat -n f g` is an admitted multi-file view; a `--` among the operands is not.
     expect(reasonOf("cat -n -- f g")).toBe("unsupported-command:cat");
     expect(reasonOf("cat -n -f")).toBe("unsupported-command:cat");
-    // nl: every other style, split/shuffled flags, longs, counts, extra operands.
     expect(reasonOf("nl f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -ba")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -bn f")).toBe("unsupported-command:nl");
@@ -1062,12 +951,10 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
     expect(reasonOf("nl -b a f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -ba -ba f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl --body-numbering=a f")).toBe("unsupported-command:nl");
-    // WHY: (ADR-0049 M1) `nl -ba f g` is an admitted multi-file view; a `--` among the operands is not.
     expect(reasonOf("nl -ba -- f g")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -ba -f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -v 2 -ba f")).toBe("unsupported-command:nl");
     expect(reasonOf("nl -i 2 -ba f")).toBe("unsupported-command:nl");
-    // numbered source with a downstream filter is never a numbered view.
     expect(reasonOf("cat -n f | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("nl -ba f | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("cat -n f | cat")).toBe("unsupported-pipeline");
@@ -1088,7 +975,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
       filePath: "f",
       ops: [{ kind: "keep", pattern: "foo" }],
     });
-    // WHY: patterns arrive through `literalValue`, so quoting carries the exact spelling.
     expect(viewOf("cat f | grep 'a b'")).toEqual({
       filePath: "f",
       ops: [{ kind: "keep", pattern: "a b" }],
@@ -1097,7 +983,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
       filePath: "f",
       ops: [{ kind: "drop", pattern: "a b" }],
     });
-    // WHY: the `rtk` unwrap covers content filters exactly as it covers selectors.
     expect(viewOf("cat f | rtk grep -v foo")).toEqual({
       filePath: "f",
       ops: [{ kind: "drop", pattern: "foo" }],
@@ -1150,9 +1035,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
   });
 
   it("translates an unnumbered search source into a keep filter", () => {
-    // WHY: an unnumbered source search proves exactly what a `keep` filter proves, so it is
-    // WHY: translated into one — the model's own command is never rewritten, and the content
-    // WHY: seam byte-gates the fold against the stdout bash actually printed.
     expect(viewOf("grep pat f | head -5")).toEqual({
       filePath: "f",
       ops: [
@@ -1176,9 +1058,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
         { kind: "first", n: 5 },
       ],
     });
-    // WHY: [ADR-0039 D3, superseding the item-8 decline] a NUMBERED single-file search piped
-    // WHY: into `head`/`tail` is a `pureSearch` with the slice ops attached — the slice is a pure
-    // WHY: line-count truncation on resolved rows, so the `LINE:` column is never re-inspected.
     expect(searchOf("grep -n pat f | head -5")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -1207,13 +1086,9 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
       lineNumbered: true,
       sliceOps: [{ kind: "last", n: 5 }],
     });
-    // WHY: F4 — a slice that leaves zero survivors declines: `head -0`/`tail -0` admit no
-    // WHY: slice (positive counts only), so the pipeline fails closed before any lease exists.
     expect(reasonOf("grep -n pat f | head -0")).toBe("unsupported-pipeline");
     expect(reasonOf("grep -n pat f | tail -0")).toBe("unsupported-pipeline");
     expect(reasonOf("rtk grep pat f | head -3")).toBe("unsupported-pipeline");
-    // WHY: `-v`/`-N` stay denied at SOURCE position — the Tier-1 source pins hold, so item 9
-    // WHY: flips no source-flag denial (only cat/head/sed-led pipelines gain filters).
     expect(reasonOf("grep -v pat f | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("rg -N pat f | head -5")).toBe("unsupported-pipeline");
   });
@@ -1250,28 +1125,21 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
       "cat f | head -c 5",
       "cat f | grep $P",
       "cat f | grep *.ts",
-      // WHY: the structural default — an unknown program needs zero new code to fail closed.
       "cat f | frobnicate",
     ]) {
       expect(reasonOf(command)).toBe("unsupported-pipeline");
     }
-    // WHY: Tier 3 does NOT lift the item-8 numbered-source guard.
     expect(reasonOf("cat -n f | grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("nl -ba f | rg -N x")).toBe("unsupported-pipeline");
-    // WHY: five stages exceed the pipeline ceiling even when every stage parses.
     expect(reasonOf("cat f | grep a | grep -v b | head -5 | tail -2")).toBe("unsupported-pipeline");
   });
 
   it("never mutates a pipeline: the rewrite is bare searches only", () => {
-    // WHY: injecting `-n` into a search-led pipeline would insert a column its downstream stage
-    // WHY: inspects, silently changing the model's own command's row set — so pipelines stay
-    // WHY: byte-identical and the interception is a translate-or-raw decision.
     expect(withSearchLineNumbers("grep pat f | head -5")).toBe("grep pat f | head -5");
     expect(withSearchLineNumbers("rg pat f | head -5")).toBe("rg pat f | head -5");
     expect(withSearchLineNumbers("grep -n pat f | head -5")).toBe("grep -n pat f | head -5");
     expect(withSearchLineNumbers("cat f | grep x")).toBe("cat f | grep x");
     expect(withSearchLineNumbers("cat f | grep x | head -5")).toBe("cat f | grep x | head -5");
-    // WHY: the bare single-file search keeps its Tier-1 splice.
     expect(withSearchLineNumbers("grep pat f")).toBe("grep -n pat f");
   });
 
@@ -1282,7 +1150,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
       { line: 3, text: "a" },
       { line: 4, text: "b" },
     ];
-    // WHY: subtract-then-head keeps file lines 3 and 4 ...
     expect(
       applyViewOps(
         [
@@ -1292,7 +1159,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
         lines,
       ).map((entry) => entry.line),
     ).toEqual([3, 4]);
-    // WHY: ... while head-then-subtract empties (lines 1 and 2 both contain K).
     expect(
       applyViewOps(
         [
@@ -1302,7 +1168,6 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
         lines,
       ),
     ).toEqual([]);
-    // WHY: slice positions are stream-relative AFTER a filter, and never renumber the line.
     expect(
       applyViewOps(
         [
@@ -1336,14 +1201,9 @@ describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", (
     expect(multiOf("grep pat -i a.ts b.ts").filePaths).toEqual(["a.ts", "b.ts"]);
     expect(multiOf("grep pat a.ts b.ts -n").lineNumbered).toBe(true);
     expect(multiOf("rg pat a.ts b.ts").program).toBe("rg");
-    // WHY: with `-e` the value IS the pattern, so every operand is a file — the Tier-2
-    // WHY: "pattern both ways" denial dissolves at every count, not just for one file.
     expect(multiOf("grep -e pat a.ts b.ts").pattern).toBe("pat");
     expect(multiOf("grep -epat a.ts b.ts").filePaths).toEqual(["a.ts", "b.ts"]);
     expect(multiOf("grep -e a b f").filePaths).toEqual(["b", "f"]);
-    // WHY: `-ei`/`-en` are attached-`-e` spellings — getopt puts the rest of the token in the
-    // WHY: option argument, so bash runs pattern `i`/`n` over two files; the count widening is
-    // WHY: exactly what newly admits them, and the serve seam then witnesses what bash printed.
     expect(multiOf("grep -ei pat f").pattern).toBe("i");
     expect(multiOf("grep -en pat f").filePaths).toEqual(["pat", "f"]);
     expect(multiOf("grep -emi pat f").pattern).toBe("mi");
@@ -1362,8 +1222,6 @@ describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", (
     expect(recursiveOf("grep --dereference-recursive pat dir").dirPath).toBe("dir");
     expect(recursiveOf("grep -e pat -r dir").pattern).toBe("pat");
     expect(recursiveOf("cd d && grep -r x .").baseDir).toBe("d");
-    // WHY: rg recurses by default, so the dir/file decision is the lifecycle's stat (the
-    // WHY: classifier stays pure); grep needs its explicit marker.
     expect(searchOf("rg pat dir").filePath).toBe("dir");
     expect(searchOf("rg pat f.ts").filePath).toBe("f.ts");
     expect(searchOf("grep pat dir").filePath).toBe("dir");
@@ -1375,24 +1233,17 @@ describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", (
   it("fails closed beyond the file bound and on every mixed or wrong-tool shape", () => {
     const tooMany = `grep pat ${Array.from({ length: 11 }, (_, i) => `f${i}.ts`).join(" ")}`;
     expect(reasonOf(tooMany)).toBe("unsupported-command:grep");
-    // WHY: recursion takes exactly one operand — recursion and multi-file never mix.
     expect(reasonOf("grep -r pat a.ts b.ts")).toBe("unsupported-command:grep");
     expect(reasonOf("grep -r pat d1 d2")).toBe("unsupported-command:grep");
     expect(reasonOf("grep -r pat")).toBe("unsupported-command:grep");
-    // WHY: rg's `-r`/`-R` are `--replace`/dereference flags, not recursion — the letters are
-    // WHY: per program, so `rg -r x pat f` can never be read as a walk.
     expect(reasonOf("rg -r x pat f")).toBe("unsupported-command:rg");
     expect(reasonOf("rg -R pat f")).toBe("unsupported-command:rg");
     expect(reasonOf("rg --replace x pat f")).toBe("unsupported-command:rg");
-    // WHY: the `--files` shape is exactly the flag plus an optional non-`-` root.
     expect(reasonOf("rg --files pat f")).toBe("unsupported-command:rg");
     expect(reasonOf("rg --files --json")).toBe("unsupported-command:rg");
     expect(reasonOf("rg --files -n")).toBe("unsupported-command:rg");
-    // WHY: stdin and implicit-cwd searches stay denied.
     expect(reasonOf("grep pat")).toBe("unsupported-command:grep");
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
-    // WHY: `git grep`/`git show` are not the two intercepted programs, and the denied-growth
-    // WHY: list keeps context flags, `-c/-l/-o/-q` and `tee`/`tac`/`sort` out of the surface.
     expect(reasonOf("git grep pat")).toBe("unsupported-command:git");
     expect(reasonOf("git show HEAD:f")).toBe("unsupported-command:git");
     expect(reasonOf("grep -e a -e b f g")).toBe("unsupported-command:grep");
@@ -1405,7 +1256,6 @@ describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", (
     expect(withSearchLineNumbers("grep -r pat dir")).toBe("grep -n -r pat dir");
     expect(withSearchLineNumbers("grep -rn pat dir")).toBe("grep -rn pat dir");
     expect(withSearchLineNumbers("rg pat dir")).toBe("rg --line-number pat dir");
-    // WHY: a path list has no match rows — nothing to number and no geometry to parse.
     expect(withSearchLineNumbers("rg --files")).toBe("rg --files");
     expect(withSearchLineNumbers("rg --files dir")).toBe("rg --files dir");
   });
@@ -1416,7 +1266,6 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
     expect(viewOf("cat f | sort -u")).toEqual({ filePath: "f", ops: [{ kind: "sortUnique" }] });
     expect(viewOf("cat f | uniq")).toEqual({ filePath: "f", ops: [{ kind: "uniq" }] });
     expect(viewOf("cat f | wc -l")).toEqual({ filePath: "f", ops: [{ kind: "count" }] });
-    // WHY: the `rtk` unwrap covers line-set consumers exactly as it covers selectors and filters.
     expect(viewOf("cat f | rtk sort -u")).toEqual({ filePath: "f", ops: [{ kind: "sortUnique" }] });
     expect(viewOf("cat f | rtk uniq")).toEqual({ filePath: "f", ops: [{ kind: "uniq" }] });
     expect(viewOf("cat f | rtk wc -l")).toEqual({ filePath: "f", ops: [{ kind: "count" }] });
@@ -1456,7 +1305,6 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
       filePath: "f",
       ops: [{ kind: "sortUnique" }, { kind: "uniq" }],
     });
-    // WHY: an unnumbered search source is the `keep` filter, so it composes with a consumer too.
     expect(viewOf("grep pat f | sort -u")).toEqual({
       filePath: "f",
       ops: [{ kind: "keep", pattern: "pat" }, { kind: "sortUnique" }],
@@ -1465,30 +1313,24 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
 
   it("denies every growth spelling around the three consumers", () => {
     for (const command of [
-      // bare/flagged/operand `sort`, its `-o` write form and combined flags
       "cat f | sort",
       "cat f | sort -n",
       "cat f | sort -r",
       "cat f | sort -u -n",
       "cat f | sort -o out.txt",
       "cat f | sort g",
-      // `uniq` with any flag or operand
       "cat f | uniq -c",
       "cat f | uniq -d",
       "cat f | uniq -u",
       "cat f | uniq extra",
-      // `wc` in every spelling but `-l` alone
       "cat f | wc",
       "cat f | wc -c",
       "cat f | wc -w",
       "cat f | wc -l f",
-      // `wc -l` is terminal — nothing may consume the count after it
       "cat f | wc -l | head -2",
       "cat f | wc -l | sort -u",
-      // any pipe program not explicitly admitted stays raw
       "cat f | sort -u | frobnicate",
       "cat f | frobnicate",
-      // the denied-growth list: context, output-shaping and count flags
       "cat f | grep -A 2 x",
       "cat f | grep -B 1 x",
       "cat f | grep -C 1 x",
@@ -1501,17 +1343,13 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
       "cat f | tail -c 5",
       "cat f | tee out.txt",
       "cat f | tac",
-      // a numbered view composes with nothing downstream (item-8 guard, not lifted)
       "cat -n f | sort -u",
       "cat -n f | grep x | sort -u",
       "nl -ba f | wc -l",
-      // a path list has no lines to count
       "rg --files | wc -l",
     ]) {
       expect(reasonOf(command)).toBe("unsupported-pipeline");
     }
-    // WHY: a line-set consumer with no source file is not a view at all, and `git grep`/`git show`
-    // WHY: are outside the two intercepted programs (their growth stays denied).
     expect(reasonOf("sort -u f")).toBe("unsupported-command:sort");
     expect(reasonOf("uniq f")).toBe("unsupported-command:uniq");
     expect(reasonOf("wc -l f")).toBe("unsupported-command:wc");
@@ -1527,15 +1365,11 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
       { line: 4, text: "a" },
       { line: 5, text: "c" },
     ];
-    // WHY: `sort -u` dedupes by text keeping the FIRST occurrence's line, then orders by text —
-    // WHY: the surviving `a` is line 2 and the surviving `b` is line 1, never a renumbered row.
     expect(applyViewOps([{ kind: "sortUnique" }], lines)).toEqual([
       { line: 2, text: "a" },
       { line: 1, text: "b" },
       { line: 5, text: "c" },
     ]);
-    // WHY: `uniq` is ADJACENT-only and literal: the same text survives at two non-adjacent
-    // WHY: positions, and each run head keeps its own true line.
     expect(applyViewOps([{ kind: "uniq" }], lines)).toEqual(lines);
     expect(
       applyViewOps(
@@ -1552,17 +1386,14 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
       { line: 3, text: "y" },
       { line: 4, text: "x" },
     ]);
-    // WHY: a slice after a consumer is stream-relative over the REORDERED stream.
     expect(applyViewOps([{ kind: "sortUnique" }, { kind: "first", n: 2 }], lines)).toEqual([
       { line: 2, text: "a" },
       { line: 1, text: "b" },
     ]);
-    // WHY: `wc -l` is terminal — the fold returns the COUNTED SET, whose length is the number.
     expect(applyViewOps([{ kind: "count" }], lines)).toEqual(lines);
     expect(applyViewOps([{ kind: "drop", pattern: "a" }, { kind: "count" }], lines)).toHaveLength(
       3,
     );
-    // WHY: raw byte order, never locale collation — `Z` (0x5A) precedes `a` (0x61).
     expect(
       applyViewOps(
         [{ kind: "sortUnique" }],
@@ -1575,8 +1406,6 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
   });
 
   it("throws on an unknown op kind instead of degrading it to a slice", () => {
-    // WHY: the fold is exhaustive over `ViewOp`: an op kind the runtime does not know must never
-    // WHY: silently become a slice and re-serve the whole file as if it were the model's output.
     expect(() =>
       applyViewOps([{ kind: "unknown-op" } as unknown as ViewOp], [{ line: 1, text: "a" }]),
     ).toThrow();
@@ -1596,10 +1425,6 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
   });
 });
 describe("bash-classifier redundant cd (D7/D8)", () => {
-  // WHY: (ADR-0039 D7) a redundant `cd` is inert like `:`/`true`: dot-forms resolve to the base
-  // WHY: for every base, and an absolute repeat matches tracked exact knowledge — so neither is
-  // WHY: counted toward the single-`cd` limit nor trips multi/post-view guards. Anything else
-  // WHY: (including `..`, which can escape a symbolic root) counts normally.
   it("skips dot-form cds without counting them", () => {
     expect(viewOf("cd . && cat f")).toEqual({ filePath: "f", ops: [] });
     expect(viewOf("cd sub && cd . && cat f")).toEqual({ filePath: "f", baseDir: "sub", ops: [] });
@@ -1626,9 +1451,6 @@ describe("bash-classifier redundant cd (D7/D8)", () => {
   });
 });
 describe("bash-classifier compound multi-block (C4)", () => {
-  // WHY: (commit 4) multiple view/search blocks admit only with glue present (hasGlue-gated
-  // WHY: relaxation); glue-less multis keep their exact current reasons. A non-redundant `cd`
-  // WHY: after a block fails closed (post-block-cd) so no block misresolves.
   it("admits multiple blocks when glue is present anywhere", () => {
     expect(compoundOf("grep -n A f && grep -n B g && echo hi")).toEqual({
       kind: "pureCompound",
@@ -1668,14 +1490,7 @@ describe("bash-classifier compound multi-block (C4)", () => {
   });
 });
 
-// WHY context-search admission pins (#183, ADR-0048 D3): D3 admits `grep -A/-B/-C` and
-// `--after-context/--before-context/--context N`, and `rg -C`, on the EXISTING single-file search
-// shape. The value is the NEXT argument (the `-m N` precedent — an attached short value would read
-// digits inside a cluster, and the digit-fails-closed rule is what keeps `-n5` raw), each option is
-// admitted at most once (mixing `-C` with `-A`/`-B` mixes two override rules), and only the shapes D3
-// names take it: rg keeps just `-C`, while recursion and multi-file context stay raw because their
-// row geometry is a different shape. Every non-context search keeps `context` ABSENT, which is what
-// leaves the Tier-1 `toEqual` literals above byte-identical.
+// Ref: docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md
 describe("bash-classifier context search admission (#183)", () => {
   it("admits grep's short window flags and carries the window on the search", () => {
     expect(searchOf("grep -A 2 pat f")).toEqual({
@@ -1687,7 +1502,6 @@ describe("bash-classifier context search admission (#183)", () => {
     });
     expect(searchOf("grep -B 3 pat f").context).toEqual({ before: 3, after: 0 });
     expect(searchOf("grep -C 1 pat f").context).toEqual({ before: 1, after: 1 });
-    // WHY: both sides at once is an ordinary grep shape (`-B 2 -A 1`); each option is read once.
     expect(searchOf("grep -A 1 -B 2 pat f").context).toEqual({ before: 2, after: 1 });
   });
 
@@ -1695,7 +1509,6 @@ describe("bash-classifier context search admission (#183)", () => {
     expect(searchOf("grep --after-context 2 pat f").context).toEqual({ before: 0, after: 2 });
     expect(searchOf("grep --before-context 2 pat f").context).toEqual({ before: 2, after: 0 });
     expect(searchOf("grep --context 2 pat f").context).toEqual({ before: 2, after: 2 });
-    // WHY: the attached value is the same option, so it is the same window.
     expect(searchOf("grep --context=2 pat f").context).toEqual({ before: 2, after: 2 });
     expect(searchOf("grep --after-context=1 pat f").context).toEqual({ before: 0, after: 1 });
   });
@@ -1708,7 +1521,6 @@ describe("bash-classifier context search admission (#183)", () => {
       lineNumbered: false,
       context: { before: 2, after: 2 },
     });
-    // WHY: `-C` may close a cluster (`-nC 2`) exactly like `m`/`e`; its value is the next argument.
     expect(searchOf("grep -nC 2 pat f")).toEqual({
       program: "grep",
       pattern: "pat",
@@ -1716,8 +1528,6 @@ describe("bash-classifier context search admission (#183)", () => {
       lineNumbered: true,
       context: { before: 2, after: 2 },
     });
-    // WHY: flags are admitted at any position before `--`, so a post-operand context flag is the same
-    // WHY: search — the corpus issues `grep pat -i f`, and `-C` permutes identically.
     expect(searchOf("grep pat -C 1 f").context).toEqual({ before: 1, after: 1 });
     expect(searchOf("cd sub && grep -C 1 pat f").context).toEqual({ before: 1, after: 1 });
     expect(searchOf("grep -C 1 -- pat f").context).toEqual({ before: 1, after: 1 });
@@ -1727,13 +1537,10 @@ describe("bash-classifier context search admission (#183)", () => {
     expect(withSearchLineNumbers("grep -A 2 pat f")).toBe("grep -n -A 2 pat f");
     expect(withSearchLineNumbers("rg -C 2 pat f")).toBe("rg --line-number -C 2 pat f");
     expect(withSearchLineNumbers("grep --context=2 pat f")).toBe("grep -n --context=2 pat f");
-    // WHY: already-numbered shapes take no splice at all, context or not.
     expect(withSearchLineNumbers("grep -nC 2 pat f")).toBe("grep -nC 2 pat f");
   });
 
   it("refuses values that are not strictly positive integers", () => {
-    // WHY: the window is the `<n>` of `-A <n>`: zero (`-A 0`), padded zero, a negative, a
-    // WHY: non-numeric value, a missing value, an empty `=` value and an exponent all fail closed.
     for (const command of [
       "grep -A 0 pat f",
       "grep -A 00 pat f",
@@ -1750,8 +1557,6 @@ describe("bash-classifier context search admission (#183)", () => {
   });
 
   it("refuses attached, repeated and mixed context spellings", () => {
-    // WHY: an attached short value would have to read digits inside the cluster; a repeated or mixed
-    // WHY: option has two override rules (`-C 2 -A 1`) and the seam would have to guess which wins.
     for (const command of [
       "grep -A2 pat f",
       "grep -B3 pat f",
@@ -1768,9 +1573,6 @@ describe("bash-classifier context search admission (#183)", () => {
   });
 
   it("refuses context on the shapes D3 does not name", () => {
-    // WHY: (ADR-0048 D3) recursive context is EXCLUDED by the decision (directory order), and D3's
-    // WHY: quoted geometry is the single-file row — a multi-file run prints context as
-    // WHY: `FILE-LINE-content`, which is not that shape.
     for (const command of [
       "grep -r -C 2 pat dir",
       "grep -R -A 1 pat dir",
@@ -1781,8 +1583,6 @@ describe("bash-classifier context search admission (#183)", () => {
     ]) {
       expect(reasonOf(command)).toBe("unsupported-command:grep");
     }
-    // WHY: D3 grants rg `-C` only, so rg's equally valid `-A`/`-B`/long forms and its multi-file
-    // WHY: shape stay raw rather than widening the decision.
     for (const command of [
       "rg -A 2 pat f",
       "rg -B 2 pat f",
@@ -1796,8 +1596,6 @@ describe("bash-classifier context search admission (#183)", () => {
   });
 
   it("still refuses every context-plus-output-modifier combination", () => {
-    // WHY: (ADR-0048 D3) `-c`/`-o`/`-l` (and their neighbours) keep their meaning: they REPLACE or
-    // WHY: drop rows, so no context geometry exists to witness. The context flag changes nothing here.
     for (const command of [
       "grep -c -A 2 pat f",
       "grep -o -C 1 pat f",
@@ -1814,8 +1612,6 @@ describe("bash-classifier context search admission (#183)", () => {
   });
 
   it("carries the window through a compound search segment", () => {
-    // WHY: the compound path reuses `parseSearchStage`, so the segment carries the same window; the
-    // WHY: serve seam still decides per segment whether it can predict (ADR-0048 D1).
     expect(classifyBashCommand("echo hi && grep -C 1 pat f")).toEqual({
       kind: "pureCompound",
       segments: [
@@ -1838,10 +1634,7 @@ describe("bash-classifier context search admission (#183)", () => {
   });
 });
 
-// WHY multi-file view admission pins (#183, ADR-0049 M1): the admitted surface is exactly `cat FILE…`,
-// `cat -n FILE…`, `nl -ba FILE…` and numeric `sed -n` ranges over TWO OR MORE operands, as a
-// STANDALONE view (no compound envelope, no pipeline). The classifier stays pure and zero-fs, so the
-// operand COUNT is not capped here — the configured file/row caps decide at the serve seam (M6).
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
 function multiViewOf(command: string) {
   const result = classifyBashCommand(command);
   expect(result.kind).toBe("pureMultiView");
@@ -1865,7 +1658,6 @@ describe("bash-classifier multi-file view admission (#183)", () => {
       ops: [],
       lineNumbered: true,
     });
-    // WHY the range is folded over the STREAM (M5): a `sed` range may span the operand boundary.
     expect(multiViewOf("sed -n '2,4p' a b")).toEqual({
       program: "sed",
       filePaths: ["a", "b"],
@@ -1878,7 +1670,6 @@ describe("bash-classifier multi-file view admission (#183)", () => {
   });
 
   it("keeps the single-operand shapes exactly as they were", () => {
-    // WHY: one operand is still the settled single-file view (and `sed` keeps its arity contract).
     expect(classifyBashCommand("cat a").kind).toBe("pureView");
     expect(classifyBashCommand("cat -n a").kind).toBe("pureView");
     expect(classifyBashCommand("nl -ba a").kind).toBe("pureView");
@@ -1887,7 +1678,6 @@ describe("bash-classifier multi-file view admission (#183)", () => {
 
   it("carries the single pre-view cd and leaves the line-number splice alone", () => {
     expect(multiViewOf("cd sub && cat a b").baseDir).toBe("sub");
-    // WHY no splice: a view is never rewritten — the model's command runs byte-identically.
     expect(withSearchLineNumbers("cat a b")).toBe("cat a b");
     expect(withSearchLineNumbers("sed -n '1,2p' a b")).toBe("sed -n '1,2p' a b");
   });
@@ -1898,8 +1688,6 @@ describe("bash-classifier multi-file view admission (#183)", () => {
 
   it("refuses every near-miss shape with the settled reasons", () => {
     for (const command of [
-      // WHY: excluded programs and shapes (M1) — head/tail headers are not file bytes, stdin has no
-      // WHY: operand, and an option among the operands is past option parsing.
       "head a b",
       "tail -n 2 a b",
       "cat a -",
@@ -1914,22 +1702,17 @@ describe("bash-classifier multi-file view admission (#183)", () => {
     ]) {
       expect(reasonOf(command)).toMatch(/^(unsupported-command|non-literal-command):?/);
     }
-    // WHY pipelines are refused at the pipeline rule, not the command rule.
     expect(reasonOf("cat a b | head")).toBe("unsupported-pipeline");
     expect(reasonOf("cat a b > out.txt")).toBe("non-literal-command");
     expect(reasonOf("cat *.txt b.txt")).toBe("non-literal-command");
   });
 
   it("refuses every compound envelope around a multi-file view", () => {
-    // WHY: (M1) standalone only — any second block, glue or inert tail has no admitted envelope, and
-    // WHY: the reason vocabulary stays closed: the existing `multi-view` covers it.
     expect(reasonOf("cat a b && cat c")).toBe("multi-view");
     expect(reasonOf("cat a b; echo hi")).toBe("multi-view");
     expect(reasonOf("echo hi && cat a b")).toBe("multi-view");
     expect(reasonOf("cat a b && grep x f")).toBe("multi-view");
-    // WHY `post-view-cd`: a `cd` after the view ran is too late to resolve its operands.
     expect(reasonOf("cat a b && cd sub")).toBe("post-view-cd");
-    // WHY a silent prefix stays inert, exactly as for a single-file view.
     expect(multiViewOf("true && cat a b").filePaths).toEqual(["a", "b"]);
   });
 });

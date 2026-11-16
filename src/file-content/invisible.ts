@@ -24,9 +24,6 @@ function expand(low: number, high: number): number[] {
   return out;
 }
 
-// WHY: today's scope exactly — C0 except the three text whitespaces that render
-// WHY: as layout (TAB, LF, CR), plus DEL and the C1 block. U+0085 stays here,
-// WHY: so the existing control disclosure keeps its bytes.
 const NON_PRINTABLE_CONTROL: ReadonlySet<number> = new Set([
   ...expand(0x00, 0x08),
   0x0b,
@@ -35,21 +32,16 @@ const NON_PRINTABLE_CONTROL: ReadonlySet<number> = new Set([
   ...expand(0x7f, 0x9f),
 ]);
 
-// WHY: the 21 non-ASCII codepoints the line canon strips (`CANON_CODE_POINTS`
-// WHY: in `src/hashline/hash-identity.ts`, minus U+0085 which the control class wins).
 const CANON_STRIPPED: ReadonlySet<number> = new Set([
   0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
   0x200a, 0x2028, 0x2029, 0x200e, 0x200f, 0x202f, 0x205f, 0x3000, 0xfeff,
 ]);
 
-// WHY: the 16 zero-width, soft-hyphen and bidi format codepoints the canon keeps.
 const CANON_SURVIVING: ReadonlySet<number> = new Set([
   0x00ad, 0x061c, 0x180e, 0x200b, 0x200c, 0x200d, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2060,
   0x2066, 0x2067, 0x2068, 0x2069,
 ]);
 
-// WHY: the 12 bidi codepoints. A bidi codepoint carries the layout-override
-// WHY: hazard in addition to its class hazard.
 const BIDI: ReadonlySet<number> = new Set([
   0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
 ]);
@@ -92,10 +84,6 @@ const NAMES: Readonly<Record<number, string>> = {
   0x2067: "RIGHT-TO-LEFT ISOLATE",
   0x2068: "FIRST STRONG ISOLATE",
   0x2069: "POP DIRECTIONAL ISOLATE",
-  // WHY: names are the real Unicode aliases — NameAliases.txt (alias type
-  // WHY: control) for the C0 controls and DEL, UnicodeData.txt and the C1
-  // WHY: Controls chart for C1. U+0009, U+000A and U+000D stay deliberately
-  // WHY: absent: text whitespaces that render as layout, never data.
   0x0000: "NULL",
   0x0001: "START OF HEADING",
   0x0002: "START OF TEXT",

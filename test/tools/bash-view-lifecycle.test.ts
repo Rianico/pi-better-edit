@@ -1,3 +1,14 @@
+/**
+ * Bash view interception, hook seam to lease: the classifier admits a command, the
+ * tool_call half splices it, the tool_result half re-parses stdout and serves anchored
+ * rows. Every suite here asserts one contract — a serve replaces stdout only when the
+ * rendered rows reproduce the file's own bytes (the D9 gate, CRLF and BOM normalized),
+ * and any skew passes the original stdout through untouched with zero leases, so a
+ * lease never outruns a row the model was shown. Compound envelopes peel a verified
+ * prefix and halt at the first skew.
+ * Ref: docs/.archive_adrs/0033-bash-view-interception.md
+ * Ref: docs/.archive_adrs/0039-compound-bash-view-interception.md
+ */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "child_process";
 import { mkdir, symlink, writeFile } from "fs/promises";
@@ -143,10 +154,6 @@ describe("bash view lifecycle", () => {
       expect(rows.some((line) => line.endsWith("│line15"))).toBe(false);
       expect(rows.some((line) => line.endsWith("│line21"))).toBe(false);
 
-      // WHY: least privilege before the first edit: line5 was never served, so its
-      // WHY: anchor — though valid content — carries no lease and fails closed.
-      // WHY: (After any successful edit the commit re-serves the whole file, so
-      // WHY: this scoping holds until the session's first successful mutation.)
       const allHashes = await lineHashes(numberedLines(30), join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -186,10 +193,6 @@ describe("bash view lifecycle", () => {
       await mkdir(join(dir, "sub"), { recursive: true });
       const content = numberedLines(5);
       await writeFile(join(dir, "sub", "f.txt"), content, "utf-8");
-      // WHY: byte-identical decoy — with the old last-`cd`-wins rule this chain
-      // WHY: leased `sub/f.txt` while bash printed `./f.txt`, and the D9 byte gate
-      // WHY: passed precisely because the decoy matches. Pass-through plus no
-      // WHY: lease proves the wrong-file grant is gone (ADR-0033 D1).
       await writeFile(join(dir, "f.txt"), content, "utf-8");
       const { pi, handlers, getTool } = makeFakePi();
       register(pi);
@@ -201,13 +204,8 @@ describe("bash view lifecycle", () => {
       expect(result).toBeDefined();
       expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
 
-      // WHY: `cat f.txt && cd sub` viewed `./f.txt` — the `cd` ran too late to
-      // WHY: affect it — so pass-through even though `sub/f.txt` is identical.
       const postCtx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-cd-post" } };
       expect(await bashResult(handler!, "cat f.txt && cd sub", postCtx, content)).toBeUndefined();
-      // WHY: and no lease was granted for the unviewed path — its valid anchor
-      // WHY: stays unknown in a session that never served it (fresh session, so
-      // WHY: the single-`cd` replacement above cannot mask a leaked grant).
       const subHashes = await lineHashes(content, join(dir, "sub", "f.txt"));
       await expect(
         editTool.execute(
@@ -222,8 +220,6 @@ describe("bash view lifecycle", () => {
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
 
-      // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`, not `b`), so a
-      // WHY: single out-of-order re-base would resolve the wrong directory.
       expect(await bashResult(handler!, "cd a && cd b && cat f.txt", ctx, content)).toBeUndefined();
       expect(
         await bashResult(handler!, "cd sub && cd .. && cat f.txt", ctx, content),
@@ -233,10 +229,6 @@ describe("bash view lifecycle", () => {
 
   it("passes through when the anchored preview exceeds its byte budget (D3)", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY (ADR-0033 D3): anchors add ~7 B/row, so a view whose raw stdout fits
-      // WHY: the bash byte budget can still exceed the preview budget — swapping in
-      // WHY: the shortened preview would silently drop lines under a header that
-      // WHY: claims the full range. Strictly slice-accurate or pass-through.
       const width = 40;
       const lines = 1200;
       const big = `${Array.from({ length: lines }, (_, i) => `line${i + 1}`.padEnd(width, ".")).join("\n")}\n`;
@@ -246,8 +238,6 @@ describe("bash view lifecycle", () => {
       register(pi);
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-trunc" } };
-      // WHY: stdout byte-matches the re-read slice (D9 passes) — only the preview
-      // WHY: budget forces pass-through, so the model keeps the complete original.
       expect(await bashResult(handler!, "cat big.txt", ctx, big)).toBeUndefined();
     });
   });
@@ -263,9 +253,6 @@ describe("bash view lifecycle", () => {
       clearDiagnostics();
       try {
         process.env.PI_HASHLINE_DEBUG = "1";
-        // WHY: observability must never become model-visible — the handler still
-        // WHY: returns undefined (original output untouched); the reason goes to the
-        // WHY: diagnostics log, never to the terminal's frame (ADR-0033 D6 holds).
         expect(await bashResult(handler!, "cat -A f.txt", ctx, "<<raw stdout>>")).toBeUndefined();
       } finally {
         if (previous === undefined) delete process.env.PI_HASHLINE_DEBUG;
@@ -387,8 +374,6 @@ describe("bash view lifecycle", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-tamper" } };
 
-      // WHY: a filtering wrapper (or drift between exec and re-read) must grant
-      // WHY: no leases — the true anchor stays unleased and fails closed.
       expect(await bashResult(handler!, "cat f.txt", ctx, "<<filtered>>\n")).toBeUndefined();
       expect(
         await bashResult(handler!, "rtk cat f.txt", ctx, `${numberedLines(5)}extra-trailer\n`),
@@ -436,10 +421,6 @@ describe("bash view lifecycle", () => {
 
   it("anchors a CRLF file viewed through bash (line-ending normalization)", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY: `cat` emits the disk bytes (CRLF) while `readNormFile` — and the
-      // WHY: anchors below — describe the LF text, so the stdout comparison must
-      // WHY: normalize line endings instead of failing closed on exactly the
-      // WHY: files the model views through bash.
       const crlf = numberedLines(5).replace(/\n/g, "\r\n");
       await writeFile(join(dir, "f.txt"), crlf, "utf-8");
       const { pi, handlers, getTool } = makeFakePi();
@@ -475,9 +456,6 @@ describe("bash view lifecycle", () => {
 
   it("anchors a BOM file viewed through bash (BOM normalization)", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY: a leading BOM is stripped by `readNormFile`, so a BOM file has to
-      // WHY: compare equal to its own stdout after the same strip — otherwise
-      // WHY: the anchors describe text the byte gate refuses to serve.
       const withBom = `\uFEFF${numberedLines(5)}`;
       await writeFile(join(dir, "f.txt"), withBom, "utf-8");
       const { pi, handlers, getTool } = makeFakePi();
@@ -491,8 +469,6 @@ describe("bash view lifecycle", () => {
       const text = result!.content[0]!.text;
       const rows = rowsOf(text);
       expect(rows).toHaveLength(5);
-      // WHY: rows come from the normalized (BOM-free) text — the same anchors
-      // WHY: the read path serves for the same file.
       expect(text).not.toContain("\uFEFF");
 
       const followUp = await editTool.execute(
@@ -517,9 +493,6 @@ describe("bash view lifecycle", () => {
 
   it("still fails closed when a CRLF/BOM view differs beyond its encoding", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY: normalization covers line endings and a BOM only. An added row, a
-      // WHY: changed row, or undecodable bytes must still fail closed, so the
-      // WHY: gate stays a byte check and not a fuzzy match (ADR-0033 D9).
       const crlf = numberedLines(5).replace(/\n/g, "\r\n");
       await writeFile(join(dir, "crlf.txt"), crlf, "utf-8");
       await writeFile(join(dir, "bom.txt"), `\uFEFF${numberedLines(5)}`, "utf-8");
@@ -552,14 +525,10 @@ describe("bash view lifecycle", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-semicolon" } };
 
-      // WHY: `cd sub; cat f.txt` is the benchmark spelling of the pre-view `cd`
-      // WHY: that `&&` already supports — the terminal statement carries the view.
       const result = await bashResult(handler!, "cd sub; cat f.txt", ctx, content);
       expect(result).toBeDefined();
       expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
 
-      // WHY: `pwd` is admitted as a prefix, but it prints the working directory,
-      // WHY: so D9 refuses the lease: the admitted shape can never mis-serve.
       const pwdCtx = {
         cwd: dir,
         sessionManager: { getSessionId: () => "bash-view-semicolon-pwd" },
@@ -568,10 +537,6 @@ describe("bash view lifecycle", () => {
         await bashResult(handler!, "pwd; cat sub/f.txt", pwdCtx, `${dir}\n${content}`),
       ).toBeUndefined();
 
-      // WHY: a prefix `cd` that fails at runtime must lease nothing. bash viewed
-      // WHY: `./f.txt` (the `cd` failed and `;` does not short-circuit), the
-      // WHY: classifier resolves `missing/f.txt`, and the byte-identical decoy
-      // WHY: proves no wrong-file grant slipped through the D9 byte gate.
       const decoy = numberedLines(5);
       await writeFile(join(dir, "f.txt"), decoy, "utf-8");
       const missCtx = {
@@ -611,8 +576,6 @@ describe("bash search interception (I1a #73)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-e2e" } };
 
-      // WHY: the full path — the `tool_call` hook rewrites the model's unnumbered command, and the
-      // WHY: `tool_result` side re-parses that mutated text (no cross-hook state) to decide the lease.
       const call = { toolName: "bash", input: { command: "grep 'line3' f.txt" } };
       for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
       expect(call.input.command).toBe("grep -n 'line3' f.txt");
@@ -673,7 +636,6 @@ describe("bash search interception (I1a #73)", () => {
       expect(rows[0]!.endsWith("│line2")).toBe(true);
       expect(rows[1]!.endsWith("│line4")).toBe(true);
 
-      // WHY: line3 was never served — its (valid) anchor carries no lease and fails closed.
       const allHashes = await lineHashes(numberedLines(5), join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -731,7 +693,6 @@ describe("bash search interception (I1a #73)", () => {
       expect(boundary).toBeDefined();
       expect(boundary!.content[0]!.text).toContain(`[capped.txt (${SEARCH_MAX_MATCHES} matches)]`);
 
-      // WHY: the cap is all-or-nothing — raw passthrough with no truncation and no partial leases.
       expect(
         await bashResult(
           handlers.get("tool_result")!,
@@ -764,25 +725,18 @@ describe("bash search interception (I1a #73)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-gates" } };
 
-      // WHY: `grep -c` prints a bare count and rg `<n> matches` prints nothing parseable — any row
-      // WHY: that is not `LINE:content` means this stdout is not the admitted geometry.
       expect(
         await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "3\n"),
       ).toBeUndefined();
-      // WHY: forged witness — stdout claims line3 but disk says `line3`→`forged`. D9 refuses.
       expect(
         await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "3:forged\n"),
       ).toBeUndefined();
-      // WHY: line 99 does not exist on disk — the anchored row would name no line.
       expect(
         await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "99:line99\n"),
       ).toBeUndefined();
-      // WHY: exit 1 (no matches) leaves stdout empty; the raw output must survive untouched.
       expect(
         await bashResult(handlers.get("tool_result")!, "grep -n zzz f.txt", ctx, ""),
       ).toBeUndefined();
-      // WHY: a directory operand is a structural deny (spec §3.2) the pure classifier cannot see, so
-      // WHY: the lifecycle layer re-checks the file kind after resolution and fails closed.
       await mkdir(join(dir, "sub"), { recursive: true });
       expect(
         await bashResult(handlers.get("tool_result")!, "grep -n line sub", ctx, "1:x\n"),
@@ -813,32 +767,21 @@ describe("bash search interception (I1a #73)", () => {
       const handler = handlers.get("tool_result")!;
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-toctou" } };
-      // WHY: a separate session so the control's leases cannot mask the stale-capture refusal below.
       const controlCtx = {
         cwd: dir,
         sessionManager: { getSessionId: () => "bash-search-toctou-ctl" },
       };
       const command = "grep -n line3 f.txt";
-      // WHY: real bash, not a hand-written string — the capture below is the bytes bash actually printed
-      // WHY: for line 3 as it was on disk at capture time.
       const runReal = () => execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
 
       const captured = runReal();
       expect(captured).toBe("3:line3\n");
-      // WHY: control — the same handler over the same capture while the disk still matches produces an
-      // WHY: anchor block, so the `undefined` after the mutation is the stale-capture refusal itself and
-      // WHY: not a dead code path that would pass under any implementation.
       const control = await bashResult(handler, command, controlCtx, captured);
       expect(control).toBeDefined();
       expect(control!.content[0]!.text).toContain("[f.txt (1 match)]");
 
-      // WHY: the race - the file mutates on disk AFTER the capture and BEFORE `tool_result` runs, so the
-      // WHY: witness handed to the hook names line 3, but every line has shifted down one, so it names
-      // WHY: content the disk no longer holds at that line.
       await writeFile(join(dir, "f.txt"), `line0\n${original}`, "utf-8");
       const fresh = runReal();
-      // WHY: discriminating staleness proof: a fresh real run over the mutated file no longer matches the
-      // WHY: captured text, so the capture is genuinely stale and not a fabricated mismatch.
       expect(fresh).toBe("4:line3\n");
       expect(fresh).not.toBe(captured);
 
@@ -849,12 +792,9 @@ describe("bash search interception (I1a #73)", () => {
         content: [{ type: "text", text: captured }],
       };
       const result = await handler(event, ctx);
-      // (a) fails closed: no anchor block is fabricated for a witness the disk no longer supports.
       expect(result).toBeUndefined();
-      // (b) what the model sees stays the raw bash stdout byte-for-byte: the hook rewrote nothing.
       expect(event.content[0]!.text).toBe(captured);
 
-      // (c) zero leases were granted, so the anchor the captured stdout named is still unknown.
       const staleHashes = await lineHashes(original, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -879,7 +819,6 @@ describe("bash search interception (I1a #73)", () => {
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-rg" } };
       const calls = handlersAll.get("tool_call") ?? [];
 
-      // WHY: denied flags must reach bash byte-identical — only the `-n` injection may mutate.
       for (const command of [
         "grep -c line f.txt",
         "rg --json line f.txt",
@@ -915,9 +854,6 @@ describe("bash search interception (I1a #73)", () => {
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-deny" } };
       const raw = "3:line3\n";
 
-      // WHY: one row per denied flag — the injection hook must leave the command byte-identical (so
-      // WHY: native grep/rg semantics are preserved) and the `tool_result` side must return undefined
-      // WHY: (so the raw stdout reaches the model untouched).
       const denied = [
         "grep -c pat f.txt",
         "grep --count pat f.txt",
@@ -925,9 +861,6 @@ describe("bash search interception (I1a #73)", () => {
         "grep --invert-match pat f.txt",
         "grep -o pat f.txt",
         "grep --only-matching pat f.txt",
-        // WHY: (ADR-0048 D3) context is admitted only in the D3 spellings and only on the single-file
-        // WHY: search shape, so these stay raw byte-identically: the attached short form, a
-        // WHY: context+count combination, the recursive shape, and rg's unnamed `-A`/`-B`/long forms.
         "grep -A2 pat f.txt",
         "grep -C1 pat f.txt",
         "grep -B3 pat f.txt",
@@ -940,8 +873,6 @@ describe("bash search interception (I1a #73)", () => {
         "rg --context 2 pat f.txt",
         "grep -l pat f.txt",
         "grep -L pat f.txt",
-        // WHY: the bare `--max-count` spelling stays denied — spec §3.2 admits the separate
-        // WHY: argument for the short `-m` alone (see the classifier matrix for the same pin).
         "grep --max-count 3 pat f.txt",
         "grep -q pat f.txt",
         "grep -s pat f.txt",
@@ -995,9 +926,6 @@ describe("bash search interception (I1a #73)", () => {
       const calls = handlersAll.get("tool_call") ?? [];
       const raw = "3:line3\n";
 
-      // WHY: the Tier-1 expansion (spec §3.2) only matters if it survives both seams — the
-      // WHY: injected `-n` at `tool_call` AND the served rows at `tool_result`. Each case gets
-      // WHY: its own session so the lease bookkeeping of one serve cannot mask the next.
       const cases: ReadonlyArray<readonly [string, string]> = [
         ["grep 'line3' f.txt -w", "grep -n 'line3' f.txt -w"],
         ["grep 'line3' -x f.txt", "grep -n 'line3' -x f.txt"],
@@ -1029,24 +957,15 @@ describe("bash search interception (I1a #73)", () => {
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-widen" } };
       const raw = "3:line3\n";
 
-      // WHY: the shapes the pure classifier refuses must also be inert at the hook seam — the injection
-      // WHY: hook leaves the command byte-identical and `tool_result` returns undefined, so a widening
-      // WHY: that admitted one of these would surface here as an injected `-n` or an anchor block.
       const denied = [
-        // WHY: attached context flags; `-A2` prints `--` separators and bare context rows, so the
-        // WHY: `^(\d+):` row geometry the anchors are built from is gone.
         "grep -A2 pat f.txt",
         "grep -B3 pat f.txt",
         "grep -C1 pat f.txt",
-        // WHY: the filename flags add or drop the `file:` prefix the line-number parse keys on.
         "grep --with-filename pat f.txt",
         "grep --no-filename pat f.txt",
-        // WHY: colour escapes wrap the digits the disk witness compares against.
         "grep --color pat f.txt",
         "grep --color=auto pat f.txt",
-        // WHY: a backtick operand is expanded by bash, so the resolved file is not the file bash reads.
         "grep `cmd` f.txt",
-        // WHY: the rg spellings of the same two widenings.
         "rg -A2 pat f.txt",
         "rg --with-filename pat f.txt",
       ];
@@ -1061,10 +980,6 @@ describe("bash search interception (I1a #73)", () => {
 
   it("normalizes CRLF and BOM in the search witness exactly as D9 does for a view", async () => {
     await withTempDir("bash-search-", async (dir) => {
-      // WHY: grep prints the disk bytes, so a CRLF file yields `3:line3\r` and a BOM file yields a
-      // WHY: leading U+FEFF on row 1, while `readNormFile`/`visLines` (and the anchors served here)
-      // WHY: describe LF/no-BOM text. `toLF(stripBOM(...))` is the tranche-1 D9 normalization, so the
-      // WHY: search witness stays consistent with the view seam on the files bash actually printed.
       await writeFile(join(dir, "crlf.txt"), "line1\r\nline2\r\nline3\r\n", "utf-8");
       await writeFile(join(dir, "bom.txt"), "\uFEFFline1\nline2\n", "utf-8");
       const { pi, handlers } = makeFakePi();
@@ -1104,8 +1019,6 @@ describe("bash multi-range sed lifecycle (Tier-2 item 7)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-sed-multi" } };
 
-      // WHY: '16,18p'+'17,20p' merge at parse to [16,20]; stdout must equal
-      // WHY: exactly that slice or the D9 byte gate fails closed.
       const sliceStdout = `${Array.from({ length: 5 }, (_, i) => `line${i + 16}`).join("\n")}\n`;
       const result = await bashResult(
         handler!,
@@ -1121,10 +1034,6 @@ describe("bash multi-range sed lifecycle (Tier-2 item 7)", () => {
       }
       expect(rows.some((line) => line.endsWith("│line15"))).toBe(false);
       expect(rows.some((line) => line.endsWith("│line21"))).toBe(false);
-      // WHY: least privilege before the first edit: line5 was never served, so its
-      // WHY: anchor — though valid content — carries no lease and fails closed.
-      // WHY: (After any successful edit the commit re-serves the whole file, so
-      // WHY: this scoping holds until the session's first successful mutation.)
       const allHashes = await lineHashes(numberedLines(30), join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -1168,11 +1077,6 @@ describe("bash multi-range sed lifecycle (Tier-2 item 7)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-sed-disjoint" } };
 
-      // WHY: disjoint [1,1],[30,30] cannot survive the sequential stream-relative
-      // WHY: fold — the second range selects inside the first selection, yielding
-      // WHY: empty — so D3 passes through and grants nothing. True sed would print
-      // WHY: line1+line30; serving raw is the safe answer until a union-aware op
-      // WHY: exists. Pass-through either way.
       expect(
         await bashResult(handler!, "sed -n -e '1p' -e '30p' f.txt", ctx, "line1\nline30\n"),
       ).toBeUndefined();
@@ -1218,7 +1122,6 @@ describe("bash multi-range sed lifecycle (Tier-2 item 7)", () => {
 
 describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
   function catNumbered(text: string): string {
-    // Mirrors GNU `cat -n` geometry: right-aligned width-6 number + tab.
     return (
       text
         .split("\n")
@@ -1248,7 +1151,6 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
       expect(rows).toHaveLength(10);
       for (const n of [1, 5, 10]) expect(rows.some((l) => l.endsWith(`│line${n}`))).toBe(true);
 
-      // Lease shape: full-file — first AND last line anchors both edit cleanly.
       for (const target of ["line1", "line10"] as const) {
         const ok = await editTool.execute(
           "e-" + target,
@@ -1285,7 +1187,6 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
       const nlRes = await bashResult(handler!, "nl -ba f.txt", ctx, catNumbered(body));
       expect(catRes).toBeDefined();
       expect(nlRes).toBeDefined();
-      // ONE renderer: same header; same row count; row bodies identical up to per-run hashes.
       expect(nlRes!.content[0]!.text.startsWith("[Bash view: ")).toBe(true);
       expect(rowsOf(nlRes!.content[0]!.text)).toHaveLength(6);
       const bodies = (t: string) =>
@@ -1324,13 +1225,11 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-num-c" } };
 
-      // Dropped row.
       const dropped = catNumbered(body)
         .split("\n")
         .filter((_, i) => i !== 1)
         .join("\n");
       expect(await bashResult(handler!, "cat -n f.txt", ctx, dropped)).toBeUndefined();
-      // Renumbered (starts at 0).
       const renum =
         body
           .split("\n")
@@ -1338,10 +1237,8 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
           .map((l, i) => `${String(i).padStart(6)}\t${l}`)
           .join("\n") + "\n";
       expect(await bashResult(handler!, "cat -n f.txt", ctx, renum)).toBeUndefined();
-      // Forged content on a numbered row.
       const forged = catNumbered(body).replace("line2", "EVIL");
       expect(await bashResult(handler!, "nl -ba f.txt", ctx, forged)).toBeUndefined();
-      // Unnumbered stdout for a numbered command (and vice versa).
       expect(await bashResult(handler!, "cat -n f.txt", ctx, body)).toBeUndefined();
       expect(await bashResult(handler!, "cat f.txt", ctx, catNumbered(body))).toBeUndefined();
     });
@@ -1367,8 +1264,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(3);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["keep1", "keep2", "keep3"]);
-      // WHY: the dropped line's true anchor was never served, so it grants nothing —
-      // WHY: least privilege, and the witness that the fold binds real file positions.
       const allHashes = await lineHashes(content, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -1409,7 +1304,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       const { pi, handlers } = makeFakePi();
       register(pi);
       const handler = handlers.get("tool_result");
-      // WHY: subtract-then-head serves file lines 3 and 4.
       const first = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-order-a" } };
       const served = await bashResult(handler!, "cat f.txt | grep -v K | head -2", first, "a\nb\n");
       expect(served).toBeDefined();
@@ -1417,8 +1311,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
         "a",
         "b",
       ]);
-      // WHY: head-then-subtract empties (lines 1 and 2 both contain K) — the fold yields
-      // WHY: no windows, so the view passes through with zero leases.
       const second = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-order-b" } };
       expect(
         await bashResult(handler!, "cat f.txt | head -2 | grep -v K", second, ""),
@@ -1433,8 +1325,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       register(pi);
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-search-head" } };
-      // WHY: the command reaches bash byte-identical — the source search became a `keep`, so
-      // WHY: whatever the model's own semantics are is what the fold is gated against.
       const call = { toolName: "bash", input: { command: "grep line f.txt | head -2" } };
       for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
       expect(call.input.command).toBe("grep line f.txt | head -2");
@@ -1449,7 +1339,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       expect(result!.content[0]!.text).toContain("[Bash view: f.txt (2 lines)]");
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(2);
-      // WHY: file-true coordinates — the survivors are lines 1 and 2, and both edit cleanly.
       const ok = await editTool.execute(
         "e1",
         {
@@ -1472,8 +1361,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
 
   it("leases sparse survivors row by row instead of passing them through raw", async () => {
     await withTempDir("bash-filter-", async (dir) => {
-      // WHY: 20 survivors over 40 lines is 20 runs — far past the read tool's 16-window budget —
-      // WHY: yet a search-shaped row lease serves it; the window budget would go raw here.
       const sparse =
         Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? `hit${i + 1}` : "miss")).join("\n") +
         "\n";
@@ -1493,7 +1380,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(20);
       expect(rows[0]!.split("\u2502")[1]).toBe("hit1");
-      // WHY: the interleaved `miss` line was filtered out, so its true anchor grants nothing.
       const allHashes = await lineHashes(sparse, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -1533,8 +1419,6 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       register(pi);
       const editTool = getTool("edit");
       const handler = handlers.get("tool_result");
-      // WHY: SEARCH_MAX_MATCHES bounds the content seam exactly as it bounds a search:
-      // WHY: over-cap passes the WHOLE output raw — never a silently truncated render.
       const fifty = Array.from({ length: 50 }, (_, i) => `hit${i + 1}`).join("\n") + "\n";
       await writeFile(join(dir, "f.txt"), fifty, "utf-8");
       const atCap = await bashResult(
@@ -1574,13 +1458,8 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
       const handler = handlers.get("tool_result");
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-gates" } };
-      // WHY: stdout claims every line survived a `-v line3` while the disk fold removes line3 —
-      // WHY: the whole-stdout byte gate refuses the serve (never a partial grant).
       expect(await bashResult(handler!, "cat f.txt | grep -v line3", ctx, body)).toBeUndefined();
-      // WHY: and the mirror image — stdout claims everything was filtered while the fold keeps
-      // WHY: four lines — also refused, so "no output" can never be manufactured by the seam.
       expect(await bashResult(handler!, "cat f.txt | grep -v line3", ctx, "")).toBeUndefined();
-      // WHY: zero leases after every refusal.
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -1607,7 +1486,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       register(pi);
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-multi" } };
-      // WHY: the model's unnumbered multi-file search is spliced by the same tool_call hook.
       const call = { toolName: "bash", input: { command: "grep 3 a.txt b.txt" } };
       for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
       expect(call.input.command).toBe("grep -n 3 a.txt b.txt");
@@ -1625,7 +1503,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       expect(text.indexOf("[a.txt")).toBeLessThan(text.indexOf("[b.txt"));
       const rows = rowsOf(text);
       expect(rows).toHaveLength(2);
-      // WHY: leases are per file, so both files' anchors edit in this one session.
       for (const [file, content] of [
         ["a.txt", "alpha3"],
         ["b.txt", "beta3"],
@@ -1662,17 +1539,13 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-multi-gates" } };
       const command = "grep -n 3 a.txt b.txt";
-      // WHY: forged content on a's line 3 — the disk witness refuses the whole serve.
       expect(
         await bashResult(handler!, command, ctx, "a.txt:3:forged\nb.txt:3:beta3\n"),
       ).toBeUndefined();
-      // WHY: a triple naming a file outside the operand set (alias/escape forgery).
       expect(
         await bashResult(handler!, command, ctx, "a.txt:3:alpha3\nevil.txt:1:gamma\n"),
       ).toBeUndefined();
-      // WHY: mixed single + triple geometry is never the admitted shape.
       expect(await bashResult(handler!, command, ctx, "3:alpha3\nb.txt:3:beta3\n")).toBeUndefined();
-      // WHY: zero leases after every refusal — a's real anchor stays unknown.
       const hashes = await lineHashes("alpha1\nalpha2\nalpha3\n", join(dir, "a.txt"));
       await expect(
         editTool.execute(
@@ -1710,7 +1583,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       );
       expect(atCap).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-multi-over" } };
-      // WHY: SEARCH_MAX_MATCHES is the TOTAL budget across files — 51 rows pass raw whole.
       const over = `${rows50}c.txt:1:line1\n`;
       expect(
         await bashResult(handler!, "grep -n line a.txt b.txt c.txt", ctx, over),
@@ -1733,8 +1605,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       await mkdir(join(dir, "sub", "node_modules", "dep"), { recursive: true });
       await mkdir(join(dir, "sub", ".hidden"), { recursive: true });
       await writeFile(join(dir, "sub", "ok.txt"), "line1\nline2\n", "utf-8");
-      // WHY: the excluded files EXIST with matching content — the walk exclusion, not a missing
-      // WHY: file, is what refuses the lease.
       await writeFile(
         join(dir, "sub", "node_modules", "dep", "leak.txt"),
         "line1\nline2\n",
@@ -1753,8 +1623,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       );
       expect(good).toBeDefined();
       expect(good!.content[0]!.text).toContain("[sub/ok.txt (1 match)]");
-      // WHY: a triple from the excluded subtree fails the WHOLE serve (zero leases) even though
-      // WHY: its bytes match disk.
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-walk-excl" } };
       expect(
         await bashResult(
@@ -1799,8 +1667,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       );
       expect(served).toBeDefined();
       expect(served!.content[0]!.text).toContain("[sub/ok.txt (1 match)]");
-      // WHY: grep needs its explicit `-r`; a bare directory operand stays raw (native grep
-      // WHY: errors on a directory, and this seam must not "helpfully" walk it).
       expect(
         await bashResult(handler!, "grep -n line2 sub", ctx, "grep: sub: Is a directory\n"),
       ).toBeUndefined();
@@ -1815,7 +1681,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       register(pi);
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-files" } };
-      // WHY: no injection for a path list — the command reaches bash byte-identical.
       const call = { toolName: "bash", input: { command: "rg --files" } };
       for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
       expect(call.input.command).toBe("rg --files");
@@ -1828,7 +1693,6 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       expect(result).toBeDefined();
       expect(result!.content[0]!.text.startsWith("[Bash file list (no anchors)]\n")).toBe(true);
       expect(rowsOf(result!.content[0]!.text)).toHaveLength(0);
-      // WHY: anchorless means anchorless — even a valid content anchor grants nothing.
       const hashes = await lineHashes("x\n", join(dir, "a.txt"));
       await expect(
         editTool.execute(
@@ -1839,11 +1703,9 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
           ctx,
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
-      // WHY: a listed entry that does not exist on disk fails the whole list closed (invariant 2).
       expect(
         await bashResult(handlers.get("tool_result")!, "rg --files", ctx, "a.txt\nghost.txt\n"),
       ).toBeUndefined();
-      // WHY: the same count cap bounds the list — 11 entries pass the whole output through raw.
       const eleven = Array.from({ length: 11 }, (_, i) => `f${i}.txt`).join("\n") + "\n";
       expect(
         await bashResult(handlers.get("tool_result")!, "rg --files", ctx, eleven),
@@ -1873,9 +1735,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       expect(text).toContain("[Bash view: f.txt (3 lines, sorted)]");
       const rows = rowsOf(text);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["alpha", "beta", "gamma"]);
-      // WHY: coordinates travel WITH the row — the surviving `beta` is file line 1 (the FIRST
-      // WHY: occurrence), so it holds line 1's anchor even though it renders second, and the
-      // WHY: duplicate line 3 was deduped away so its anchor was never leased.
       const allHashes = await lineHashes(content, join(dir, "f.txt"));
       expect(anchorFor(rows, "beta")).toBe(allHashes[0]);
       expect(anchorFor(rows, "alpha")).toBe(allHashes[1]);
@@ -1931,8 +1790,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       expect(text).toContain("[Bash view: f.txt (3 lines, adjacent-dedup)]");
       const rows = rowsOf(text);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["x", "y", "x"]);
-      // WHY: `uniq` never sorts — the SECOND `x` run (file line 4) survives beside the first,
-      // WHY: and each run head carries its own true line. Line 2 was the collapsed twin.
       const allHashes = await lineHashes(content, join(dir, "f.txt"));
       expect(rows[0]!.split("\u2502")[0]).toBe(allHashes[0]);
       expect(rows[1]!.split("\u2502")[0]).toBe(allHashes[2]);
@@ -1977,8 +1834,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       register(pi);
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count" } };
-      // WHY: both count spellings are accepted (`4\n` piped, padded when GNU names a
-      // WHY: file), so the padded observed bytes are a legal count.
       const result = await bashResult(
         handlers.get("tool_result")!,
         "cat f.txt | grep -v line3 | wc -l",
@@ -1995,8 +1850,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
         "line4",
         "line5",
       ]);
-      // WHY: the number is checkable because EVERY counted row is leased from the re-read
-      // WHY: snapshot (file order, true coordinates) while the dropped line grants nothing.
       const allHashes = await lineHashes(content, join(dir, "f.txt"));
       expect(rows[3]!.split("\u2502")[0]).toBe(allHashes[4]);
       await expect(
@@ -2051,9 +1904,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       expect(plain!.content[0]!.text).toContain("[Bash view: f.txt (count: 3)]");
       expect(await run("bash-lineset-count-padded", "  3\n")).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count-gates" } };
-      // WHY: every other observed shape refuses the WHOLE serve with zero leases — a number the
-      // WHY: fold does not produce, a trailing extra field, a non-numeric line, a negative and
-      // WHY: an empty stdout (the count gate never manufactures a number).
       for (const stdout of ["4\n", "3 4\n", "three\n", "-3\n", ""]) {
         expect(await bashResult(handler!, "cat f.txt | wc -l", ctx, stdout)).toBeUndefined();
       }
@@ -2081,8 +1931,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       register(pi);
       const handler = handlers.get("tool_result");
       const allHashes = await lineHashes(content, join(dir, "f.txt"));
-      // WHY: the sorted stream is what the NEXT stage sees, so sort-then-head keeps a(2) and
-      // WHY: b(3) while head-then-sort keeps c(1) and a(2) — same command words, other rows.
       const sortedFirst = await bashResult(
         handler!,
         "cat f.txt | sort -u | head -2",
@@ -2105,8 +1953,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       expect(headRows.map((row) => row.split("\u2502")[1])).toEqual(["a", "c"]);
       expect(headRows[0]!.split("\u2502")[0]).toBe(allHashes[1]);
       expect(headRows[1]!.split("\u2502")[0]).toBe(allHashes[0]);
-      // WHY: the named pair agrees — dropping then sorting is the same set in the same order as
-      // WHY: sorting then dropping — and both keep b(3) and c(1) as the surviving rows.
       for (const [session, command] of [
         ["bash-lineset-order-c", "cat f.txt | grep -v a | sort -u"],
         ["bash-lineset-order-d", "cat f.txt | sort -u | grep -v a"],
@@ -2139,8 +1985,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       const editTool = getTool("edit");
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-cap" } };
-      // WHY: SEARCH_MAX_MATCHES bounds a consumer exactly as it bounds a search or filter — one
-      // WHY: row over the cap passes the WHOLE output through raw, never a truncated render.
       expect(await bashResult(handler!, "cat f.txt | sort -u", ctx, over)).toBeUndefined();
       expect(
         await bashResult(handler!, "cat f.txt | wc -l", ctx, `${SEARCH_MAX_MATCHES + 1}\n`),
@@ -2170,8 +2014,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       const editTool = getTool("edit");
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-gates" } };
-      // WHY: each of these claims a row set the disk fold does not produce — a foreign row, the
-      // WHY: file's own order instead of byte order, and a duplicated survivor.
       for (const stdout of ["alpha\ngamma\n", "beta\nalpha\n", "alpha\nalpha\nbeta\n"]) {
         expect(await bashResult(handler!, "cat f.txt | sort -u", ctx, stdout)).toBeUndefined();
       }
@@ -2200,8 +2042,6 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       const editTool = getTool("edit");
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-empty" } };
-      // WHY: a `wc -l` whose fold kept nothing has no row to lease, so the whole stdout passes
-      // WHY: through — a bare `[f.txt (count: 0)]` header would claim a ledger it cannot honour.
       expect(
         await bashResult(handler!, "cat f.txt | grep -v line | wc -l", ctx, "0\n"),
       ).toBeUndefined();
@@ -2236,9 +2076,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       register(pi);
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-symlink" } };
-      // WHY: the OPERAND goes through the shared target resolver — the path authority every other
-      // WHY: seam uses, which resolves symlink components on purpose — so a symlinked root is
-      // WHY: walked as its target and the served display path stays editable through that resolver.
       const viaRoot = await bashResult(
         handler!,
         "grep -rn line2 linked",
@@ -2247,10 +2084,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       );
       expect(viaRoot).toBeDefined();
       expect(viaRoot!.content[0]!.text).toContain("[linked/ok.txt (1 match)]");
-      // WHY: the walk never admits a symlink ENTRY (a `Dirent` is not followed) but the seam
-      // WHY: matches a stdout entry by RESOLVED identity, so a spelling that resolves into the
-      // WHY: walked set serves the walked file's own display path and true line — the bytes are
-      // WHY: verified against that file, and the render never echoes the link spelling.
       const viaEntry = await bashResult(
         handler!,
         "grep -rn line2 .",
@@ -2259,12 +2092,10 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       );
       expect(viaEntry).toBeDefined();
       expect(viaEntry!.content[0]!.text).toContain("[real/ok.txt (1 match)]");
-      // WHY: an entry that resolves OUTSIDE the walked set still fails the whole serve closed.
       await writeFile(join(dir, "other.txt"), "line1\nline2\n", "utf-8");
       expect(
         await bashResult(handler!, "grep -rn line2 real", ctx, "other.txt:2:line2\n"),
       ).toBeUndefined();
-      // WHY: the real tree still serves — the refusals above are about links, not about walking.
       const good = await bashResult(handler!, "grep -rn line2 real", ctx, "real/ok.txt:2:line2\n");
       expect(good).toBeDefined();
       expect(good!.content[0]!.text).toContain("[real/ok.txt (1 match)]");
@@ -2273,8 +2104,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
 
   it("bounds the walk by directories queued when a forest holds no files", async () => {
     await withTempDir("bash-hard-", async (dir) => {
-      // WHY: review F4 — the visit bound must trip on a directory-only forest, where the file
-      // WHY: counter never moves.
       for (let i = 0; i < 250; i++) await mkdir(join(dir, "d", `n${i}`), { recursive: true });
       const { pi, handlers } = makeFakePi();
       register(pi);
@@ -2308,8 +2137,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       register(pi);
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-nm" } };
-      // WHY: the exclusion gates DESCENT, not the operand — naming the root admits it whole,
-      // WHY: including the subtree below it.
       const deep = await bashResult(
         handler!,
         "grep -rn line2 node_modules",
@@ -2318,7 +2145,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       );
       expect(deep).toBeDefined();
       expect(deep!.content[0]!.text).toContain("[node_modules/dep/deep.txt (1 match)]");
-      // WHY: a `node_modules` seen while walking ANOTHER root is skipped (the nested case).
       await mkdir(join(dir, "other", "node_modules"), { recursive: true });
       await writeFile(join(dir, "other", "node_modules", "nested.txt"), "line1\nline2\n", "utf-8");
       await writeFile(join(dir, "other", "ok.txt"), "line1\nline2\n", "utf-8");
@@ -2340,8 +2166,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       const { pi, handlers } = makeFakePi();
       register(pi);
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-listdir" } };
-      // WHY: only regular files enter the walk's membership, so a directory entry (which native
-      // WHY: `rg --files` never prints) fails the whole list closed.
       expect(
         await bashResult(handlers.get("tool_result")!, "rg --files", ctx, "a.txt\nsub\n"),
       ).toBeUndefined();
@@ -2354,9 +2178,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
       const { pi, handlers } = makeFakePi();
       register(pi);
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-sed" } };
-      // WHY: review F6 — the two `range` ops are COMPOSED by the interval algebra, so the second
-      // WHY: selection resolves against the already-narrowed stream, selects nothing and passes
-      // WHY: the raw output through. Never a wrong slice; recorded in ADR-0033 D10.
       expect(
         await bashResult(
           handlers.get("tool_result")!,
@@ -2370,8 +2191,6 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
 });
 
 describe("bash view — pureView section banners (#134)", () => {
-  // WHY: the read tool's own per-window header. The bash view renders through a one-element window
-  // WHY: array, so it used to inherit this string as its file banner; that is the defect fixed here.
   const READ_HEADER = /^\[Lines \d+-\d+ of \d+ total\]$/;
   const catNumberedLocal = (text: string): string =>
     `${text
@@ -2476,10 +2295,6 @@ describe("bash view — pureView section banners (#134)", () => {
 
   it("A5 — a merged multi-range sed banners the union once", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY: overlapping `-e` ranges merge at parse (Tier-2 item 7) to ONE interval, so the
-      // WHY: union carries a single banner — the policy is per section, but no bash command
-      // WHY: can produce two sections (see the disjoint case below). Asserting the union's own
-      // WHY: range, not an inherited window header.
       const body = numberedLines(30);
       const union = `${Array.from({ length: 5 }, (_, i) => `line${i + 16}`).join("\n")}\n`;
       const text = await drive(
@@ -2496,10 +2311,6 @@ describe("bash view — pureView section banners (#134)", () => {
 
   it("A5 boundary — a DISJOINT multi-range sed fails closed (no two-section view exists)", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY (§7.9): `applySliceOps` folds `range` ops by intersection, so two disjoint ranges
-      // WHY: yield zero intervals and the gate passes the raw stdout through — there is no
-      // WHY: reachable two-window bash view in this code. This pins that fail-closed boundary
-      // WHY: rather than a two-banner rendering that cannot occur.
       const body = numberedLines(30);
       const stdout = "line5\nline6\nline10\nline11\n";
       const text = await drive(
@@ -2515,8 +2326,6 @@ describe("bash view — pureView section banners (#134)", () => {
 
   it("A6 — an over-budget slice still declines interception", async () => {
     await withTempDir("bash-view-", async (dir) => {
-      // WHY: raw stdout fits the bash byte budget, but the anchors the view would serve do not fit
-      // WHY: the preview budget — the D3 gate must still send it through raw, with zero leases.
       const big = `${Array.from({ length: 1500 }, (_, i) => `line${i + 1}`.padEnd(40, ".")).join("\n")}\n`;
       const slice = `${big.split("\n").slice(0, 1200).join("\n")}\n`;
       const text = await drive(dir, { "big.txt": big }, "head -n 1200 big.txt", slice, "bv-a6");
@@ -2536,7 +2345,6 @@ describe("bash view — pureView section banners (#134)", () => {
         head2,
         "bv-a7b",
       );
-      // WHY: the page header is the first line, so that is what names the caller's path.
       const pathOf = (t: string) => /^\[Bash view: ([^\]]*?) \(/.exec(t.split("\n")[0]!)?.[1];
       expect(pathOf(pure!)).toBe("sub/f.txt");
       expect(pathOf(piped!)).toBe(pathOf(pure!));
@@ -2583,7 +2391,6 @@ describe("bash search — pipelined head/tail slices (#135 W1)", () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]!.endsWith("│line1")).toBe(true);
       expect(rows[1]!.endsWith("│line2")).toBe(true);
-      // WHY: F4 — file line 5 matched but was sliced away; its valid anchor carries no lease.
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -2633,7 +2440,6 @@ describe("bash search — pipelined head/tail slices (#135 W1)", () => {
       expect(rows).toHaveLength(2);
       expect(rows[0]!.endsWith("│line9")).toBe(true);
       expect(rows[1]!.endsWith("│line10")).toBe(true);
-      // WHY: F4 — file line 1 matched but was sliced away; its valid anchor carries no lease.
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -2745,9 +2551,7 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(lines[2]).toBe("[f.txt (3 matches)]");
       const rows = rowsOf(text!);
       expect(rows).toHaveLength(8);
-      // WHY: every observed match row is anchored (none leak through raw).
       expect(rows.filter((l) => l.endsWith("│line1")).length).toBe(2);
-      // WHY: leases cover exactly the served survivors in both blocks.
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -2794,7 +2598,6 @@ describe("bash compound envelope (#135 C4)", () => {
         "w5b",
       );
       expect(text).toBeDefined();
-      // WHY: exactly one search block rendered (the verified prefix); the corrupt tail stays raw.
       expect(text!.split("\n").filter((l) => l === SEARCH_HEAD)).toHaveLength(1);
       expect(text!.split("\n")[2]).toBe("[f.txt (3 matches)]");
       expect(text!.includes("9:zzz")).toBe(true);
@@ -2889,9 +2692,6 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(text).toContain("[f.txt (2 matches)]");
       const rows = rowsOf(text!);
       expect(rows).toHaveLength(2);
-      // WHY: F4 — file line 5 is displayed nowhere (empty block plus head-2 cover only 1-2);
-      // WHY: its valid anchor carries no lease. Probed BEFORE any file-modifying edit,
-      // WHY: because post-edit grants would enable it (pre-existing engine behavior).
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -2968,8 +2768,6 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(good.text).toBeDefined();
       expect(good.text).toContain("[f.txt (5 matches)]");
       const bad = await driveCompound(dir, { "f.txt": body }, cmd, `${base}EXTRA`, "w5nl-bad");
-      // WHY: D4 partial — both blocks verified before the trailing garbage, so they
-      // WHY: stand anchored with their leases while the unverified tail stays raw.
       expect(bad.text).toBeDefined();
       expect(bad.text!.split("\n").filter((l) => l === SEARCH_HEAD)).toHaveLength(2);
       expect(bad.text!.includes("EXTRA")).toBe(true);
@@ -2992,9 +2790,6 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(text).toContain("[Bash view: f.txt (lines 1-2 of 10 total)]");
       expect(text).toContain("[f.txt (2 matches)]");
       expect(rowsOf(text!)).toHaveLength(4);
-      // WHY: F4 — file line 5 sits in the gap (view took 1-2, search took 9-10);
-      // WHY: its valid anchor carries no lease. Probed BEFORE any file-modifying edit,
-      // WHY: because post-edit grants would enable it (pre-existing engine behavior).
       const allHashes = await lineHashes(body, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -3049,14 +2844,10 @@ describe("bash serve attribution guards (#175)", () => {
 
   it("G1 twin: identical stdout rows from two admitted files fail closed, zero leases", async () => {
     await withTempDir("bash-attr-g1-", async (dir) => {
-      // WHY: (ADR-0048 D1 — bash serve admission) never content matching, no other-file anchor bleed — file `a`
-      // WHY: line 1 (`b.txt:3:x`) and file `a:1:b.txt` line 3 (`x`) print the identical row
-      // WHY: `a:1:b.txt:3:x`, so either coordinate is a guess. Fail closed, zero leases.
       const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
       const command = "grep -n x a 'a:1:b.txt'";
       const stdout = "a:1:b.txt:3:x\na:1:b.txt:3:x\n";
       const { text, editTool, ctx } = await drive(dir, files, command, stdout, "attr-g1");
-      // WHY: `text` is undefined on pass-through — the twin must not render an anchor block.
       expect(text).toBeUndefined();
       const hashesA = await lineHashes(files.a, join(dir, "a"));
       await expect(
@@ -3073,9 +2864,6 @@ describe("bash serve attribution guards (#175)", () => {
 
   it("G1 dot root: recursive spelling twin fails closed", async () => {
     await withTempDir("bash-attr-g1d-", async (dir) => {
-      // WHY: `admitted` displays are `path.join`-normalized (`a`) while bash echoes the operand
-      // WHY: spelling (`./a` for a `.` root) — candidates are resolved, never display-matched,
-      // WHY: so the `./a` vs `a:1:b.txt` twin is still ambiguous and fails closed, zero leases.
       const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
       const { text, editTool, ctx } = await drive(
         dir,
@@ -3100,8 +2888,6 @@ describe("bash serve attribution guards (#175)", () => {
 
   it("G1 adjacent control: one admitted split still serves", async () => {
     await withTempDir("bash-attr-g1c-", async (dir) => {
-      // WHY: only `a` is admitted, so `a:1:b.txt:3:x` has exactly one resolving split —
-      // WHY: the guard is an ambiguity refusal, not a multi-file refusal.
       const { text, editTool, ctx } = await drive(
         dir,
         { a: "b.txt:3:x\n", "other.txt": "q\n" },
@@ -3133,11 +2919,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("G2: descending and duplicated search rows fail closed, ascending serves", async () => {
-    // WHY: (serve-seam rule, one served row per file line — ADR-0048, bash serve admission,
-    // WHY: states the no-bleed invariant, not an ordering clause) the printed
-    // WHY: number is a label whose ORDER is proven by the stream, not by matching content — a
-    // WHY: descending or repeated label owns no disjoint ordered intervals and no lease↔row
-    // WHY: bijection, even with byte-equal rows.
     await withTempDir("bash-attr-g2-", async (dir) => {
       const files = { "f.txt": numberedLines(3) };
       const { text: desc } = await drive(
@@ -3196,10 +2977,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("equal bytes in different compound blocks lease per block, the gap stays unleased", async () => {
-    // WHY: (#175) lines 1-2 ARE lines 5-6 byte-for-byte — attribution is by interval, not
-    // WHY: content, so each block leases its own lines while lines 3-4 (shown nowhere) refuse.
-    // WHY: Two setups: rejection probes always run before the one mutating edit per session,
-    // WHY: because leases are snapshot-bound and a success would move the snapshot.
     const body = "s1\ns2\nmid1\nmid2\ns1\ns2\n";
     const command = "printf \"h\\n\"; sed -n '1,2p' f.txt; sed -n '5,6p' f.txt";
     const stdout = "h\ns1\ns2\ns1\ns2\n";
@@ -3244,7 +3021,6 @@ describe("bash serve attribution guards (#175)", () => {
       expect(ok.isError).toBeFalsy();
     });
     await withTempDir("bash-attr-eq-", async (dir) => {
-      // WHY: the second block's own line 5 leases independently of block 1's line 1.
       const { text } = await drive(dir, { "f.txt": body }, command, stdout, "attr-eq-b");
       const rows = rowsOf(text!);
       const anchors = rows.filter((l) => l.endsWith("│s2")).map((l) => l.split("│")[0]!);
@@ -3254,10 +3030,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("CRLF in a non-leading block is normalized; BOM there fails that block closed", async () => {
-    // WHY: (ADR-0033 D9) the whole-observed CRLF/BOM normalization runs before the peel, so a
-    // WHY: CRLF block still matches its disk-predicted bytes — while a mid-stream BOM is bytes
-    // WHY: the disk prediction never contains, so the peel halts: block 1 keeps its leases,
-    // WHY: the BOM block and remainder stay raw (ADR-0039 D4 prefix semantics).
     await withTempDir("bash-attr-crlf-", async (dir) => {
       const { text, editTool, ctx } = await drive(
         dir,
@@ -3295,7 +3067,6 @@ describe("bash serve attribution guards (#175)", () => {
         "attr-bom2",
       );
       expect(text).toBeDefined();
-      // WHY: only block 1 anchored; the BOM block passes through as raw bytes.
       expect(rowsOf(text!)).toHaveLength(1);
       expect(text!.includes("﻿b1")).toBe(true);
       const hashesB = await lineHashes("﻿b1\nb2\n", join(dir, "b.txt"));
@@ -3315,8 +3086,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("a triple without the trailing newline still serves both rows", async () => {
-    // WHY: (#175) the lone-trailing-newline tolerance is pop-if, not content matching — an
-    // WHY: observed stream ending mid-row still owns two disjoint ordered intervals.
     await withTempDir("bash-attr-nonl3-", async (dir) => {
       const { text, editTool, ctx } = await drive(
         dir,
@@ -3349,7 +3118,6 @@ describe("bash serve attribution guards (#175)", () => {
 
   it("missing trailing newline as the last block and a one-empty-line file both serve", async () => {
     await withTempDir("bash-attr-tail-", async (dir) => {
-      // WHY: trailing-newline-only leniency (`joined` vs `joined + "\n"`) covers the last block.
       const { text } = await drive(
         dir,
         { "a.txt": "a1\n", "n.txt": "n1" },
@@ -3388,9 +3156,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 
   it("content that mimics geometry serves by byte equality, not by parsing content", async () => {
-    // WHY: (#175) a `grep -n` row whose text starts `5:foo` and a `cat -n` line whose text
-    // WHY: starts `5\tfoo` both serve — the label widths come from counters (leased line digits,
-    // WHY: the fixed `%6d\t` field), so mimic content can never shift a split.
     await withTempDir("bash-attr-mimic-", async (dir) => {
       const { text } = await drive(
         dir,
@@ -3419,15 +3184,6 @@ describe("bash serve attribution guards (#175)", () => {
   });
 });
 
-// WHY context-search lifecycle pins (#183, ADR-0048 D3): a context search prints match rows
-// (`LINE:content`) AND the context rows around them (`LINE-content`), in groups separated by `--`.
-// D3 requires every one of those rows to be re-read and byte-compared, and the context rows to be
-// SERVED AND LEASED under the same `(session, path, anchor)` key as a match row. The lease is the
-// claim, so each test witnesses it through the edit tool, never through the block's own text — and the
-// observed stdout always comes from real bash, never a hand-written string. D3 also requires a
-// TOTAL-row cap independent of `SEARCH_MAX_MATCHES` (over-cap → whole-command pass-through, never
-// truncation): 31 matches are under the match cap but over the total cap, which is exactly what the
-// boundary test pins.
 describe("bash context search serving (#183)", () => {
   const CONTEXT_FILE = "l1\nl2\npat3\nl4\nl5\nl6\npat7\nl8\nl9\nl10\n";
 
@@ -3439,26 +3195,19 @@ describe("bash context search serving (#183)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-serve" } };
       const command = "grep -n -C 1 pat f.txt";
-      // WHY: real bash, not a hand-written string — the observed rows are the bytes grep printed,
-      // WHY: `--` group separator included, so the fixture cannot drift from the real geometry.
       const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
       expect(observed).toBe("2-l2\n3:pat3\n4-l4\n--\n6-l6\n7:pat7\n8-l8\n");
 
       const result = await bashResult(handlers.get("tool_result")!, command, ctx, observed);
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      // WHY: the banner literal is frozen (#150) and unchanged; the bracket names what the block
-      // WHY: HOLDS — the hits, then the context rows served beside them.
       expect(text.startsWith("[Bash search (anchors)]")).toBe(true);
       expect(text).toContain("[f.txt (2 matches, 4 context lines)]");
       const rows = rowsOf(text);
       const contents = rows.map((row) => row.split("│").slice(1).join("│"));
       expect(contents).toEqual(["l2", "pat3", "l4", "l6", "pat7", "l8"]);
-      // WHY: the `--` separator carries no file byte, so it is never rendered as a row.
       expect(contents).not.toContain("--");
 
-      // WHY: line 5 sits in the gap between the two groups — it was never printed, so its (valid)
-      // WHY: anchor carries no lease even though the block exists.
       const hashes = await lineHashes(CONTEXT_FILE, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -3473,7 +3222,6 @@ describe("bash context search serving (#183)", () => {
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
 
-      // WHY: (D3) a CONTEXT row's anchor is a real lease — editing through it succeeds.
       const leased = await editTool.execute(
         "e1",
         {
@@ -3500,8 +3248,6 @@ describe("bash context search serving (#183)", () => {
       const command = "grep -C 1 pat f.txt";
       const call = { toolName: "bash", input: { command } };
       for (const handler of calls) await handler(call, ctx);
-      // WHY: the splice is the hook's only mutation and it keeps the model's window verbatim, so the
-      // WHY: bytes bash prints are the numbered geometry this seam parses.
       expect(call.input.command).toBe("grep -n -C 1 pat f.txt");
       const observed = execFileSync("bash", ["-c", call.input.command], {
         cwd: dir,
@@ -3523,14 +3269,11 @@ describe("bash context search serving (#183)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-forged" } };
       const command = "grep -n -C 1 pat f.txt";
-      // WHY: only byte 4 of the CONTEXT row is forged; the geometry is perfect, so a seam that
-      // WHY: verified matches alone would serve it — this is the context-row witness under test.
       const observed = "2-l2\n3:pat3\n4-L4X\n--\n6-l6\n7:pat7\n8-l8\n";
       expect(
         await bashResult(handlers.get("tool_result")!, command, ctx, observed),
       ).toBeUndefined();
 
-      // WHY: the whole serve failed, so even a MATCH row's anchor is unleased (zero partial grants).
       const hashes = await lineHashes(CONTEXT_FILE, join(dir, "f.txt"));
       await expect(
         editTool.execute(
@@ -3555,7 +3298,6 @@ describe("bash context search serving (#183)", () => {
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-window" } };
       const command = "grep -n -C 1 pat f.txt";
 
-      // WHY: line 9 is outside `-C 1` of every match, so this row is not the command's output.
       expect(
         await bashResult(
           handlers.get("tool_result")!,
@@ -3565,9 +3307,6 @@ describe("bash context search serving (#183)", () => {
         ),
       ).toBeUndefined();
 
-      // WHY: a matched line is printed as a MATCH row (`3:`), never as context (`3-`) — grep prints a
-      // WHY: matched line inside another match's window that way, so a context row that IS a match
-      // WHY: line cannot come from this command.
       expect(
         await bashResult(
           handlers.get("tool_result")!,
@@ -3586,14 +3325,11 @@ describe("bash context search serving (#183)", () => {
       register(pi);
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-plain" } };
       const command = "grep -n pat f.txt";
-      // WHY: a plain search never prints `--` or a `LINE-content` row, so both are foreign output.
       for (const observed of ["3:pat3\n--\n7:pat7\n", "2-l2\n3:pat3\n", "3:pat3\n4-l4\n"]) {
         expect(
           await bashResult(handlers.get("tool_result")!, command, ctx, observed),
         ).toBeUndefined();
       }
-      // WHY: positive control — the same file and session serve the plain geometry, so the refusals
-      // WHY: above discriminate on geometry and not on the file.
       const control = await bashResult(
         handlers.get("tool_result")!,
         command,
@@ -3606,8 +3342,6 @@ describe("bash context search serving (#183)", () => {
   });
 
   it("serves at the total-row cap and passes the whole command through one row over it", async () => {
-    // WHY: every block is 6 lines with its match on the block's third line, so a `-C 2` window is the
-    // WHY: block's first five lines and the sixth line keeps two windows from merging: rows = 5 × matches.
     const blocks = (n: number): string =>
       Array.from(
         { length: n },
@@ -3635,9 +3369,6 @@ describe("bash context search serving (#183)", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-cap-over" } };
       const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
-      // WHY: 31 matches are under `SEARCH_MAX_MATCHES`, while the 155 rows are over
-      // WHY: `SEARCH_MAX_TOTAL_ROWS` — so this refusal is the TOTAL-row cap and nothing else. It is
-      // WHY: all-or-nothing: the whole command passes through raw, never a truncated window.
       expect(
         await bashResult(handlers.get("tool_result")!, command, ctx, observed),
       ).toBeUndefined();
@@ -3663,9 +3394,6 @@ describe("bash context search serving (#183)", () => {
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-context-compound" } };
       const command = "echo hi && grep -n -C 1 pat f.txt";
       const observed = execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
-      // WHY: predicting a context block byte-exactly means reproducing grep's window-merge and `--`
-      // WHY: rules from disk; D3 does not add that prediction, so the documented fail-closed outcome
-      // WHY: is the WHOLE command raw (the glue block alone never renders as a compound).
       expect(
         await bashResult(handlers.get("tool_result")!, command, ctx, observed),
       ).toBeUndefined();

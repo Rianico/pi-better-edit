@@ -32,7 +32,6 @@ export const GO_DECORATION: DecorationSpec = {
   kinds: GO_SPAN_KINDS,
   docCommentTypes: new Set(["comment"]),
   isDocComment: (node) => {
-    // WHY: Go doc comments start at column 0; a trailing comment on the previous line does not.
     if (node.startPosition.column !== 0) return false;
     const text = node.text?.trimStart() ?? "";
     return text.startsWith("//") || text.startsWith("/*");

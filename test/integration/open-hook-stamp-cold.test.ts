@@ -1,26 +1,14 @@
 /**
- * #87c — the open stamp's hook-count field is a BUILD constant, proved across cold processes.
+ * #87c — proves the open stamp's hook-count field is a BUILD constant, across cold processes. The
+ * count folds in `openHooks.length` (the format and its bump rule live above `storeGenerationStamp`
+ * in `src/hash-store.ts`), so the test measures it as a shipped build sees it: one esbuild bundle of
+ * the production entry (`scripts/build-dist.mjs --entry`) run by TWO COLD node processes, each opening
+ * a fresh store and printing its stamp — the two values must be identical.
  *
- * WHY this file exists and why it builds a bundle: the stamp folds in `openHooks.length` so that a
- * build registering an ADDITIONAL open hook invalidates every stamp written by a build that did not
- * (see the WHY block above `storeGenerationStamp` in `src/hash-store.ts`). That only works if the
- * count is fixed by the module graph rather than by whatever happened to run first in a process — so
- * this test measures it the way a shipped build sees it: one esbuild bundle of the production entry
- * (the repo's own bundler wrapper, `scripts/build-dist.mjs`, whose `--entry` flag is a documented test
- * seam), executed by TWO COLD `node` processes. Each cold process opens a fresh store of its own and
- * prints the stamp it wrote; the two values must be IDENTICAL, which is the whole claim.
- *
- * WHY the count is read THROUGH the stamp rather than imported: `openHooks` is module-private, and a
- * public accessor would exist only for this test. The stamp IS the observable consequence — a count
- * that moved between processes would print two different values here.
- *
- * WHY this also covers the graph: the registry is filled by module top-level pushes, so
- * `openHooks.length` is a function of WHICH modules the entry pulls in. Bundling `index.ts` — the
- * production entry — is what makes the cold count the shipped one.
- *
- * LIMITATION, restated because this test must not be read as covering it: a SWAP (one hook removed,
- * another added) preserves the count, so this guards ADDITION only; a semantic change to an existing
- * hook's work is `HASH_STORE_VERSION`'s job (see the bump convention in `src/store-kernel/constants.ts`).
+ * The count is read THROUGH the stamp because `openHooks` is module-private and a public accessor
+ * would exist only for this test. Bundling `index.ts` is what makes the cold count the shipped one:
+ * the registry is filled by module top-level pushes, so the count follows WHICH modules the entry
+ * pulls in.
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -52,10 +40,6 @@ shutdownHashStore();
  * on the module graph) would show up as a difference.
  */
 function observeCold(runs: number): string[] {
-  // WHY the entry lives INSIDE the repo and the bundle lands in `dist/`: the production graph reads
-  // its prompt assets relative to the bundle's own directory (`../prompts/...`), so a bundle written
-  // to a system temp directory fails at import. `dist/` is also gitignored and already the artifact's
-  // home, which is why the relative depth matches the published build exactly.
   const work = mkdtempSync(join(process.cwd(), ".tmp", "open-hook-stamp-"));
   const entry = join(work, "entry.ts");
   const bundle = join(process.cwd(), "dist", `open-hook-stamp-cold-${basename(work)}.mjs`);
@@ -92,14 +76,11 @@ describe("the stamp's hook count is a build constant (#87c)", () => {
     const first = stamps[0] as string;
     const second = stamps[1] as string;
 
-    // WHY: the claim the folding rests on: two fresh processes, two fresh stores, one value.
     expect(second).toBe(first);
 
     const fields = first.split(":");
     expect(fields).toHaveLength(STAMP_FIELD_COUNT);
     expect(Number(fields[0])).toBe(STAMP_FORMAT_VERSION);
-    // WHY: the field is the registry's own size, not a placeholder: a build that registered an
-    // WHY: ADDITIONAL hook would print a larger count, which is exactly what invalidates an old stamp.
     expect(Number(fields[HOOK_COUNT_FIELD])).toBeGreaterThan(0);
     expect(Number.isInteger(Number(fields[HOOK_COUNT_FIELD]))).toBe(true);
   }, 120_000);

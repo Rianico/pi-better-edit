@@ -1,25 +1,14 @@
 /**
  * The selection-range note seam — one module decides whether a note is due and renders it.
- *
- * WHY its own module: a provider answers "what encloses this window's first line" and nothing else —
- * innermost first — the header formatter only places a finished clause, and the read path never
- * formats note text. This module is the one place those three meet, so the note cannot scatter
- *
- * One decision, two placements: the seam returns one clause per served window, keyed by chain (a chain
- * is named once, on the first window served from it). A single-window page places its clause on the
- * page header; a multi-window page places each clause on the section that serves it. Neither the
- * read path nor the header formatter decides which windows get a note.
- *
- * The note is silent in four distinct situations, and only one of them is a fault:
- * - the window equals its innermost span (nothing to add);
- * - nothing encloses the window's first line (the provider declines or answers an empty chain);
- * - the pre-lookup gate declined it (no registered provider, a window that covers its file);
- * - the lookup failed (threw, timed out, or answered something invalid) — the only case that logs.
- *
- * A window that straddles two siblings is not silence: the chain anchors on the window's first
- * line, so the innermost span names the sibling the window starts in.
- * The gate runs before any parser work. The note is chrome: it changes no served line, holds no
- * lease, and carries no anchor.
+ * WHY its own module: a provider answers what encloses, the header formatter only places a finished
+ * clause, and the read path never formats note text — this is the one place the three meet.
+ * One decision, two placements: one clause per chain, on the first window served from it — the page
+ * header for a single-window page, the serving section for a multi-window one.
+ * Silent in four situations, only one a fault: window equals its innermost span; nothing encloses the
+ * first line; the pre-lookup gate declined it (no provider, window covers the file); the lookup failed
+ * (threw, timed out, invalid) — only that case logs. A window straddling siblings is not silence: the
+ * chain anchors on its first line, so the innermost span names the sibling the window starts in.
+ * The gate runs before parser work. The note is chrome: no served line changes, no lease, no anchor.
  */
 import {
   REFUSAL_REASONS,
@@ -106,7 +95,6 @@ function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T | typeof
 
 /** Collapse a provider-supplied name to what one header clause can carry safely. */
 function sanitizeName(value: string): string {
-  // WHY: a Markdown heading may legally contain brackets, and the header is one bracket grammar.
   const collapsed = value
     .replace(/[[\]]/g, "")
     .replace(/\s+/g, " ")
@@ -138,7 +126,6 @@ function candidateWindows(
     if (!isPositiveInteger(window.offset) || !isPositiveInteger(window.limit)) continue;
     if (window.offset > input.totalLines) continue;
     const end = Math.min(window.offset + window.limit - 1, input.totalLines);
-    // WHY: a window that covers its file has no larger span to name, so it is not a candidate.
     if (window.offset === 1 && end === input.totalLines) continue;
     candidates.push({ index, window: { offset: window.offset, limit: end - window.offset + 1 } });
   }
@@ -200,18 +187,12 @@ function admittedChain(
  */
 function renderClause(chain: readonly AdmittedSpan[], lastLine: number): string {
   const innermost = chain[0]!;
-  // WHY: Neovim trims from the outer end (`trim_scope = 'outer'), keeping the innermost.
   const kept = chain.slice(0, 3);
   const labels: string[] = [];
   for (let index = kept.length - 1; index >= 0; index--)
     labels.push(spanLabel(kept[index]!.kind, sanitizeName(kept[index]!.name), kept[index]!.source));
-  // WHY: ASCII `>` over U+203A: the note is machine-facing, and the glyph has width and
-  // WHY: replacement risk in a constrained terminal font.
   const breadcrumb = labels.join(" > ");
   const preposition = lastLine <= innermost.end ? "in" : "starts in";
-  // WHY: parentheses bind the extent to the innermost name, where a comma bound it to the whole
-  // WHY: chain, and `lines` collided with the window's own `lines a-b of N total`. `(span a-b)`
-  // WHY: binds and names the extent in the same eight characters.
   return `; ${preposition} ${breadcrumb} (span ${innermost.start}-${innermost.end})`;
 }
 
@@ -233,7 +214,6 @@ async function lookup(
       input.timeoutMs ?? NOTE_LOOKUP_TIMEOUT_MS,
     );
   } catch {
-    // SAFETY: a throwing or hanging provider must never fail a read; the note is a best effort.
     return { failure: { source, reason: "provider_error" } };
   }
   if (answer === TIMED_OUT) return { failure: { source, reason: "provider_error" } };
@@ -251,8 +231,6 @@ async function lookup(
   if (!("valid" in admitted) || admitted.valid !== true)
     return { failure: { source, reason: "invalid_answer" } };
   const innermost = admitted.spans[0]!;
-  // WHY: a chain whose innermost level misses the window's first line is a wrong answer, and a
-  // WHY: wrong answer must behave exactly like no answer — the served rows are already correct.
   if (innermost.start > window.offset || innermost.end < window.offset) return {};
   if (innermost.start === window.offset && innermost.end === window.offset + window.limit - 1)
     return {};

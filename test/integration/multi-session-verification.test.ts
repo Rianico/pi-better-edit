@@ -1,18 +1,13 @@
 /**
- * Multi-session verification of the line-identity MVCC redesign (bd3a8f2).
+ * Multi-session verification of the line-identity MVCC redesign (bd3a8f2). The redesign scopes
+ * identity authority to `(session_id, file_path, anchor)`: leases are granted at serve time and
+ * resolved read-only at edit time, and the served mirror, retired set and blocked hashes are per
+ * session.
  *
- * The redesign scopes its whole identity authority to `(session_id, file_path, anchor)`: leases are
- * granted at serve time and resolved read-only at edit time, and the served mirror, the retired set
- * and the blocked hashes are per session. That makes multi-session behaviour a first-class invariant, not
- * an edge case — and none of the existing suites drive two live sessions against one store.
- *
- * Each `it` pins one isolation property:
- *   1. a lease granted in one session authorizes nothing in another
- *   2. sessions do not clobber each other's served state
- *   3. a concurrent edit in another session is an external change (fail closed on the touched line)
- *   4. a restart (fresh session key, same store) invalidates anchors from the previous session
- *   5. leases are path-scoped: an identical anchor in another file is not authorized
- *   6. delete-heavy churn across many sessions never poisons a fresh session
+ * Each `it` pins one isolation property: a lease authorizes nothing in another session; sessions
+ * do not clobber each other's served state; a concurrent edit elsewhere fails closed on the
+ * touched line; a restart invalidates the previous session's anchors; leases are path-scoped; and
+ * delete-heavy churn never poisons a fresh session.
  */
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
@@ -51,7 +46,6 @@ describe("multi-session — lease isolation", () => {
       );
       const line9 = aRows[8]!.hash;
 
-      // B never read the file: A's lease must not authorize B's edit
       await expect(
         editTool.execute(
           "b1",
@@ -66,7 +60,6 @@ describe("multi-session — lease isolation", () => {
       ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
       expect(await readFile(path, "utf-8")).toBe(SMALL_CPP);
 
-      // control: the very same anchor is authorized once B holds its own lease
       const bRows = rows(
         getText(
           await readTool.execute("b2", { file: "small.cpp" }, undefined, undefined, sessionB),
@@ -105,10 +98,8 @@ describe("multi-session — lease isolation", () => {
           await readTool.execute("b1", { file: "small.cpp" }, undefined, undefined, sessionB),
         ),
       );
-      // content-addressed anchors agree across sessions for identical content
       expect(bRows.map((r) => r.hash)).toEqual(aRows.map((r) => r.hash));
 
-      // B's read must not invalidate A's served mirror
       expect(
         (await createSessionHandle("session-A2", path).load()).filter((h) => h !== null),
       ).toHaveLength(aRows.length);
@@ -125,7 +116,6 @@ describe("multi-session — lease isolation", () => {
         undefined,
         sessionB,
       );
-      // A edits a line B never touched
       await editTool.execute(
         "a2",
         {
@@ -177,7 +167,6 @@ describe("multi-session — concurrent edits are external changes", () => {
         sessionB,
       );
 
-      // A's anchor for that line has no live identity any more
       await expect(
         editTool.execute(
           "a2",
@@ -205,14 +194,13 @@ describe("multi-session — restart semantics", () => {
     await withTempFile("small.cpp", SMALL_CPP, async ({ cwd, path }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const before = ctxFor(cwd, "boot-1");
-      const after = ctxFor(cwd, "boot-2"); // fresh session key, same store/HOME
+      const after = ctxFor(cwd, "boot-2");
 
       const pre = rows(
         getText(await readTool.execute("r1", { file: "small.cpp" }, undefined, undefined, before)),
       );
       expect(await createSessionHandle("boot-1", path).load()).toContain(pre[8]!.hash);
 
-      // pasted-history anchor from the previous session
       await expect(
         editTool.execute(
           "e1",
@@ -229,7 +217,6 @@ describe("multi-session — restart semantics", () => {
       ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
       expect(await readFile(path, "utf-8")).toBe(SMALL_CPP);
 
-      // and after its own read the new session works normally
       const post = rows(
         getText(await readTool.execute("r2", { file: "small.cpp" }, undefined, undefined, after)),
       );
@@ -268,12 +255,8 @@ describe("multi-session — path scoping", () => {
           await readTool.execute("r2", { file: "one.txt.copy.txt" }, undefined, undefined, ctx),
         ),
       );
-      // WHY: file-scoped derivation — same content in different files yields
-      // WHY: different anchors (C1); each file's rows carry their own leases.
       expect(copyRows.map((r) => r.hash)).not.toEqual(oneRows.map((r) => r.hash));
 
-      // WHY: one's anchor is foreign to the copy even though the content is
-      // WHY: byte-identical — another-file spelling reuse authorizes nothing.
       await expect(
         editTool.execute(
           "e1",
@@ -288,7 +271,6 @@ describe("multi-session — path scoping", () => {
       ).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(other, "utf-8")).toBe("alpha\nbravo\ncharlie\n");
 
-      // WHY: the copy's own lease authorizes its own anchor.
       await expect(
         editTool.execute(
           "e1b",
@@ -304,7 +286,7 @@ describe("multi-session — path scoping", () => {
         ),
       ).resolves.toBeDefined();
       expect(await readFile(other, "utf-8")).toBe("alpha\nBRAVO\ncharlie\n");
-      await writeFile(other, "alpha\nbravo\ncharlie\n", "utf-8"); // reset
+      await writeFile(other, "alpha\nbravo\ncharlie\n", "utf-8");
       const neverRead = `${path}.never-read.txt`;
       await writeFile(neverRead, "alpha\nbravo\ncharlie\n", "utf-8");
       await expect(

@@ -59,6 +59,6 @@ export type LifecycleDeps = {
     servedRows?: ServedRow[];
   };
   visLines: (s: string) => string[];
-  /** (ADR-0048 D2) re-run the terminal display transform on the exact raw head bytes. */
+  /** (docs/.archive_adrs/0048-bash-serve-admission-display-context-compound.md D2) re-run the terminal display transform on the exact raw head bytes. */
   runDisplayTransform: (transform: DisplayTransform, input: string) => Promise<string | undefined>;
 };

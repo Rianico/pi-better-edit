@@ -215,8 +215,6 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      // WHY: read/write agreement made the verify path canonical — staleness
-      // WHY: diagnostics name the absolute file path.
       expect(errorText).toContain(`[E_STALE_RANGE] line 2 in ${path}`);
       expect(errorText).toContain("Current range (fresh read):");
       expect(errorText).toContain("│BETA");
@@ -405,9 +403,6 @@ describe("renderCall preview", () => {
     });
   });
 
-  // WHY: (#168-class) the compute must never verify anchors against a session that did not
-  // WHY: serve them. A session_start switching the global manager inside the debounce window
-  // WHY: must discard the pending preview (cancel semantics), not re-target the new session.
   it("discards a pending preview when the session switches during the debounce window", async () => {
     let previewError = "";
     let previewSet = false;
@@ -432,15 +427,11 @@ describe("renderCall preview", () => {
           harness.theme,
           harness.context,
         );
-        // resume/fork/switch inside the 150 ms window installs a different serving session
         pi.startSession({ sessionManager: { getSessionId: () => "switched-session" } });
         await vi.advanceTimersByTimeAsync(600);
       } finally {
         vi.useRealTimers();
       }
-      // WHY: the fake registry fires session_start handlers without awaiting them and the
-      // wrong-session verify is real fs I/O; let everything settle before sampling state
-      // and before the temp-dir cleanup removes the store.
       await new Promise((resolve) => setTimeout(resolve, 250));
       previewSet = harness.state.preview !== undefined;
       previewError = (harness.state.preview as { error?: string } | undefined)?.error ?? "";
@@ -448,7 +439,6 @@ describe("renderCall preview", () => {
     });
     expect(previewError).not.toMatch(/E_UNKNOWN_ANCHOR/);
     expect(previewSet).toBe(false);
-    // the armed slot was cancelled, so a later renderCall may re-arm against the new session
     expect(argsKeySet).toBe(false);
   });
 

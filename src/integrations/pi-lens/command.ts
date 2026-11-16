@@ -164,10 +164,6 @@ function notify(
     ctx.ui.notify(message, type);
     return;
   }
-  // WHY: the only legitimate stdout write left in the extension — `hasUI === false` means print or
-  // WHY: json mode, where no renderer owns the terminal and stdout is the channel that reaches the
-  // WHY: caller. The TUI branch above returns before this line, so a live frame is never touched.
-  // SAFETY: the message carries the command's entire output and there is no other channel in these modes.
   console.log(message);
 }
 
@@ -186,9 +182,6 @@ function statusText(cwd: string): string {
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > auto",
   ];
-  // WHY: a blank line between the blocks — they are five subjects: the bridge, the store, the bash
-  // WHY: view, its multi-file caps, and the diagnostics log — and each one keeps the shape the others
-  // WHY: taught the reader.
   return [
     lensLines.join("\n"),
     "",
@@ -205,23 +198,18 @@ function statusText(cwd: string): string {
 /**
  * The store's half of the status output, in the lens block's own layout: the settings, then the
  * override, then a precedence line.
- *
- * WHY each key carries its rung: the ladder resolves PER KEY, so "the project file is set" says
- * nothing about which value the store will actually use, and the rung is what says which file to
- * edit next.
- *
+ * WHY each key carries its rung: the ladder resolves PER KEY, so "the project file is set" says nothing
+ * about the value the store will use; the rung names the file to edit next.
  * WHY the store path is printed with its override: `PI_BETTER_EDIT_CONFIG_DIR` is the ONLY thing that
- * can move the store, and no config file key can (there is deliberately no `store.dir`), which is
- * worth saying where a reader is looking for the setting that moved it.
- *
+ * can move the store and no config file key can (there is deliberately no `store.dir`).
  * WHY a warning is repeated here: an unusable config file degrades to the defaults, and a display
- * that showed those defaults with no reason would be the silent drop this ladder refuses to make.
+ * showing those defaults with no reason would be the silent drop this ladder refuses to make.
+ * The override is printed verbatim: the store opens exactly that string, so a trimmed
+ * display would name a directory the store never opens.
  */
 function storeStatusText(cwd: string): string {
   const warnings: string[] = [];
   const settings = resolveStoreJanitorSettingsWithSources(cwd, (reason) => warnings.push(reason));
-  // WHY: verbatim and never trimmed — this is the value the store will USE (see configDirOverride),
-  // WHY: so a display that trimmed it would name a directory the store does not open.
   const override = configDirOverride();
   return [
     `${COMMAND_NAME} store`,
@@ -270,13 +258,14 @@ function bashViewStatusText(cwd: string): string {
 }
 
 /**
- * The multi-file caps' half of the status output (ADR-0049 M6).
+ * The multi-file caps' half of the status output (M6).
  *
  * WHY its own block rather than two more lines in the bash-view block: the two ladders have different
  * precedence (`view` has an env override; the caps resolve project > global > default), and one
  * precedence line per block is the only honest way to say so. WHY both file values are printed beside
  * the effective ones: the losing value is the one an operator edits next.
  */
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
 function multiFileStatusText(cwd: string): string {
   const warnings: string[] = [];
   const effective = resolveBashMultiFileSettingsWithSources(cwd, (reason) => warnings.push(reason));
@@ -329,8 +318,6 @@ function applyMode(mode: LensBridgeMode, scope: LensBridgeScope, cwd: string): s
 async function pickInteractively(ctx: ExtensionCommandContext): Promise<void> {
   const labels = LENS_PICKER_CHOICES.map((choice) => choice.label);
   const picked = await ctx.ui.select(`${COMMAND_NAME} lens bridge`, labels);
-  // WHY: an undefined result is the user cancelling the dialog, so nothing is written and no
-  // WHY: confirmation is printed — silence is the correct response to Esc.
   if (picked === undefined) return;
   const choice = LENS_PICKER_CHOICES.find((candidate) => candidate.label === picked);
   if (choice === undefined) {
@@ -396,8 +383,6 @@ function applyBashViewMode(mode: BashViewMode, scope: ConfigScope, cwd: string):
 async function pickBashViewInteractively(ctx: ExtensionCommandContext): Promise<void> {
   const labels = BASH_VIEW_PICKER_CHOICES.map((choice) => choice.label);
   const picked = await ctx.ui.select(`${COMMAND_NAME} bash view`, labels);
-  // WHY: an undefined result is the user cancelling the dialog, so nothing is written and no
-  // WHY: confirmation is printed — silence is the correct response to Esc.
   if (picked === undefined) return;
   const choice = BASH_VIEW_PICKER_CHOICES.find((candidate) => candidate.label === picked);
   if (choice === undefined) {
@@ -412,13 +397,15 @@ async function pickBashViewInteractively(ctx: ExtensionCommandContext): Promise<
 }
 
 /**
- * `/pi-better-edit bash-view multi-file …` — the caps' command surface (ADR-0049 M6).
+ * `/pi-better-edit bash-view multi-file …` — the caps' command surface (M6).
  *
  * WHY numbers live here and not in the settings overlay: the overlay is an enum-only `SettingsList`
- * (ADR-0038), so arbitrary numeric editing belongs to the subcommand — exactly as M6 says. A value
+ * (docs/.archive_adrs/0038-settings-overlay.md), so arbitrary numeric editing belongs to the subcommand — exactly as M6 says. A value
  * outside the allowed range is refused with the range named, and nothing is written; the caps can be
  * LOWERED below the safety bound, never raised past it.
  */
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
+// Ref: docs/.archive_adrs/0038-settings-overlay.md
 function handleMultiFile(tokens: string[], ctx: ExtensionCommandContext): void {
   const sub = tokens[1] ?? "status";
   if (sub === "status") {
@@ -463,13 +450,12 @@ function handleMultiFile(tokens: string[], ctx: ExtensionCommandContext): void {
   const path = saveBashMultiFileConfig(patch, scope, ctx.cwd).path;
   notify(ctx, `${COMMAND_NAME} bash multi-file ${key} set to ${value} (${scope}) — ${path}`);
 }
+/** Routing: the multi-file surface takes four tokens, so it is routed before the 3-token ceiling. */
 async function handleBashView(args: string, ctx: ExtensionCommandContext): Promise<void> {
   const tokens = args
     .trim()
     .split(/\s+/)
     .filter((token) => token.length > 0);
-  // WHY: the multi-file route is dispatched BEFORE the 3-token ceiling — its own surface takes four
-  // WHY: tokens (`bash-view multi-file max-files 8 global`), and it validates them itself.
   if (tokens[1] === "multi-file") {
     handleMultiFile(tokens.slice(1), ctx);
     return;
@@ -565,13 +551,8 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           await handleLens(args, ctx);
         }
       } catch (error: unknown) {
-        // SAFETY: a command handler must never reject into the host's event loop — the failure is
-        // SAFETY: reported to the user and the command ends.
         if (error instanceof DomainError) {
-          // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope built for the model
-          // WHY: and host channels, not a sentence for the operator, so the envelope goes to the log
-          // WHY: (where a diagnosis can still reach it) and the user gets a plain failure notice. A
-          // WHY: failure that is not a DomainError keeps its own text: that part is user-actionable.
+          // Ref: docs/spec/unified-error-and-warning-contract.md
           reportDiagnostic("lens-command", `${COMMAND_NAME}: ${errorText(error)}`, error);
           notify(ctx, `${COMMAND_NAME}: the command failed unexpectedly.`, "error");
         } else {

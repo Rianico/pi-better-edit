@@ -4,18 +4,14 @@ import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
 
 /**
- * Prose-neutrality linter (spec section 6, item 4: PROSE NEUTRALITY
- * LINTER, review-ruled form). `FILLER` is a small data-driven list, not
- * a verb blacklist: each banned patronizing phrase carries a reason,
- * and extending the list requires declaring one — the same discipline
- * as the terminology baseline. The scan owns src string literals via
- * the AST, and permits the single `mode: "literal"` escape in the
- * `E_SUSPICIOUS_TEXT` refusal payload while still banning filler
- * there and everywhere else.
+ * Prose-neutrality linter (spec section 6, item 4: PROSE NEUTRALITY LINTER, review-ruled form).
+ * `FILLER` is a small data-driven list, not a verb blacklist: each banned patronizing phrase carries a
+ * reason, and extending the list requires declaring one — the same discipline as the terminology
+ * baseline. The scan owns src string literals via the AST, and permits the single `mode: "literal"`
+ * escape in the `E_SUSPICIOUS_TEXT` refusal payload while still banning filler there and elsewhere.
  *
- * Falsifiability: `literalHasFiller` fails a planted literal holding a
- * filler phrase, and `reasonDeclared` fails a planted reason-less
- * entry (see the negative controls below).
+ * Falsifiability: `literalHasFiller` fails a planted literal holding a filler phrase, and
+ * `reasonDeclared` fails a planted reason-less entry (see the negative controls below).
  */
 
 type FillerEntry = {

@@ -4,10 +4,10 @@
  * violation they claim to catch, by mutating the artifact, the manifest and the bundle input
  * and asserting a non-zero exit with the expected diagnostic.
  *
- * WHY: a verification step that passes on a broken artifact is worse than no step at all.
- * Every check is exercised here against a deliberate mutation, and the expected message is
- * asserted too — a mutant that trips an unrelated check, or that crashes later for a
- * different reason, must not be recorded as a pass.
+ * A verification step that passes on a broken artifact is worse than no step at all, so every
+ * check is exercised against a deliberate mutation and the expected message is asserted too: a
+ * mutant that trips an unrelated check, or that crashes later for a different reason, must not
+ * be recorded as a pass.
  *
  * Usage: node scripts/verify-dist-mutations.mjs
  */
@@ -97,8 +97,6 @@ function main() {
     "does not resolve relative to the artifact",
   );
 
-  // WHY: the REQUIRED_TOOLS check must have a witness — dropping a registration has to redden
-  // WHY: verify-dist, or the guard can rot exactly the way the tool removal let it.
   const droppedTool = writeMutantArtifact("dropped-tool-registration", (code) =>
     code.replace('name: "undo_last_edit"', 'name: "__mutated_undo_last_edit"'),
   );
@@ -132,10 +130,6 @@ function main() {
   mutants.push(undeclared);
   addMutation("undeclared-bare-package", ["--artifact", undeclared], "left-pad");
 
-  // WHY: static import statements are not the only way a specifier reaches the runtime; a
-  // stripped prefix inside import() or require() is the same 2.1.0 failure class. The shapes
-  // below are the ones esbuild actually emits: a comment inside the call, and `__require`
-  // rather than a source-level `require`.
   const dynamicImport = writeMutantArtifact(
     "dynamic-import-node-prefix",
     (code) =>
@@ -242,10 +236,6 @@ function main() {
     "@earendil-works/pi-tui is a runtime dependency",
   );
 
-  // WHY: the externals list is the contract, the metafile guard is the invariant behind it. A
-  // bare import that is not externalized gets inlined from node_modules, which the output scan
-  // cannot see, so this guard is exercised through the build itself. Both the fixture and the
-  // bundle esbuild writes before the guard rejects it are cleaned up by the finally below.
   const guardEntry = join(SCRATCH, "metafile-guard-entry.ts");
   const guardBundle = join(SCRATCH, "metafile-guard.js");
   mutants.push(guardEntry, guardBundle);
@@ -267,8 +257,6 @@ function main() {
     let failures = 0;
     for (const mutation of mutations) {
       const result = mutation.kind === "build" ? runBuild(mutation.args) : run(mutation.args);
-      // Assertions read stderr: every diagnostic here is written with console.error, while a
-      // bundler's progress lines go to stdout and would otherwise be mistaken for the message.
       const output = `${result.stderr}${result.stdout}`;
       const message = result.stderr.trim().split("\n")[0] ?? "";
       if (result.status === 0) {

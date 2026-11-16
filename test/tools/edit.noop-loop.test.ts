@@ -7,8 +7,6 @@ import { withTempFile, setupIntegrationTest, getText, extractHash } from "../sup
 const NOOP_LINE_1 = "bbb";
 
 async function readSample(ctx: any, readTool: any): Promise<string[]> {
-  // WHY: anchors come from the served read, not a re-derivation — the read path
-  // WHY: symlink-resolves before seeding, so only served rows agree by construction.
   const r1 = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
   return getText(r1)
     .split("\n")
@@ -125,8 +123,6 @@ describe("edit tool noop-loop guard", () => {
       await writeFile(join(cwd, "other.ts"), "aaa\nbbb\nccc\n", "utf-8");
 
       const hashes = await readSample(ctx, readTool);
-      // WHY: per-file counters need per-file anchors — other.ts has identical
-      // WHY: content but a different seed, so its served rows are its own.
       const rOther = await readTool.execute("r1", { file: "other.ts" }, undefined, undefined, ctx);
       const otherHashes = getText(rOther)
         .split("\n")

@@ -10,12 +10,6 @@ import { DomainError } from "../../src/domain-errors.js";
 import { saveLensBridgeConfig } from "../../src/integrations/pi-lens/config.js";
 import { saveStoreJanitorConfig } from "../../src/store-config.js";
 
-// WHY: (Issue #94) these eight guards are internal contract checks, not payload validation: the
-// WHY: command handlers narrow every token and the settings overlay offers only enum choices, so no
-// WHY: caller can reach them. Their code must read as an invariant failure and their text must state
-// WHY: the fact — a payload options section would advertise a choice that cannot exist.
-// WHY: The token list mirrors `test/arch/remedy-eligibility.test.ts`, which polices the registry
-// WHY: examples; this oracle drives the eight REAL sites, where a planted imperative would pass it.
 const IMPERATIVE = /\b(retry|use|run|execute|omit|declare|choose|merge|pass|send|fix)\b/i;
 const PAYLOAD_OPTIONS = "Options:";
 
@@ -80,8 +74,6 @@ const SITES: readonly Site[] = [
     offending: "mars",
     trigger: (dir) => MULTI_FILE_SCOPE("mars", dir),
   },
-  // WHY: the empty-patch guard names no offending VALUE, so it belongs to the multi-file ladder's own
-  // WHY: test (`test/core/bash-multi-file-config.test.ts`), not to this offending-value oracle.
 
   {
     label: "store janitor mode",
@@ -123,9 +115,6 @@ describe("config setter enum guards (Issue #94)", () => {
       expect(caught).toBeInstanceOf(DomainError);
       const error = caught as { code: string; message: string; payload: { message: string } };
       expect(error.code).toBe("E_INTERNAL_INVARIANT");
-      // WHY: the rendered envelope is what a reader (or a host) actually sees, so both the envelope
-      // WHY: and the payload text are checked — and the offending value must survive in it, or the
-      // WHY: failure would name no cause at all.
       expect(error.message).toContain(
         "[MODEL] [E_INTERNAL_INVARIANT] An internal invariant failed: ",
       );

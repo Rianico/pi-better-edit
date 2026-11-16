@@ -14,19 +14,12 @@ import { ANCHOR_GENERATION } from "../hashline/hash-identity.js";
 import { SERVED_TTL_MS, SERVED_PRUNE_INTERVAL_MS } from "../constants.js";
 import { loadHashStore, onStoreOpen, type HashStore } from "../hash-store.js";
 import { withStore, withBusyRetry, getCached, markRun, due } from "../store-kernel/index.js";
-// WHY: snapshot retention is owned by the CAS store that owns `file_snapshots` (spec §3.6.1); the
-// WHY: session module only asks for a pass at its deterministic boundary — the store open.
 import { vacuumSnapshots } from "../snapshot-store";
 import type { ServedRow } from "./serve-render.js";
 import type { OutlineFoldRange } from "../hashline/resolve.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
-// WHY: --- sessionKey authority (kept here; served-state re-exports for compat) ---
-
-// WHY: (#165) there is deliberately no fallback key: a minted key that was never served anything
-// WHY: makes every lease lookup miss and surfaces a misleading E_UNKNOWN_ANCHOR. Entrypoints
-// WHY: without a session fail here, at the boundary, with the real cause.
 export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string } }): string {
   const fromSession = ctx?.sessionManager?.getSessionId();
   if (fromSession) return fromSession;
@@ -35,7 +28,6 @@ export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string 
   );
 }
 
-// WHY: --- SQLite stmts (private to deep module) ---
 interface ServedStmts {
   servedGet: (sessionKey: string, path: string) => Record<string, unknown> | undefined;
   servedUpsert: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
@@ -65,7 +57,7 @@ interface ServedStmts {
   snapshotByHash: (path: string, snapshotHash: string) => LeaseSnapshot | undefined;
   lineageAnchorsOf: (snapshotId: number) => LeaseLineageRow[];
   /**
-   * The lineage rows for exactly these line numbers (ADR-0043): the page-priced half of a read
+   * The lineage rows for exactly these line numbers (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md): the page-priced half of a read
    * grant. A whole-file serve keeps `lineageAnchorsOf`, where one scan beats a seek per line.
    */
   lineageForLines: (snapshotId: number, lineNumbers: readonly number[]) => LeaseLineageRow[];
@@ -142,15 +134,9 @@ interface LeaseLineageRow {
   canon_hash: string;
 }
 
-// WHY: a dense post-edit serve covers every line of the file, so leases are written in one
-// WHY: multi-row upsert per chunk instead of one statement per line (Probe L: 30k lines).
 const LEASE_UPSERT_CHUNK = 400;
-// WHY: (ADR-0043) the number of line numbers one `line_number IN (...)` lookup binds. SQLite's
-// WHY: parameter ceiling is far higher, but a page-sized serve is ~2000 rows and a small chunk keeps
-// WHY: every prepared statement reused across reads (the cache is keyed by chunk size).
+// Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
 const LINEAGE_PAGE_CHUNK = 400;
-// WHY: at or below this many served rows, resolving the grant's lineage by line number is cheaper than
-// WHY: scanning the whole snapshot. Above it (a whole-file serve) the scan wins, so the grant switches.
 const GRANT_PAGE_MAX = 4096;
 const leaseUpsertStmts = new WeakMap<
   DatabaseSync,
@@ -220,21 +206,13 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
   const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
   const servedPruneOlderThanStmt = db.prepare("DELETE FROM served WHERE updated_at < ?");
-  // WHY: (#87c) the read half of the prune above, and it must stay the SAME predicate and the SAME
-  // WHY: parameter as the delete: this is what lets a due-but-empty prune cost nothing, and a guard
-  // WHY: that asked a different question would change which rows survive.
   const servedExpiredExistsStmt = db.prepare(
     "SELECT 1 AS one FROM served WHERE updated_at < ? LIMIT 1",
   );
-  // WHY: served_leases is the v7 identity authority (spec §3.1). The upsert is the atomic
-  // WHY: re-serve contract: a re-served anchor adopts the fresh line_id and clears retired_at.
   const lineageAnchorsStmt = db.prepare(
     "SELECT anchor, line_id, canon_hash FROM line_lineage WHERE snapshot_id = ?",
   );
-  // WHY: (ADR-0043) a page-sized grant resolves only the lines it serves. `line_lineage`'s primary
-  // WHY: key is (snapshot_id, line_number), so each parameter is a b-tree seek — instead of reading the
-  // WHY: whole snapshot's lineage and building its Map on every cache-hit read. The full read above
-  // WHY: stays for whole-file serves, where one scan beats a seek per line.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const lineagePagesCache = new Map<number, ReturnType<DatabaseSync["prepare"]>>();
   const lineagePagesStmt = (size: number) => {
     let stmt = lineagePagesCache.get(size);
@@ -248,8 +226,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     }
     return stmt;
   };
-  // WHY: `node:sqlite` rows are untyped records; each page row is narrowed field-by-field instead of
-  // WHY: asserted, so a malformed lineage row grants no lease (fail-closed) rather than a wrong identity.
   const lineagePageRows = (
     snapshotId: number,
     lineNumbers: readonly number[],
@@ -268,16 +244,10 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     }
     return rows;
   };
-  // WHY: canon evidence is derived here and nowhere else (#151): the lease for the anchor a served
-  // WHY: mirror row names carries the digest the served line's canon produced, so no canon text is
-  // WHY: stored and no process-wide hash->canon map exists (issue #149).
   const leaseListCanonStmt = db.prepare(
     "SELECT anchor, canon_hash FROM served_leases WHERE session_id = ? AND file_path = ?",
   );
   const snapshotByHashStmt = db.prepare(
-    // WHY: provenance over key: a poisoned current-key row from a pre-bump writer is never
-    // WHY: a pairing source — the grant below binds lease line_ids from this row's lineage,
-    // WHY: gated on the anchor generation (never the canon version).
     "SELECT snapshot_id, snapshot_hash FROM file_snapshots " +
       "WHERE path = ? AND snapshot_hash = ? AND committed = 1 AND anchor_generation = ?",
   );
@@ -295,10 +265,7 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "SELECT DISTINCT file_path AS file_path FROM served_leases " +
       "WHERE session_id = ? AND anchor = ? ORDER BY file_path ASC",
   );
-  // WHY: (ADR-0043) NOT EXISTS keeps the NOT IN semantics (a NULL `line_id` matched nothing under
-  // WHY: NOT IN, so it still retires nothing — the explicit guard preserves that) while letting the
-  // WHY: unique (snapshot_id, line_id) index answer once per active lease. NOT IN built a 100k-row
-  // WHY: temp b-tree on every cache-hit read: ~12ms that had nothing to do with the page.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const leaseRetireAbsentStmt = db.prepare(
     "UPDATE served_leases SET retired_at = ? " +
       "WHERE file_path = ? AND retired_at IS NULL AND line_id IS NOT NULL " +
@@ -310,8 +277,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   );
   const leaseDeletePathStmt = db.prepare("DELETE FROM served_leases WHERE file_path = ?");
   const leaseWipeStmt = db.prepare("DELETE FROM served_leases WHERE session_id = ?");
-  // WHY: drift-notice dedup lives in served_session_meta (spec §5.1 table 5), decoupled from
-  // WHY: the legacy served mirror that v6 shells keep alive.
   const metaGetReportedStmt = db.prepare(
     "SELECT reported FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
@@ -325,8 +290,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "DELETE FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
   const metaDeletePathStmt = db.prepare("DELETE FROM served_session_meta WHERE file_path = ?");
-  // WHY: outline fold ranges (tranche 3 fold-gate) share the session-meta row with the drift-notice
-  // WHY: dedup, so each upsert names only its own column and never clobbers the other.
   const metaGetOutlineFoldsStmt = db.prepare(
     "SELECT outline_folds FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
@@ -386,9 +349,9 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     servedExpiredExists: (updatedBefore) =>
       servedExpiredExistsStmt.get(updatedBefore) !== undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     snapshotByHash: (path: string, snapshotHash: string) =>
       snapshotByHashStmt.get(path, snapshotHash, ANCHOR_GENERATION) as LeaseSnapshot | undefined,
-    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageForLines: (snapshotId, lineNumbers) => {
       const rows: LeaseLineageRow[] = [];
       for (let i = 0; i < lineNumbers.length; i += LINEAGE_PAGE_CHUNK) {
@@ -465,7 +428,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     metaDelete: (sessionKey, path) => {
       withBusyRetry(() => {
-        // WHY: dropping the whole meta row is exactly what clearing the reported set means.
         metaClearReportedStmt.run(sessionKey, path);
       });
     },
@@ -490,10 +452,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   };
 }
 
-// WHY: the legacy v6 shell keeps its `canons` column: an un-restarted v6 process prepares a
-// WHY: statement naming it at store open, so dropping it would break that process's whole mirror.
-// WHY: Nothing in v7 reads or writes it — canon evidence is derived from `served_leases.canon_hash`
-// WHY: (issue #151).
 export function ensureServedSchema(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS served (" +
@@ -508,7 +466,6 @@ export function ensureServedSchema(db: DatabaseSync): void {
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  // WHY: Migration for existing DBs that were created before retired/canons/snapshotId
   try {
     const cols = db.prepare("PRAGMA table_info(served)").all() as {
       name: string;
@@ -519,8 +476,6 @@ export function ensureServedSchema(db: DatabaseSync): void {
     const cols2 = db.prepare("PRAGMA table_info(served)").all() as {
       name: string;
     }[];
-    // WHY: `canons` is deliberately still added here for the same v6-shell reason; nothing in v7
-    // WHY: reads or writes it — canon evidence is derived from `served_leases.canon_hash` (#151).
     if (!cols2.some((c) => c.name === "canons")) {
       db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
     }
@@ -531,8 +486,6 @@ export function ensureServedSchema(db: DatabaseSync): void {
       db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
     }
   } catch (error) {
-    // SAFETY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;
-    // SAFETY: the store open still succeeds and later reads re-attempt the additive migration.
     reportDiagnostic("served-session", "Failed to migrate served schema:", error);
   }
 }
@@ -544,20 +497,16 @@ export function ensureServedSchema(db: DatabaseSync): void {
 const SERVED_PRUNE_META_KEY = "served_prune_at";
 
 /**
- * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one. Both the
- * delete and its run stamp are writes, and a `DELETE` takes the store's write lock even when its
- * predicate matches no row, so a healthy stamp-matching open that took no lock before would otherwise
- * contend for one here. The item is therefore asked only when it is due, and it deletes only when
- * there is something to delete.
+ * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one: a `DELETE` takes the store's write
+ * lock even when its predicate matches no row, so a healthy stamp-matching open would contend for one here. The item is asked only
+ * when due, and it deletes only when there is something to delete.
  *
- * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so
- * an expired row can live `SERVED_TTL_MS` plus that interval. The timer earns its place because the
- * guard it skips scans the mirror whenever nothing is expired (no index covers `updated_at`); the
- * measured medians and the sizing argument are in that constant's WHY block.
+ * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so an expired row can live
+ * `SERVED_TTL_MS` plus that interval. The timer earns its place because the guard it skips scans the mirror whenever nothing is
+ * expired (no index covers `updated_at`); the measured medians and the sizing argument are in that constant's WHY block.
  *
- * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now -
- * SERVED_TTL_MS`) is asked as an existence question before it is asked as a delete, the same rows are
- * removed, and the run stamp is written only by a run that removed some.
+ * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now - SERVED_TTL_MS`) is asked as an existence
+ * question before it is asked as a delete, the same rows are removed, and the run stamp is written only by a run that removed some.
  */
 function pruneExpiredMirrorRows(db: DatabaseSync): void {
   const now = Date.now();
@@ -571,17 +520,10 @@ function pruneExpiredMirrorRows(db: DatabaseSync): void {
 
 onStoreOpen((db) => {
   ensureServedSchema(db);
-  // WHY: retention of v7 leases and session meta belongs to the vacuum engine (#86) — opening the
-  // WHY: store stays strictly additive and idempotent (spec §5.1 item 8), so a version flap in a
-  // WHY: mixed-version environment can never drop v7 identity state.
   pruneExpiredMirrorRows(db);
-  // WHY: the store open is the vacuum's deterministic boundary — retention is enforced across all
-  // WHY: paths before a new session accumulates snapshots, including after a crash left an
-  // WHY: over-budget store behind.
   vacuumSnapshots(db);
 });
 
-// WHY: --- internal helpers — private to deep module (not exported) ---
 function isValidServedList(value: unknown): value is (string | null)[] {
   if (!Array.isArray(value)) return false;
   for (const entry of value) {
@@ -652,15 +594,11 @@ function patchServed(
   while (updated.length > 0 && updated.at(-1) === null) updated.pop();
 }
 
-// WHY: sync store-level ops (require open store — caller ensures via loadHashStore/withStore)
 /**
  * Drop every served fact for one (session, path): the legacy mirror, its identity leases and its
  * drift-notice dedup set. They are one fact split across three tables, so they are dropped
  * together — a surviving lease would let an anchor the session no longer validly holds resolve
  * instead of failing E_STALE_ANCHOR (spec §3.1 fail-closed).
- *
- * WHY: corrupt-reset callers already run inside a `withStore` transaction and `BEGIN IMMEDIATE`
- * cannot nest, so the drop only opens its own transaction when the caller is outside one.
  */
 function dropServedState(store: HashStore, sessionKey: string, path: string): void {
   const drop = () => {
@@ -705,7 +643,6 @@ function upsertServedInner(
   grantLeasesForRows(store, sessionKey, path, entries);
 }
 
-/** WHY: a truncated serve delivers a suffix of the file, so its mirror is clamped and cleared. */
 interface TruncatedServeShape {
   lineCount: number;
   clearFrom?: number;
@@ -744,19 +681,13 @@ function writeServeMirrorInner(
   if (!isNoOp) {
     servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
   } else if (!shape) {
-    // WHY: a no-op mirror displaces nothing and leaves no lease to re-grant here.
     return;
   }
   const disp = displacedHashes(before, updated);
   if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
 }
 
-/**
- * WHY: the single writer for a serve observation: the served mirror and the lease grant
- * WHY: (spec §3.1.2). `shape` is the only difference between the truncated serve (a suffix was
- * WHY: shown, so the mirror is clamped/cleared) and the plain one. Canon evidence needs no write at
- * WHY: all: it is derived from the leases this writer grants (#151).
- */
+/** The single writer for a serve observation: the served mirror, then the lease grant. */
 function writeServeRecord(
   store: HashStore,
   sessionKey: string,
@@ -777,8 +708,6 @@ function writeServeRecord(
     );
     throw error;
   }
-  // WHY: identity is granted independently of the legacy mirror: a no-op mirror re-serve still
-  // WHY: has to re-grant a lease that a materialization retired (spec §3.1.2 re-serve upsert).
   grantLeasesForRows(store, sessionKey, path, rows, contentHash);
 }
 
@@ -824,29 +753,21 @@ function grantLeasesForRows(
   try {
     grantLeasesInTransaction(store.db, sessionKey, path, rows, contentHash);
   } catch (error) {
-    // SAFETY: best-effort lease grant — serves are already recorded and the tool result is valid;
-    // SAFETY: a missed lease degrades to the fail-closed path the next edit would take anyway.
     reportDiagnostic("served-session", "Failed to grant served leases:", error);
   }
 }
 
 /**
- * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never
- * invented here: it is read from the committed snapshot whose content was actually served, so the
- * edit path can resolve the anchor's identity later. Anchors without committed lineage (e.g. a
- * preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay
- * fail-closed.
+ * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never invented here: it is read from the
+ * committed snapshot whose content was actually served, so the edit path can resolve the anchor's identity later. Anchors without
+ * committed lineage (e.g. a preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay fail-closed.
  *
- * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the
- * served content (`recordEpoch` full reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`,
- * `recordLeases`). There is deliberately NO fallback to the newest materialization: after content
- * reverts to an earlier committed snapshot a re-serve of the reverted content would bind anchors
- * that both snapshots share to the OTHER version's `line_id` — the silent-miswrite class §3.1.2
- * exists to prevent. An unknown hash therefore grants nothing and the next edit fails closed.
- *
- * This is the in-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and
- * deliberately propagates instead of swallowing, so a failed re-serve rolls back the adoption and
- * retirement it shares a transaction with (the undo restore is one transaction, not three).
+ * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the served content (`recordEpoch` full
+ * reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`, `recordLeases`). There is deliberately NO fallback to the newest
+ * materialization: after content reverts, a re-serve would bind anchors both snapshots share to the OTHER version's `line_id` — the
+ * silent-miswrite class §3.1.2 exists to prevent — so an unknown hash grants nothing and the next edit fails closed.
+ * In-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and deliberately propagates instead of swallowing, so
+ * a failed re-serve rolls back the adoption and retirement it shares a transaction with (the undo restore is one transaction).
  */
 export function grantLeasesInTransaction(
   db: DatabaseSync,
@@ -858,13 +779,9 @@ export function grantLeasesInTransaction(
   const live = rows.filter((row) => row.hash !== null);
   if (live.length === 0) return;
   const stmts = servedStmts(db);
-  // WHY: the caller names the snapshot it actually served, so a file reverted to content from
-  // WHY: an older committed snapshot leases against that snapshot, not `S_latest`.
   const snapshot = stmts.snapshotByHash(path, contentHash);
   if (!snapshot) return;
-  // WHY: (ADR-0043) a page-sized serve resolves its own lines; a dense/whole-file serve reads the
-  // WHY: snapshot's lineage once. Both produce the same anchor-keyed index — a read's grant cost should
-  // WHY: scale with the rows it shows, not with the file.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const byAnchor = new Map(
     (live.length <= GRANT_PAGE_MAX
       ? stmts.lineageForLines(
@@ -874,7 +791,6 @@ export function grantLeasesInTransaction(
       : stmts.lineageAnchorsOf(snapshot.snapshot_id)
     ).map((entry) => [entry.anchor, entry]),
   );
-  // WHY: a lease is keyed by anchor, so a batch that repeats an anchor keeps only its last serve.
   const grants = new Map<string, LeaseGrant>();
   for (const row of live) {
     const lineage = byAnchor.get(row.hash!);
@@ -916,9 +832,10 @@ function asOutlineFoldRange(item: unknown): OutlineFoldRange | undefined {
 
 /**
  * Outline fold ranges hiding unserved lines for this (session, path) (tranche 3 fold-gate).
- * A missing row, a NULL column, or unparsable JSON reads as no folds, so the span gate stays
- * inert (ADR-0024) instead of failing closed on a bookkeeping miss. Runs on the caller's store
- * with no write, so the edit-path lease source can read it synchronously beside `loadLeases`.
+ * A missing row, a NULL column, or unparsable JSON reads as no folds, so the span gate stays inert
+ * (docs/adr/0016-outline-mode-point-anchors.md) instead of failing closed on a bookkeeping miss.
+ * Runs on the caller's store with no write, so the edit-path lease source can read it synchronously
+ * beside `loadLeases`.
  */
 function getOutlineFoldsInner(
   store: HashStore,
@@ -929,8 +846,6 @@ function getOutlineFoldsInner(
   try {
     raw = servedStmts(store.db).metaGetOutlineFolds(sessionKey, path)?.outline_folds ?? null;
   } catch {
-    // WHY: a store that predates the `outline_folds` column (or any failed read) carries no fold
-    // WHY: record — the gate stays inert and the next outline read re-records it.
     return [];
   }
   if (typeof raw !== "string" || raw.length === 0) return [];
@@ -1003,12 +918,9 @@ export function recordServedMirrorInTransaction(
   },
 ): void {
   const store: HashStore = { db, engine: "node:sqlite" };
-  // WHY: displaced anchors retire even for an empty serve, matching the pre-CAND-3 retire-then-record order.
   if (options?.retireAnchors && options.retireAnchors.length > 0) {
     addRetiredAnchors(store, sessionKey, path, options.retireAnchors);
   }
-  // WHY: `recordDiff`/`recordTruncated` early-return on an empty serve, skipping the mirror write
-  // AND its displaced retirement — mirrored here.
   if (rows.length === 0) return;
   writeServeMirrorInner(store, sessionKey, path, rows, options?.shape);
 }
@@ -1134,7 +1046,6 @@ async function retireAnchorsInner(
   });
 }
 
-// WHY: helpers for handle
 export function planServeRecording(input: {
   resultLineCount?: number;
   firstChangedLine?: number;
@@ -1147,14 +1058,11 @@ export function planServeRecording(input: {
   };
 }
 
-// WHY: --- SessionHandle factory ---
 export function createSessionHandle(
   sessionKey: string,
   path: string,
   storeOverride?: HashStore,
 ): import("./types.js").SessionHandle {
-  // WHY: storeOverride allows injecting MemoryStore in tests via custom HashStore wrapping Memory DB
-  // WHY: For prod, we load the shared SQLite store lazily.
   async function resolveStore(): Promise<HashStore> {
     if (storeOverride) return storeOverride;
     return loadHashStore();
@@ -1209,9 +1117,6 @@ export function createSessionHandle(
     ): Promise<void> {
       if (servedRows.length === 0) return;
       const store = await resolveStore();
-      // WHY: `contentHash` is absent when the leases were already granted inside the
-      // WHY: materialization transaction (spec §3.1.2 step 5) — the record is then mirror-only and
-      // WHY: grants nothing, so no third transaction remains on the read/edit path.
       const plan = planServeRecording(opts);
       if (plan.mode === "plain") {
         recordServesInner(store, sessionKey, path, servedRows, opts.contentHash);
@@ -1261,7 +1166,6 @@ export function createSessionHandle(
       withStore(() => {
         const current = getServedInner(store, sessionKey, path);
         const updated = [...current];
-        // WHY: merge rows via patchServed
         if (input.rows.length > 0) {
           if (input.lineCount !== undefined && updated.length > input.lineCount)
             updated.length = input.lineCount;
@@ -1273,7 +1177,6 @@ export function createSessionHandle(
           current.length !== updated.length || current.some((v, i) => v !== updated[i]);
         if (changed || input.rows.length > 0) {
           if (updated.length === 0 && input.rows.length === 0) {
-            // WHY: no-op
           } else {
             servedStmts(store.db).servedUpsert(
               sessionKey,
@@ -1335,7 +1238,6 @@ export function createSessionHandle(
   };
 }
 
-// WHY: convenience: create from ctx directly
 export function sessionFromContext(
   ctx: { sessionManager?: { getSessionId(): string } },
   path: string,
@@ -1343,7 +1245,6 @@ export function sessionFromContext(
   return createSessionHandle(sessionKeyFor(ctx), path);
 }
 
-// WHY: re-export TTL-aware wipe helpers for extension lifecycle (still via handle path, but keep as util)
 export async function wipeSession(sessionKey: string): Promise<void> {
   const store = await loadHashStore();
   wipeServed(store, sessionKey);
@@ -1394,7 +1295,6 @@ export function loadAnchorHomes(store: HashStore, sessionKey: string, anchor: st
   return servedStmts(store.db).leaseHomes(sessionKey, anchor);
 }
 
-// WHY: --- Legacy low-level exports for facade compat (keep import surface stable) ---
 export function getServed(store: HashStore, sessionKey: string, path: string): (string | null)[] {
   return getServedInner(store, sessionKey, path);
 }

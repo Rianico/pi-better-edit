@@ -1,24 +1,14 @@
 /**
- * #87c — the stamp-gated open: a healthy, stamp-matching open performs NO WRITE TRANSACTION AT ALL.
+ * #87c/#87d — the stamp-gated open. A two-part stamp (the DB header's `PRAGMA user_version` for the
+ * schema half, a `meta` row for the anchor-generation half) decides whether the generation sweep or
+ * the `meta('version')` upsert run, so a healthy, stamp-matching open issues NO write transaction —
+ * proved lock-free by opening while a rival process holds the store's write lock.
  *
- * WHY this file exists: the open chain used to sweep the store's generation state on every open, at
- * TWO call sites (`buildStore`'s `ensureSnapshotTables` and the snapshot-store open hook's re-entrant
- * `ensureSnapshotSchema`), and to re-write `meta('version')` on every open as well. All three are
- * writers, so a healthy open serialized against every other process on the shared store. The tests
- * below pin the replacement: a two-part stamp (the DB header's `PRAGMA user_version` for the schema
- * half, a `meta` row for the anchor-generation half) decides whether the sweep and the version upsert
- * run, and the whole fast path is proved lock-free by opening while a RIVAL HOLDS THE WRITE LOCK —
- * which no write statement can survive.
- *
- * (#87d) WHY THE STAMP IS THE OPEN'S LAST STEP: a stamp written inside `buildStore` — before
- * `isHealthy` and before the five registered hooks — certifies work that has not happened yet, so a hook
- * that throws leaves a VALID-LOOKING STAMP over an unfinished store and the next open takes the fast
- * path over it. The tests below pin the replacement: `buildStore` hands the stamp-due decision back
- * instead of writing the stamp, `openStore` writes both halves once every hook has succeeded (inside the
- * retry budget, because that write leaves `openDbWithBusyRetry`'s envelope), and the hook phase's
- * re-entrant ensure consults the open's IN-MEMORY decision rather than the row — so a slow-path open
- * still sweeps exactly ONCE and writes the stamp exactly ONCE.
-
+ * The stamp is the open's last step: `buildStore` hands the stamp-due decision back, `openStore`
+ * writes both halves once every hook has succeeded (inside the retry budget, because that write
+ * leaves `openDbWithBusyRetry`'s envelope), and the hook phase's re-entrant ensure consults the
+ * open's in-memory decision rather than the row — so a slow-path open sweeps exactly once and stamps
+ * exactly once, and a hook that throws leaves no stamp over an unfinished store.
  */
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { spawn } from "node:child_process";
@@ -45,23 +35,12 @@ import { initHasher } from "../../src/hashline/hasher";
 import { snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";
 import { getWritableTempRoot } from "../support/fixtures";
 
-/** The `meta` key holding the generation half of the open stamp. */
 const STAMP_KEY = "store_stamp";
-/** The `meta` key holding the last-run instant of the periodic served-mirror prune. */
 const PRUNE_RUN_KEY = "served_prune_at";
-/**
- * The stamp's documented format — `<format>:<store schema>:<canon>:<anchor generation>:<hooks>` — as a
- * shape, because the last field is the open-hook count: a build constant the test cannot import (the
- * registry is module-private and its count is only observable through the stamp it produces).
- */
 const STAMP_SHAPE = new RegExp(
   `^1:${HASH_STORE_VERSION}:${CANON_VERSION}:${ANCHOR_GENERATION}:\\d+$`,
 );
 
-/**
- * Assert the store on disk carries a CURRENT stamp, and return its value so a test can compare it
- * against what a later open produces (the value must be a build constant, not a per-open value).
- */
 function expectCurrentStamp(): string {
   const view = readStamp();
   expect(view.userVersion).toBe(HASH_STORE_VERSION);
@@ -74,8 +53,6 @@ beforeAll(async () => {
   await initHasher();
 });
 
-/** The extension root this file owns, published under the env var `stateRoot()` reads; the store
- * lives in its `state/` subdirectory. */
 async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), "pi-stamp-"));
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
@@ -88,15 +65,6 @@ async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> 
   }
 }
 
-/**
- * A SECOND PATH to the store file of `dir`: the alias is a symlink to `dir`, so the two spellings
- * resolve to ONE file while `loadHashStore`'s cache — keyed on the path STRING — cannot serve the
- * next leg from the previous leg's handle. That is what makes every leg of the two-sequential-opens
- * test below a REAL open, in one process, with no `shutdownHashStore()` between them: the open path's
- * own shutdown is the only thing that ends the previous connection. A symlink is the platform's only
- * spelling of one file that survives `path.join`'s normalisation of `.`, `..` and repeated
- * separators — and the same spelling is asserted to resolve back to the store file itself.
- */
 async function aliasStoreDir(dir: string): Promise<string> {
   const alias = join(dir, "alias");
   await symlink(dir, alias);
@@ -109,10 +77,6 @@ interface StampView {
   stamp: string | undefined;
 }
 
-/**
- * Read the stamp off the FILE, through a connection of its own — never through the open path. It
- * reads the store of the current config dir, which `withStoreDir` pins for the test.
- */
 function readStamp(): StampView {
   const db = new DatabaseSync(hashStorePath());
   try {
@@ -144,23 +108,11 @@ interface StatementTrace {
   execs: string[];
 }
 
-/**
- * How many times the open ran the schema ensure of the snapshot tables. The sweep has TWO call sites
- * and both funnel through `ensureSnapshotTables`, so this is what proves the gate covered BOTH of them
- * rather than one of them being skipped by never being reached.
- */
 function schemaEnsureSites(trace: StatementTrace): number {
   return trace.execs.filter((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS file_snapshots"))
     .length;
 }
 
-/**
- * Record every statement any connection issues, so a test can count the write-lock takers an open runs.
- * `exec`-level for the statements that take the lock through `exec`, plus a `prepare` COUNTER for the two
- * `meta` upserts (each is prepared where it is run, exactly once, so counting prepares counts writes).
- * What this cannot see is covered by the rival-lock test instead: no write statement can succeed while
- * that lock is held.
- */
 function startTrace(): { stop: () => StatementTrace } {
   const proto = DatabaseSync.prototype as unknown as {
     exec: (sql: string) => unknown;
@@ -199,12 +151,9 @@ function startTrace(): { stop: () => StatementTrace } {
   };
 }
 
-/** Hold the store's write lock from a rival connection and return its release function. */
 function holdWriteLock(): () => void {
   const holder = new DatabaseSync(hashStorePath(), { timeout: 0 });
   holder.exec("BEGIN IMMEDIATE");
-  // WHY: make the transaction a real one — a write lock is what the open must not need, and an
-  // WHY: empty transaction would let SQLite collapse it.
   holder.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run("rival", "1");
   return () => {
     try {
@@ -215,7 +164,6 @@ function holdWriteLock(): () => void {
   };
 }
 
-/** A current-generation snapshot plus one lineage row, the shape a real read materializes. */
 function plantSnapshot(store: HashStore, path: string, content: string): void {
   upsertSnapshot(store, {
     path,
@@ -226,7 +174,6 @@ function plantSnapshot(store: HashStore, path: string, content: string): void {
   });
 }
 
-/** A snapshot row of another generation: exactly what the sweep exists to remove. */
 function plantForeignGenerationRow(db: DatabaseSync, path: string): void {
   const row = db
     .prepare(
@@ -243,10 +190,6 @@ function countRows(db: DatabaseSync, sql: string, ...params: (string | number)[]
   return (db.prepare(sql).get(...params) as { n: number }).n;
 }
 
-/**
- * The statement counts an open owed: what it wrote, and how many write locks it took to do it. They
- * ride the assertion MESSAGE, so a failure reports the observed counts rather than only the diff.
- */
 function countsOf(trace: StatementTrace): {
   beginImmediate: number;
   sweepDeletes: number;
@@ -261,10 +204,6 @@ function countsOf(trace: StatementTrace): {
   };
 }
 
-/**
- * The test's own open hook, registered LAST — after every hook the imports above register — so an open
- * that fails or blocks here has already run all of the open's other work. Inert unless a test arms it.
- */
 let hookThrows = false;
 let holdWriteLockMs = 0;
 
@@ -304,10 +243,6 @@ onStoreOpen(async () => {
 
 describe("stamp-gated open (#87c)", () => {
   it("takes no write lock: a fast-path open succeeds while a rival holds BEGIN IMMEDIATE", async () => {
-    // WHY: THE DISCRIMINATOR. The base build's open reaches the sweep's `BEGIN IMMEDIATE`, blocks on
-    // WHY: the rival's write lock for its whole retry budget and throws `errcode 5` — so SUCCEEDING
-    // WHY: here is a complete proof that the open took no write lock at all: SQLite cannot write
-    // WHY: without it, and every write attempt would have thrown busy instead.
     await withStoreDir(async (dir) => {
       const store = await loadHashStore();
       plantSnapshot(store, join(dir, "healthy.ts"), "aaa\nbbb\nccc\n");
@@ -325,9 +260,6 @@ describe("stamp-gated open (#87c)", () => {
         const measured = performance.now() - started;
         const recorded = trace.stop();
         release();
-        // WHY: the no-write proof, localized: the open issued no `BEGIN IMMEDIATE` and no sweep
-        // WHY: delete. The bound is not a performance claim — it separates "completed the open" from
-        // WHY: "sat in the contention budget", which the base build's failure costs.
         expect(recorded.beginImmediate).toBe(0);
         expect(recorded.sweepDeletes).toBe(0);
         expect(recorded.writes).toEqual([]);
@@ -342,15 +274,8 @@ describe("stamp-gated open (#87c)", () => {
       const first = startTrace();
       await loadHashStore();
       const firstTrace = first.stop();
-      // WHY: ONE sweep on a fresh store — the slow path runs once per open, not once per call site:
-      // WHY: `buildStore`'s site sweeps and `buildStore` then stamps, so the hook's re-entrant ensure
-      // WHY: finds a matching stamp and stops. The 2 deletes are the two that site can run: at that
-      // WHY: point `served_leases` does not exist yet, so its two lease deletes are skipped
-      // WHY: (`hasLeases`) — they are vacuous on a fresh store, which has no leases to drop.
       expect(firstTrace.beginImmediate).toBe(1);
       expect(firstTrace.sweepDeletes).toBe(2);
-      // WHY: and BOTH call sites still ran their schema ensure — the gate is what skipped the second
-      // WHY: sweep, not a missing second call.
       expect(schemaEnsureSites(firstTrace)).toBe(2);
       expectCurrentStamp();
 
@@ -358,8 +283,6 @@ describe("stamp-gated open (#87c)", () => {
       const second = startTrace();
       await loadHashStore();
       const secondTrace = second.stop();
-      // WHY: the fast path takes NO write lock and runs NO sweep at EITHER site: nothing of the sort
-      // WHY: is issued, and the version upsert is skipped with them.
       expect(secondTrace.beginImmediate).toBe(0);
       expect(secondTrace.sweepDeletes).toBe(0);
       expect(schemaEnsureSites(secondTrace)).toBe(2);
@@ -394,9 +317,6 @@ describe("stamp-gated open (#87c)", () => {
         const trace = startTrace();
         const reopened = await loadHashStore();
         const recorded = trace.stop();
-        // WHY: the slow path runs again — ONCE, at `buildStore`'s site: the stamp it writes at the end
-        // WHY: of the build is what makes the hook's second ensure a no-op. All four sweep deletes run
-        // WHY: there, because `served_leases` exists by then.
         expect(recorded.beginImmediate).toBe(1);
         expect(recorded.sweepDeletes).toBe(4);
         expect(schemaEnsureSites(recorded)).toBe(2);
@@ -419,11 +339,6 @@ describe("stamp-gated open (#87c)", () => {
   });
 
   it("folds the open-hook count into the stamp, so an ADDED hook invalidates it", async () => {
-    // WHY: the registry is built by module top-level pushes, so the count is a function of the BUILD.
-    // WHY: This rewrites the count the way a build registering one MORE hook would leave it: the next
-    // WHY: open must take the slow path — that new hook's work is not certified by the old stamp — and
-    // WHY: then re-stamp its own count. LIMITATION: a swap (one hook out, one in) keeps the count, which
-    // WHY: is why `HASH_STORE_VERSION`'s bump convention still governs semantic changes.
     await withStoreDir(async () => {
       const store = await loadHashStore();
       plantForeignGenerationRow(store.db, "/poisoned.ts");
@@ -452,8 +367,6 @@ describe("stamp-gated open (#87c)", () => {
   });
 
   it("folds the stamp's FORMAT version in, so changing the field list invalidates old stamps", async () => {
-    // WHY: the leading field exists so a future shape change invalidates every stamp written by the old
-    // WHY: shape BY CONSTRUCTION. This is that claim, exercised: an unknown format takes the slow path.
     await withStoreDir(async () => {
       const store = await loadHashStore();
       plantForeignGenerationRow(store.db, "/poisoned.ts");
@@ -479,10 +392,6 @@ describe("stamp-gated open (#87c)", () => {
   });
 
   it("a stale or future HASH_STORE_VERSION takes the slow path and is rewritten", async () => {
-    // WHY: the schema half of the stamp IS `HASH_STORE_VERSION`, so any change to an owner's
-    // WHY: schema-ensure or gated work that bumps it invalidates every stamp on disk. Both directions
-    // WHY: are checked: a store older than this build and one written by a NEWER build that this one
-    // WHY: must not trust.
     for (const version of [HASH_STORE_VERSION - 1, HASH_STORE_VERSION + 1]) {
       await withStoreDir(async () => {
         const store = await loadHashStore();
@@ -507,10 +416,6 @@ describe("stamp-gated open (#87c)", () => {
   });
 
   it("a failing sweep leaves the stamp unset, and the restored open stamps it", async () => {
-    // WHY: the stamp is the store's record that the WHOLE slow path — DDL, migrations and sweep —
-    // WHY: completed. Stamping before (or during) the sweep would make a failed sweep permanent, so
-    // WHY: this is the RED-proof test for that ordering: force the sweep to throw and the stamp must
-    // WHY: still be absent; restore it and the next open stamps.
     await withStoreDir(async () => {
       const proto = DatabaseSync.prototype as unknown as { exec: (sql: string) => unknown };
       const originalExec = proto.exec;
@@ -537,7 +442,6 @@ describe("stamp-gated open (#87c)", () => {
   it("pins the version row and the header to the store version", async () => {
     await withStoreDir(async () => {
       const store = await loadHashStore();
-      // WHY: `meta('version')` keeps its value, format and semantics — the stamp is a SECOND row.
       expect(store.db.prepare("SELECT value FROM meta WHERE key = 'version'").get()).toEqual({
         value: String(HASH_STORE_VERSION),
       });
@@ -557,10 +461,6 @@ describe("stamp-gated open (#87c)", () => {
   });
 
   it("leaves planted rows alone across a stamp-matching reopen (the deliberate trade)", async () => {
-    // WHY: the sweep is an upgrade/migration action now, not a per-open one: rows that a matching
-    // WHY: stamp says nothing about — here a foreign-generation row planted after the sweep — are NOT
-    // WHY: removed by a reopen. This is the deliberate trade (the store's provenance is unchanged, so
-    // WHY: there is nothing to upgrade); the poison goes when the stamp moves.
     await withStoreDir(async (dir) => {
       const store = await loadHashStore();
       plantForeignGenerationRow(store.db, join(dir, "poisoned.ts"));
@@ -589,11 +489,6 @@ describe("stamp-gated open (#87c)", () => {
 });
 
 describe("the stamp is the open's last step (#87d)", () => {
-  /**
-   * THE RED PROOF: a hook that throws must leave NO stamp, because the stamp certifies the WHOLE open —
-   * the build, the migrations, the sweep and every hook. Stamped before the hooks, that failure leaves a
-   * valid-looking stamp over an unfinished store, and the next open takes the fast path over it.
-   */
   it("a hook that throws leaves no stamp, and the next open takes the slow path and re-stamps", async () => {
     await withStoreDir(async () => {
       hookThrows = true;
@@ -605,8 +500,6 @@ describe("the stamp is the open's last step (#87d)", () => {
         hookThrows = false;
       }
 
-      // THE RED ASSERTION: neither half of the stamp survives a failed open. The `version` row the gate
-      // also reads is NOT part of the stamp — the build writes it, before any hook runs.
       const failed = readStamp();
       expect(failed, `stamp after a throwing hook: ${JSON.stringify(failed)}`).toEqual({
         userVersion: 0,
@@ -614,8 +507,6 @@ describe("the stamp is the open's last step (#87d)", () => {
         stamp: undefined,
       });
 
-      // The hooks' DDL is deliberately ungated — it ran, and it stays, which is what keeps the open
-      // self-healing. Nothing here is gated by the stamp.
       const probe = new DatabaseSync(hashStorePath());
       try {
         expect(
@@ -628,8 +519,6 @@ describe("the stamp is the open's last step (#87d)", () => {
         probe.close();
       }
 
-      // With no stamp the next open cannot take the fast path: it sweeps again as ONE `BEGIN IMMEDIATE`
-      // and writes BOTH halves, so the store is stamped again.
       const trace = startTrace();
       await loadHashStore();
       const recorded = trace.stop();
@@ -639,16 +528,9 @@ describe("the stamp is the open's last step (#87d)", () => {
     });
   });
 
-  /**
-   * The move takes the stamp write out of `openDbWithBusyRetry`'s envelope, so the deferred write needs
-   * a retry of its own. The write lock here is REAL and held across the hook phase by a child process; an
-   * unwrapped write would reject with `errcode 5` here, i.e. it would fail an open that had already done
-   * all of its work.
-   */
   it("retries the deferred stamp write when the store is busy at the end of the open", async () => {
     await withStoreDir(async () => {
       const store = await loadHashStore();
-      // The next open must OWE a stamp write, so it reaches the deferred step.
       store.db.exec("PRAGMA user_version = 0");
       shutdownHashStore();
 
@@ -675,12 +557,6 @@ describe("the stamp is the open's last step (#87d)", () => {
     });
   });
 
-  /**
-   * THE COUNTS: the move must not double the slow path's work. Read on a store whose stamp no longer
-   * matches — the upgrade shape — where the sweep's own site runs ONCE (the hook's re-entrant ensure
-   * consults the open's in-memory decision, not the row the open has not written yet) and the stamp is
-   * written ONCE, whichever statement issues it.
-   */
   it("sweeps once and writes the stamp once on the slow path, and nothing at all on the fast path", async () => {
     await withStoreDir(async () => {
       const store = await loadHashStore();
@@ -698,7 +574,6 @@ describe("the stamp is the open's last step (#87d)", () => {
         metaUpserts: 2,
         headerStamps: 1,
       });
-      // BOTH ensure sites still ran: the gate skipped the second sweep, a call was not skipped.
       expect(schemaEnsureSites(slow)).toBe(2);
       expectCurrentStamp();
 
@@ -719,7 +594,6 @@ describe("the stamp is the open's last step (#87d)", () => {
 });
 
 describe("periodic served-mirror prune (#87c)", () => {
-  /** Two expired mirror rows and one fresh one, the shape the TTL prune judges. */
   function plantMirrorRows(store: HashStore): { expired: string[]; fresh: string } {
     const now = Date.now();
     const insert = store.db.prepare(
@@ -740,9 +614,6 @@ describe("periodic served-mirror prune (#87c)", () => {
   }
 
   it("a due prune deletes exactly the expired rows", async () => {
-    // WHY: semantics preserved — the same predicate, the same rows: the prune still issues
-    // WHY: `DELETE FROM served WHERE updated_at < ?` with the cutoff `now - SERVED_TTL_MS`, and the
-    // WHY: existence read that guards it asks the SAME question with the SAME parameter.
     await withStoreDir(async () => {
       const store = await loadHashStore();
       const { expired, fresh } = plantMirrorRows(store);
@@ -751,7 +622,6 @@ describe("periodic served-mirror prune (#87c)", () => {
 
       const reopened = await loadHashStore();
       expect(mirrorSessions(reopened.db)).toEqual([fresh]);
-      // WHY: the run is recorded only when it actually ran, so the next open does not repeat it.
       const recorded = reopened.db
         .prepare("SELECT value FROM meta WHERE key = ?")
         .get(PRUNE_RUN_KEY) as { value: string } | undefined;
@@ -763,7 +633,6 @@ describe("periodic served-mirror prune (#87c)", () => {
     await withStoreDir(async () => {
       const store = await loadHashStore();
       plantMirrorRows(store);
-      // WHY: a fresh run stamp is the "already ran" state — the item must stay down.
       store.db
         .prepare(
           "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -780,7 +649,6 @@ describe("periodic served-mirror prune (#87c)", () => {
         ),
       ).toBe(2);
 
-      // WHY: backdate the run stamp past the interval and the item is due again.
       notDue.db
         .prepare("UPDATE meta SET value = ? WHERE key = ?")
         .run(String(Date.now() - SERVED_PRUNE_INTERVAL_MS - 1), PRUNE_RUN_KEY);
@@ -791,9 +659,6 @@ describe("periodic served-mirror prune (#87c)", () => {
   });
 
   it("does not write the run stamp when there is nothing to prune", async () => {
-    // WHY: the timestamp write is itself a write-lock taker, so it is owed only to a run that
-    // WHY: deleted something — otherwise a due-but-empty prune would keep the fast path lock-free and
-    // WHY: yet write.
     await withStoreDir(async () => {
       await loadHashStore();
       shutdownHashStore();
@@ -806,60 +671,24 @@ describe("periodic served-mirror prune (#87c)", () => {
 });
 
 /**
- * #87c — TWO SEQUENTIAL OPENS IN ONE PROCESS, IN BOTH ORDERS, WITH THE SLOT THE HOOK PHASE READS.
+ * #87c — three REAL opens of ONE store, in one process, in both orders, quoting each leg's statement
+ * counts. Each leg reaches the store through a different spelling of its path (`aliasStoreDir`),
+ * because `loadHashStore` caches per path STRING; the open's own shutdown is then the only thing that
+ * ends the previous connection, so the SLOT, not the handle, is what these counts pin.
  *
- * WHY this exists beside "sweeps once and writes the stamp once on the slow path": that test pins what
- * ONE open owes. This test pins the same contract PER LEG, across three real opens of ONE store in one
- * process and in BOTH orders — slow then fast, then fast then slow — quoting each leg's statement counts
- * (`BEGIN IMMEDIATE`, sweep DELETEs, meta upserts, header stamps).
- *
- * NOT A NOVELTY, and the paragraph this replaces claimed one: deleting `openStamp = stamp` reds THIS
- * test at leg 1 (`{beginImmediate: 2}` against `{beginImmediate: 1}`) AND reds SEVEN tests this file
- * ALREADY had, identically — "sweeps at both call sites on a fresh store…", "a mismatch in EITHER
- * stamp half…", "folds the open-hook count into the stamp…", "folds the stamp's FORMAT version in…",
- * "a stale or future HASH_STORE_VERSION…", "a hook that throws leaves no stamp…" and "sweeps once and
- * writes the stamp once on the slow path…". Measured on the file as it stood BEFORE this test was
- * added: 15 tests, 7 red under that one deletion. The property was already pinned; what this test adds
- * is the per-leg contract above, and that is worth having.
- *
- * THE LEGS ARE REAL OPENS OF ONE STORE, AND NO TEST-SIDE SHUTDOWN RUNS BETWEEN THEM. A second
- * `loadHashStore()` on an unchanged config path is served from the cache, so each leg reaches the
- * store through a different spelling of its path (`aliasStoreDir`, asserted below to resolve to the
- * same file). The open path's own shutdown is then the only thing that ends the previous connection —
- * which is also why the SLOT, not the handle, is what these counts pin.
- *
- * RED PROOF: remove `openStamp = stamp` (or move it after the hook loop) and leg 1 reds FIRST, on
- * `beginImmediate`: `{beginImmediate: 2, sweepDeletes: 6}` against this leg's `{beginImmediate: 1,
- * sweepDeletes: 2}` — with neither a slot nor a persisted stamp the hook's re-entrant ensure sweeps a
- * second time. Leg 1 ends the test, so the later legs' counts are never observed here; that same
- * mutation on a store which already holds `served_leases` doubles to 8 sweep DELETEs against 4 in
- * "sweeps once and writes the stamp once on the slow path". Its leg-1 failure is the same one the seven
- * tests listed above report, each in its own shape.
- *
- * THE SLOW AND FAST COUNTS RESTATE what "sweeps once and writes the stamp once on the slow path"
- * already asserts: the legs compare that same shape across open orders rather than a different one.
+ * The slow and fast legs restate "sweeps once and writes the stamp once on the slow path" per leg.
+ * RED PROOF: remove `openStamp = stamp` and leg 1 reds on `beginImmediate` (2 against 1), as do
+ * seven sibling tests in this file, each in its own shape.
  */
 describe("two sequential opens in one process (#87c)", () => {
-  /**
-   * What a store's FIRST open owes when there is no stamp: one `BEGIN IMMEDIATE` around the sweep, the
-   * sweep's two DELETEs (a fresh build has no `served_leases` table yet, so its lease deletes are not
-   * owed), the version and stamp `meta` upserts, and the header write.
-   */
   const FIRST_OPEN_LEG = { beginImmediate: 1, sweepDeletes: 2, metaUpserts: 2, headerStamps: 1 };
-  /**
-   * What an open owes when its stamp does NOT match on a store that already has the lease table: the
-   * same again plus the sweep's two `served_leases` deletes.
-   */
   const SLOW_LEG = { beginImmediate: 1, sweepDeletes: 4, metaUpserts: 2, headerStamps: 1 };
-  /** What an open owes when its stamp DOES match: nothing — the fast path takes no write lock. */
   const FAST_LEG = { beginImmediate: 0, sweepDeletes: 0, metaUpserts: 0, headerStamps: 0 };
 
   it("runs slow then fast, then fast then slow, on one store in one process", async () => {
     await withStoreDir(async (dir) => {
       const alias = await aliasStoreDir(dir);
 
-      // LEG 1 — SLOW, the store's first open: no stamp, so the sweep's site runs once, the hook's
-      // re-entrant ensure reads the slot instead of the unwritten row, and both halves are stamped.
       const leg1 = startTrace();
       await loadHashStore();
       const leg1Run = leg1.stop();
@@ -872,12 +701,10 @@ describe("two sequential opens in one process (#87c)", () => {
         "both ensure sites ran; the gate skipped the second sweep",
       ).toBe(2);
       expectCurrentStamp();
-      // The precondition every later leg rests on: the two spellings name ONE store file, not two.
       expect(await realpath(join(alias, "state", "hash-store.sqlite"))).toBe(
         await realpath(join(dir, "state", "hash-store.sqlite")),
       );
 
-      // LEG 2 — the stamp leg 1 wrote matches, so the second open of the same store owes no statement.
       vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", alias);
       const leg2 = startTrace();
       const store = await loadHashStore();
@@ -892,9 +719,6 @@ describe("two sequential opens in one process (#87c)", () => {
         "both ensure sites ran; the gate skipped both sweeps",
       ).toBe(2);
 
-      // LEG 3 — FAST THEN SLOW, on the same store: the header half is moved on leg 2's OWN connection,
-      // outside any open (the slot was cleared when leg 2's hook phase ended). The next open must
-      // notice, and the store still holds the lease table leg 1 built, so this sweep is the full one.
       store.db.exec("PRAGMA user_version = 0");
       vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", dir);
       const leg3 = startTrace();

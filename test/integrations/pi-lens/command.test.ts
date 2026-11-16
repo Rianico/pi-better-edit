@@ -17,10 +17,6 @@ import {
 import { DomainError } from "../../../src/domain-errors.js";
 import { clearDiagnostics, readDiagnostics } from "../../support/fixtures.js";
 
-// WHY: (Issue #94) the catch's channel mapping is the unit under test, and no production input
-// WHY: makes a dependency of this command throw a DomainError — that unreachability is the fix's
-// WHY: own premise — so the one doubled dependency is declared here and delegates to the real
-// WHY: saver by default: every other test in this file still exercises the real write path.
 vi.mock("../../../src/integrations/pi-lens/config.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../../src/integrations/pi-lens/config.js")>();
@@ -158,7 +154,6 @@ describe("registerLensCommand", () => {
       "bash-view on",
       "bash-view off",
       "bash-view status",
-      // WHY: (ADR-0049 M6) the multi-file cap subcommands join the same completion list.
       "bash-view multi-file",
       "bash-view multi-file status",
       "bash-view multi-file max-files",
@@ -293,8 +288,6 @@ describe("registerLensCommand", () => {
     await options.handler("lens auto project extra", ctx);
     expect(notifications[3]).toContain("Too many arguments");
 
-    // WHY: (Issue #94) the user channel carries plain sentences only — a rejected token must never
-    // WHY: surface the model envelope, which is what a phantom payload error would look like here.
     for (const message of notifications) {
       expect(message).not.toContain("[MODEL]");
       expect(message).not.toContain("[USER]");
@@ -317,8 +310,6 @@ describe("registerLensCommand", () => {
 
     expect(notifications).toHaveLength(1);
     expect(notifications[0]).toContain("pi-better-edit:");
-    // WHY: (Issue #94) only a DomainError is reduced to the plain sentence — a raw I/O failure keeps
-    // WHY: its own code and text, which is the part an operator can act on.
     expect(notifications[0]).not.toContain("failed unexpectedly");
   });
 
@@ -336,17 +327,11 @@ describe("registerLensCommand", () => {
     expect(notifications[0]).not.toContain("[MODEL]");
     expect(notifications[0]).not.toMatch(/\[E_[A-Z_]+\]/);
     expect(notifications[0]).not.toContain("simulated invariant failure");
-    // WHY: the envelope is not dropped, only re-routed: the log keeps the code and the cause,
-    // WHY: which is what makes the user-facing sentence safe to be vague.
-    // WHY: the envelope is not dropped, only re-routed: the diagnostics log keeps the code and the
-    // WHY: cause, which is what makes the user-facing sentence safe to be vague — and keeps the
-    // WHY: stack trace out of the terminal frame Pi's renderer owns.
     const record = readDiagnostics().find((entry) =>
       entry.message.includes("pi-better-edit: [MODEL] [E_INTERNAL_INVARIANT]"),
     );
     expect(record).toBeDefined();
     expect(record?.error?.message).toContain("simulated invariant failure");
-    // WHY: the double refuses before any write, so a failed command must leave no config.
     expect(existsSync(projectConfigPath())).toBe(false);
   });
   describe("status output — the store section (#90)", () => {
@@ -371,7 +356,6 @@ describe("registerLensCommand", () => {
     it("keeps every settled lens line byte-identical and appends the store section after it", async () => {
       const lines = (await statusOf(projectDir)).split("\n");
 
-      // The lens block keeps its own line order; the store block starts at a blank separator line.
       const storeAt = lines.indexOf("pi-better-edit store");
       expect(storeAt).toBeGreaterThan(0);
       expect(lines[storeAt - 1]).toBe("");

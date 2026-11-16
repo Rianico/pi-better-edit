@@ -17,16 +17,17 @@ import type { NormFile, NormText } from "./types.js";
 export type { NormFile, NormText } from "./types.js";
 
 /**
- * The `stat(2)` identity of one file version (ADR-0043): the four numbers a stat key is built from.
+ * The `stat(2)` identity of one file version: the four numbers a stat key is built from.
  *
  * WHY ctime and not just mtime: userspace can set mtime (`utimes`, `rsync --times`), but it cannot set
  * ctime — a write bumps ctime even when the caller restores the mtime and keeps the size. That is what
  * makes "same size, same mtime, different bytes" a detectable change instead of an invisible one.
  */
+// Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
 export type StatIdentity = { ino: number; size: number; mtimeMs: number; ctimeMs: number };
 
 /**
- * The opaque key a read stamps on the snapshot it materialized (ADR-0043). Deliberately a string: the
+ * The opaque key a read stamps on the snapshot it materialized. Deliberately a string: the
  * store compares it, it never interprets it, and it round-trips exact doubles (`String(n)` is shortest
  * round-trip), so no float column equality decides whether a file is unchanged.
  */
@@ -68,12 +69,8 @@ export async function fileSnap(
   preloadedStats?: FileStats,
 ): Promise<SnapInfo> {
   const canonicalPath = await resolveTarget(absolutePath);
-  // WHY: the load path stat'd this same canonical path to size the file and reject directories, so
-  // WHY: its `Stats` is authoritative for the snapshot id; re-stat'ing could only disagree with the
-  // WHY: bytes the caller has already read and hashed.
   const stats: FileStats = preloadedStats ?? (await stat(canonicalPath));
-  // WHY: P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
-  // WHY: Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
+  // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
   const effectiveChecksum = checksum ?? undefined;
   return {
     snapshotId: fmtSnapId(canonicalPath, stats, effectiveChecksum),
@@ -129,9 +126,6 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    // WHY: the count is the NORMALIZED text's, because `toLF` turns a lone `\r` into a line break: a
-    // WHY: count taken before it under-reads a CR-only file, which would then pass this cap and die in
-    // WHY: the anchor space instead. One walk settles it without holding a line.
     const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
@@ -163,21 +157,11 @@ export async function readNormFile(
     path: norm.absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
-    // WHY: this is the read-path materialization of the file's committed bytes (spec §3.1.3 / §3.1.3.3):
-    // WHY: it is the single authoritative source of line survival, so it is the only hashing call in
-    // WHY: the load path allowed to retire leases. In-memory working-buffer hashing stays non-authoritative.
     retireLeases: true,
   });
   return { ...norm, fileHashes };
 }
 
-/**
- * The served read's anchor plan: the walk assigns each line's anchor while the preview keeps the page.
- *
- * WHY: `readNormFile` finishes the whole anchor array before the caller knows which lines to show, so
- * WHY: the read path takes the assignment instead and runs it inside its own walk. `readNormFile` stays
- * WHY: for the callers that need the finished array (the edit pipeline) and pays a split for it.
- */
 export async function anchorWalkFor(
   normalized: string,
   absolutePath: string,

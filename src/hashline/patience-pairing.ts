@@ -1,24 +1,14 @@
 /**
- * Scaled recursive patience pairing (spec §5.2): aligns a previous snapshot's lines to the
- * current snapshot's lines so `line_id`s survive reorders, inserts, and deletes.
- *
- * The engine has four phases, all fail-closed: an ambiguous interval pairs nothing rather
- * than guessing coordinates.
- *
- *   1. Locally unique canon anchors become candidate pins (`findUniquePins`).
- *   2. The candidate pins' minimal-displacement LIS backbone is their unconditional
- *      intersection across every maximum-length, minimum-Δ subsequence
- *      (`findStablePinBackbone`, two-pass DP over patience-sorted ranks).
- *   3. Pinless rigid runs with identical canon sequences zip pairwise (Probe N).
- *   4. Bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when
- *      it lies on every maximal traceback path, so an interval with several optimal pairings
- *      stays UNPAIRED / RETIRED.
- *
- * When the backbone is empty the interval falls straight through to leaf handling: the
- * engine never recurses on identical bounds, so alignment cannot starve the scan budget.
- *
- * Invariant: `prevLines` and `currLines` are contiguous ascending 1-based line numbers
- * (spec §5.2 descriptor shape), so a descriptor's index + 1 is its line number.
+ * Scaled recursive patience pairing (spec §5.2). Four phases, all fail-closed — an ambiguous interval
+ * pairs nothing rather than guessing coordinates:
+ *   1. locally unique canon anchors become candidate pins (`findUniquePins`);
+ *   2. their minimal-displacement LIS backbone (`findStablePinBackbone`, two-pass DP over patience-sorted
+ *      ranks) is the unconditional intersection of every maximum-length, minimum-Δ subsequence;
+ *   3. pinless rigid runs with identical canon sequences zip pairwise (Probe N);
+ *   4. bounded leaf intervals align on a unique LCS embedding only: a pairing is emitted when it
+ *      lies on every maximal traceback path, so several optimal pairings stay UNPAIRED / RETIRED.
+ * `prevLines`/`currLines` are contiguous ascending 1-based, so index + 1 = line; an empty backbone
+ * falls through to leaves and no bound recurses on itself, so the scan budget cannot starve.
  */
 
 export interface LineDescriptor {
@@ -33,14 +23,13 @@ export interface AnchorPin {
 
 export interface PairingOptions {
   /**
-   * WHY: production callers omit this so the dynamic `MAX(100000, 4*(prev+curr))` guard
-   * WHY: applies; tests inject a tiny budget to prove the guard halts alignment instead of
-   * WHY: silently recursing past it.
+   * Production callers omit this so the dynamic `MAX(100000, 4*(prev+curr))` guard applies; tests
+   * inject a tiny budget to prove the guard halts alignment instead of silently recursing past it.
    */
   scanBudget?: number;
   /**
    * Whether to zip the unchanged, provably-forced prefix/suffix before the engine runs (default
-   * `true`; see ADR-0044). Diagnostic/test seam: the differential corpus in
+   * `true`; see docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md). Diagnostic/test seam: the differential corpus in
    * `test/hashline/patience-pairing.test.ts` compares this path against the full scan, which is
    * how the shortcut's result-equivalence is pinned.
    */
@@ -66,7 +55,7 @@ export function pairingScanBudget(prevCount: number, currCount: number): number 
 
 /**
  * The unchanged boundary runs whose pairs are FORCED, so they may be zipped without the engine
- * (ADR-0044).
+ * (docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md).
  *
  * WHY uniqueness is the safety condition: a canon that occurs exactly once in `prevLines` and
  * exactly once in `currLines` must be paired by every maximum-length alignment — skipping it would
@@ -127,12 +116,6 @@ interface WeightedPin {
   displacement: number;
 }
 
-/**
- * WHY: per-rank prefix-min indexes keep the minimal-displacement LIS at O(m log m): a
- * WHY: Fenwick over each rank's compressed `currLine` coordinates answers "min displacement of a
- * WHY: length-(k-1) subsequence ending before this coordinate" in O(log m) without an O(m²)
- * WHY: scan over predecessors.
- */
 class RankDisplacementIndex {
   private readonly sorted: number[];
   private readonly tree: Float64Array;
@@ -197,8 +180,6 @@ function computeLengthAndMinDisplacement(pins: WeightedPin[]): {
     const rank = lengths[i]!;
     let shortest = pin.displacement;
     if (rank > 1) {
-      // WHY: the predecessor with rank-1 is guaranteed to have been processed already
-      // WHY: (pins arrive in ascending prevLine), so a finite minimum always exists when rank > 1.
       const predecessor = indexes[rank - 2]!.queryBelow(pin.currLine);
       if (predecessor !== Infinity) shortest += predecessor;
     }
@@ -320,24 +301,14 @@ export function findStablePinBackbone(pins: AnchorPin[]): AnchorPin[] {
 }
 
 /**
- * Bounded leaf alignment (spec §3.4.4). Uniqueness is **embedding-level**: a pairing survives
- * only when it lies on every maximal traceback path, and an interval with more than one maximum
- * pairing pairs nothing (its lines stay UNPAIRED / RETIRED).
+ * Bounded leaf alignment (spec §3.4.4). Uniqueness is **embedding-level**: a pairing survives only
+ * when it lies on every maximal traceback path; an interval with more than one maximum pairing
+ * pairs nothing (its lines stay UNPAIRED / RETIRED).
  *
  * `pairingCount` is the exact number of maximum pairings (embeddings) of the optimal LCS in the
- * sub-interval, capped at 2 so the decision stays polynomial. It deliberately counts neither
- * distinct canon strings nor DP orderings:
- * - A repeated canon that can be matched in two places counts twice, although the LCS string is
- *   the same: `[A, A, A]` vs `[A, A]` counts 3, not 1.
- * - Two orderings of down/right skips around the same matched lines count once, because they are
- *   the same embedding: `[A, X, B]` vs `[A, Y, B]` counts 1, not 2.
- *
- * The recurrence is a first-pair decomposition. For the region starting at `(i, j)` with optimal
- * length `target`, every maximum pairing either matches `i` with `j` (only possible when the
- * canons agree, and then it extends a maximum pairing of `(i + 1, j + 1)`), or leaves at least
- * one of the two lines unmatched, which is a maximum pairing of `(i + 1, j)` and/or `(i, j + 1)`
- * at the same length. The overlap of those two jump regions is subtracted, so each pairing is
- * counted exactly once. The cap is applied after the inclusion-exclusion subtraction, and because
+ * sub-interval, capped at 2 so the decision stays polynomial; it counts neither distinct canon
+ * strings nor DP orderings. The recurrence is a first-pair decomposition whose overlap is
+ * subtracted so each pairing counts once; the cap is applied after that subtraction, and since
  * `|A ∪ B| == 1` forces `A` and `B` to be the same singleton, the `=== 1` test that drives
  * `isUnique` stays exact under the cap.
  */
@@ -405,11 +376,6 @@ export function computeLCSPaths(
       const diagonal = suffix[(i + 1) * stride + (j + 1)]!;
       const pKey = prevLines[pStart - 1 + i]!.canonHash;
       const cKey = currLines[cStart - 1 + j]!.canonHash;
-      // WHY: with `pairingCount[i][j] === 1` each step has exactly one pairing-optimal
-      // WHY: continuation, so this preference order reproduces *the* unique embedding. A canon
-      // WHY: match that preserves the optimum must be in it (a maximum path through that pair
-      // WHY: would otherwise be a second embedding), and when skipping both lines is optimal
-      // WHY: the unique embedding can only continue inside `(i + 1, j + 1)`.
       if (pKey === cKey && diagonal + 1 === target) {
         pairs.push([pStart + i, cStart + j]);
         i++;
@@ -483,9 +449,6 @@ export function pairSnapshots(
         alignRecursive(pCursor, pEnd, cCursor, cEnd);
         return;
       }
-      // WHY: contested candidate pins leave the backbone empty. Recursing on identical
-      // WHY: bounds here would never shrink the interval; fall through to leaf handling
-      // WHY: instead so progress and the scan budget are both guaranteed.
     }
 
     const pCount = pEnd - pStart + 1;
@@ -500,8 +463,6 @@ export function pairSnapshots(
         }
       }
       if (identical) {
-        // WHY: equal counts with an identical canon sequence is a pure shift of a rigid
-        // WHY: run: the only sound pairing is the positional zip (spec §3.5.1, Probe N).
         for (let i = 0; i < pCount; i++) pairing.set(pStart + i, cStart + i);
         return;
       }
@@ -522,10 +483,7 @@ export function pairSnapshots(
   if (boundaries.prefix === 0 && boundaries.suffix === 0) {
     alignRecursive(1, prevLines.length, 1, currLines.length);
   } else {
-    // WHY: (ADR-0044) the shortcut still charges the top-level interval the full scan would have
-    // WHY: charged, so an injected `scanBudget` keeps its pre-trim meaning: a budget too small for
-    // WHY: the whole interval pairs nothing, exactly as before. The middle is then aligned on its
-    // WHY: own and charged like any other sub-interval.
+    // Ref: docs/.archive_adrs/0044-pairing-skips-forced-unchanged-boundary.md
     const fullLength = prevLines.length + currLines.length;
     if (scanBudget < fullLength) return pairing;
     scanBudget -= fullLength;

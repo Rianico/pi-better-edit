@@ -27,7 +27,6 @@ describe("fmtReadPreview", () => {
   it("carries no footer on a partial preview, only the details' next offset", async () => {
     const text = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
     const result = await fmtReadPreview(text, { limit: 3 }, undefined, home.testPath);
-    // WHY: the header is the only page chrome (spec §4.4) — the continuation lives in `details`.
     expect(result.text).not.toContain("Use windows");
     expect(result.text.split("\n")).toHaveLength(3);
     expect(result.nextOffset).toBe(4);

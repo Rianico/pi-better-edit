@@ -51,7 +51,7 @@ export const LANGUAGES: Readonly<Record<string, LanguageScope>> = {
  * One outline row: a named symbol and its 1-indexed physical declaration line. The line is the
  * scope node's own start row, never the decorated span start, so leading documentation and
  * decorators never move the row and no text beyond the name is pulled. Tranche 2 derives point
- * anchors from these raw lines (ADR-0013).
+ * anchors from these raw lines (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md).
  */
 export interface OutlineSymbol {
   readonly name: string;
@@ -111,7 +111,6 @@ function tsOutlineStatement(node: SyntaxNodeLike): SyntaxNodeLike | undefined {
   const lexical = node.parent;
   if (lexical === null || lexical === undefined || lexical.type !== "lexical_declaration")
     return undefined;
-  // WHY: one grammar node type covers const/let/var, so only the keyword proves a constant.
   if (!/^\s*const\b/.test(lexical.text ?? "")) return undefined;
   if (node.namedChildren.some((child) => TS_FUNCTION_VALUES.has(child.type))) return undefined;
   let current = lexical.parent;
@@ -126,7 +125,6 @@ function isTopLevelConstDeclarator(node: SyntaxNodeLike): boolean {
   const statement = tsOutlineStatement(node);
   if (statement === undefined) return false;
   if (OUTLINE_ROOTS.has(statement.type)) return true;
-  // WHY: namespace members are module API while function bodies hold locals, so only a block owned by a namespace module passes.
   if (statement.type !== "statement_block") return false;
   const owner = statement.parent;
   return owner?.type === "internal_module" || owner?.type === "module";
@@ -207,10 +205,8 @@ function collectOutlineSymbols(
   const visit = (node: SyntaxNodeLike): void => {
     if (node !== root) {
       const decorated = scope.decorate(node);
-      // WHY: a Go struct is a table typeAlias but an outline struct, and the supplement only fires on its own node types.
       const kind = supplementOutlineKind(language, node) ?? decorated.kind;
       if (kind !== undefined && OUTLINE_KINDS.has(kind) && decorated.name !== undefined) {
-        // WHY: the grammar parses a constructor as a method literally named constructor, while LSP names it Constructor.
         rows.push({
           name: decorated.name,
           kind: kind === "method" && decorated.name === "constructor" ? "constructor" : kind,
@@ -221,7 +217,6 @@ function collectOutlineSymbols(
     for (const child of node.namedChildren) visit(child);
   };
   visit(root);
-  // WHY: the walk is source-ordered, but a stable line sort keeps injected trees deterministic for the tranche-2 anchor seam.
   rows.sort((a, b) => a.line - b.line);
   return rows;
 }
@@ -287,7 +282,6 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
     try {
       return await runtimeAvailable();
     } catch {
-      // SAFETY: an unresolvable optional module is an absent runtime, not a read failure.
       return false;
     }
   };
@@ -336,12 +330,10 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
           },
         };
       } catch {
-        // SAFETY: load failures are the same answer as no boundary; the read stays exact.
         return { kind: "decline", decline: decline("grammar_unavailable", language) };
       }
     })();
     handles.set(language, pending);
-    // WHY: a failed or cold load is not memoized, so a later read can retry once the fetch lands.
     void pending.then((outcome) => {
       if (outcome.kind !== "ready") handles.delete(language);
     });
@@ -358,7 +350,6 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
       runtimeAbsent = true;
       return;
     }
-    // WHY: start every fetch now; the read path still waits only its own budget.
     await Promise.allSettled(languages.map((language) => requestGrammar(language, options)));
   };
 
@@ -428,7 +419,6 @@ export function createAstSpanProvider(options: AstSpanProviderOptions = {}): Ast
           tree.delete?.();
         }
       } catch {
-        // SAFETY: a symbol-free or unparseable file yields an empty list, never a throw.
         return [];
       }
     },

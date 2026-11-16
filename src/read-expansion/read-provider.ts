@@ -77,9 +77,6 @@ export function createReadSpanProvider(
     options.qualifiedNameTimeoutMs ?? DEFAULT_QUALIFIED_NAME_TIMEOUT_MS,
   );
   if (wrapped === base) return Object.assign(base, { outline });
-  // WHY: the qualified-name wrapper rebuilds the provider object, so the outline seam is
-  // WHY: re-attached by delegation instead of spreading `wrapped` (which would freeze the live
-  // WHY: `runtimeAbsent` getter into one reading).
   return {
     get runtimeAbsent() {
       return wrapped.runtimeAbsent === true;

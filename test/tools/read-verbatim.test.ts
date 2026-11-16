@@ -44,7 +44,6 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       undefined,
       home.testPath,
     );
-    // WHY: a page's only chrome is its header (spec §4.4); the rows are the page, nothing follows them.
     expect(verbatim.text).toBe("b\nc");
     expect(verbatim.shownRange).toEqual({ startLine: 2, endLine: 3 });
     expect(verbatim.nextOffset).toBe(4);

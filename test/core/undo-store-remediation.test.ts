@@ -10,8 +10,6 @@ import {
 } from "../../src/undo-store";
 import { useTestHome } from "../support/fixtures";
 
-// REMEDIATION store-domain witnesses (P2-1 row clear, P2-2 raw pre-image, P3-6 index):
-// the durability contract lives in the store schema, so it is pinned here directly.
 useTestHome();
 
 beforeAll(async () => {

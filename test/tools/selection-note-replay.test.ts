@@ -188,7 +188,6 @@ describe("selection-range note replay", () => {
     const baseline = join(root, "baseline");
     const candidate = join(root, "candidate");
     try {
-      // Baseline: recorded before the note existed — same file read twice, no clause anywhere.
       await writeSession(
         baseline,
         "typescript.jsonl",
@@ -233,7 +232,6 @@ describe("selection-range note replay", () => {
           [
             {
               file: "/repo/notes.txt",
-              // The legacy clause, recorded before the parenthesized extent: still counted.
               text: `${served("/repo/notes.txt", 2, 3, 60, "; in paragraph, lines 1-7")}\nabcd│[x.ts (lines 1-2 of 9 total; in function f, lines 1-9)]`,
             },
           ],
@@ -252,8 +250,6 @@ describe("selection-range note replay", () => {
       expect(report.candidate.totals.reReadShare).toBeCloseTo(0.2, 8);
       expect(report.candidate.byLanguage.typescript?.reads).toBe(3);
 
-      // Only served read headers count: one quoted clause inside an assistant message and one
-      // note-shaped content row are both ignored.
       expect(report.candidate.notes.fires).toBe(5);
       expect(report.candidate.notes.readsWithNote).toBe(5);
       expect(report.candidate.notes.fireShare).toBeCloseTo(1, 8);
@@ -304,32 +300,26 @@ describe("selection-range note replay", () => {
         root,
         "typescript.jsonl",
         sessionLines("violations", [
-          // span equal to the window
           {
             file: "/repo/src/a.ts",
             text: served("/repo/src/a.ts", 5, 6, 40, "; in function a (span 5-6)"),
           },
-          // span that does not contain the window's first line
           {
             file: "/repo/src/b.ts",
             text: served("/repo/src/b.ts", 5, 9, 40, "; in function b (span 6-7)"),
           },
-          // `in` whose span ends before the window ends: the window escapes the span
           {
             file: "/repo/src/c.ts",
             text: served("/repo/src/c.ts", 5, 9, 40, "; in function c (span 3-7)"),
           },
-          // `starts in` whose span covers the whole window: the preposition denies the containment
           {
             file: "/repo/src/e.ts",
             text: served("/repo/src/e.ts", 5, 6, 40, "; starts in function e (span 1-30)"),
           },
-          // honest note, must not be counted as a violation
           {
             file: "/repo/src/d.ts",
             text: served("/repo/src/d.ts", 5, 6, 40, "; in function d (span 1-30)"),
           },
-          // legal straddle, must not be counted as a violation
           {
             file: "/repo/src/f.ts",
             text: served("/repo/src/f.ts", 10, 11, 40, "; starts in function f (span 5-10)"),
@@ -369,12 +359,10 @@ describe("selection-range note replay", () => {
         sessionLines("straddle", [
           {
             file: "/repo/src/a.ts",
-            // The span contains the window's first line 10 and ends at 10, inside the window.
             text: served("/repo/src/a.ts", 10, 11, 40, "; starts in function straddle (span 5-10)"),
           },
           {
             file: "/repo/src/b.ts",
-            // The legacy clause prints no preposition, so a legacy straddle stays legal.
             text: served("/repo/src/b.ts", 5, 9, 40, "; in function legacy, lines 3-7"),
           },
         ]),
@@ -400,8 +388,6 @@ describe("selection-range note replay", () => {
         sessionLines("whole-file-shipped", [
           {
             file: "/repo/src/a.ts",
-            // The page covers its file, so its window normalises to 1-40 and `starts in` cannot hold.
-            // The renderer never notes a whole-file page, so a note here is a violation by construction.
             text: served("/repo/src/a.ts", 1, 40, 40, "; starts in function a (span 1-30)"),
           },
         ]),
@@ -432,7 +418,6 @@ describe("selection-range note replay", () => {
         sessionLines("whole-file-legacy", [
           {
             file: "/repo/notes.txt",
-            // A legacy clause prints no preposition, so only the whole-file window can make it illegal.
             text: served("/repo/notes.txt", 1, 40, 40, "; in paragraph, lines 1-7"),
           },
         ]),
@@ -461,7 +446,6 @@ describe("selection-range note replay", () => {
         sessionLines("window-shape", [
           {
             file: "/repo/src/a.ts",
-            // The span equals the window, so the note is illegal and the window is the served span.
             text: served("/repo/src/a.ts", 5, 6, 40, "; in function a (span 5-6)"),
           },
         ]),
@@ -473,7 +457,6 @@ describe("selection-range note replay", () => {
       const report = JSON.parse(result.stdout) as ReplayReport;
       const window = report.candidate.notes.violations[0]?.window;
       expect(window).toEqual({ start: 5, end: 6 });
-      // A recorded window describes a served window only: the page total is not part of its shape.
       expect(Object.keys(window ?? {}).sort()).toEqual(["end", "start"]);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -489,7 +472,6 @@ describe("selection-range note replay", () => {
         sessionLines("message", [
           {
             file: "/repo/src/a.ts",
-            // A whole-file window, so the message must name the predicate's first reason too.
             text: served("/repo/src/a.ts", 1, 40, 40, "; starts in function a (span 1-30)"),
           },
         ]),
@@ -498,8 +480,6 @@ describe("selection-range note replay", () => {
       const result = runCli(["--candidate", root, "--limit-sessions", "10", "--json"]);
 
       expect(result.status).toBe(1);
-      // The four reasons in the order `isLegalNote` checks them: whole-file window, a span that
-      // misses the first line, a span equal to the window, and the wrong preposition.
       expect(result.stderr).toContain(
         "a note whose window covers its whole file, whose span does not contain the served " +
           "window's first line or equals the window, or whose preposition is wrong",
@@ -518,13 +498,10 @@ describe("selection-range note replay", () => {
         sessionLines("multi-window", [
           {
             file: "/repo/src/a.ts",
-            // The section is partial, so a span that contains line 1 is still legal: only a window
-            // that covers its whole file is a violation by construction.
             text: `[Lines 10-20 of 40 total; in function a (span 1-30)]\n${anchorAt(0)}│line 10`,
           },
           {
             file: "/repo/src/b.ts",
-            // The last section ends at the file's end but does not start at line 1, so it stays legal.
             text: `[Lines 21-40 of 40 total; starts in function b (span 5-35)]\n${anchorAt(0)}│line 21`,
           },
         ]),

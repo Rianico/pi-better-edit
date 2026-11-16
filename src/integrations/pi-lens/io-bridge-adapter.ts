@@ -1,28 +1,14 @@
 /**
  * Unified I/O bridge adapter — the only place that records to pi-lens v2.
- *
- * WHY one module for both seams: a v2 `record` entry carries at most one facet
- * of each kind, and the two domain-neutral seams (`src/served-spans.ts`,
- * `src/mutated-files.ts`) already separate reads from mutations, so each
- * notification maps to single-facet `record` calls. Edit-plus-preview pairs
- * therefore travel as two back-to-back calls in producer order, never as one
- * atomic compound.
- *
- * Read evidence: a notification that carries verbatim `content` is recorded span
- * by span, each span in its own single-range call with its slice (`content` is
- * valid only for a single contiguous range, and slicing keeps multi-span
- * notifications honest). A span whose slice fails is dropped, never sent short.
- * A notification without `content` — diff previews and reject-and-serve rows,
- * where no raw text is at hand — is recorded as ONE call carrying every range
- * with `evidence: "disk"`, the v1-equivalent behavior. `lineHashes` are never
- * sent: they would need the bridge's hash algorithm, while `content` lets the
- * bridge hash in memory with its own.
- *
- * Silence is the contract: these observers run inside core tool execution, so
- * nothing here logs and nothing throws — a broken bridge degrades to "no I/O
- * mirrored", never to a failed read, edit or write. Drops are counted instead,
- * for tests only. An explicit `off` mode is a configuration choice, not a failed
- * mirror, so it is never a drop.
+ * WHY one module for both seams: a v2 `record` entry carries at most one facet of each kind, so the two
+ * domain-neutral seams (`src/served-spans.ts`, `src/mutated-files.ts`) each map to single-facet calls,
+ * and an edit-plus-preview pair travels as two back-to-back calls in producer order, never one compound.
+ * Read evidence: verbatim `content` is recorded span by span, one single-range call each with its slice,
+ * and a failed slice drops the span rather than sending it short; `content` is valid only for one
+ * contiguous range. Without it, ONE call carries every range with `evidence: "disk"`; `lineHashes` are never sent.
+ * Silence is the contract: these observers run inside core tool execution, so nothing here logs and
+ * nothing throws — a broken bridge degrades to "no I/O mirrored", never a failed read, edit or write.
+ * Drops are counted instead, for tests only; an explicit `off` mode is never a drop.
  */
 import { isAbsolute } from "node:path";
 import { addMutatedFileObserver, type MutatedFileNotification } from "../../mutated-files.js";
@@ -94,9 +80,6 @@ function recordMutated(bridge: IOBridge, notification: MutatedFileNotification):
     });
     if (result?.mutate?.accepted !== true) dropCount += 1;
   } catch {
-    // SAFETY: advisory-only — a refused record must not propagate into the edit
-    // SAFETY: or write that already landed, and the failure is the bridge's to
-    // SAFETY: report.
     dropCount += 1;
   }
 }
@@ -123,9 +106,6 @@ function recordSlicedSpan(
     });
     if (result?.read?.accepted !== true) dropCount += 1;
   } catch {
-    // SAFETY: advisory-only — one rejected span must not stop the remaining
-    // SAFETY: spans of the same notification, and the failure is the bridge's
-    // SAFETY: to report.
     dropCount += 1;
   }
 }
@@ -153,8 +133,6 @@ function recordDiskReads(
     });
     if (result?.read?.accepted !== true) dropCount += 1;
   } catch {
-    // SAFETY: advisory-only — the bridge's failure belongs to the bridge, never
-    // SAFETY: to the read or edit that served the rows.
     dropCount += 1;
   }
 }
@@ -177,7 +155,8 @@ function recordServedSpans(bridge: IOBridge, notification: ServedSpanNotificatio
  * `getCwd` is injectable because the observer path has no command context:
  * `process.cwd()` stands in for the session cwd (pi launches in it), while the
  * `/pi-better-edit` command resolves the exact `ctx.cwd`. The mode is re-read per
- * notification, so a mode change takes effect immediately.
+ * notification, so a mode change takes effect immediately. A cwd that cannot be
+ * resolved mirrors nothing and counts no drop, like an explicit `off`.
  */
 export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () => void {
   const getCwd = options?.getCwd ?? ((): string => process.cwd());
@@ -185,8 +164,6 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       return resolveEffectiveLensMode(getCwd());
     } catch {
-      // SAFETY: an unusable cwd means the mode cannot be resolved, so nothing
-      // SAFETY: is mirrored and no drop is counted for a config read.
       return undefined;
     }
   };
@@ -194,21 +171,13 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
     try {
       const mode = resolveMode();
       if (mode === undefined || mode === "off") return;
-      // WHY: `auto` treats an absent bridge as disabled and `on` cannot conjure
-      // WHY: one, so both modes share this single no-op path — the mode gate
-      // WHY: above is the only difference between them, and an absent bridge is
-      // WHY: still a dropped mirror.
       const bridge = getIOBridge();
       if (bridge === undefined) {
         dropCount += 1;
         return;
       }
       recordMutated(bridge, notification);
-    } catch {
-      // SAFETY: advisory-only — this runs inside core tool execution, so no
-      // SAFETY: failure may propagate into the edit or write that produced the
-      // SAFETY: mutation.
-    }
+    } catch {}
   });
   const detachServed = addServedSpanObserver((notification: ServedSpanNotification): void => {
     try {
@@ -221,11 +190,7 @@ export function attachIOBridgeAdapter(options?: { getCwd?: () => string }): () =
         return;
       }
       recordServedSpans(bridge, notification);
-    } catch {
-      // SAFETY: advisory-only — this runs inside core tool execution, so no
-      // SAFETY: failure may propagate into the read or edit that served the
-      // SAFETY: rows.
-    }
+    } catch {}
   });
   return () => {
     detachMutated();

@@ -1,12 +1,6 @@
 /**
  * SAFETY: store-kernel/settings — the janitor settings ladder: read, resolve per key, name the rung.
  *
- * WHY: this lives in the kernel rather than beside the writer because the resolved settings are what the
- * WHY: maintenance pass runs on: cadence, batch width and enable/disable are open-gate policy, and a
- * WHY: resolver that drifts from the store's own knobs would throttle the wrong sweep. The file's shape
- * WHY: (keys, scopes, the atomic preserving write) stays in `store-config.ts`; this module only reads.
- * WHY: Precedence is PER KEY — env, then project file, then global file, then the default — and a file
- * WHY: that exists but cannot be used warns through `onWarn` while the values fall through.
  */
 import {
   isRecord,
@@ -70,8 +64,6 @@ export const STORE_JANITOR_DEFAULTS: StoreJanitorSettings = {
   batchSize: STORE_JANITOR_BATCH_DEFAULT,
 };
 
-// WHY: one place maps a setting to its file key, so the read path and the write path cannot spell a
-// WHY: key differently — the failure a second hand-written literal would introduce.
 const STORE_JANITOR_KEYS = {
   mode: "janitor",
   intervalMs: "janitorIntervalMs",
@@ -141,8 +133,6 @@ function readScopeSettings(
   const mode = store[STORE_JANITOR_KEYS.mode];
   const intervalMs = store[STORE_JANITOR_KEYS.intervalMs];
   const batchSize = store[STORE_JANITOR_KEYS.batchSize];
-  // WHY: with `exactOptionalPropertyTypes` an unusable key is OMITTED rather than present as
-  // WHY: `undefined`, so "this scope said nothing about it" is one state, not two.
   return {
     ...(isStoreJanitorMode(mode) ? { mode } : {}),
     ...(isIntervalMs(intervalMs) ? { intervalMs } : {}),
@@ -217,8 +207,7 @@ export function resolveStoreJanitorSettingsWithSources(
 }
 
 /**
- * The effective janitor settings, without their provenance. Precedence is PER KEY — env, then
- * project, then global, then the default. Never throws.
+ * The effective janitor settings, without their provenance. Never throws.
  */
 export function resolveStoreJanitorSettings(
   cwd: string,

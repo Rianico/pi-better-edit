@@ -13,10 +13,12 @@ beforeAll(async () => {
 const FILE = "a\nb\nX\nY\nc\n";
 const H = contentOnlyHashes(FILE);
 
-// WHY: the span-ref arm's internal-seam shape (ticket-02): the target names where the text lands,
-// WHY: `source` names the same-file line span to copy from, and `retire` distinguishes move from
-// WHY: copy. `content_lines` is the empty placeholder the implementation materializes from the
-// WHY: pre-item buffer — the caller never hand-writes copied text.
+/**
+ * The span-ref arm's internal-seam shape (ticket-02): the target names where the text lands,
+ * `source` names the same-file line span to copy from, and `retire` distinguishes move from
+ * copy. `content_lines` is the empty placeholder the implementation materializes from the
+ * pre-item buffer — the caller never hand-writes copied text.
+ */
 function spanRefEdit(
   target: [number, number],
   source: [number, number],
@@ -78,8 +80,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("moves onto a replace target adjacent to (immediately after) the source", () => {
-    // The result bytes coincide with a plain target deletion here, so the applied-not-noop status
-    // and the retired source span (invariant 7's carrier) are what refute a half-implementation.
     const result = applyEdit(FILE, spanRefEdit([5, 5], [3, 4], true), undefined, H);
     expect(result.content).toBe("a\nb\nX\nY\n");
     expect(result.noopEdit).toBeUndefined();
@@ -103,8 +103,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("the degenerate adjacent move is the honest noop — no crash, no write, no double-apply", () => {
-    // Insert `X\nY` after line 2 while retiring exactly lines 3..4: the assembled bytes are the
-    // pre-item bytes, so this must ride the noop path rather than splice twice.
     const result = applyEdit(FILE, spanRefEdit([2, 2], [3, 4], true, "after"), undefined, H);
     expect(result.content).toBe(FILE);
     expect(result.noopEdit).toBeDefined();
@@ -119,9 +117,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
       () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true), undefined, H),
       "E_BAD_PAYLOAD",
     );
-    // WHY: (ticket-02b P1-B) the pinned predicate is placement-aware: an insertion point strictly
-    // WHY: inside the retired lines overlaps it — `before` when s1 < T <= s2, `after` when
-    // WHY: s1 <= T < s2. Both spellings refuse; today they wrote corrupt bytes.
     expectErrorCode(
       () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true, "after"), undefined, H),
       "E_BAD_PAYLOAD",
@@ -133,8 +128,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("the four touching spellings stay legal — refusing one alias would refuse its twin", () => {
-    // Positive control for the refusal above: the positions OUTSIDE the retired lines are legal and
-    // WHY: must all compute the input bytes (invariant 10's honest noop, both alias pairs).
     for (const [at, line] of [
       ["before", 3],
       ["after", 2],
@@ -148,11 +141,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("the empty file keeps its honest noop on the touching spellings (ticket-02d P1)", () => {
-    // WHY: `splitLines("") = [""]` — one empty line — so a touching degenerate move has
-    // WHY: `retired.s2 = 1 = fileLines.length` and an empty last line in `out`: the terminator clause
-    // WHY: must NOT fire on the empty body. The bytes are pinned to `""` absolutely (not just
-    // WHY: call-vs-call equality — two calls can agree on the wrong value), matching the parent's
-    // WHY: honest noop.
     const h = contentOnlyHashes("");
     for (const at of ["before", "after"] as const) {
       const move: HEdit = {
@@ -168,11 +156,6 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("an identity-target move whose retirement reaches EOF matches the pinned deletion bytes (F1)", () => {
-    // WHY: (ticket-02c F1) the target already carries the copied text, so the item's net effect IS
-    // WHY: the deletion of the retired line — and the EOF deletion in a file with no trailing
-    // WHY: newline is a pinned, byte-asserted contract (`hashline.apply.test.ts`, "EOF deletion
-    // WHY: preserves an empty preceding line"): `"b\n\nb"` → `"b\n\n"`. The line-coordinate
-    // WHY: rejoin must conform to that convention, never shadow it with `join("\n")`.
     for (const [content, expected] of [
       ["b\n\nb", "b\n\n"],
       ["c\n\nc", "c\n\n"],
@@ -216,9 +199,6 @@ describe("applyEdit — span-ref resolution and evidence", () => {
   });
 
   it("a lease-crossed source pair narrates its own W_REVERSED_ANCHORS (source branch executes)", () => {
-    // WHY: the pre-heal on `fileHashes` cannot see this reversal — the content occurrences run
-    // WHY: from-to ascending — only the LEASE resolutions cross (spec §3.1.1). The source arm must
-    // WHY: narrate its own heal: exactly one notice, and the move still applies on the healed span.
     const content = "alpha\nbeta\ngamma";
     const h = contentOnlyHashes(content);
     const lease = (lineId: number, servedLineNumber: number) => ({
@@ -263,9 +243,6 @@ describe("applyEdit — span-ref resolution and evidence", () => {
   });
 
   it("a target already carrying the copied lines suppresses its splice (F5 branch)", () => {
-    // WHY: `b` at line 2 and line 3 hash apart (per-line salt), so the move is legal adjacency with
-    // WHY: an equal-text target: only the retirement mutates — one mutationSpan, added 0 / removed 1,
-    // WHY: and the target range's zero delta is inherent (equal-width replacement), not patched.
     const file2 = "a\nb\nb\nc\n";
     const h2 = contentOnlyHashes(file2);
     const edit: HEdit = {
@@ -282,10 +259,6 @@ describe("applyEdit — span-ref resolution and evidence", () => {
   });
 
   it("the served hash echo gate runs on copied lines, with a clean control beside it", () => {
-    // The mirror below is base's served state; the file's line 3 is itself a reproducing served
-    // row (`H3│gamma`). Copying it WRITES that reproducing line, so the evidence gate must refuse;
-    // copying line 4 (plain "delta") must apply — both asserted in one test so the refusal cannot
-    // come from the copy path being broken in general.
     const base = "alpha\nbeta\ngamma\ndelta";
     const bh = contentOnlyHashes(base);
     const served = [...bh];
@@ -314,21 +287,7 @@ describe("applyEdit — span-ref resolution and evidence", () => {
   });
 });
 
-// WHY: (ticket-02c F3) the permanent two-path fence. `applyEdit` ships TWO assembly paths for one
-// WHY: logical edit — the hand-written byte splice (`resToSpan`) and the span-ref line-coordinate
-// WHY: assembly (`assembleLines`). F1 was exactly one path's serialization shadowing the other's
-// WHY: pinned convention. Coverage claim, narrowed per REVIEW-ticket-02c §9 (the blanket promise
-// WHY: was overstated — ticket-02c moved bytes on the unlisted empty-file class and this fence
-// WHY: stayed green): a future edit that moves either path's bytes ON ONE OF THE LISTED SHAPE
-// WHY: CLASSES, in one of the three modes, fails here. The absolute-byte pins for the
-// WHY: serialization itself are the F1 test and the direct tuple table, not this fence.
 describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte)", () => {
-  // WHY: shape classes mandated by the ticket: first line, last line, EOF without a trailing
-  // WHY: newline, the pinned empty-preceding-line (F1) shapes, CRLF (both endings), multi-line
-  // WHY: spans, single-line files both ways, the `"\n"`-only file, trailing blank lines,
-  // WHY: duplicate text (position-salted hashes make every pair anchor-resolvable), the
-  // WHY: equal-text-target noop shape, and — newly, by ticket-02d — the EMPTY FILE, the one
-  // WHY: shape class the clause's proxy predicate misfired on.
   const FENCE_FILES = [
     "",
     "a\nb\nc\n",
@@ -349,7 +308,6 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
   function outcome(run: () => string): string {
     try {
       return `OK:${run()}`;
-      // WHY: codes compared, never messages: the envelope is presentation, the refusal is the fact.
     } catch (error) {
       return `ERR:${(error as { code?: string }).code ?? "(no code)"}`;
     }
@@ -443,9 +401,6 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
   });
 
   it("every identity-target move equals the hand-written deletion of its retired lines", () => {
-    // WHY: the F1 class generalized: when the target already carries the copied lines, the move's
-    // WHY: net effect IS the retirement, so its bytes must equal the pinned deletion path's bytes
-    // WHY: for the same retired span — at every shape, in every mode.
     for (const mode of [undefined, "general", "literal"] as const) {
       for (const content of FENCE_FILES) {
         const lines = splitLines(content);
@@ -456,8 +411,6 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
             for (let t1 = 1; t1 <= lines.length; t1++) {
               const t2 = t1 + (s2 - s1);
               if (t2 > lines.length) continue;
-              // WHY: an overlapping move refuses (`E_BAD_PAYLOAD`) and is not equivalent to a
-              // WHY: bare deletion of the source; only the disjoint equal-text pairs are.
               if (Math.max(t1, s1) <= Math.min(t2, s2)) continue;
               const moved = lines.slice(t1 - 1, t2);
               const copied = lines.slice(s1 - 1, s2);
@@ -486,26 +439,14 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
   });
 });
 
-// WHY: (ticket-02d P3, REVIEW-ticket-02c P3) the direct tuple table on the serialization helper —
-// WHY: assembly-independent, one tuple per clause, so every mutation of the terminator rule that
-// WHY: the review enumerated (M1 pre-fix rejoin, M2 drop `out[last] === ""`, M3 drop
-// WHY: `retired.s2 === fileLines.length`, M4 drop the retirement link) turns this table RED. The
-// WHY: fence and the sweep each pin only part of the clause set; M3 was caught by nothing before
-// WHY: this table existed.
 describe("serializeLineList — direct tuple table", () => {
   it("pins every terminator clause with one tuple", () => {
-    // clause-2 fires: the pinned empty-preceding-line EOF arm, asserted as absolute bytes.
     expect(serializeLineList("b\n\nb", ["b", "", "b"], { s1: 3, s2: 3 }, ["b", ""])).toBe("b\n\n");
-    // clause-2 controls: no surviving empty final line, or no retirement reaching EOF.
     expect(serializeLineList("b\n\nb", ["b", "", "b"], { s1: 3, s2: 3 }, ["b"])).toBe("b");
     expect(serializeLineList("a\nb\nc", ["a", "b", "c"], { s1: 3, s2: 3 }, ["a", "b"])).toBe(
       "a\nb",
     );
-    // kills M3: retirement present but NOT reaching EOF (s2=1 != n=3) — no terminator.
     expect(serializeLineList("\n\na", ["", "", "a"], { s1: 1, s2: 1 }, ["", ""])).toBe("\n");
-    // kills M1/M4 and pins the ticket-02d P1 guard: the empty body never takes the terminator.
-    // WHY: the review's table lists "\n" as the CURRENT (buggy) value of this tuple; this row
-    // WHY: asserts the fixed expectation, so it is red before the guard and green after it.
     expect(serializeLineList("", [""], { s1: 1, s2: 1 }, [""])).toBe("");
   });
 });

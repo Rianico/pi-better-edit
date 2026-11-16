@@ -1,3 +1,10 @@
+/**
+ * Fault injection for the served-or-absent envelope of a row-carrying rejection inside a batch buffer
+ * that earlier items already changed. A later same-file `text_ref` copy reaches it publicly (see
+ * `batch-copy-source-rejection-serve.test.ts`); here the leased resolver refuses only inside the
+ * grown 18-line buffer, with rows rendered from it — the shape the v2.18.0 fold false positive
+ * produced — and every other call is the real one.
+ */
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { readEnvelope } from "../../src/error-envelope.js";
@@ -13,11 +20,6 @@ import {
   withTempFile,
 } from "../support/fixtures";
 
-// WHY: fault injection for the served-or-absent envelope of a row-carrying rejection inside a batch
-// WHY: buffer that earlier items already changed. A later same-file `text_ref` copy reaches it
-// WHY: publicly (see `batch-copy-source-rejection-serve.test.ts`); here the leased resolver refuses
-// WHY: only inside the grown (18-line) buffer, with rows rendered from it — exactly the shape the
-// WHY: v2.18.0 fold false positive produced — and every other call is the real one.
 vi.mock("../../src/hashline/lease-resolve.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/hashline/lease-resolve.js")>();
   const { makeServedRejection } = await import("../../src/served-session/serve-render.js");
@@ -114,17 +116,13 @@ describe("rejection inside a changed batch buffer (served-or-absent)", () => {
       expect(readEnvelope(caught)?.servedRows ?? []).toEqual([]);
       expect(message).not.toContain("Current range (fresh read):");
       expect(message).toContain("none grant leases and none were recorded as served");
-      // WHY: the bounded read is named in current-file coordinates, not the buffer's 9-12.
       expect(message).toContain(
         "An anchored read of current-file lines 5-8 would serve that range.",
       );
-      // WHY: the refusal names current-file coordinates only — the injected headline's buffer line 9
-      // WHY: is re-anchored to the current-file line 5, so no buffer-coordinate line number leaks.
       expect(message).not.toContain("line 9");
       expect(message).toContain("line 5 injected refusal.");
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
 
-      // WHY: the rejection left the served record untouched, so the standalone edit still applies.
       const result = await editTool.execute(
         "e2",
         { file: "sample.ts", edits: [deleteRender] },

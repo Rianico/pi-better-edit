@@ -106,6 +106,12 @@ export type ForeignServedView = {
   source: LeaseSpanSource;
 };
 
+/**
+ * The foreign source keeps the target's two admission rules: lossy bytes refuse, because the cut
+ * materializes span bytes decoded from THIS file and would write destroyed content into the target;
+ * and `fileLines` is `splitLines(normalized)`, because `normalized.split("\n")` misaligns the
+ * trailing line against `fileHashes` and the leased seam skips `assertAligned`.
+ */
 export async function loadForeignServedView(input: {
   path: string;
   cwd: string;
@@ -121,10 +127,6 @@ export async function loadForeignServedView(input: {
       noPersist: true,
     },
   );
-  // WHY: (04b-rem P2-3) the admission round-trip guard applies to the FOREIGN source exactly as
-  // WHY: it applies to the target: the cut materializes span bytes decoded from THIS file, so
-  // WHY: lossy bytes here would write destroyed content into the target. The refusal names the
-  // WHY: member whose bytes broke the round-trip — the cause is observed, not assumed.
   if (hadUtf8DecodeErrors) {
     throw new DomainError("E_LOSSY_TEXT", { path: absolutePath });
   }
@@ -138,9 +140,6 @@ export async function loadForeignServedView(input: {
   return {
     absolutePath,
     normalized,
-    // WHY: (§9.6) `splitLines` is the fileLines every hash/coordinate computation uses —
-    // WHY: `normalized.split("\n")` misaligns the trailing line against `fileHashes`, and the
-    // WHY: leased seam skips `assertAligned`, so the violation would be silent.
     fileLines: splitLines(normalized),
     fileHashes,
     served,
@@ -154,6 +153,9 @@ export async function loadForeignServedView(input: {
  * when one is in flight (a chained batch edit), else from `line_lineage(C)` when the edit load path
  * materialized C, else from an in-memory `pairSnapshots(S_latest, content)` for preview. Nothing is
  * written: the edit path never re-stamps a lease.
+ * written: the edit path never re-stamps a lease. A lease from a superseded anchor generation is
+ * never honoured, because the open-time sweep cannot cover rows written after it; and `anchorHomes`
+ * stays a callback so the session-wide home lookup costs nothing on the happy path.
  */
 export function leaseSpanSource(input: {
   store: HashStore;
@@ -163,15 +165,9 @@ export function leaseSpanSource(input: {
   currentIds?: (number | null)[];
 }): LeaseSpanSource {
   const byAnchor = new Map<string, ServedLease>();
-  // WHY: (ADR-0045) hard expiry — an ACTIVE lease past the session TTL has no resolution
-  // WHY: authority. It is dropped here, before any `leaseFor` can return it, so the read and edit
-  // WHY: seams re-resolve content instead of trusting a dead identity. A retired lease is a
-  // WHY: different state and is still returned (the resolver judges its `retiredAt`).
+  // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
   const now = Date.now();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
-    // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a
-    // WHY: stale generation cannot resolve by line_id alone. The open-time sweep
-    // WHY: deletes these rows; this gate covers rows written between sweep and read.
     if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
     if (isExpiredActiveLease(lease, now)) continue;
     byAnchor.set(lease.anchor, lease);
@@ -179,12 +175,8 @@ export function leaseSpanSource(input: {
   const positions = input.currentIds
     ? identityPositions(input.currentIds)
     : positionsByIdentity(input.store, input.absolutePath, input.content);
-  // WHY: the session-wide home lookup runs on the failure path only: the happy
-  // WHY: path never calls it, so serving one more file costs nothing at edit time.
   const { store, sessionKey, absolutePath } = input;
-  // WHY: outline fold ranges recorded by the last outline read of this file (tranche 3 fold-gate).
-  // WHY: Absent or empty keeps the span gate inert (ADR-0024), so non-outline reads — which record
-  // WHY: no folds — resolve exactly as before.
+  // Ref: docs/adr/0016-outline-mode-point-anchors.md
   const outlineFolds = loadOutlineFolds(store, sessionKey, absolutePath);
   return {
     currentSnapshotHash: snapshotHashFor(input.content),
@@ -206,9 +198,11 @@ export function leaseSpanSource(input: {
   };
 }
 
-// WHY: (#165) the pipeline never mints a session key: a key that was never served anything makes
-// WHY: every lease lookup miss and surfaces a misleading E_UNKNOWN_ANCHOR. Missing sessions fail
-// WHY: here, at the boundary, with the real cause.
+/**
+ * The pipeline never mints a session key (#165): a key that was never served anything makes every
+ * lease lookup miss and surfaces a misleading E_UNKNOWN_ANCHOR, so a missing session fails here,
+ * at the boundary, with the real cause.
+ */
 export function requireSessionKey(sessionKey: string | undefined): string {
   if (!sessionKey) {
     throw new Error("edit pipeline requires options.sessionKey — entrypoints must carry a session");

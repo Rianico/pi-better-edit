@@ -64,8 +64,6 @@ function canonHashOf(line: string): string {
  */
 describe("WAL lineage commit from the working buffer", () => {
   it("keeps the working-buffer identity of a surviving duplicate when re-pairing S_latest is ambiguous", async () => {
-    // Two byte-identical canon lines: patience pairing cannot tell which of the two survives a
-    // delete, so the read-path mechanism answers "no pairing" and would issue a brand-new `line_id`.
     const content = "same\nsame\n";
     const result = "same\n";
     const duplicateCanon = canonHashOf("same");
@@ -83,8 +81,6 @@ describe("WAL lineage commit from the working buffer", () => {
       const first = extractHash(lines[0]!);
       const second = extractHash(lines[1]!);
       expect(second).not.toBe(first);
-      // WHY: the lineage anchors committed below must be live-width tokens —
-      // WHY: the `after` equality already pins their value, this pins the width.
       expect(second).toHaveLength(HASH_LEN);
 
       const store = await loadHashStore();
@@ -93,8 +89,6 @@ describe("WAL lineage commit from the working buffer", () => {
       const survivorId = before[1]!.line_id;
       const counterBefore = nextId(store, path);
 
-      // Delete the earlier of the two identical lines. The surviving line is physically the second
-      // one, so the working buffer keeps its `line_id`.
       await editTool.execute(
         "e1",
         { file: "dup.txt", edits: [{ anchor_from: first, anchor_to: first, text: "" }] },
@@ -106,11 +100,8 @@ describe("WAL lineage commit from the working buffer", () => {
       expect(await readFile(path, "utf-8")).toBe(result);
       const after = lineageRows(store, path, result);
       expect(after).toEqual([{ line_number: 1, line_id: survivorId, anchor: second }]);
-      // The surviving line was already known to the working buffer: zero counter allocations.
       expect(nextId(store, path)).toBe(counterBefore);
 
-      // End to end: the lease the model still holds for the surviving anchor names the same
-      // identity it named before the batch.
       const leases = loadLeases(store, sessionKeyFor(ctx), path);
       const survivorLease = leases.find((lease) => lease.anchor === second);
       expect(survivorLease?.line_id).toBe(survivorId);
@@ -150,7 +141,6 @@ describe("WAL lineage commit from the working buffer", () => {
       const ids = lineageRows(store, path, result).map((row) => row.line_id);
       const allocated = ids.filter((id) => id >= counterBefore!);
       expect(allocated).toEqual([4, 5]);
-      // Exactly two ids, contiguous from the persisted counter, and one statement's worth of movement.
       expect(nextId(store, path)).toBe(counterBefore! + 2);
       expect(ids).toEqual([1, 4, 5, 3]);
     });
@@ -195,8 +185,6 @@ describe("WAL lineage commit from the working buffer", () => {
       );
 
       expect(await readFile(path, "utf-8")).toBe(original);
-      // Cache guard runs before the working-buffer commit: canonical snapshot adopted verbatim,
-      // zero counter movement, no UNIQUE (path, snapshot_hash) violation.
       expect(snapshotId(store, path, original)).toBe(canonicalId);
       expect(lineageRows(store, path, original)).toEqual(canonicalLineage);
       expect(nextId(store, path)).toBe(counterAfterForward);
@@ -232,8 +220,6 @@ describe("read-path re-pairing across a one-region change (issue #163)", () => {
       const beforeAnchors = await lineHashes(before, path);
       expect(beforeRows).toHaveLength(40);
 
-      // A plain rewrite (no edit tool): the next read is a content-hash miss, so the read path
-      // pairs the new content against the previous snapshot to inherit identities.
       await writeFile(path, after, "utf-8");
       await readTool.execute("r1", { file: "trim.txt" }, undefined, undefined, ctx);
 
@@ -248,7 +234,6 @@ describe("read-path re-pairing across a one-region change (issue #163)", () => {
         );
         expect(afterAnchors[line], `line ${line + 1} anchor`).toBe(beforeAnchors[line]);
       }
-      // The edited line is the only one that takes a fresh identity.
       expect(afterRows[20]!.line_id).not.toBe(beforeRows[20]!.line_id);
       expect(afterAnchors[20]).not.toBe(beforeAnchors[20]);
     });

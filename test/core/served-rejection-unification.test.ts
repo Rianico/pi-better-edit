@@ -90,8 +90,6 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       expect(err.message).toMatch(/^\[MODEL\] \[E_[A-Z_]+\]/);
       expect(err.servedRows).toHaveLength(3);
     }
-    // WHY: both row-carrying codes serve the fresh range with no retry mandate — the retry hint
-    // WHY: left every format with the #56 redline (ADR-0034; the remedy field owns the action).
     expect(stale.message).toContain("Current range (fresh read):");
     expect(stale.message).not.toContain("Retry with these anchors");
     expect(anchor.message).toContain("Current range:");
@@ -187,8 +185,6 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
                   retiredAt: null,
                 }
               : undefined,
-      // WHY: the fast path runs the whole-window identity gate (#151), so every served row of the
-      // WHY: span — interior included — must resolve through its own lease.
       rebasedLineOf: (lineId: number) =>
         lineId === 1 ? 1 : lineId === 2 ? 2 : lineId === 3 ? 3 : undefined,
     };

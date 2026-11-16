@@ -24,8 +24,6 @@ export { vacuumSnapshots };
 export { snapshotIOFor } from "./snapshot-io.js";
 export type { HashSnapshotIO, HashSnapshotUpsertOptions } from "./snapshot-io.js";
 export type { VacuumResult };
-// WHY: the vacuum budgets are the store's retention policy constants, so the module entry keeps
-// WHY: them on the public surface; consumers must never reach into the eviction module directly.
 export {
   VACUUM_GLOBAL_BUDGET_BYTES,
   VACUUM_SOFT_OVERFLOW_BYTES,
@@ -40,12 +38,10 @@ import { reportDiagnostic, reportWarning } from "../diagnostics.js";
 interface SnapshotRef {
   snapshot_id: number;
   line_count: number;
-  // WHY: provenance is recorded, not inferred from the key prefix — a 0/foreign
-  // WHY: anchor generation is a miss even under a current-generation key (poisoned store).
   anchor_generation: number;
 }
 
-/** The row a stat-identity adoption names: the committed snapshot for one file version (ADR-0043). */
+/** The row a stat-identity adoption names: the committed snapshot for one file version (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md). */
 interface StatSnapshotRef extends SnapshotRef {
   snapshot_hash: string;
 }
@@ -54,7 +50,7 @@ interface SnapshotStmts {
   findSnapshot: (path: string, snapshotHash: string) => SnapshotRef | undefined;
   findSnapshotByStat: (path: string, statKey: string) => StatSnapshotRef | undefined;
   lineageAnchors: (snapshotId: number) => { anchor: string }[];
-  /** The lineage rows of a half-open 1-based line-number range, in line order (ADR-0043 page read). */
+  /** The lineage rows of a half-open 1-based line-number range, in line order (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md page read). */
   lineageRange: (
     snapshotId: number,
     fromLine: number,
@@ -100,9 +96,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     "SELECT snapshot_id, line_count, anchor_generation FROM file_snapshots " +
       "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
   );
-  // WHY: (ADR-0043) the adoption lookup names the FILE VERSION, not the content: a matching stat
-  // WHY: identity is what lets the read path resolve one page of lineage instead of materializing
-  // WHY: every anchor. Newest first so a re-stamped row (a fallback adoption) wins over a stale one.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   const findStatStmt = db.prepare(
     "SELECT snapshot_id, snapshot_hash, line_count, anchor_generation FROM file_snapshots " +
       "WHERE path = ? AND stat_key = ? AND committed = 1 " +
@@ -127,18 +121,11 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   const allPathsStmt = db.prepare(
     "SELECT path FROM file_snapshots UNION SELECT path FROM file_undo UNION SELECT path FROM served " +
       "UNION SELECT file_path FROM served_leases UNION SELECT file_path FROM served_session_meta " +
-      // WHY: a path whose snapshots were all evicted by the vacuum leaves only its counter row behind
-      // WHY: (spec §3.6.3); enumerating `line_id_counters` is what lets `pruneMissing` reclaim that
-      // WHY: orphan instead of leaking an id block for a file that no longer exists.
       "UNION SELECT path FROM line_id_counters",
   );
   const deleteSnapshotStmt = db.prepare("DELETE FROM file_snapshots WHERE snapshot_id = ?");
   const deleteByPathStmt = db.prepare("DELETE FROM file_snapshots WHERE path = ?");
-  // WHY: generation-mismatch deletes purge lineage explicitly (same no-CASCADE rule
-  // WHY: as the by-path purge above).
   const deleteLineageBySnapshotStmt = db.prepare("DELETE FROM line_lineage WHERE snapshot_id = ?");
-  // WHY: `line_lineage` is purged explicitly rather than leaning on `ON DELETE CASCADE`, so a store
-  // WHY: opened without `PRAGMA foreign_keys = ON` still leaves no orphan lineage behind (spec §3.6.3).
   const deleteLineageByPathStmt = db.prepare(
     "DELETE FROM line_lineage WHERE snapshot_id IN " +
       "(SELECT snapshot_id FROM file_snapshots WHERE path = ?)",
@@ -151,10 +138,6 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "ON CONFLICT(path) DO UPDATE SET next_id = line_id_counters.next_id + ? " +
       "RETURNING (next_id - ?) AS start_id",
   );
-  // WHY: the miss path must never take the `ON CONFLICT (path, snapshot_hash)` UPDATE branch
-  // WHY: (spec §3.2.4 step 3): a DO UPDATE would silently rewrite an existing canonical row under
-  // WHY: a local allocation. `DO NOTHING` + no returned row is the conflict signal the caller
-  // WHY: rolls back on, so the concurrent writer's canonical snapshot is adopted instead.
   const insertSnapshotStmt = db.prepare(
     "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation, stat_key) " +
       "VALUES (?, ?, ?, ?, 1, ?, ?) " +
@@ -173,6 +156,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       latestSnapshotStmt.get(path, ANCHOR_GENERATION) as { snapshot_id: number } | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     findSnapshotByStat: (...params) => findStatStmt.get(...params) as StatSnapshotRef | undefined,
+    // SAFETY: `node:sqlite` rows are untyped; `lineageRangeStmt` selects exactly these three columns.
     lineageRange: (...params) =>
       lineageRangeStmt.all(...params) as unknown as {
         line_number: number;
@@ -180,6 +164,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
         canon_hash: string;
       }[],
     setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
+    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these three columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
@@ -250,10 +235,6 @@ export function positionsByIdentity(
 ): Map<number, number> {
   const stmts = snapshotStmts(store.db);
   const row = stmts.findSnapshot(path, cacheKey(contentChecksum(content)));
-  // WHY: single-owner anchor-generation gate — findSnapshot returns the row regardless of
-  // WHY: provenance, so this reader applies the same anchor_generation miss as getSnapshot:
-  // WHY: a poisoned current-key row is never a pairing source. The miss falls through
-  // WHY: to the generation-gated latestSnapshot below.
   if (row && row.anchor_generation === ANCHOR_GENERATION) {
     const map = new Map<number, number>();
     for (const entry of stmts.lineageIdentities(row.snapshot_id)) {
@@ -286,9 +267,6 @@ export function getSnapshot(
   const snapshotHash = cacheKey(contentChecksum(content));
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
   if (!row) return undefined;
-  // WHY: provenance over key prefix — a current-generation key can still name a
-  // WHY: poisoned row (written before the column existed). Unknown/foreign
-  // WHY: anchor generation is a miss that deletes, like any corrupt row.
   if (row.anchor_generation !== ANCHOR_GENERATION) {
     if (corruptPolicy === "delete") {
       withBusyRetry(() => {
@@ -319,7 +297,6 @@ export function getSnapshot(
  */
 /** Whether a snapshot cache key belongs to the current anchor generation. Single owner: the middle component. */
 export function isCurrentAnchorGeneration(snapshotHash: string): boolean {
-  // WHY: named destructure — the middle component is the anchor axis; the canon leads, the checksum trails.
   const [, generation] = snapshotHash.split(":");
   return generation === String(ANCHOR_GENERATION);
 }
@@ -327,8 +304,6 @@ export async function anchorsForSnapshotHash(
   path: string,
   snapshotHash: string,
 ): Promise<string[] | undefined> {
-  // WHY: a foreign-generation descriptor is never resolved — its anchors were
-  // WHY: derived under another anchor generation and must not be leased or edited.
   if (!isCurrentAnchorGeneration(snapshotHash)) return undefined;
   const store = await loadHashStore();
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
@@ -355,12 +330,8 @@ export interface SnapshotDescriptor {
    * The caller's authoritative per-line identity (1-based line number -> `line_id`), one entry per
    * line of `content`, `null` for a line the caller created and has not allocated yet.
    *
-   * WHY: the edit commit path already knows every surviving line's `line_id` from its in-memory
-   * WHY: working buffer (spec §3.2.4 step 1: "Surviving unmodified lines preserve their exact
-   * WHY: line_ids from the working buffer map (0% diffing, 100% exact)"). Passing the map here makes
-   * WHY: the commit persist it verbatim; only `null` entries take fresh counter ids. When absent the
-   * WHY: engine derives identities by pairing against `S_latest` — that is the READ-path
-   * WHY: materialization mechanism (a read has no working buffer, only content to align).
+   * When present, the commit persists this map verbatim and only `null` entries take fresh
+   * counter ids; when absent, the engine derives identities by pairing against `S_latest`.
    */
   lineIds?: readonly (number | null)[];
 }
@@ -416,9 +387,6 @@ export async function adoptPinnedSnapshotFor(
   descriptor: SnapshotDescriptor,
   options?: SnapshotAdoptOptions,
 ): Promise<void> {
-  // WHY: a foreign-generation descriptor must never write lineage — its anchors
-  // WHY: were derived under another anchor generation. Fail closed (programmer error),
-  // WHY: never adopt verbatim.
   if (!isCurrentAnchorGeneration(descriptor.snapshotHash)) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
       message: `Refusing to adopt snapshot from another anchor generation: ${JSON.stringify(descriptor.snapshotHash)}.`,
@@ -429,7 +397,7 @@ export async function adoptPinnedSnapshotFor(
 }
 
 /**
- * One lineage row a stat-matched page read resolves (ADR-0043): the anchor to serve and the canon
+ * One lineage row a stat-matched page read resolves (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md): the anchor to serve and the canon
  * digest the snapshot committed that line under, which the caller re-verifies against the bytes it
  * is about to show. A page that cannot be proven falls back to content-hash materialization — never
  * a stale anchor.
@@ -441,7 +409,7 @@ interface StatLineageRow {
 }
 
 /**
- * A committed snapshot selected by file version (ADR-0043). `anchorsInRange` is page-priced: one PK
+ * A committed snapshot selected by file version (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md). `anchorsInRange` is page-priced: one PK
  * range scan over `line_lineage`, never a materialization of the whole file's identity. Throws when
  * the range is not fully present — provenance it cannot prove is provenance it will not serve.
  */
@@ -461,7 +429,7 @@ function checksumOf(snapshotHash: string): string | undefined {
 }
 
 /**
- * Finds the committed snapshot whose stamped stat identity names this file version (ADR-0043).
+ * Finds the committed snapshot whose stamped stat identity names this file version (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md).
  *
  * Best-effort by design: a missing row, a foreign anchor generation, or an unreadable store is a
  * MISS, never an error — the caller falls back to content-hash materialization, which is the only
@@ -525,13 +493,13 @@ export interface StatSnapshotAdoption {
 }
 
 /**
- * Adopts an already-committed snapshot on stat identity alone (ADR-0043): no content is hashed, no
+ * Adopts an already-committed snapshot on stat identity alone (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md): no content is hashed, no
  * lineage is written, only the leases and mirror a materialization owns are recorded.
  *
  * Returns `false` when the snapshot is no longer the row this file version names (a concurrent vacuum
  * or a re-stamp won the race). The caller must then take the content-hash path: it is the only writer
  * allowed to decide what this content's identity is. Retirement stays authoritative — a cache-hit read
- * still retires the leases its snapshot no longer covers (ADR-0042 §3.1.3).
+ * still retires the leases its snapshot no longer covers (docs/.archive_adrs/0042-retention-runs-only-on-fresh-snapshot-commits.md §3.1.3).
  */
 export async function adoptStatSnapshotFor(
   adoption: StatSnapshotAdoption,
@@ -555,8 +523,7 @@ export async function adoptStatSnapshotFor(
         return false;
       }
       const now = Date.now();
-      // WHY: adoption cannot grow the store, so ADR-0042's retention trigger (fresh commits only)
-      // WHY: stays exactly where it was — a cache-hit read never sweeps.
+      // Ref: docs/.archive_adrs/0042-retention-runs-only-on-fresh-snapshot-commits.md
       if (plan.retireLeases) {
         retireAbsentLeases(store.db, adoption.path, row.snapshot_id, now);
       }
@@ -568,7 +535,6 @@ export async function adoptStatSnapshotFor(
       try {
         store.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative.
         console.error("[snapshot-store] failed to rollback stat adoption:", rollbackError);
       }
       throw error;
@@ -626,7 +592,7 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   return { inherited };
 }
 
-/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write, `statKey` the observed file version (ADR-0043). */
+/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write, `statKey` the observed file version (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md). */
 interface MaterializePlan {
   retireLeases: boolean;
   leases?: LeaseGrant;
@@ -667,14 +633,7 @@ function grantMaterializedLeases(
   grantLeasesInTransaction(db, leases.sessionKey, path, leases.rows, snapshotHash);
 }
 
-// WHY: soft-overflow throttle (spec §3.6.1, ADR-0017): the vacuum runs after every
-// WHY: authoritative materialization, so an unthrottled warning would fire on every read and edit
-// WHY: while the store stays over the soft cap. The chosen rule is transition-in per store
-// WHY: instance: warn only on the false -> true transition of `overSoftOverflow` for a given
-// WHY: `DatabaseSync`, stay silent while the overflow persists, and re-arm when a pass reports
-// WHY: no overflow so the next episode warns again. Keyed by `DatabaseSync` (the store instance),
-// WHY: so a reopened store warns afresh. Observability only: never throws, never evicts, never
-// WHY: alters the caller result.
+// Ref: docs/.archive_adrs/0017-lru-vacuum-supersedes-epoch-concurrency.md
 const softOverflowWarnedByDb = new WeakMap<DatabaseSync, boolean>();
 
 /**
@@ -698,9 +657,7 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
         `over the 50 MB budget; pinned snapshots are never evicted and this state ` +
         `is expected to lapse as leases expire.`,
     );
-  } catch {
-    // SAFETY: observability only — a broken diagnostic sink must never fail the caller.
-  }
+  } catch {}
 }
 
 /**
@@ -727,21 +684,8 @@ function materializeSnapshotInTxn(
   const { path, snapshotHash, lineCount, hashes, content } = descriptor;
   const { retireLeases, leases, servedMirror, statKey } = plan;
   const lines = splitLines(content);
-  // WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4 step
-  // WHY: 4): the default is `false` so in-memory working-buffer snapshots — and any content that has
-  // WHY: not reached disk yet — can never retire the leases a session still validly holds.
   const stmts = snapshotStmts(store.db);
-  // WHY: the pre-allocation snapshot cache guard (spec §3.2.4 step 2): a committed row for
-  // WHY: `(path, snapshot_hash)` already pins canonical `line_id`s. Adopting it here means a
-  // WHY: cyclical edit (`bar` -> `foo` -> `bar`) or an undo revert allocates ZERO counter ids and
-  // WHY: never reaches the UNIQUE (path, snapshot_hash) insert, so it cannot rewrite canonical
-  // WHY: lineage or waste surrogate ids. Retirement still runs: the adopted snapshot may predate
-  // WHY: leases the current content no longer covers.
   let existing = stmts.findSnapshot(path, snapshotHash);
-  // WHY: provenance over key prefix — a poisoned row under a current-generation
-  // WHY: key is deleted, not adopted; the fresh insert below re-derives
-  // WHY: file-scoped anchors. Without this, every read would re-adopt and
-  // WHY: re-stamp the poison forever.
   if (existing && existing.anchor_generation !== ANCHOR_GENERATION) {
     stmts.deleteLineage(existing.snapshot_id);
     stmts.deleteSnapshot(existing.snapshot_id);
@@ -753,15 +697,10 @@ function materializeSnapshotInTxn(
     }
     grantMaterializedLeases(store.db, leases, path, snapshotHash);
     recordMaterializedMirror(store.db, servedMirror, path);
-    // WHY: (ADR-0043) a content-verified adoption still records the version it was observed at, so
-    // WHY: the next read of this unchanged file takes the stat path instead of the content-hash one.
+    // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
     if (statKey !== undefined) stmts.setSnapshotStatKey(existing.snapshot_id, statKey);
     return { snapshotId: existing.snapshot_id, inserted: false };
   }
-  // WHY: survivors keep their exact `line_id`s (spec §3.2.4 step 1). The edit commit path hands
-  // WHY: in the working buffer's map, so its identities are taken verbatim (0% diffing); the
-  // WHY: read path has no working buffer, so there the engine pairs against S_latest. Either way
-  // WHY: only the lines left unidentified (the batch's inserted lines) take fresh ids.
   const inherited = descriptor.lineIds
     ? workingBufferIdentities(descriptor.lineIds, lines.length)
     : pairAgainstLatest(store, path, lines).inherited;
@@ -772,9 +711,6 @@ function materializeSnapshotInTxn(
   const startId = freshIds > 0 ? stmts.allocateLineIds(path, freshIds) : 0;
   const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now(), statKey);
   if (insertedId === undefined) {
-    // WHY: a concurrent writer committed `(path, snapshot_hash)` first (spec §3.2.4 step 3): the
-    // WHY: whole transaction — counter block included — is discarded and the canonical snapshot
-    // WHY: adopted, so no locally allocated id survives and no unique index is violated.
     return undefined;
   }
   let nextFreshId = startId;
@@ -783,20 +719,10 @@ function materializeSnapshotInTxn(
     const lineId = inherited.get(lineNumber) ?? nextFreshId++;
     stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[index] ?? ""), hash);
   }
-  // WHY: `retireLeases` is `true` only for an authoritative materialization (spec §3.1.3): leases
-  // WHY: whose line_id is absent from the snapshot just committed are retired here, inside the same
-  // WHY: transaction, so the edit/resolve path stays strictly read-only.
   if (retireLeases) {
     retireAbsentLeases(store.db, path, insertedId, Date.now());
   }
-  // WHY: the lease grant is step 5 of the materialization transaction (spec §3.1.2): the
-  // WHY: served leases commit with the snapshot and lineage, so a failure here rolls the
-  // WHY: lineage back instead of leaving committed identity without leases for content
-  // WHY: already served (read window, edit diff) or already on disk (undo restore).
   grantMaterializedLeases(store.db, leases, path, snapshotHash);
-  // WHY: CAND-3: the served mirror is step 6 of the same transaction — the lease grant above
-  // WHY: and the mirror rows commit or roll back as one unit, so a torn store state
-  // WHY: (lease-without-mirror, mirror-without-lease) is structurally unreachable.
   recordMaterializedMirror(store.db, servedMirror, path);
   return { snapshotId: insertedId, inserted: true };
 }
@@ -825,7 +751,6 @@ function materializeSnapshot(
         try {
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
-          // SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
           reportDiagnostic(
             "snapshot-store",
             "[snapshot-store] failed to rollback transaction:",
@@ -836,8 +761,6 @@ function materializeSnapshot(
       }
     });
     if (materialized === undefined) {
-      // WHY: a concurrent writer committed the canonical row between our ROLLBACK and now (spec
-      // WHY: §3.2.4 step 3) — one retry adopts it; a second miss is a store invariant violation.
       if (attempt > 0) {
         throw new Error(
           `Unresolvable snapshot conflict for ${descriptor.path} (${descriptor.snapshotHash}): canonical row missing after conflict.`,
@@ -845,14 +768,6 @@ function materializeSnapshot(
       }
       continue;
     }
-    // WHY: retention is paid only by the call that inserted a fresh snapshot — a fresh commit is
-    // WHY: exactly when a path's retention window can overflow. Adoption (the read-path cache hit) adds
-    // WHY: no row and cannot overflow the budget; making it sweep the whole store was what turned each
-    // WHY: read into seconds of pin-query CPU on a large lease table. The sweep runs after the
-    // WHY: transaction (never inside it — it owns `BEGIN IMMEDIATE`), and a vacuum failure can never
-    // WHY: fail the read/edit that already committed. The just-materialized row is protected: its
-    // WHY: leases committed inside the transaction, and an unpinned in-flight row would otherwise be
-    // WHY: the sweep's first candidate in an over-budget store.
     if (materialized.inserted) {
       try {
         const vacuumResult = vacuumSnapshots(store.db, {
@@ -860,8 +775,6 @@ function materializeSnapshot(
         });
         reportVacuumSoftOverflow(store.db, vacuumResult);
       } catch (error) {
-        // SAFETY: best-effort retention — the snapshot is committed and the tool result is valid; a
-        // SAFETY: missed pass only defers eviction to the next fresh commit or store open.
         console.error("[snapshot-store] vacuum failed:", error);
       }
     }
@@ -914,7 +827,6 @@ function materializeBatch(
         try {
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
-          // SAFETY: best-effort rollback — the original failure is authoritative.
           reportDiagnostic(
             "snapshot-store",
             "[snapshot-store] failed to rollback batch transaction:",
@@ -933,18 +845,11 @@ function materializeBatch(
       continue;
     }
     const snapshotIds = materialized.map((entry) => entry.snapshotId);
-    // WHY: a batch where every descriptor adopted an existing row cannot grow the store, so it owes no
-    // WHY: retention. This is the read path on unchanged content (`upsertSnapshotsFor`): skipping the
-    // WHY: global pin scan here is what keeps a large store's reads off the vacuum query. A batch with at
-    // WHY: least one fresh commit still sweeps once, after the transaction, with every in-flight row
-    // WHY: protected.
     if (materialized.some((entry) => entry.inserted)) {
       try {
         const vacuumResult = vacuumSnapshots(store.db, { protectSnapshotIds: snapshotIds });
         reportVacuumSoftOverflow(store.db, vacuumResult);
       } catch (error) {
-        // SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed
-        // SAFETY: pass only defers eviction to the next fresh commit or store open.
         console.error("[snapshot-store] vacuum failed:", error);
       }
     }
@@ -1010,17 +915,10 @@ export async function pruneMissing(store: HashStore): Promise<void> {
   withStore(() => {
     const stmts = snapshotStmts(store.db);
     for (const path of missing) {
-      // WHY: the counter guard is evaluated BEFORE the purge deletes anything (spec §3.6.3): the
-      // WHY: counter is the never-rewinding id authority, so a path that still held a snapshot or a
-      // WHY: lease when pruning began keeps its id block. Counted after the deletes, both counts
-      // WHY: always read 0 and the counter was wiped for every missing path, letting a re-created
-      // WHY: file restart an id block that a surviving anchor still claims.
       const heldIdentity = stmts.countSnapshots(path) > 0 || stmts.countLeases(path) > 0;
       stmts.deleteByPath(path);
       deleteUndo(store, path);
       deleteServedByPath(store, path);
-      // WHY: dropped only for a path that was already without snapshot and lease and is absent from
-      // WHY: disk — the only state in which no surviving anchor can still claim one of its ids.
       if (!heldIdentity) {
         stmts.deleteCounter(path);
       }

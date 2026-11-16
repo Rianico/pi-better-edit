@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 /**
  * Builds the extension entry declared by `pi.extensions` / `main` in package.json.
- *
- * WHY: pi installs a git source with devDependencies omitted (npm `install --omit=dev
- * --legacy-peer-deps`, pnpm `install --prod --config.auto-install-peers=false`, bun
- * `install --omit=dev --omit=peer`) after `git clean -fdx`, and it drops manifest entries
- * whose path does not exist without a message. The build therefore has to work with no
- * devDependencies present, and it has to fail loudly: a silent skip recreates the 2.2.0
- * regression, where the gitignored artifact was cleaned away, zero extensions resolved,
- * and pi's dependency repair could not see the missing file.
+ * pi installs a git source with devDependencies omitted (npm, pnpm and bun each install
+ * production-only) after `git clean -fdx`, and it drops manifest entries whose path does
+ * not exist without a message. The build must therefore work with no devDependencies
+ * present and must fail loudly: a silent skip recreates the 2.2.0 regression, where the
+ * gitignored artifact was cleaned away, zero extensions resolved, and pi's dependency
+ * repair could not see the missing file.
  *
  * Usage: node scripts/build-dist.mjs [--outfile dist/index.js] [--entry index.ts]
- *        --entry is the seam the metafile-guard mutation uses to bundle a fixture.
  * Env:   PI_BUNDLER_BIN  explicit bundler binary; skips discovery and provisioning
  */
 import { execFileSync, spawnSync } from "node:child_process";
@@ -209,8 +206,6 @@ function parseArgs(argv) {
     }
     fail(`unknown argument: ${arg}`);
   }
-  // WHY: --entry is a test seam. Defaulting the output to the canonical artifact would let a
-  // seam caller that passes --entry and forgets --outfile silently overwrite dist/index.js.
   if (argv.includes("--entry") && !argv.includes("--outfile")) {
     fail("--entry requires an explicit --outfile");
   }

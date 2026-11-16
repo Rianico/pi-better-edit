@@ -1,18 +1,14 @@
 /**
  * pi-lens bridge configuration — the on-disk `lens.bridge` setting and its precedence ladder.
- *
  * WHY a seam: the mode is read on every served-row notification and written only by the
  * `/pi-better-edit` command, so both sides must agree on one ladder — env, then project file,
  * then global file, then the `auto` default. A malformed config is never an error: it degrades
  * to "not configured" so a hand-edited file can never break editing.
- *
  * Shape of the shared config file (`CONFIG_REL`, owned by `src/json-config.ts`):
  * `{ "$schema": <LENS_SCHEMA_ID>, "lens": { "bridge": "auto" | "on" | "off" } }`
  * (documented by `schemas/pi-better-edit.json`). Unknown keys are preserved on write.
- *
- * The FILE, the scopes, the read and the preserving atomic write belong to
- * `src/json-config.ts`, which the store settings use too: one ladder, not one per settings owner.
- * This module owns only the `lens.*` keys.
+ * The FILE, the scopes, the read and the preserving atomic write belong to `src/json-config.ts`,
+ * which the store settings use too: one ladder, not one per settings owner; this module owns only `lens.*`.
  */
 import { DomainError } from "../../domain-errors.js";
 import {
@@ -137,8 +133,6 @@ export function saveLensBridgeConfig(
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `lens.bridge` is ours to set — an existing `$schema` is a deliberate editor-time
-  // WHY: choice and unknown top-level or `lens.*` keys belong to the user, so all of them survive.
   updateConfigFile(path, (existing) => ({
     ...existing,
     lens: { ...(isRecord(existing.lens) ? existing.lens : {}), bridge: mode },

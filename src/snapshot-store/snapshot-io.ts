@@ -1,26 +1,25 @@
 /**
  * SAFETY: snapshot-io — the persistence seam between a hash identity and the snapshot store.
  *
- * WHY: `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a two-method interface
- * WHY: (`get` / `upsert`). That seam belongs to the store: the store owns the rows, the cache key and
- * WHY: the transaction, and identity stays free of store shape. The adapter here is the whole wiring —
- * WHY: a caller names the store it materializes into and gets an IO bound to it.
+ * `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a two-method interface
+ * (`get` / `upsert`). That seam belongs to the store: it owns the rows, the cache key and the
+ * transaction, and identity stays free of store shape — a caller names its store, gets an IO.
  *
- * WHY: explicit parameter over an ambient default. ADR-0002's import-time install let a bare
- * WHY: `lineHashes(content, path)` choose whichever store happened to be open in the process, so a
- * WHY: call that never named a store still persisted into one. Callers now pass `snapshotIOFor(store)`
- * WHY: (or `persist: false` when they only derive anchors), and nothing installs a process-wide IO.
+ * Explicit parameter over an ambient default. docs/.archive_adrs/0002-session-keyed-served-state.md's import-time install let a bare
+ * `lineHashes(content, path)` choose whichever store happened to be open in the process, so a
+ * call that never named a store still persisted into one. Callers now pass `snapshotIOFor(store)`
+ * (or `persist: false` when they only derive anchors); nothing installs a process-wide IO.
  */
 import type { HashStore } from "../hash-store.js";
 import { cacheKey, getSnapshot, upsertSnapshot } from "./index.js";
 
 export interface HashSnapshotUpsertOptions {
   /**
-   * WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4
-   * WHY: step 4): it must be `true` only when `content` is the file's committed truth (read-path
-   * WHY: materialization, post-write batch commit, undo revert). In-memory working-buffer hashing
-   * WHY: that never reaches disk must leave `retired_at` untouched, or a rejected batch would
-   * WHY: retire every anchor the session still validly holds and force a re-read.
+   * Retirement is conditional on an authoritative materialization: it must be `true` only when
+   * `content` is the file's committed truth (read-path materialization, post-write batch commit,
+   * undo revert). In-memory working-buffer hashing that never reaches disk must leave `retired_at`
+   * untouched, or a rejected batch would retire every anchor the session still validly holds and
+   * force a re-read.
    */
   retireLeases?: boolean;
   /**
@@ -49,7 +48,7 @@ export interface HashSnapshotUpsertOptions {
     retireAnchors?: readonly string[];
   };
   /**
-   * The `stat(2)` identity the caller observed for this path when it materialized `content` (ADR-0043):
+   * The `stat(2)` identity the caller observed for this path when it materialized `content` (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md):
    * stamped on the snapshot row in the same transaction, so the next read of the unchanged file adopts
    * on stat identity alone. Absent on materializations that never observed the file (working buffers,
    * edit commits, undo restores) — their rows keep a NULL key and never match a stat lookup.

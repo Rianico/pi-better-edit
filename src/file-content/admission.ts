@@ -1,15 +1,8 @@
 /**
  * SAFETY: admission — the read request's admission seam: payload → admitted request → window plan.
  *
- * WHY: this is validation and windowing, not orchestration. `read.ts` runs the tool (prepare → enroll
- * WHY: → recordServes); the rules that decide whether a payload is readable and which lines a file's
- * WHY: windows become belong beside the walker/preview that gives those windows their meaning. The
- * WHY: seam is one-way: the caller imports admission, admission never imports the tool.
- *
- * WHY: every rule here is fail-closed on the same payload error, because a tool call that bypasses the
- * WHY: schema (the exhaustiveness contract tests do) must reach identical wording and identical
- * WHY: refusals as a validated one (ADR-0041).
  */
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import type { HashStore } from "../hash-store.js";
@@ -19,9 +12,9 @@ import { leaseSpanSource } from "../mutation-engine/edit-source.js";
 import { assertNever } from "../utils.js";
 import { visibleLineTotal, walkLines } from "./line-walker.js";
 /**
- * WHY: (#272) the read schema is a union, so a non-array `windows` ALSO fails the outline variant's
- * missing `mode`; the model reads that line and never learns the window shapes. Both the
- * pre-validation guard and the admission seam speak this one contract sentence instead.
+ * The contract sentence both guards speak (#272). The read schema is a union, so a non-array
+ * `windows` ALSO fails the outline variant's missing `mode`; the model reads that line and never
+ * learns the window shapes.
  */
 const WINDOWS_ARRAY_CONTRACT =
   '"windows" must be an array of windows: [{ offset, limit }] or [{ around_anchor, radius }]. A JSON string is not an array.';
@@ -79,8 +72,6 @@ function positiveInt(value: unknown, name: string): number {
 function admitMode(value: unknown): RenderMode | undefined {
   if (value === undefined) return undefined;
   if (value === "served" || value === "verbatim" || value === "outline") return value;
-  // WHY: `assertNever` carries the union's exhaustiveness to runtime and keeps the wording the
-  // WHY: schema rejection uses for the same payload.
   return assertNever(value as never);
 }
 
@@ -100,7 +91,6 @@ function admitWindow(window: unknown, label: string): AdmittedWindow {
     return { kind: "anchor", anchor, radius: positiveInt(radius, `${label}.radius`) };
   }
   const offset = positiveInt(raw.offset, `${label}.offset`);
-  // WHY: an offset with no limit still names a window, so it takes the canonical default size
   const limit =
     raw.limit === undefined ? DEFAULT_WINDOW_LIMIT : positiveInt(raw.limit, `${label}.limit`);
   return { kind: "offset", offset, limit };
@@ -123,19 +113,12 @@ export function normalizeReadPayload(params: RawReadParams): RawReadParams {
         : undefined;
   if (file === undefined) return raw;
   const hasFlat = raw.offset !== undefined || raw.limit !== undefined;
-  // WHY: (#271) a model can serialize `windows` as a JSON string; the schema requires an array, so
-  // WHY: the call is refused before `execute` and the model falls back to a whole-file read, paying
-  // WHY: for the failed window AND the page. Fold a JSON array here, BEFORE the schema sees it. A
-  // WHY: parse failure or a non-array JSON value stays as-is, so the downstream array guard keeps its
-  // WHY: single `windows must be an array` wording.
   let namedWindows: unknown = raw.windows;
   if (typeof namedWindows === "string") {
     try {
       const parsed = JSON.parse(namedWindows) as unknown;
       if (Array.isArray(parsed)) namedWindows = parsed;
-    } catch {
-      // WHY: unparseable text is not a window list; the downstream array guard owns that refusal.
-    }
+    } catch {}
   }
   const windows =
     raw.windows !== undefined
@@ -155,8 +138,8 @@ export function normalizeReadPayload(params: RawReadParams): RawReadParams {
   };
 }
 /**
- * WHY: (#272) a non-array `windows` must reach the model as the window contract, not as the union
- * validator's outline-variant `mode` error. `prepareArguments` calls this BEFORE the validator; and
+ * A non-array `windows` must reach the model as the window contract (#272), not as the union
+ * validator's outline-variant `mode` error. `prepareArguments` calls this BEFORE the validator, and
  * `admitReadRequest` calls it for callers that bypass the schema (ADR-0041).
  */
 export function guardWindowsArray(params: RawReadParams): unknown[] | undefined {
@@ -168,10 +151,11 @@ export function guardWindowsArray(params: RawReadParams): unknown[] | undefined 
 }
 
 /**
- * Admission for the flat single-file shape (ADR-0041 D1): validates the file, every window,
- * and the window cap. A payload without `file` was already rejected by the schema; the check
- * below is the safety net for callers that bypass validation.
+ * Admission for the flat single-file shape (`D1`): validates the file, every window, and the window
+ * cap. A payload without `file` was already rejected by the schema; the check below is the safety net
+ * for callers that bypass validation.
  */
+// Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
 export function admitReadRequest(params: RawReadParams): AdmittedRequest {
   const request = normalizeReadPayload(params);
   const mode = admitMode(request.mode) ?? "served";
@@ -184,10 +168,6 @@ export function admitReadRequest(params: RawReadParams): AdmittedRequest {
     rawWindows === undefined || rawWindows.length === 0
       ? undefined
       : rawWindows.map((window, windowIndex) => admitWindow(window, `windows[${windowIndex}]`));
-  // WHY: the schema's per-variant `maxItems` and this guard enforce the same split for validated
-  // WHY: and unvalidated callers alike — window count is what multiplies the auto-read budget, but
-  // WHY: outline mode ignores caller windows (its coverage comes from the AST seam), so the cap
-  // WHY: binds every mode except outline. Narrowly outline-only: a 17-window served call still fails here.
   if (mode !== "outline" && (windows?.length ?? 0) > MAX_READ_WINDOWS) {
     throw badPayload(MAX_READ_WINDOWS_MESSAGE);
   }
@@ -243,9 +223,6 @@ function resolveAnchorWindow(
     content: resolver.normalized,
   });
   const lease = source.leaseFor(window.anchor);
-  // WHY: no lease for this file is the whole warning (spec §4.3): an unknown anchor, one this session
-  // WHY: holds for another file, and a foreign-generation row all fail closed the same way, and the
-  // WHY: specification pins one wording for all three — so no homes lookup is needed to say it.
   if (lease === undefined) return undefined;
   const decision = resolveLineIdentity(lease, source);
   if (decision.kind !== "line") return undefined;
@@ -270,8 +247,6 @@ export function planWindows(
       windows.push({ offset: window.offset, limit: window.limit });
       continue;
     }
-    // WHY: an anchor window can only resolve against served lineage; a non-text or anchor-less load
-    // WHY: leaves it unresolved, which is the same "not found" the model has to re-read past.
     const resolved = resolver === undefined ? undefined : resolveAnchorWindow(window, resolver);
     if (resolved === undefined) {
       warnings.push(anchorWarning(window.anchor));

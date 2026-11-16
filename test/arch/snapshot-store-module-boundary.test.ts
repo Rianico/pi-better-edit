@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as snapshotStore from "../../src/snapshot-store";
 
-/** Every `.ts` file under `dir`, depth first. */
 function tsFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
@@ -13,7 +12,6 @@ function tsFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Static and dynamic import specifiers in one module source. */
 function importSpecifiers(source: string): string[] {
   const specifiers: string[] = [];
   for (const match of source.matchAll(/(?:from|import\()\s*["']([^"']+)["']/g)) {
@@ -25,8 +23,6 @@ function importSpecifiers(source: string): string[] {
 
 describe("snapshot-store module boundary", () => {
   it("resolves the module entry and re-exports the vacuum policy surface", () => {
-    // WHY: the directory module must keep the former single-file public surface reachable from the
-    // WHY: bare module specifier, so no consumer has to reach into a sub-path to get it back.
     expect(typeof snapshotStore.vacuumSnapshots).toBe("function");
     expect(snapshotStore.VACUUM_GLOBAL_BUDGET_BYTES).toBe(50 * 1024 * 1024);
     expect(snapshotStore.VACUUM_SOFT_OVERFLOW_BYTES).toBe(100 * 1024 * 1024);

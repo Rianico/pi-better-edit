@@ -328,7 +328,6 @@ describe("auto-read after write", () => {
 
       expect(autoReadText).toContain("line 1");
 
-      // WHY: the page states its own range and stop (spec §4.4); there is no footer to continue from.
       expect(autoReadText).toContain("[Auto-read: ");
       expect(autoReadText).toMatch(/\(lines 1-\d+ of 2500 total\)/);
       expect(autoReadText).not.toContain("Use windows");

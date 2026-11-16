@@ -9,18 +9,12 @@ import { configFileDisplayPath, configFilePath, readScopeConfig } from "../../sr
 import { readBashViewConfig } from "../../src/bash-view-config";
 
 /**
- * The settings ladder after the relocation (#190).
- *
- * What these pin, in the order a user experiences it:
- *  1. an existing settings file at EITHER retired location is ADOPTED, not ignored — its keys
- *     still apply on the first run;
- *  2. the move is visible and reversible: new file written, every retired source renamed `.bak`,
- *     one record;
- *  3. the new file wins once it exists (the retired ones are then just history);
- *  4. a failed move still serves the settings it could read (the read side must not depend on the
- *     write side), and says so in the diagnostics log instead of the terminal;
- *  5. the project scope follows the same rule, and refuses to write at all in a tree that will not
- *     take the write.
+ * The settings ladder after the relocation (#190): an existing file at either retired
+ * location is adopted on first read, the move writes the new file and renames every
+ * retired source to `.bak` behind one record, and the new file wins once it exists.
+ * A failed move still serves what it could read and logs the failure rather than
+ * writing to the terminal; the project scope follows the same rule and refuses to
+ * start in a tree that will not take the write.
  */
 const RETIRED_XDG_REL = ".config/pi-better-edit/pi-better-edit.json";
 const RETIRED_FLAT_REL = ".pi/agents/pi-better-edit.json";
@@ -88,14 +82,12 @@ describe("global settings relocation", () => {
     expect(readDiagnostics().some((record) => record.message.includes("adopted settings"))).toBe(
       true,
     );
-    // The second read takes the new file, so adoption happens once.
     expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
   });
 
   it("falls through to the retired flat home file, and retires both sources", async () => {
     await seed(retiredXdgPath(), { bash: { view: "on" } });
     await seed(retiredFlatPath(), { bash: { view: "off" } });
-    // The XDG file is the stronger retired rung, so its keys are the ones adopted.
     expect(readBashViewConfig(cwd)).toEqual({ global: "on" });
     expect(existsSync(`${retiredXdgPath()}.bak`)).toBe(true);
     expect(existsSync(`${retiredFlatPath()}.bak`)).toBe(true);
@@ -109,8 +101,6 @@ describe("global settings relocation", () => {
   });
 
   it("adopts the settings file the override itself used to hold", async () => {
-    // WHY: an override user's pre-change file was <override>/pi-better-edit.json — the directory
-    // WHY: WAS both roots, so it is the strongest retired source for them, not an absent one.
     await seed(retiredOverridePath(), { bash: { view: "off" } });
 
     expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
@@ -125,8 +115,6 @@ describe("global settings relocation", () => {
     await seed(retiredFlatPath(), { bash: { view: "on" } });
 
     expect(readBashViewConfig(cwd)).toEqual({ global: "off" });
-    // Every retired source retires, not only the winner: a loser left live would resurrect stale
-    // settings the moment the new file went away.
     for (const source of [retiredOverridePath(), retiredXdgPath(), retiredFlatPath()]) {
       expect(existsSync(source), source).toBe(false);
       expect(existsSync(`${source}.bak`), source).toBe(true);
@@ -145,8 +133,6 @@ describe("global settings relocation", () => {
   });
 
   it("never derives a NEW path from XDG_CONFIG_HOME", () => {
-    // WHY: adoption is the only reader of the retired XDG base; the new layout is derived from the
-    // WHY: override/agent dir and the state home, so a moved XDG base cannot move a written file.
     process.env.XDG_CONFIG_HOME = join(root, "xdg-config");
     const settings = configFilePath("global", cwd);
     const state = stateRoot();
@@ -177,8 +163,6 @@ describe("global settings relocation", () => {
 
   it("still serves the retired settings when the move cannot be written", async () => {
     await seed(retiredXdgPath(), { bash: { view: "off" } });
-    // WHY: a DIRECTORY where the config file should be makes the adoption's write fail for real,
-    // WHY: while the diagnostics log stays writable — so the warning it reports is observable.
     await mkdir(storeDir, { recursive: true });
     await mkdir(newGlobalPath());
 
@@ -210,15 +194,12 @@ describe("project settings relocation", () => {
   it("adopts the retired flat project file beside the new directory", async () => {
     await seed(projectRetiredPath(), { store: { janitor: "off" } });
 
-    // The read is what adopts: the keys are served from the retired file on first use.
     expect(readScopeConfig("project", cwd)?.store).toEqual({ janitor: "off" });
     expect(await readFile(newProjectPath(), "utf-8")).toContain('"janitor": "off"');
     expect(existsSync(projectRetiredPath())).toBe(false);
     expect(existsSync(`${projectRetiredPath()}.bak`)).toBe(true);
   });
 
-  // WHY also skipped as root: root ignores a 0o555 directory, so the write SUCCEEDS and the test
-  // WHY: would assert the opposite of what the code does — a false failure in any root-owned runner.
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "skips the project write entirely, silently, when the tree is not writable",
     async () => {
@@ -226,15 +207,11 @@ describe("project settings relocation", () => {
       clearDiagnostics();
       await chmod(join(cwd, ".pi", "agents"), 0o555);
       try {
-        // The read side keeps working from the retired file; the write is skipped BEFORE it is
-        // attempted, so a read-only checkout pays neither a failed write nor a warning per session.
         expect(configFilePath("project", cwd)).toBe(newProjectPath());
         expect(readScopeConfig("project", cwd)?.store).toEqual({ janitor: "off" });
         expect(existsSync(newProjectPath())).toBe(false);
         expect(existsSync(projectRetiredPath())).toBe(true);
         expect(existsSync(`${projectRetiredPath()}.bak`)).toBe(false);
-        // WHY no record at all: a failed adoption writes a warning naming the destination, so its
-        // absence is the observable proof that the write was never attempted.
         expect(readDiagnostics().filter((r) => r.message.includes(newProjectPath()))).toEqual([]);
       } finally {
         await chmod(join(cwd, ".pi", "agents"), 0o755);

@@ -39,7 +39,6 @@ describe("ServedSession — handle deep interface", () => {
         { contentHash: snapshotHashFor(content) },
       );
 
-      // An external shrink is materialized by the read path, which retires the vanished leases.
       const shortContent = "alpha\nBRAVO\n";
       await writeFile(filePath, shortContent, "utf-8");
       const shrunk = await readNormFile("p.ts", home, { store });
@@ -54,8 +53,6 @@ describe("ServedSession — handle deep interface", () => {
       expect(await h.load()).toEqual([seeded.fileHashes[0], shortHashes[1]]);
       const leases = loadLeases(store, "sessA", seeded.absolutePath);
       const active = leases.filter((lease) => lease.retired_at === null);
-      // `alpha` survives the shrink with its identity, and the re-served `BRAVO` is leased into the
-      // truncated range; `bravo` and `charlie` vanished, so the authoritative writer retired them.
       expect(active.map((lease) => lease.anchor)).toEqual([seeded.fileHashes[0], shortHashes[1]]);
       expect(active[1]!.served_line_number).toBe(2);
       expect(
@@ -90,7 +87,6 @@ describe("ServedSession — handle deep interface", () => {
         true,
       );
 
-      // plain mode: no line count, so the mirror rows are upserted without truncation
       await h.recordDiff([{ position: 5, hash: "zzzz" }], { contentHash: snapshotHashFor("") });
       expect((await h.load())[5]).toBe("zzzz");
     });
@@ -143,7 +139,6 @@ describe("ServedSession — handle deep interface", () => {
         (lease) => lease.served_line_number === 3,
       )!;
 
-      // external insert relocates ccc from line 3 to line 4 without changing its text
       const drifted = "aaa\nbbb\nddd\nccc\n";
       const driftedHashes = await materializedLineHashes(drifted, "/p.ts");
       const movedAnchor = driftedHashes[3]!;
@@ -155,8 +150,6 @@ describe("ServedSession — handle deep interface", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.retired_at).toBeNull();
       expect(rows[0]!.served_line_number).toBe(4);
-      // The insert shifted the coordinate, not the line: S_latest -> S_curr pairing inherits the
-      // exact `line_id` (spec §3.1.3.2), and only the served snapshot is restamped.
       expect(rows[0]!.line_id).toBe(before.line_id);
       expect(rows[0]!.served_snapshot_hash).not.toBe(before.served_snapshot_hash);
     });
@@ -169,15 +162,12 @@ describe("ServedSession — handle deep interface", () => {
       const hashes = await materializedLineHashes(content, "/p.ts");
       const store = await loadHashStore();
 
-      // A newer materialization exists, so a `latest` fallback would bind the lease to a
-      // different content version — the silent-miswrite class the empty hash must not open.
       await materializedLineHashes("alpha\nBRAVO\n", "/p.ts");
 
       await h.recordDiff(
         hashes.map((hash, position) => ({ position, hash })),
         { contentHash: "", resultLineCount: hashes.length, firstChangedLine: 1 },
       );
-      // The rejection/truncated hooks fail closed for an omitted hash too: no content version named.
       await h.recordServeFeedback([{ position: 0, hash: hashes[0]! }], "live", 2);
       await h.recordTruncated([{ position: 1, hash: hashes[1]! }], 2, undefined, undefined);
 
@@ -190,12 +180,8 @@ describe("ServedSession — handle deep interface", () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const served = "alpha\nbravo\n";
       const servedHashes = await materializedLineHashes(served, "/p.ts");
-      // A DIFFERENT content version materializes afterwards: a symmetric reorder, so the patience
-      // engine pairs nothing and `alpha`'s line_id in the newer snapshot differs from the served one.
       const reordered = "bravo\nalpha\n";
       const newerHashes = await materializedLineHashes(reordered, "/p.ts");
-      // …and both snapshots share the first line's anchor (same line text), which is what made the
-      // `latest` fallback a silent miswrite rather than an obvious miss.
       expect(newerHashes[1]).toBe(servedHashes[0]);
 
       await h.recordServeFeedback(
@@ -266,8 +252,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   );
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(tmpHome);

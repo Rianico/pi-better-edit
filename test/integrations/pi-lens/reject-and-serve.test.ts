@@ -63,8 +63,6 @@ async function withLensHarness(
 ): Promise<void> {
   await withTempDir(prefix, async (dir) => {
     const harness = setupIntegrationTest(dir);
-    // SAFETY: the registries are module-global and `register` already attached the shipped adapter,
-    // SAFETY: so clearing first keeps exactly one adapter under test with an injected cwd.
     clearServedSpanObserversForTests();
     notifications.length = 0;
     calls.length = 0;
@@ -125,8 +123,6 @@ describe("reject-and-serve mirror", () => {
       expect(notifications).toEqual([]);
       expect(calls).toEqual([]);
 
-      // WHY: a preview without the session the anchors were served to fails loud instead of minting
-      // WHY: a fresh key whose lease lookups would miss as a misleading E_UNKNOWN_ANCHOR.
       const sessionless = await previewTool.preview({ file: "p.txt", edits }, dir, {});
       expect(sessionless).toEqual({ error: expect.any(String) });
       expect(notifications).toEqual([]);

@@ -90,13 +90,6 @@ export interface ApplyVerificationContext {
   sessionKey?: string;
 }
 
-/**
- * WHY: the served hash echo gate is evidence-only (GLOSSARY.md served hash echo,
- * WHY: ADR-0009 revision, `[E_SUSPICIOUS_TEXT]`): one position-agnostic,
- * WHY: content-matched scan over the lines that will be written via the unified
- * WHY: `findServedHashEcho` — never a shape check, so a served prefix with
- * WHY: differing content stays accepted.
- */
 function assertNotEmpty(originalContent: string, result: string): void {
   if (originalContent.length > 0 && result.length === 0) {
     throw new DomainError("E_EMPTY_RANGE", {});
@@ -108,8 +101,6 @@ function assertNotEmpty(originalContent: string, result: string): void {
  * the span's first line, `after` lands after the span's last line's content and before the
  * existing separator — including at EOF with no trailing newline. Inserting at least one line
  * always changes the bytes, so an insertion never reaches the noop comparison.
- * WHY: (ticket-04 §3.4) `applyEdit` refuses an insertion whose resolved target spans more than one
- * WHY: line before reaching here, so both bounds name the same line.
  */
 function insertionSpan(edit: RHEdit, lineIndex: LIdx): RESpan {
   const { fileLines, lineStarts } = lineIndex;
@@ -198,15 +189,6 @@ function assemble(content: string, sp: RESpan, signal: AbortSignal | undefined):
 }
 
 /**
- * WHY: (ticket-02b P1-A) span-ref items assemble from LINE coordinates on the pre-item buffer: an
- * WHY: insertion point is a position BETWEEN lines, so the four legal touching spellings of one
- * WHY: position (`before T=s1` ≡ `after T=s1-1`, `after T=s2` ≡ `before T=s2+1`) compute the same
- * WHY: line list — a degenerate adjacent move is byte identity BY CONSTRUCTION, which the
- * WHY: byte-level clamp could not promise because `before`/`after` replacements carry opposite
- * WHY: newline shapes and never commute through a removal that eats a newline (falsified at
- * WHY: 108/189 clamp firings; the falsifying tests are the alias matrix in
- * WHY: `test/tools/mutation-engine.span-ref.test.ts` and the sweep in
- * WHY: `test/core/hashline.span-ref-sweep.test.ts`).
  */
 function assembleLines(
   content: string,
@@ -222,8 +204,6 @@ function assembleLines(
     if (placement === "before" && i === t1) out.push(...copied);
     const insideSource = retired !== undefined && i >= retired.s1 && i <= retired.s2;
     if (insideSource) {
-      // WHY: a retired line contributes nothing, but the `after` point beside it still emits:
-      // WHY: `after T=s2` is the legal alias of `before T=s2+1`.
     } else if (placement === undefined && i >= t1 && i <= t2) {
       if (i === t1) out.push(...copied);
     } else {
@@ -241,12 +221,10 @@ function assembleLines(
  * HERE and nowhere else: a retirement reaching EOF in a file with no trailing newline keeps a
  * surviving empty line's own terminator — the empty-preceding-line arm of `resToSpan`'s EOF
  * deletion, byte-asserted in `test/core/hashline.apply.test.ts` ("EOF deletion preserves an empty
- * preceding line"). For a non-empty file with at least one surviving line, `out`'s last line is
- * empty without an original trailing newline only when that arm fired (ticket-02c F1: the byte
- * convention is canonical, the line path conforms). The empty file is the shape that arm cannot
- * describe: `splitLines("")` is one empty line, so a degenerate retirement of it assembles
- * `out = [""]` without the arm ever firing — `content.length > 0` keeps that spelling the honest
- * noop its parent commit wrote (ticket-02d P1).
+ * preceding line"). For a non-empty file with a surviving line, `out`'s last line is empty without
+ * an original trailing newline only when that arm fired (ticket-02c F1: the byte convention is
+ * canonical, the line path conforms). The empty file is a shape that arm cannot describe: `splitLines("")` is one empty line, so a degenerate
+ * retirement assembles `out = [""]` without the arm ever firing, and `content.length > 0` keeps that spelling the honest noop (ticket-02d P1).
  */
 export function serializeLineList(
   content: string,
@@ -310,9 +288,6 @@ function resolveEdit(
       reversed: leased.reversed,
     };
   }
-  // WHY: no seam at all (no mirror, no lease source): the library-level `applyEdit` seam, where
-  // WHY: anchor algebra is the only authority. A session edit always carries both, so it can never
-  // WHY: reach this branch — lost identity fails closed in the lease seam above.
   const byContent = resolveEditByContent(
     edit,
     { fileHashes, fileLines, ...(filePath !== undefined ? { filePath } : {}) },
@@ -363,8 +338,6 @@ export function applyEdit(
   } = verification ?? {};
 
   const lineIndex = buildIdx(content);
-  // WHY: no pathless file materialization — without precomputed hashes the file
-  // WHY: path is required so anchors derive file-scoped, never content-only.
   const fileHashes =
     precomputedHashes ??
     (filePath === undefined
@@ -399,10 +372,6 @@ export function applyEdit(
     });
   }
 
-  // WHY: (ticket-04 §3.4) "before"/"after" splice at ONE zero-width position; a resolved multi-line
-  // WHY: target has no single honest insertion point, so the placement is refused AFTER anchor
-  // WHY: resolution (a raw anchor-string comparison cannot see a rebased span) and BEFORE any
-  // WHY: assembly — this covers literal, reference and foreign-materialized payloads identically.
   if (
     (resolved.placement === "before" || resolved.placement === "after") &&
     resolved.hash_bounds[0].line !== resolved.hash_bounds[1].line
@@ -417,10 +386,6 @@ export function applyEdit(
     });
   }
 
-  // WHY: (ticket-02) the span-ref arm resolves its source through the SAME seam and authority as
-  // WHY: the target — same lease-first path, same fail-closed rejections, so an unresolvable
-  // WHY: source records reject-and-serve rows exactly like a rejected target. Both spans are then
-  // WHY: measured on this one pre-item `lineIndex`; nothing re-resolves after assembly.
   let resolvedSource: RHEdit | undefined;
   if (edit.source) {
     const sourceEdit: HEdit = { content_lines: [], hash_bounds: edit.source.bounds };
@@ -448,12 +413,6 @@ export function applyEdit(
     const s1 = resolvedSource.hash_bounds[0].line;
     const s2 = resolvedSource.hash_bounds[1].line;
     if (edit.source.retire) {
-      // WHY: (ticket-02b P1-B) the overlap question is placement-aware: an insertion point is a
-      // WHY: position BETWEEN lines, so `before` overlaps only strictly above the start
-      // WHY: (s1 < T <= s2) and `after` only strictly below the end (s1 <= T < s2). The four
-      // WHY: touching spellings (`before T=s1`, `before T=s2+1`, `after T=s1-1`, `after T=s2`)
-      // WHY: denote positions OUTSIDE the retired lines and stay legal — invariant 10 makes
-      // WHY: them honest noops, refusing one spelling would refuse its alias.
       const t1 = resolved.hash_bounds[0].line;
       const t2 = resolved.hash_bounds[1].line;
       const overlap =
@@ -467,8 +426,6 @@ export function applyEdit(
           resolved.placement === undefined
             ? `target (lines ${t1}-${t2})`
             : `target line ${t1} (at "${resolved.placement}")`;
-        // WHY: (sweep (a)) the retired `copy_from`/`delete_source` spellings named wire fields that
-        // WHY: no longer exist — the retrying party sends `"text_ref"` and its `"mode"`.
         throw new DomainError("E_BAD_PAYLOAD", {
           message:
             `A move's "text_ref" span (lines ${s1}-${s2}) overlaps its ${target} while "mode": "cut" is set. ` +
@@ -476,33 +433,14 @@ export function applyEdit(
         });
       }
     }
-    // WHY: materialize before the evidence scan so every gate runs on the lines that will be
-    // WHY: written (invariant 9): copied and hand-written text are the same kind of input.
-    // SAFETY: (ticket-02c AP4 ledger) no fail-closed guard stands here for a degenerate/empty
-    // SAFETY: retirement (the deleted `slice(s1 - 1, s2).length === 0` throw): no input reaches
-    // SAFETY: it. Both resolution seams heal a reversed pair before returning (`valEdit` in
-    // SAFETY: `resolve.ts` swaps when the resolved lines cross, `resolveLeasedEdit` swaps too),
-    // SAFETY: so `s1 <= s2`; and resolved coordinates only ever name lines this buffer has —
-    // SAFETY: content resolution reads `fileHashes`, the lease seam rebases `line_id`s through
-    // SAFETY: current-content positions and `verifyRebasedSpan` refuses anything else with
-    // SAFETY: `E_STALE_RANGE`. Hence `s2 <= fileLines.length` and the slice is never empty
-    // SAFETY: (suite-wide instrumentation at 67a5812: 6,346 source-arm executions, 0 degenerate).
     resolved.content_lines = lineIndex.fileLines.slice(s1 - 1, s2);
   }
 
   warnUnicodeEsc(prefixFixed, warnings);
 
   if (served) {
-    // WHY: evidence-only gate (ADR-0009 revision): one position-agnostic scan of
-    // WHY: the lines that will be written (`resolved.content_lines`) against the
-    // WHY: served mirror with its canon digests. Nothing rewrites `content_lines`
-    // WHY: between `prepareEdit`/`resolveEdit` and the write, so one view suffices.
-    // WHY: No canon data means no evidence, so the scan stays silent — never a shape refusal.
-    // WHY: A lease-resolved span needs no separate current-anchor scan: identity lives in the
-    // WHY: lease seam, and the served hash echo condition only names served anchors.
+    // Ref: docs/.archive_adrs/0009-bounded-hash-echo-guard.md
     const digests = canonDigests ?? [];
-    // WHY: the scan input names that one view explicitly, so a future stage
-    // WHY: cannot re-add a second view silently.
     const scan = { lines: resolved.content_lines, anchors: served, digests };
     const hit = findServedHashEcho(scan.lines, scan.anchors, scan.digests, 1);
     let servedCopy:
@@ -524,13 +462,6 @@ export function applyEdit(
         const anchorFrom = edit.hash_bounds[0].hash;
         const anchorTo = edit.hash_bounds[1].hash;
         const counterPath = absolutePath ?? filePath ?? "(unknown file)";
-        // WHY: verification side of the tally, separated from the clear: this records the
-        // WHY: refusal while the edit is still uncommitted, so the count survives for the
-        // WHY: resubmission; only a committed write clears it (`pipeline.ts` post-commit,
-        // WHY: `lifecycle-hooks` post-write).
-        // WHY: a session-less caller keeps no tally: count 1 states "no prior
-        // WHY: submission known", where a shared fallback bucket would report
-        // WHY: another caller's refusals (#132).
         const count =
           sessionKey === undefined
             ? 1
@@ -551,15 +482,8 @@ export function applyEdit(
         });
       }
     }
-    // WHY: no span verification happens here: the lease seam owns verification for every
-    // WHY: edit it resolves (#151, `verifyRebasedSpan` inside `resolveLeasedEdit`), and the
-    // WHY: library-level mirror branch that verified a served mirror against itself has no
-    // WHY: live caller and is retired (#10).
   }
 
-  // WHY: (ticket-02 invariant 5, ticket-02b) both splices of a span-ref item derive from the SAME
-  // WHY: pre-item buffer (`lineIndex`), so an anchor made ambiguous by one splice can never change
-  // WHY: what the other removes; the span-ref arm assembles the result from line coordinates.
   const mutationSpans: { startLine: number; endLine: number; inserted: number }[] = [];
   let sourceRange: ResolvedRange | undefined;
   const targetRange = resolvedRange(resolved);
@@ -578,10 +502,6 @@ export function applyEdit(
         inserted: 0,
       });
     }
-    // WHY: a target already carrying the copied lines contributes no splice — the retirement alone
-    // WHY: produces the bytes, and `resolvedRange` already reports a zero delta for an equal-width
-    // WHY: replacement (the ticket-02 `delta: 0` correction was a no-op for every reachable input
-    // WHY: and is dropped; the suppressing branch is covered by the target-equals-source test).
     const targetSame =
       resolved.placement === undefined &&
       t2 - t1 + 1 === resolved.content_lines.length &&
@@ -623,9 +543,6 @@ export function applyEdit(
   }
   assertNotEmpty(content, result);
 
-  // WHY: (ticket-02 invariant 10, ticket-02b P1-A) a degenerate move — an insertion point touching
-  // WHY: its own retired span — computes to byte identity on the line list, so it rides the noop
-  // WHY: path: no write, no double-apply, one honest `noopEdit`.
   if (edit.source && result === content) {
     return {
       content,
@@ -648,25 +565,7 @@ export function applyEdit(
     : undefined;
   const changed = changedRange(content, result);
 
-  // WHY: middle tier beside the gate above: a replacement line opening with a
-  // WHY: served anchor whose remainder canon digest matches none of the digests the
-  // WHY: leases recorded for that anchor's served line. The bytes are already assembled as-is; the
-  // WHY: note only
-  // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
-  // WHY: never alters bytes, never blocks, keeps no state, fires per line.
-  // WHY: soft-hint tier beside it: replacement lines opening with an anchor-shaped
-  // WHY: prefix never served for this session and file. The bytes are already
-  // WHY: assembled as-is with no rewrite; the count states the offending-line
-  // WHY: total and the tool's own row shape, never a remedy. Fires regardless of literal
-  // WHY: declaration (the declaration covers served rows, not never-served shapes),
-  // WHY: never blocks, keeps no state. The per-item count travels as structured
-  // WHY: data (`neverServedCount`); the batch path aggregates across items and
-  // WHY: renders one counted hint per call, never via warning-string matching.
   let neverServedCount = 0;
-  // WHY: (spec D6) the never-served shape scan is shape-only and pure, so it runs
-  // WHY: against an empty served set when the tracker is missing — the hint must not
-  // WHY: depend on lease state. The served prefix mismatch tier stays evidence-gated
-  // WHY: (`if (served)`): with no served content it reports nothing by construction.
   if (served) {
     const digests = canonDigests ?? [];
     const mismatches = findServedPrefixMismatches(resolved.content_lines, served, digests, 1);
@@ -702,10 +601,6 @@ export function applyEdit(
 function resolvedRange(resolved: RHEdit): ResolvedRange {
   const [start, end] = resolved.hash_bounds;
   if (resolved.placement === "before" || resolved.placement === "after") {
-    // WHY: an insertion is zero-width: it lands after line `pointLine` (`before` targets the line
-    // WHY: below the point, `after` the line above). The empty-range form (startLine = point + 1,
-    // WHY: endLine = point) is what lets identity bookkeeping keep every existing line — a width-1
-    // WHY: range would drop the target line's `line_id`.
     const targetLine = resolved.placement === "before" ? start.line : end.line;
     const pointLine = resolved.placement === "before" ? targetLine - 1 : targetLine;
     return {

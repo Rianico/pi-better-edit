@@ -65,7 +65,6 @@ describe("edit served-row gate with declaration", () => {
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const before = await readFsFile(path, "utf-8");
-      // verbatim single row
       await expect(
         editTool.execute(
           "e1",
@@ -78,7 +77,6 @@ describe("edit served-row gate with declaration", () => {
           ctx,
         ),
       ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
-      // multi-row chain copied from another position
       await expect(
         editTool.execute(
           "e1",
@@ -97,7 +95,6 @@ describe("edit served-row gate with declaration", () => {
           ctx,
         ),
       ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
-      // ambiguous: served prefix, differing content stays accepted
       const ok = await editTool.execute(
         "e1",
         {
@@ -116,7 +113,6 @@ describe("edit served-row gate with declaration", () => {
       );
       expect(ok.content[0]?.text).toContain("Successfully edited");
       expect(await readFsFile(path, "utf-8")).toContain(`${hashes[1]}│CHANGED`);
-      // restore for byte-identical check of refusals: refusals wrote nothing before the accepted write
       expect(before).toBe("one\ntwo\nthree\n");
     });
   });
@@ -236,7 +232,6 @@ describe("write served-row gate with declaration", () => {
       const { readFile: rf } = await import("node:fs/promises");
       const path = join(cwd, "notes.md");
       await writeFile(path, "one\ntwo\n", "utf-8");
-      // Use the read tool to serve real rows (grants the leases canon evidence is derived from)
       const { getTool } = setupIntegrationTest(cwd);
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-w" } } as any;
@@ -294,7 +289,6 @@ describe("write literal audit via tool_result", () => {
       } as any;
       register(pi);
       expect(toolResultHandler).toBeDefined();
-      // Serve the pre-write rows
       const { getTool } = setupIntegrationTest(cwd);
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-audit" } } as any;
@@ -302,7 +296,6 @@ describe("write literal audit via tool_result", () => {
       const { lineHashes: lh } = await import("../../src/hashline/hash-identity.js");
       const hashes = await lh("one\ntwo\n", path);
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
-      // Simulate a successful literal write that bypassed the pre-write guard
       await writeFile(path, verbatim, "utf-8");
       const out = await toolResultHandler(
         {

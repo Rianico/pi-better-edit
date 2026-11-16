@@ -89,9 +89,7 @@ export function primeGrammarForTests(
 export function discardCachedGrammar(path: string): void {
   try {
     rmSync(path, { force: true });
-  } catch {
-    // SAFETY: best effort — a cache deletion failure must not fail the read.
-  }
+  } catch {}
 }
 
 function sha256Hex(bytes: Uint8Array): string {
@@ -108,8 +106,6 @@ function readVerifiedCache(path: string, expected: string): Uint8Array | undefin
     return undefined;
   }
   if (sha256Hex(bytes) === expected) return bytes;
-  // WHY: stale or corrupted cache bytes are discarded before any network attempt, so a re-fetch
-  // WHY: cannot be skipped by the stale file it is meant to replace.
   discardCachedGrammar(path);
   return undefined;
 }
@@ -128,7 +124,6 @@ async function fetchVerified(
     const bytes = new Uint8Array(await response.arrayBuffer());
     return sha256Hex(bytes) === entry.sha256 ? bytes : undefined;
   } catch {
-    // SAFETY: offline, timeout, DNS failure and a malformed response are all "no grammar".
     return undefined;
   }
 }
@@ -142,11 +137,7 @@ function writeCache(path: string, bytes: Uint8Array): void {
   } catch {
     try {
       rmSync(temporary, { force: true });
-    } catch {
-      // SAFETY: best effort cleanup.
-    }
-    // WHY: a failed cache write does not invalidate bytes already verified in memory; the caller
-    // WHY: can parse them now, and the next use simply retries the write.
+    } catch {}
   }
 }
 
@@ -177,7 +168,6 @@ function fetchAndCache(
       writeCache(path, bytes);
       return bytes;
     } catch {
-      // SAFETY: a fetch/write failure is the same answer as an offline grammar.
       return undefined;
     }
   })();

@@ -3,17 +3,13 @@
  * Verifies the built extension entry the way pi loads it, rather than trusting that the
  * bundler exited 0.
  *
- * WHY (ADR-0027): pi drops manifest entries whose path does not exist without a message,
- * and its dependency repair compares only `dependencies` against `node_modules`, so a
- * missing artifact resolves zero extensions permanently. A bundle that builds can still
- * throw at extension load, strip a `node:` prefix, inline a host package, or resolve its
- * prompt assets relative to a directory that does not exist. Each of those is checked here
- * and each check is demonstrated to fail by scripts/verify-dist-mutations.mjs.
+ * pi drops a manifest entry whose path does not exist without a message, so a missing artifact
+ * resolves zero extensions permanently, and a bundle that builds can still throw at load,
+ * strip a `node:` prefix, inline a host package, or resolve a prompt asset relative to a
+ * directory that does not exist. verify-dist-mutations.mjs fails each check on purpose.
  *
  * Usage: node scripts/verify-dist.mjs [--artifact <path>] [--manifest <path>]
- *                                    [--package-root <dir>] [--skip-freshness]
- *        --artifact / --manifest / --package-root are the seams the mutation harness uses;
- *        they default to the real manifest entry in this package.
+ *        [--package-root <dir>] [--skip-freshness]; those seams default to this package.
  */
 import {
   existsSync,
@@ -179,9 +175,7 @@ function maxMtimeMs(paths, packageRoot) {
  * prefix inside `import("sqlite")` is the same 2.1.0 failure class as one inside a static
  * import.
  *
- * Each specifier must resolve: either a Node builtin that kept its `node:` prefix, or a
- * package the manifest declares. A stripped prefix (`node:sqlite` -> `sqlite`) is exactly
- * what broke 2.1.0 and no package.json lint catches it.
+ * Each specifier must resolve: a Node builtin that kept its `node:` prefix, or a declared package.
  */
 function bareSpecifiers(code) {
   const specifiers = new Set();
@@ -256,8 +250,6 @@ function packageNameOf(specifier) {
  * auto-install from fetching them into the user's tree.
  */
 function assertHostPackagesAreOptionalPeers(manifest) {
-  // optionalDependencies is a runtime dependency list too and npm installs it into consumers;
-  // bundleDependencies would vendor a host copy into the tarball. Neither may carry one.
   const runtimeNames = [
     ...Object.keys(manifest.dependencies ?? {}),
     ...Object.keys(manifest.optionalDependencies ?? {}),

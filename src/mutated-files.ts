@@ -1,21 +1,14 @@
 /**
  * Mutated-file observer seam — the domain-neutral notification of which file this tool just
- * changed, and which of its lines moved. Producers (edit, undo-last-edit, write) hand over the
- * 1-indexed changed ranges; this module fans them out to registered observers.
- *
- * WHY a seam: the mutated set is known deep in the mutation paths, while the consumer is an
- * optional outer integration that may be absent entirely (the mutation bridge). Inverting
- * the dependency here keeps every producer free of integration imports, and with no observer
- * registered the behavior of the tool is unchanged.
- *
- * Invariant: an empty `ranges` list means the WHOLE file changed (whole-file authorship, an undo
- * that re-serves the file, a producer that knows no line detail) — it is never "nothing happened",
- * so every notification is delivered. `src/served-spans.ts` makes the opposite choice for the same
- * word: an empty `spans` list there means nothing was served and is dropped. The two payloads read
- * alike but mean opposites, which is why the two seams stay separate modules.
- *
- * Invariant: no path handling lives here — `filePath` is the absolute normalized path the caller
- * already holds. Ranges are 1-indexed and expected ascending, non-overlapping, non-adjacent.
+ * changed and which of its lines moved: 1-indexed changed ranges fanned out to observers.
+ * WHY a seam: the mutated set is known deep in the mutation paths while the consumer is an
+ * optional outer integration that may be absent (the mutation bridge), so inverting the dependency
+ * keeps every producer free of integration imports and no observer means unchanged behavior.
+ * An empty `ranges` list means the WHOLE file changed (whole-file authorship, an undo
+ * that re-serves, a producer that knows no line detail) — never "nothing happened", so every
+ * notification is delivered. `src/served-spans.ts` picks the opposite: empty `spans` means nothing
+ * was served, and is dropped. No path handling lives here (`filePath` is the absolute
+ * normalized path the caller holds); ranges are 1-indexed, expected ascending, non-overlapping, non-adjacent.
  */
 import type { ServedSpan } from "./served-spans.js";
 
@@ -56,16 +49,11 @@ export function addMutatedFileObserver(observer: MutatedFileObserver): () => voi
  * already landed.
  */
 export function notifyMutatedFile(notification: MutatedFileNotification): void {
-  // WHY: a snapshot keeps this pass stable — an observer that subscribes or unsubscribes during
-  // WHY: fan-out must not change the recipient set mid-iteration.
   const snapshot = observers.slice();
   for (const observer of snapshot) {
     try {
       observer(notification);
-    } catch {
-      // SAFETY: observer isolation — a broken integration sink must never fail the edit or write
-      // SAFETY: that already landed, nor silence the remaining observers.
-    }
+    } catch {}
   }
 }
 

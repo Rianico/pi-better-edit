@@ -25,29 +25,33 @@ import {
   useTestHome,
 } from "../support/fixtures.js";
 
-// WHY: these tests pin the ticket-04 wire contract — §3 finite key-set gate semantics: an item is
-// WHY: legal only when its key set is EXACTLY one of S1 {anchor_from, anchor_to, text}, S2 = S1 + at,
-// WHY: S3 {anchor_from, anchor_to, text_ref}, S4 = S3 + at. The swap landed in this commit: HEAD
-// WHY: speaks the new wire (`replace_with` and the legacy spellings are refused), and these
-// WHY: assertions are the fence that keeps it that way — not a red plan for a future swap.
+/**
+ * The edit wire contract: an item is legal only when its key set is exactly S1 {anchor_from,
+ * anchor_to, text}, S2 = S1 + at, S3 {anchor_from, anchor_to, text_ref}, or S4 = S3 + at. The
+ * swap has landed — `replace_with` and the legacy spellings are refused — so these assertions
+ * are the fence that keeps it that way, not a plan for a future swap.
+ *
+ * Two oracles carry most of the file: a foreign copy or cut must be BYTE-IDENTICAL to the
+ * intra-file equivalent (the comparison, never a hand-written expected string), and the served
+ * schema must agree with admission about `null` on optional slots, which the local
+ * `schemaAllowsNull` mirrors from pi's `api/constrained-sampling.js`.
+ */
 useTestHome();
 
 beforeAll(async () => {
   await initHasher();
 });
 
-// WHY: the ticket swaps the wire; these tests drive the same admission pair the tool seam uses
-// WHY: (normReq + assertReq, src/edit-tool.ts), so they pin the contract, not an implementation choice.
 function admit(raw: unknown): NormalizedEditRequest {
   const canonical = normReq(raw);
   assertReq(canonical);
   return canonical as NormalizedEditRequest;
 }
 
-// WHY: (sweep (b), §9.7) `describeReceived` appends the submitted JSON to every item-level
-// WHY: refusal, so a bare `toContain(key)` is echo-satisfied — it cannot fail even when the
-// WHY: refusal names nothing. Stripping the echo leaves only the refusal clauses, and the
-// WHY: assertions below match refusal CLAUSES (`unsupported field(s) "op"`), never bare keys.
+/**
+ * Drops the `Received:` echo `describeReceived` appends to every item-level refusal, so an
+ * assertion matches refusal CLAUSES and cannot be echo-satisfied by the submitted JSON.
+ */
 function refusalText(message: string): string {
   const echo = message.indexOf("Received:");
   return echo === -1 ? message : message.slice(0, echo);
@@ -171,15 +175,6 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
   });
 
   it("a foreign-source cut commits at the engine seam as one two-file transaction — the item-(iv) refusal is deleted deliberately (04b)", async () => {
-    // WHY: (ticket-04 item (iv) → ticket-04b §1) this test used to PIN the refusal
-    // WHY: ("A foreign-source reference supports mode: … copy today"): item (iv) had no recovery
-    // WHY: story — retiring the source before the copy lands turns a mid-transaction crash into
-    // WHY: data loss, so the guard existed until the correlated multi-file transaction
-    // WHY: (`runCutTransaction`, ADR-0028) supplied the missing half: durable intent record before
-    // WHY: the first rename, the target insert committed BEFORE the destructive source
-    // WHY: retirement, and next-run repair for the window between. The refusal is deleted as an
-    // WHY: intentional act, in the same commit as the behaviour it enables; this test witnesses
-    // WHY: both halves — the refusal no longer fires, and the cut lands on BOTH files.
     await withTempDir("foreign-cut-entry-", async (cwd) => {
       await writeFile(join(cwd, "sample.txt"), "a\nb\nc\n", "utf-8");
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
@@ -203,7 +198,6 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
       if (!isMutationSuccess(result)) return;
       await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nx\ny\nc\n");
       await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("z\n");
-      // the deleted copy-only refusal must never surface again at this seam
       expect(result.diff).not.toContain("supports mode:");
     });
   });
@@ -231,7 +225,6 @@ describe("Edit wire contract — behavior", () => {
         const { ctx, readTool } = setupIntegrationTest(cwd);
         const h = await lineHashes("a\nb\nb\nc\n", join(cwd, "sample.txt"));
         await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
-        // WHY: each served occurrence gets its own anchor even when the text is identical.
         expect(h[1]).not.toBe(h[2]);
         const raw = req([{ anchor_from: h[1]!, anchor_to: h[2]!, text: "Z", at: "before" }]);
         const request = admit(raw);
@@ -270,9 +263,6 @@ describe("Edit wire contract — behavior", () => {
       if (!isMutationSuccess(result)) return;
       await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("a\nb\nc\n");
       expect(result.metrics.classification).toBe("noop");
-      // WHY: (sweep (b), §6) `toContain("[MODEL]")` cannot fail independently of the code —
-      // WHY: the tier prefix is guaranteed by `formatWarning`'s construction. Pin the RENDERED
-      // WHY: clause and its payload (ref, both anchors, the observation and the remedy) instead.
       const text = result.toolResult.content[0]!.text;
       expect(text).toContain("[W_NOOP_INSERT]");
       expect(text).toContain(
@@ -362,11 +352,6 @@ describe("Edit wire contract — behavior", () => {
       expect(result.result).toBe("1\nx\ny\n3\n");
       await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe("1\nx\ny\n3\n");
       await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");
-      // WHY: (sweep (b), §9.8) the `servedByPath` detail section is built from the applied target
-      // WHY: files only (`edit-response.ts`), so asserting against it was tautological. Assert the
-      // WHY: foreign path's STORE ROWS instead: after a foreign copy its served mirror and its
-      // WHY: leases are exactly what `r2` served — the copy grants nothing, retires nothing,
-      // WHY: re-stamps nothing on the file it only read.
       const store = await loadHashStore();
       const foreignAbs = (await readNormFile("source.txt", cwd, { store, noPersist: true }))
         .absolutePath;
@@ -385,8 +370,6 @@ describe("Edit wire contract — behavior", () => {
       await writeFile(join(cwd, "source.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
-      // WHY: anchors come from the served read — re-deriving would need the
-      // WHY: loader's symlink-resolved path, so served rows agree by construction.
       const t = getText(r1)
         .split("\n")
         .filter((line) => line.includes("│"))
@@ -405,12 +388,6 @@ describe("Edit wire contract — behavior", () => {
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationFailure(result)).toBe(true);
       if (!isMutationFailure(result)) return;
-      // WHY: (item (ii)) the old alternation `toMatch(/^E_(STALE_ANCHOR|UNKNOWN_ANCHOR|
-      // WHY: FOREIGN_ANCHOR)$/)` passed silently when the code regressed into the
-      // WHY: `foreignRejection` E_STALE_ANCHOR fallback. These anchors are derived
-      // WHY: content-only and leased under NO file, so the §0 pass-through must surface
-      // WHY: E_UNKNOWN_ANCHOR — PIN (green at HEAD — falsification owed by mutation phase: removing
-      // WHY: the pass-through at pipeline.ts:441-447 flips this to E_STALE_ANCHOR and turns RED).
       expect(result.code).toBe("E_UNKNOWN_ANCHOR");
       expect(result.message).toContain("source.txt");
       expect(result.message).toContain("has not served");
@@ -426,7 +403,6 @@ describe("Edit wire contract — behavior", () => {
       await writeFile(join(cwd, "source.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
-      // WHY: the anchors are served under `other.txt` — identical content, identical anchors.
       await readTool.execute("r2", { file: "other.txt" }, undefined, undefined, ctx);
       const t = await lineHashes("1\n2\n3\n", join(cwd, "target.txt"));
       const s = await lineHashes("x\ny\nz\n", join(cwd, "other.txt"));
@@ -436,9 +412,6 @@ describe("Edit wire contract — behavior", () => {
           {
             anchor_from: t[1]!,
             anchor_to: t[1]!,
-            // WHY: the reference names `source.txt` — never served — but its anchors hold a
-            // WHY: lease under `other.txt`: lease precedence (lease-resolve.ts) says a lease for
-            // WHY: another file wins over holding no lease anywhere → E_FOREIGN_ANCHOR.
             text_ref: { anchor_from: s[0]!, anchor_to: s[1]!, file: "source.txt", mode: "copy" },
           },
         ],
@@ -447,8 +420,6 @@ describe("Edit wire contract — behavior", () => {
       expect(isMutationFailure(result)).toBe(true);
       if (!isMutationFailure(result)) return;
       expect(result.code).toBe("E_FOREIGN_ANCHOR");
-      // WHY: the rendered message must distinguish this branch from `E_UNKNOWN_ANCHOR`: the
-      // WHY: anchors are inconsistent WITH the named file and the refusal names their homes.
       expect(result.message).toContain("not for source.txt");
       expect(result.message).toContain("served for");
       await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe("1\n2\n3\n");
@@ -507,13 +478,6 @@ describe("Edit wire contract — behavior", () => {
   });
 });
 
-// WHY: (item (i), the blank-line P1 fence) the invariant: the SAME span copied from another
-// WHY: served file must produce BYTE-IDENTICAL output to the same span replaced within one file.
-// WHY: The comparison IS the oracle — the intra-file arm resolves through `content_lines` with no
-// WHY: `text` round-trip (apply.ts), so no expected string is hand-written here. At HEAD the
-// WHY: foreign collapse `fileLines.slice(l1-1, l2).join("\n")` inverts `parseText` wrong: every
-// WHY: all-blank span of >= 2 lines loses exactly one blank line, and a single blank line
-// WHY: collapses to "" and is refused by the literal arm's min-line guard.
 type CopyPairCase = {
   name: string;
   controlContent: string;
@@ -622,9 +586,6 @@ const COPY_PAIR_CASES: CopyPairCase[] = [
     foreignContent: "\n\n\n",
     foreignSpan: [1, 3],
   },
-  // TICKET-04b §11 mandatory re-run: the matrix now covers every shape the dispatch names —
-  // empty (blank line at the head of the file), trailing-blank, no-trailing-newline, CRLF and
-  // mixed endings — for BOTH the foreign copy and the foreign cut arm.
   {
     name: "empty line at the head of the file",
     controlContent: "\nb\nc\n",
@@ -676,17 +637,6 @@ describe("Edit wire contract — paired blank-line control (item (i) fence)", ()
   }
 });
 
-// WHY: (ticket-04b §11 byte fence, mandatory re-run over the full matrix) three claims per row,
-// WHY: each with the comparison itself as the oracle — no hand-written expected bytes:
-// WHY:   (1) the foreign CUT's target output is byte-identical to the intra-file equivalent
-// WHY:       (the intra-file copy of the same span — a cut's insert arm must be exactly a copy);
-// WHY:   (2) after a fault-injected abort INSIDE the two-rename window, target AND source are
-// WHY:       byte-identical to the pre-transaction contents;
-// WHY:   (3) the retirement write goes through the SAME canonical serialization as every other
-// WHY:       write — `bom + restoreEndings(result, originalEnding)` with `originalEnding` decided
-// WHY:       by the earliest line break in the file — which the independent re-fold below
-// WHY:       restates with plain string operations (no module import), so agreement is evidence,
-// WHY:       not tautology. One convention, no third path.
 function expectedRetirement(raw: string, l1: number, l2: number): string {
   const idxLF = raw.indexOf("\n");
   const idxCRLF = raw.indexOf("\r\n");
@@ -773,11 +723,6 @@ describe("Edit wire contract — §11 byte fence: foreign cut mirrors the intra-
           sessionKey: TEST_SESSION_ID,
         });
         if (expectedSource === "") {
-          // The row whose retirement would EMPTY the source: the same per-file guard the
-          // intra-file path enforces (`E_EMPTY_RANGE`, "use `write`") refuses the source plan
-          // in-memory, BEFORE the intent record and any rename — so this row's fence claim is
-          // the refusal itself: both files byte-identical to the seeds, nothing half-written.
-          // A zero-line source cannot be served at all, so no other row reaches this arm.
           expect(
             isMutationFailure(result) && result.code === "E_EMPTY_RANGE",
             `cutting the whole of an all-blank source must refuse with E_EMPTY_RANGE (${tc.name})`,
@@ -793,9 +738,7 @@ describe("Edit wire contract — §11 byte fence: foreign cut mirrors the intra-
             : `foreign cut arm must succeed (${tc.name})`,
         ).toBe(true);
         if (!isMutationSuccess(result)) return;
-        // Claim (1): the insert is byte-identical to the intra-file equivalent.
         await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe(intraCopyBytes);
-        // Claim (3): the retirement shares the canonical serializer — restated independently.
         await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe(expectedSource);
       });
     });
@@ -830,26 +773,17 @@ describe("Edit wire contract — fail-closed placement guard on the published se
     } catch (error) {
       caught = error;
     }
-    // WHY: the guard is the ONLY fail-closed check on the internal placement value — every other
-    // WHY: consumer falls through to the in-place path, which REMOVES the target span. It must
-    // WHY: stay a refusal (E_BAD_PAYLOAD), and as a MODEL-tier rejection it must name the field
-    // WHY: the retrying party can act on: the wire says `at`, not the internal `placement`.
     expect(caught, "the guard must stay fail-closed").toBeInstanceOf(DomainError);
     const de = caught as DomainError;
     expect(de.code).toBe("E_BAD_PAYLOAD");
     expect(de.message).toContain('"at"');
     expect(de.message).toContain("Nothing was written");
-    // PIN (remediation-2 B2 — green at HEAD; falsification owed by mutation phase: the M5
-    // mutation that rewords `placementSpellings()` must fail HERE, not only on the field name).
     expect(de.message).toContain('"in-place", "before" or "after"');
   });
 });
 
 describe("Edit wire contract — admission names the field (§9.2, §9.3)", () => {
   it('refuses text_ref.file "" at admission and names the "file" field', () => {
-    // WHY: (§9.2) an empty `file` string is admitted today and only fails later as
-    // WHY: `[E_UNSUPPORTED_FILE] Path is a directory: .` — the refusal belongs at admission,
-    // WHY: naming the field (echo-stripped clause, so the naming is real).
     expectBadPayload(
       req([
         {
@@ -863,10 +797,6 @@ describe("Edit wire contract — admission names the field (§9.2, §9.3)", () =
   });
 
   it("names the MISSING required key when an item's key set lacks one", () => {
-    // WHY: (§9.3) the missing-key path today renders `has unsupported field(s)  (...)` with a
-    // WHY: BLANK list — the illegal key set is also missing a REQUIRED key, and the refusal must
-    // WHY: name it. The echoed JSON contains `"anchor_to"` too, so the clause is checked after
-    // WHY: stripping — at HEAD nothing in the refusal itself names it.
     expectBadPayload(req([{ anchor_from: "a1B", text: "T", at: "after" }]), '"anchor_to"');
   });
 });
@@ -884,10 +814,6 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
           text_ref: { anchor_from: h[0]!, anchor_to: h[1]!, file: "./sample.txt", mode: "cut" },
         },
       ]);
-      // WHY: (§9.4) foreign-vs-same-file is decided by RAW STRING equality today, so this legal
-      // WHY: intra-file cut is refused as a foreign-source cut. It must resolve to the same
-      // WHY: contract as the unaliased intra-file cut pinned above ("c\nd\na\nb\n", source
-      // WHY: retired) — at HEAD `admit` throws and the test is red.
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
       if (!isMutationSuccess(result)) return;
@@ -899,13 +825,6 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
   });
 
   it('a same-file copy spelled "./sample.txt" takes the reference machinery, not the literal path', async () => {
-    // WHY: (§9.4) the aliased spelling is classified FOREIGN today (raw-string equality) and
-    // WHY: collapses to a literal payload. The witness is a single blank line: the literal path
-    // WHY: cannot carry it (the empty text trips the literal guard), while the reference arm
-    // WHY: writes the blank line verbatim. A copy routed through the reference machinery must
-    // WHY: behave exactly like the plain same-file copy — the plain arm is the oracle, no
-    // WHY: hand-written expected bytes. At HEAD the aliased arm is refused where the plain arm
-    // WHY: succeeds, so this is red.
     let plainResult = "";
     await withTempFile("sample.txt", "a\n\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
@@ -947,10 +866,6 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
   });
 
   it("a same-file cut spelled with an ABSOLUTE alias is the same SAME-FILE cut (remediation-2 B3)", async () => {
-    // RED at `ad80222`: admission compares LEXICALY normalized spellings, so the absolute alias
-    // differs from `sample.txt`, is classified foreign, and the cut is refused — two definitions
-    // of "same file". With the one realpath rule the engine already uses, this must behave
-    // byte-identically to the unaliased intra-file cut (source retired, "c\nd\na\nb\n").
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
@@ -983,11 +898,6 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
   });
 });
 
-// WHY: (ticket-67) strict structured-output harnesses spell "absent" as an explicit null
-// WHY: (every property required). The four optional slots (`text`, `text_ref`, `at`, root
-// WHY: `mode`) read null/undefined as absent at admission — one predicate, so the gate, the
-// WHY: validators and the normalizers cannot disagree. The XOR contract stands: two genuine
-// WHY: payloads are still refused, and a null on both sides is still no payload.
 describe("Edit wire contract — null reads as absent (ticket-67)", () => {
   it('admits { text: "T", text_ref: null } as a literal and normalizes to the text', () => {
     const admitted = admit(
@@ -1063,11 +973,6 @@ describe("Edit wire contract — null reads as absent (ticket-67)", () => {
   });
 });
 
-// WHY: (ticket-75) the #67 fold stopped at the item's own slots: `text_ref.file` is optional one
-// WHY: level down, and a strict structured-output harness spells an omitted optional property as an
-// WHY: explicit null, so the refusal named a rule the harness could not obey. The fold reaches it
-// WHY: now, while the REQUIRED nested slots (`mode`, both anchors) keep refusing — this block pins
-// WHY: both halves of that distinction, so neither can drift into the other silently.
 describe("Edit wire contract — nested text_ref nulls (ticket-75)", () => {
   it("admits text_ref.file: null as absent and drops the key rather than carrying null", () => {
     const admitted = admit(
@@ -1083,7 +988,6 @@ describe("Edit wire contract — nested text_ref nulls (ticket-75)", () => {
     const payload = admitted.edits[0]!.payload;
     if (payload.kind !== "reference") throw new Error("expected a reference payload");
     expect(payload).toMatchObject({ kind: "reference", mode: "copy" });
-    // The fold deletes the key: a null left on the span would be read as a file named "null".
     expect(payload.span).not.toHaveProperty("file");
   });
 
@@ -1142,13 +1046,12 @@ describe("Edit wire contract — nested text_ref nulls (ticket-75)", () => {
   });
 });
 
-// WHY: (binary-selection-remediation Option C, ADR-0036) the served schema must agree with
-// WHY: admission: every optional slot admits `null` (which `foldAbsentSlots` reads as absent) and
-// WHY: every required slot refuses it. The predicate mirrors pi's `schemaAllowsNull`
-// WHY: (`@earendil-works/pi-ai` `api/constrained-sampling.js`): null is spelled as its own
-// WHY: `type`, or as a variant inside `anyOf`/`enum`/`const`. FALSIFIABILITY: before this change
-// WHY: every optional property was a bare `Type.Optional(...)`, so `schemaAllowsNull` returned
-// WHY: false and the positive loop below failed on its first entry (`edits[].text`).
+/**
+ * Mirrors pi's `schemaAllowsNull` (`@earendil-works/pi-ai` `api/constrained-sampling.js`): null
+ * is spelled as its own `type`, or as a variant inside `anyOf`/`enum`/`const`. The served schema
+ * must agree with admission — every optional slot admits `null` (read as absent by
+ * `foldAbsentSlots`) and every required slot refuses it.
+ */
 type NullProbe = { type?: unknown; const?: unknown; enum?: unknown; anyOf?: unknown };
 
 function schemaAllowsNull(schema: unknown): boolean {

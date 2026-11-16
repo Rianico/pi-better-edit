@@ -53,8 +53,6 @@ function mimeToLFile(mime: string | undefined): LFile | undefined {
   return { kind: "binary", description: mime };
 }
 
-// WHY: narrowing `fs.Stats` to the fields this codebase reasons about keeps `node:fs` out of the
-// WHY: domain types, so callers — tests included — can hand over a plain object, not a `Stats` fixture.
 /** Snapshot identity and size: the only `fs.Stats` fields this codebase reads. */
 export interface FileStats {
   ino: number;
@@ -66,8 +64,6 @@ export interface FileStats {
 interface LFileText {
   kind: "text";
   text: string;
-  // WHY: the load path already stat'd this path; handing the result to the caller keeps the read
-  // WHY: path at one `stat` syscall per file instead of re-stat'ing for the snapshot id.
   stats?: FileStats;
   hadUtf8DecodeErrors?: true;
 }
@@ -127,11 +123,6 @@ export async function loadFileKindAndText(
     let utf8Suspect = false;
     let newlineCount = 0;
     const parts: string[] = [];
-    // WHY: (04b-rem P2-3) an invalid UTF-8 sequence ALWAYS makes a non-fatal decoder emit U+FFFD,
-    // WHY: so the absence of U+FFFD proves the round-trip is lossless; its presence proves
-    // WHY: nothing — the file may legitimately contain the replacement character. Suspicion
-    // WHY: therefore decides what to CHECK, never what to REPORT: the report is the byte
-    // WHY: comparison below, which tells a corrupt file and a legal U+FFFD character apart.
     function noteUtf8(decoded: string): void {
       if (!utf8Suspect && decoded.includes("\uFFFD")) utf8Suspect = true;
     }
@@ -169,12 +160,6 @@ export async function loadFileKindAndText(
     parts.push(decodeChunk(new Uint8Array(0), false));
 
     const text = parts.join("");
-    // WHY: the round-trip ORACLE: the decoded text is line-addressable without loss exactly when
-    // WHY: re-encoding it equals the file's bytes. Runs only on suspicion; re-reading the file is
-    // WHY: cheaper than keeping a parallel raw copy for every clean file.
-    // WHY: (04b-rem2 suggestion 1) the byte read goes through the file layer's ONE primitive —
-    // WHY: the oracle and every restore/compare site now read bytes the same way, including the
-    // WHY: BOM: the WHOLE byte image is compared, nothing is stripped at the oracle site.
     let hadUtf8DecodeErrors = false;
     if (utf8Suspect) {
       const rawBytes = await readBytes(filePath);
@@ -198,7 +183,7 @@ export async function loadFileKindAndText(
  * code points that reach the model invisibly, so a verbatim read names them instead of escaping
  * them — see docs/spec/search-and-read-evolution.md §6.
  */
-// eslint-disable-next-line no-control-regex -- WHY: these code points ARE the notice's subject.
+// eslint-disable-next-line no-control-regex -- these code points ARE the notice's subject.
 const NON_PRINTABLE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 
 export interface ControlCharReport {

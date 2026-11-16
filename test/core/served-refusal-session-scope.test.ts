@@ -32,10 +32,8 @@ describe("served-refusal tally — session scope (#132)", () => {
     const path = "/tmp/132-share.txt";
     expect(trackServedWriteRefusal("sess-share-a", path, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-share-a", path, REFUSED_LINE)).toBe(2);
-    // The second session starts at 1: no inherited tally from the first.
     expect(trackServedWriteRefusal("sess-share-b", path, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-share-b", path, REFUSED_LINE)).toBe(2);
-    // One composite key per (session, path), never one per refusal.
     expect(_servedRefusalSize()).toBe(2);
   });
 
@@ -45,7 +43,6 @@ describe("served-refusal tally — session scope (#132)", () => {
     expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(1);
     expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(2);
     expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(3);
-    // A different refused payload is a new refusal, not a continuum.
     expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", "Zz9X│hello")).toBe(1);
     expect(_servedRefusalSize()).toBe(1);
   });
@@ -58,7 +55,6 @@ describe("served-refusal tally — session scope (#132)", () => {
     expect(trackServedWriteRefusal("sess-clear-other", a, REFUSED_LINE)).toBe(1);
     expect(_servedRefusalSize()).toBe(3);
     clearServedRefusals("sess-clear", a);
-    // The composite key for exactly that (session, path) is gone.
     expect(_servedRefusalSize()).toBe(2);
     expect(trackServedWriteRefusal("sess-clear", a, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-clear", b, REFUSED_LINE)).toBe(2);
@@ -69,8 +65,6 @@ describe("served-refusal tally — session scope (#132)", () => {
   it("bounds the tracker globally without draining one session first", () => {
     const sessions = Array.from({ length: 10 }, (_, index) => `sess-multi-${index}`);
     const pathOf = (pathIndex: number) => `/tmp/132-multi-${pathIndex}.txt`;
-    // Round-robin insertion: 10 sessions x 30 paths = 300 distinct composite keys, so
-    // every session's keys are spread across the whole insertion order.
     for (let pathIndex = 0; pathIndex < 30; pathIndex++) {
       for (const sessionKey of sessions) {
         trackServedWriteRefusal(sessionKey, pathOf(pathIndex), REFUSED_LINE);
@@ -78,11 +72,9 @@ describe("served-refusal tally — session scope (#132)", () => {
       expect(_servedRefusalSize()).toBeLessThanOrEqual(SERVED_REFUSAL_MAX_ENTRIES);
     }
     expect(_servedRefusalSize()).toBe(SERVED_REFUSAL_MAX_ENTRIES);
-    // The 44 globally oldest keys are gone: each session's earliest paths restart at 1.
     for (const sessionKey of sessions) {
       expect(trackServedWriteRefusal(sessionKey, pathOf(0), REFUSED_LINE)).toBe(1);
     }
-    // No session was drained: every session still holds its newest path and it sharpens.
     for (const sessionKey of sessions) {
       expect(trackServedWriteRefusal(sessionKey, pathOf(29), REFUSED_LINE)).toBe(2);
     }
@@ -97,22 +89,16 @@ describe("served-refusal tally — session scope (#132)", () => {
     for (let index = 0; index < 200; index++) {
       trackServedWriteRefusal("sess-lru-other", `/tmp/132-lru-${index}.txt`, REFUSED_LINE);
     }
-    // A resubmission moves its key to the tail of the LRU order.
     expect(trackServedWriteRefusal(sessionKey, touched, REFUSED_LINE)).toBe(2);
     for (let index = 200; index < 300; index++) {
       trackServedWriteRefusal("sess-lru-other", `/tmp/132-lru-${index}.txt`, REFUSED_LINE);
     }
     expect(_servedRefusalSize()).toBe(SERVED_REFUSAL_MAX_ENTRIES);
-    // 46 keys over the cap were evicted, and the resubmitted one is not among them —
-    // insertion-order FIFO would have evicted it as the 2nd-oldest key.
     expect(trackServedWriteRefusal(sessionKey, touched, REFUSED_LINE)).toBe(3);
-    // The least recently refused key is the head, and the head is what goes.
     expect(trackServedWriteRefusal(sessionKey, oldest, REFUSED_LINE)).toBe(1);
   });
 
   it("rejects a NUL delimiter in a session key or a path (composite-key safety)", () => {
-    // The `\0` separator is enforced, never assumed: an input carrying it is refused, so two
-    // scopes can never fuse into one key and silently share a count.
     expect(() =>
       trackServedWriteRefusal("sess\0injected", "/tmp/132-nul.txt", REFUSED_LINE),
     ).toThrow(TypeError);
@@ -123,7 +109,6 @@ describe("served-refusal tally — session scope (#132)", () => {
       trackServedEditRefusal("sess\0injected", "/tmp/132-nul.txt", "Ab3X", "Cd4X", REFUSED_LINE),
     ).toThrow(TypeError);
     expect(() => clearServedRefusals("sess-nul", "/tmp/132\0injected.txt")).toThrow(TypeError);
-    // A rejected scope inserts nothing: the tracker stays empty.
     expect(_servedRefusalSize()).toBe(0);
   });
 });
@@ -135,7 +120,6 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "shared.txt"));
       const sessionA = { ...ctx, sessionManager: { getSessionId: () => "sess-132-a" } };
       const sessionB = { ...ctx, sessionManager: { getSessionId: () => "sess-132-b" } };
-      // Each session serves itself the file, so each holds its own served mirror.
       await readTool.execute("r1", { file: "shared.txt" }, undefined, undefined, sessionA);
       await readTool.execute("r2", { file: "shared.txt" }, undefined, undefined, sessionB);
       const payload = {
@@ -153,7 +137,6 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
       expect(aSecond.message).toContain("submission 2");
       expect(aSecond.message).toContain("Identical refusal");
 
-      // A path-keyed counter would report 3× here — the other session's tally.
       const bFirst = await editTool
         .execute("e1", payload, undefined, undefined, sessionB)
         .catch((error: unknown) => error as Error);

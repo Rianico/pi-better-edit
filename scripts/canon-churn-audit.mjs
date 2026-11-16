@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * WHY: re-runnable formatter-churn audit — measures, per code point, whether locally installed
+ * Re-runnable formatter-churn audit: measures, per code point, whether locally installed
  * formatters rewrite it in source. Evidence generator for any future canon version (issue #22).
  * Invocation: node scripts/canon-churn-audit.mjs — a formatter rejecting a snippet is measured
  * as skip for that language; formatter behaviour is never asserted from docs/articles records.

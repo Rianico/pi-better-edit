@@ -72,8 +72,6 @@ describe("resolveBashMultiFileSettings — precedence ladder", () => {
   });
 
   it("resolves PER KEY: one from the project file, its sibling from the global file", async () => {
-    // WHY per key: a scope that sets one cap says nothing about the other, so the other keeps
-    // falling through the ladder — the property the rung report exists to expose.
     await seedProjectConfig({ bash: { multiFile: { maxFiles: 4 } } });
     await seedGlobalConfig({ bash: { multiFile: { maxRows: 100 } } });
     const resolved = resolveBashMultiFileSettingsWithSources(projectDir, warn);
@@ -96,8 +94,6 @@ describe("resolveBashMultiFileSettings — precedence ladder", () => {
     await seedProjectConfig({ bash: { multiFile: { maxFiles: 42 } } });
     await seedGlobalConfig({ bash: { multiFile: { maxFiles: 5 } } });
     const resolved = resolveBashMultiFileSettingsWithSources(projectDir, warn);
-    // WHY: the dropped project value is NOT clamped to 10 — the cap only ever falls through, so an
-    // WHY: operator never gets a cap they did not configure.
     expect(resolved.maxFiles).toEqual({ value: 5, source: "global" });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain(projectConfigPath());
@@ -159,8 +155,6 @@ describe("saveBashMultiFileConfig", () => {
   it("writes one cap into the project file and reports the path", async () => {
     const { path } = saveBashMultiFileConfig({ maxFiles: 8 }, "project", projectDir);
     expect(path).toBe(projectConfigPath());
-    // WHY `$schema` is expected: the shared writer stamps it on every file it creates, so a saved
-    // WHY: file is self-describing for editors.
     expect(JSON.parse(await readFile(path, "utf-8"))).toEqual({
       $schema: CONFIG_SCHEMA_ID,
       bash: { multiFile: { maxFiles: 8 } },
@@ -168,9 +162,6 @@ describe("saveBashMultiFileConfig", () => {
   });
 
   it("preserves bash.view and the sibling cap in both directions", async () => {
-    // WHY both directions: two owners write inside the same `bash` object, so each must spread what it
-    // WHY: did not own — a caps write dropping `view`, or a `view` write dropping the caps, would
-    // WHY: silently revert the other setting.
     saveBashViewConfig("off", "project", projectDir);
     saveBashMultiFileConfig({ maxFiles: 6 }, "project", projectDir);
     saveBashMultiFileConfig({ maxRows: 150 }, "project", projectDir);
@@ -216,7 +207,6 @@ describe("saveBashMultiFileConfig", () => {
       expect(caught).toBeInstanceOf(DomainError);
       expect((caught as DomainError).code).toBe("E_INTERNAL_INVARIANT");
     }
-    // WHY: nothing was written, so a rejected value never reads back as the default.
     await expect(readFile(projectConfigPath(), "utf-8")).rejects.toThrow();
   });
 });

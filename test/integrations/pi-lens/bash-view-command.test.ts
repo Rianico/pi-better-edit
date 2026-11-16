@@ -125,7 +125,6 @@ describe("bash-view command", () => {
       { label: "bash-view on", value: "bash-view on" },
       { label: "bash-view off", value: "bash-view off" },
       { label: "bash-view status", value: "bash-view status" },
-      // WHY: (ADR-0049 M6) the multi-file cap surface is part of the same prefix filter.
       { label: "bash-view multi-file", value: "bash-view multi-file" },
       { label: "bash-view multi-file status", value: "bash-view multi-file status" },
       { label: "bash-view multi-file max-files", value: "bash-view multi-file max-files" },
@@ -281,9 +280,7 @@ describe("bash-view command", () => {
   });
 });
 
-// WHY (ADR-0049 M6): the caps are operator policy with a closed range, so the surface must show the
-// effective value WITH its rung, accept a LOWERED value into either scope, and refuse anything outside
-// the range without writing a byte — a silently dropped cap would read back as the default.
+// Ref: docs/.archive_adrs/0049-multi-file-bash-views.md
 describe("bash-view multi-file command (ADR-0049 M6)", () => {
   it("prints both effective caps with their rungs and both file values, creating nothing", async () => {
     const { options } = captureCommand();
@@ -298,7 +295,6 @@ describe("bash-view multi-file command (ADR-0049 M6)", () => {
     expect(text).toContain("bash.multiFile.maxRows: 2000 (default)");
     expect(text).toContain("allowed: maxFiles 2-10, maxRows 1-2000");
     expect(text).toContain("precedence: project > global > default");
-    // WHY nothing on disk: a status read never creates the config directory or the file.
     expect(existsSync(join(projectDir, ".pi"))).toBe(false);
   });
 
@@ -311,7 +307,6 @@ describe("bash-view multi-file command (ADR-0049 M6)", () => {
     expect(notifications[0]).toContain(projectConfigPath());
     expect(readJson(projectConfigPath())).toMatchObject({ bash: { multiFile: { maxFiles: 8 } } });
 
-    // WHY the scope defaults to project: the surface mirrors `bash-view` [project|global] ordering.
     await options.handler("bash-view multi-file max-rows 1500", ctx);
     await options.handler("bash-view off", ctx);
     expect(readJson(projectConfigPath())).toMatchObject({
@@ -323,8 +318,6 @@ describe("bash-view multi-file command (ADR-0049 M6)", () => {
 
     notifications.length = 0;
     await options.handler("bash-view multi-file status", ctx);
-    // WHY project still wins for maxFiles and the row cap comes from the project too: the ladder is
-    // WHY: resolved per key and the project file sets both.
     expect(notifications[0]).toContain("bash.multiFile.maxFiles: 8 (project)");
     expect(notifications[0]).toContain("bash.multiFile.maxRows: 1500 (project)");
   });
@@ -354,7 +347,6 @@ describe("bash-view multi-file command (ADR-0049 M6)", () => {
     await options.handler("bash-view multi-file status extra", ctx);
     expect(notifications[6]).toContain("Too many arguments");
 
-    // WHY nothing written: a rejected value must never read back as the default.
     expect(existsSync(join(projectDir, ".pi"))).toBe(false);
     expect(existsSync(globalConfigPath())).toBe(false);
   });

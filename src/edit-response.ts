@@ -29,10 +29,6 @@ export type EditDetails = {
   contentHash?: string;
   warnings?: string[];
   driftNotice?: string;
-  /**
-   * WHY: I4 (spec §5) — the applied summary line the model-visible text leads with, ahead of the
-   * WHY: anchored diff. `diff` stays the bare collapsed projection for TUI presentation clients.
-   */
   summary?: string;
 };
 type TResult = {
@@ -241,7 +237,6 @@ export function buildChanged(input: SuccessInput): TResult {
     removedLines,
   });
   const denseServedRows = denseServeRows(resultHashes);
-  // WHY: the explicit `editMeta` range wins, else the rendered diff names it; either may be absent.
   const firstChangedLine = editMeta.firstChangedLine ?? diffResult.firstChangedLine;
   const lastChangedLine = editMeta.lastChangedLine ?? diffResult.lastChangedLine;
 
@@ -279,11 +274,6 @@ export type BatchSection = {
   totalAddedLines: number;
   totalRemovedLines: number;
   literalDeclarations?: number;
-  /**
-   * WHY: the commit path (`apply`) already renders this section's diff to derive the mirror's
-   * WHY: `firstChangedLine`; carrying it here keeps genDiff at one render per commit — the
-   * WHY: model-visible text and `servedByPath.firstChangedLine` come from that same render.
-   */
   renderedDiff?: {
     diff: string;
     firstChangedLine: number | undefined;
@@ -340,8 +330,6 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       s.renderedDiff ??
       genDiff(s.originalNormalized, s.result, 1, s.resultHashes, s.originalHashes);
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
-    // WHY: dense rows for the batch serve record — position and hash only; canon evidence is
-    // WHY: derived from the leases the record grants (#151).
     const denseRows = denseServeRows(s.resultHashes);
     if (denseRows.length > 0) {
       servedByPath.push({
@@ -365,8 +353,6 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
   const summary = `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
-  // WHY: I4 (spec §5) — the model-visible text leads with the summary line, a blank line, then the
-  // WHY: collapsed anchored diff; `details.diff` stays the bare projection for TUI presentation.
   const text = modelText(summary, diff, warnings);
 
   return {
@@ -420,7 +406,7 @@ function innerDiagnostic(error: Error): string {
 }
 
 /**
- * Indent a rendered options block under the item it belongs to inside a batch bullet. WHY: a
+ * Indent a rendered options block under the item it belongs to inside a batch bullet. A
  * wrapper renders one line per failing item, so an unindented `Options:` line would read as a
  * third alternative between bullets.
  */
@@ -439,38 +425,23 @@ function indentOptions(message: string): string {
  */
 export function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
   const { error, index, path } = args;
-  // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
-  // WHY: so the wrapper must not render them a second time — one serve block per rejection.
-  // WHY: the inner `details.cause` (user-facing diagnosis) is preserved on the wrapper so a
-  // WHY: batched failure still emits it.
-  // WHY: the failing edit's pre-rendered serve block is forwarded too (spec D2): an atomic
-  // WHY: batch abort must preserve the serve block or the retry owes a re-read.
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
       BATCH_ATOMICITY_TRAILER,
   );
-  // WHY: the whole forwarded payload moves through the envelope reader/writer pair
-  // WHY: (src/error-envelope.ts) — the wrapper stamps exactly the validated slots the
-  // WHY: inner rejection carries: code, cause (with its `details` projection), rows, block.
   attachEnvelope(wrapped, readEnvelope(error) ?? {});
   return wrapped;
 }
 /**
- * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`:
- * one aggregated rejection with one bullet per failing item (`- edit[1]: …`) so a single
- * resubmission can fix them all instead of burning one turn per failure. The batch is still
- * all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic
- * (and code) inline, so the model can act on every failure without a re-read.
- *
- * Field aggregation (spec D2 — the envelope must stay actionable):
- * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
- *   first item's domain code so `toFailure` still routes the typed path (and keeps this full
- *   message) instead of rewriting it as `E_UNKNOWN`.
- * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed
- *   batch states each cause inline instead of promoting one.
- * - `servedRows`: the union of every failing item's rows (each item's retry leases were already
- *   recorded on its own rejection path).
- * - `servedBlock`: every failing item's block, in item order.
+ * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`: one aggregated rejection with one
+ * bullet per failing item (`- edit[1]: …`) so a single resubmission can fix them all instead of burning a turn per failure. The batch
+ * is still all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic and code inline, so the model
+ * can act on every failure without a re-read.
+ * Field aggregation (spec D2 — the envelope must stay actionable): `code` — every item keeps its own `[E_*]` inline in the message,
+ * and the envelope carries the first item's domain code so `toFailure` still routes the typed path (keeping this full message)
+ * instead of rewriting it as `E_UNKNOWN`; `details`/`cause` — carried only when every failing item agrees on one diagnosis, a mixed
+ * batch stating each cause inline instead of promoting one; `servedRows` — the union of every failing item's rows (each item's retry
+ * leases were already recorded on its own rejection path); `servedBlock` — every failing item's block, in item order.
  */
 export function batchAbortForMany(args: {
   failures: { error: Error; index: number }[];
@@ -484,9 +455,6 @@ export function batchAbortForMany(args: {
       BATCH_ATOMICITY_TRAILER,
   );
   const envelopes = failures.map((f) => readEnvelope(f.error) ?? {});
-  // WHY: promotion keys off the FIRST item's raw string code — registry member or not —
-  // WHY: so a non-registry head code suppresses the typed route instead of letting a
-  // WHY: later item's code promote (the aggregation rule `toFailure`'s routing depends on).
   const firstCode = failures.map((f) => rawCodeOf(f.error)).find((code) => code !== undefined);
   const envelope: ErrorEnvelope = {};
   if (firstCode !== undefined && isDomainErrorCode(firstCode)) {
@@ -520,15 +488,9 @@ export function batchAbortForMany(args: {
  * `batchAbortForMany` instead so every malformed item is reported together.
  */
 export function wrapParseFailure(error: Error, index: number, path: string): Error {
-  // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
-  // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
-  // WHY: hunt for coordinate overlap.
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n${BATCH_ATOMICITY_TRAILER}`,
   );
-  // WHY: the wrapper carries the inner code and diagnosis through the envelope pair so the
-  // WHY: failure envelope keeps the code the model can act on. A parse failure carries no
-  // WHY: rows or block — only the two diagnostic slots are forwarded here.
   const { code, cause } = readEnvelope(error) ?? {};
   attachEnvelope(wrapped, {
     ...(code !== undefined ? { code } : {}),

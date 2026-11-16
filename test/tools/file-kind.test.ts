@@ -12,9 +12,6 @@ import {
 useTestHome();
 
 describe("file kind guards in tools", () => {
-  // REMEDIATION P2-3 reverses this file's old witness: a lossy edit that re-encoded U+FFFD over
-  // the original bytes was the defect. The read path keeps disclosing such files; the edit path
-  // now refuses before any mutation.
   it("edit discloses invalid utf-8 on read but refuses to edit it (bytes do not round-trip)", async () => {
     const bytes = new Uint8Array([0xff, 0x28, 0x0a, 0x69, 0x6e, 0x74, 0x0a]);
     await withTempBytes("bad-utf.ts", bytes, async ({ cwd, path }) => {
@@ -63,12 +60,10 @@ describe("file kind guards in tools", () => {
       );
       const text = readResult.content[0].text as string;
 
-      // The bytes stay verbatim: the raw controls are emitted, never an escaped form.
       expect(text).toContain("\u0007beta\u001b");
       expect(text).not.toContain("\\x07");
       expect(text).not.toContain("\\u001b");
 
-      // The notice names the invisible characters the rows carry.
       expect(text).toContain("2 non-printable control characters present: U+0007, U+001B");
       expect(text).toContain("shown verbatim");
     });

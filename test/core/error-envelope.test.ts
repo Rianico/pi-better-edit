@@ -15,8 +15,6 @@ import { DomainError } from "../../src/domain-errors.js";
 describe("error envelope — one assembler/reader for the forwarded rejection fields", () => {
   it("attachEnvelope round-trips all five forwarded fields", () => {
     const err = new Error("[MODEL] wrapped rejection");
-    // WHY: `payloadMessage` is single-purpose, so the carrier code must be the one the
-    // WHY: reader's gate admits — a foreign code drops that slot (pinned below).
     attachEnvelope(err, {
       code: "E_BAD_PAYLOAD",
       cause: "retirement",
@@ -31,8 +29,6 @@ describe("error envelope — one assembler/reader for the forwarded rejection fi
       servedBlock: "abc│b",
       payloadMessage: 'Field "at" needs one line.',
     });
-    // WHY: the wire projection is pinned too: consumers catch `details.cause` off the
-    // WHY: thrown error, and `toFailure`'s failure shape carries the {code, cause} twin.
     const wire = err as Error & { code?: unknown; cause?: unknown; details?: unknown };
     expect(wire.code).toBe("E_BAD_PAYLOAD");
     expect(wire.cause).toBe("retirement");
@@ -44,11 +40,7 @@ describe("error envelope — one assembler/reader for the forwarded rejection fi
     attachEnvelope(err, { code: "E_STALE_ANCHOR", payloadMessage: 'Field "at" needs one line.' });
     expect(readEnvelope(err)?.code).toBe("E_STALE_ANCHOR");
     expect(readEnvelope(err)?.payloadMessage).toBeUndefined();
-    // WHY: the writer gates too, so reading the carrier directly proves the slot never landed.
-    // WHY: `readEnvelope` alone could not show a stamped leak, since the reader hides it.
     expect((err as { payloadMessage?: unknown }).payloadMessage).toBeUndefined();
-    // WHY: a blank message is absence, exactly like a blank served block, so the
-    // WHY: non-empty clause of the gate needs its own witness.
     const blank = new Error("blank payload message");
     attachEnvelope(blank, { code: "E_BAD_PAYLOAD", payloadMessage: "" });
     expect(readEnvelope(blank)?.payloadMessage).toBeUndefined();

@@ -76,10 +76,8 @@ describe("read.selectionRange ladder", () => {
 
 describe("schema", () => {
   it("validates read.selectionRange and carries no read.expansion key", () => {
-    const schema = JSON.parse(
-      // SAFETY: the repository's own schema file is a trusted local asset.
-      readFileSync(join("schemas", "pi-better-edit.json"), "utf-8"),
-    ) as {
+    // SAFETY: the repository's own schema file is a trusted local asset.
+    const schema = JSON.parse(readFileSync(join("schemas", "pi-better-edit.json"), "utf-8")) as {
       properties: { read: { properties: Record<string, { enum?: string[]; default?: string }> } };
     };
     const read = schema.properties.read.properties;

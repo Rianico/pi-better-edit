@@ -1,4 +1,4 @@
-/** SAFETY: @deprecated Import from "./payload-contract.js" instead — compatibility shim retained until next MAJOR per ADR-0007. Single source: src/payload-contract.ts. */
+/** SAFETY: @deprecated Import from "./payload-contract.js" instead — compatibility shim retained until next MAJOR per docs/.archive_adrs/0007-merged-edit-payload-hoisted-path.md. Single source: src/payload-contract.ts. */
 /** SAFETY: @deprecated Use `import { normReq } from "./payload-contract.js"` */
 export {
   /** SAFETY: @deprecated Use `import { normReq } from "./payload-contract.js"` */

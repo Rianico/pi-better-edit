@@ -1,23 +1,14 @@
 /**
- * Dev-only harnesses must not be able to touch the developer's real state (#190).
+ * Dev-only harnesses must not touch the developer's real state (#190). The state pass reads
+ * retired sources from `$HOME` and `$XDG_CONFIG_HOME` as well as the override, DELETES
+ * `.corrupt-*` dumps, and the settings ladder renames retired files to `.bak` — so pinning
+ * `PI_BETTER_EDIT_CONFIG_DIR` is only half the sandbox; the other half is one shared map
+ * (`scripts/lib/sandbox-env.mjs`), and this guard keeps every harness that names it on it.
  *
- * The state pass reads retired sources from `$HOME` and `$XDG_CONFIG_HOME` as well as from the
- * override, DELETES `.corrupt-*` dumps, and the settings ladder renames retired settings files to
- * `.bak`. A script that pins only `PI_BETTER_EDIT_CONFIG_DIR` therefore still has the walk of the
- * real `~/.config/pi-better-edit` behind it: running a benchmark could delete the developer's dumps
- * and move their log and their settings file. Pinning the override is only half the sandbox, so the
- * other half is one shared map (`scripts/lib/sandbox-env.mjs`), and this guard keeps every harness
- * that names the override on it.
- *
- * WHY the map is asserted by EXECUTING the helper in a child process instead of importing it: it is
- * a script-side `.mjs`, outside the TypeScript program (`tsconfig.json` includes `index.ts`, `src`
- * and `test`), so a typed import cannot see it — and the guard should read the real object the
- * harnesses spread into `env`, so a pin dropped from the helper fails here rather than in a
- * benchmark run that has already deleted something.
- *
- * WHY the source scan rather than a benchmark run: `bench-adopt` seeds a 100k-line fixture and
- * measures for minutes, so what is guarded is the seam — the helper is the only place a pin can be
- * added or lost, and the scan proves each harness hands that map to the process it runs.
+ * The map is read by EXECUTING the helper in a child process: it is a script-side `.mjs`,
+ * outside the TypeScript program, and the guard should read the real object the harnesses
+ * spread into `env`. The check is a source scan, not a benchmark run, which would seed a
+ * 100k-line fixture and measure for minutes.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";

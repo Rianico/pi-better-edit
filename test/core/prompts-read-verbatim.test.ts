@@ -18,8 +18,6 @@ describe("read prompts serve mode: verbatim", () => {
     expect(guidelines.some((guideline) => guideline.includes("never served"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes('mode: "verbatim"'))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes('mode: "outline"'))).toBe(true);
-    // WHY: outline must name when to use it and the follow-up window read; a bare mode name
-    // WHY: leaves the model free to read the whole file after the outline.
     expect(guidelines.some((guideline) => guideline.includes("above about 200 lines"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes("start with"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes("do not read the body"))).toBe(true);
@@ -30,7 +28,6 @@ describe("read prompts serve mode: verbatim", () => {
     expect(guidelines.some((guideline) => guideline.includes("Do not read the whole file"))).toBe(
       true,
     );
-    // WHY: image support recovered (PR #52) — the restored contract names the image-attachment return.
     expect(guidelines.some((guideline) => guideline.includes("image attachment"))).toBe(true);
     expect(guidelines.some((guideline) => guideline.includes("widened"))).toBe(false);
     expect(guidelines.some((guideline) => guideline.includes("re-read"))).toBe(false);

@@ -1,4 +1,3 @@
-// SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
@@ -22,18 +21,13 @@ import { reportInfo } from "./diagnostics.js";
 import { migrateLegacyState } from "./state-migration.js";
 
 import { stateRoot } from "./config-dir.js";
-// WHY: these have been this module's surface since before the diagnostics sink existed, so callers
-// WHY: keep importing them here; the implementation moved to config-dir.ts only to break the
-// WHY: diagnostics → hash-store → hash-identity → diagnostics import cycle.
 export { STORE_CONFIG_DIR_ENV_VAR, configDirOverride, stateRoot } from "./config-dir.js";
 
 export function hashStorePath(): string {
-  // SAFETY: join of trusted stateRoot with fixed "hash-store.sqlite" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.sqlite");
 }
 
 export function legacyHashStorePath(): string {
-  // SAFETY: join of trusted stateRoot with fixed "hash-store.json" — constant suffix, no traversal.
   return join(stateRoot(), "hash-store.json");
 }
 
@@ -128,7 +122,6 @@ function openDbWithBusyRetry(storePath: string, budget?: BusyBudget): OpenedDb {
 
 function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
   const db = new DatabaseSync(storePath, {
-    // WHY: this option IS the busy handler the wiring guard reads back as `PRAGMA busy_timeout`.
     timeout: resolveBusyBudget(budget).timeoutMs,
   });
   let stampDue: boolean;
@@ -149,10 +142,6 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
   return { db, stampDue };
 }
 
-// WHY: (#105 Q2, option B) the closed identifier set the DDL helpers resolve through. Each
-// WHY: `(table, column, definition)` triple lives here once, so an ALTER site cannot name a table,
-// WHY: column or definition that is not a member: the helper signatures below admit only members,
-// WHY: and the interpolated fragments in their statements come from those members.
 const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
   file_snapshots: { stat_key: "TEXT" },
@@ -180,18 +169,6 @@ function tableColumns(db: DatabaseSync, table: DdlTable): Set<string> {
   try {
     return readTableColumns(db, table);
   } catch {
-    // WHY: the empty set answers TWO questions at once — "this table is not there yet" and "this
-    // WHY: schema could not be read" — and the first is the intended one: PRAGMA table_info returns
-    // WHY: no rows for a missing table rather than throwing (measured), so only a failed READ
-    // WHY: arrives here (a closed handle reads `database is not open`).
-    // WHY: The two questions stop being interchangeable per caller: `addColumnIfMissing` and
-    // WHY: `renameGenerationColumn` go on to attempt their ALTER and fail LOUDLY (`duplicate column
-    // WHY: name`, `no such table`) rather than silently, and `buildStore`'s pre-session-keyed
-    // WHY: `served` shell guard reads `size > 0` as false and so skips its DROP — the safe direction.
-    // WHY: `hasTable` in `ensureSnapshotTables` does NOT take this path: it reads through
-    // WHY: `readTableColumns` and throws on a failed read (#105 Q1), because a failed read there
-    // WHY: would make `hasLeases` false and skip the sweep's two lease deletes — a PARTIAL sweep
-    // WHY: reporting success.
     return new Set<string>();
   }
 }
@@ -204,7 +181,7 @@ function addColumnIfMissing<T extends MigrationTable>(
   const definitions: Readonly<Record<string, string>> = MIGRATION_COLUMNS[table];
   const definition = definitions[column];
   if (!tableColumns(db, table).has(column)) {
-    // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+    // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
@@ -214,107 +191,38 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
   if (cols.has("anchor_generation")) return;
   if (cols.has("canon_version")) {
     try {
-      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+      // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
       db.exec(`ALTER TABLE ${table} RENAME COLUMN canon_version TO anchor_generation`);
       return;
     } catch {
-      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+      // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
       db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
-      // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+      // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
       db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
-      // SAFETY: the RENAME fallback tolerates a store that keeps both columns — the DROP is refused
-      // SAFETY: whenever SQLite cannot drop the column at all (measured on this runtime, which DOES
-      // SAFETY: support DROP COLUMN: an index naming the column refuses it with `error in index ...
-      // SAFETY: after drop column`), and a both-columns store is inert: every v7 reader/writer names
-      // SAFETY: `anchor_generation` only, and the leftover `canon_version` values were already copied
-      // SAFETY: over by the UPDATE above, so the stale column is never read. A concurrently open
-      // SAFETY: pre-rename process whose prepared statement names `canon_version` breaks fail-closed
-      // SAFETY: on its next step (same failure class as the v6 `canons` guard in `buildStore`) —
-      // SAFETY: exposure is the unreleased intermediate build only; see ADR-0031 §4.
+      // Ref: docs/.archive_adrs/0031-file-scoped-anchors-residual-and-generation-discipline.md
       try {
-        // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+        // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
         db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
-      } catch {
-        // WHY: DROP failure leaves the inert both-columns store; see SAFETY above.
-      }
+      } catch {}
       return;
     }
   }
-  // pi-lens-ignore: sql-injection -- Invariant: identifiers from closed MigrationTable/GenerationTable literal unions; no external input
+  // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
   db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
 }
 
-// WHY: (#87c) the open stamp — the store's own record that its schema, the generation its persisted
-// WHY: anchors were derived under, and the BUILD that wrote it all agree with the one reading it.
-// WHY: It is carried as the header field `PRAGMA user_version` (free: no query, no lock) plus one
-// WHY: indexed read of `meta`. The version row is part of the gate even though it carries no new
-// WHY: information, because the fast path SKIPS the upsert that maintains it: a gate that ignored the
-// WHY: row could leave a deleted one unrestored for as long as the rest of the stamp matched.
-// WHY: The value is a VERSIONED FORMAT and carries IDENTITY only:
-// WHY:     <format>:<store schema>:<canon>:<anchor generation>:<registered open hooks>
-// WHY: - the LEADING field is the format version: bump it when the field list below changes shape, so
-// WHY:   every stamp written by the old shape is invalid BY CONSTRUCTION rather than by luck.
-// WHY: - `HASH_STORE_VERSION` is the schema half — `constants.ts` says when it must move.
-// WHY: - `CANON_VERSION` and `ANCHOR_GENERATION` are the persisted anchor set's generation.
-// WHY: - the OPEN-HOOK COUNT is the build fingerprint. The registry is built by module top-level
-// WHY:   pushes, so the count is a function of the BUILD: a build that registers an ADDITIONAL hook
-// WHY:   mismatches every stamp an older build wrote, instead of silently suppressing the new hook's
-// WHY:   work. LIMITATION, stated rather than implied: a SWAP (one hook removed, another added) keeps
-// WHY:   the count, so this guards ADDITION only — a semantic change to an existing hook still needs
-// WHY:   the version bump above. The count is preferred over a hash of the hook list: a hash would
-// WHY:   have to be measured free on the bundled artifact to earn its place, and the count is free by
-// WHY:   construction. A module imported lazily that registers a hook later costs one extra slow open:
-// WHY:   the count moves, the stamp mismatches, and the next open re-stamps.
-// WHY: NO TIME-VARYING STATE IS FOLDED IN. Due-ness instants — the periodic served-mirror prune's
-// WHY: last-run row, the janitor's schedule — live in their OWN `meta` rows. Folding one in would
-// WHY: conflate "the store's identity changed" with "maintenance is due", and a reader could not tell
-// WHY: from a mismatch WHY the open took the slow path.
-// WHY: BOTH halves must match, so a half-written stamp can only send the next open down the slow path,
-// WHY: never past it.
-//
-// WHY: the traps this gate is built around, and how each is answered:
-// WHY: (a) A STAMP WITH A MISSING OBJECT: the DDL above runs unconditionally, so a dropped table or
-// WHY:     index is recreated on the very next open. What a matching stamp buys is narrower than
-// WHY:     "everything is present" — it says the SWEEP has run for this provenance, so the sweep is all
-// WHY:     it may skip. Rows the skipped sweep would have removed survive (see (c)); every reader that
-// WHY:     consumes them is generation-gated and fails closed, so the exposure is latency, not safety.
-// WHY: (b) TWO BUILDS SHARING ONE STORE: a build whose stamp differs — including one that writes no
-// WHY:     stamp at all — mismatches, re-sweeps, and re-stamps its own view; the other build then
-// WHY:     mismatches in turn. Fail-safe and merely slower: they alternate between the slow and fast
-// WHY:     paths instead of either one trusting a stamp it did not write.
-// WHY: (c) ROW-LEVEL POISONING: the deliberate trade, and the DURATION of the exposure. The sweep is an
-// WHY:     upgrade/migration action now, not a per-open one, so a row poisoned AFTER the sweep that
-// WHY:     stamped the store is not removed by a stamp-matching reopen. What this changes is WHEN foreign
-// WHY:     rows can exist, never WHETHER they can:
-// WHY:     - TODAY'S BOUND, the only deterministic one: the next stamp-invalidating event — a generation
-// WHY:       or schema bump, an ADDITIONAL open hook, or a fresh store. Nothing else bounds it until the
-// WHY:       periodic bound lands.
-// WHY:     - PERIODIC BOUND: IMPLEMENTED, at the lifecycle boundary this file does not own — the
-// WHY:       store janitor (`src/store-janitor.ts`) runs the sweep on `session_start` and
-// WHY:       `session_shutdown` only, throttled through its own `meta` row to at most about once a
-// WHY:       day, never on the tool-call open path, with batched deletes and a live-store guard. It
-// WHY:       reuses the SAME predicates this sweep runs (the exported `*_SQL` constants below), so
-// WHY:       an open-time sweep and a periodic one remove one set of rows. Load-bearing design is
-// WHY:       therefore in the code, not in prose.
-// WHY:     - TRIGGER: operator action only — a hand-edited store, or a copy taken from one. Nothing in
-// WHY:       normal operation reaches it.
-// WHY:     WHY THE TRADE IS SURVIVABLE: no honoring path trusts a stored row without re-deriving from the
-// WHY:       bytes it is about. A lease is generation-gated AT USE TIME (`isCurrentAnchorGeneration` on
-// WHY:       the lease's own 3-part `served_snapshot_hash`, `src/mutation-engine/edit-source.ts`), and its
-// WHY:       resolved span must clear the MVCC contiguity gate (`verifyRebasedSpan` -> `E_STALE_RANGE`,
-// WHY:       `src/hashline/served-verification.ts`), whose line identities come from the CURRENT content's
-// WHY:       own lineage (`positionsByIdentity`). The served mirror decides no identity either: it feeds
-// WHY:       an evidence-only scan of the lines about to be written (`findServedHashEcho`,
-// WHY:       `src/hashline/apply.ts`) and, through `retired`, the set of anchors the RESULT may not be
-// WHY:       ASSIGNED to: `loadBlockedHashes` hands them to the identity as `blockedHashes`, and
-// WHY:       `markHashUsed` pre-marks those slots, so no line of the new content is given one. A
-// WHY:       retired anchor is never refused — only never re-assigned — so it decides no identity
-// WHY:       either. A stale row's worst case is a MISS or a fail-closed refusal, never a wrongly
-// WHY:       honored line identity.
-// WHY: (d) `BEGIN IMMEDIATE` CANNOT NEST: the sweep keeps its own in-transaction guard, so a caller
-// WHY:     already inside a transaction still absorbs the sweep instead of opening a second one.
-// WHY: (e) The open hooks' `existed` flag keeps its meaning — computed once in `openStore`, cleared on
-// WHY:     rebuild — and nothing in this stamp reads or clears it.
+/**
+ * The persisted stamp's format — identity only, and BOTH halves must match: the `store_stamp` `meta`
+ * row plus the header field `PRAGMA user_version`, whose value is
+ * `<format>:<store schema>:<canon>:<anchor generation>:<registered open hooks>`.
+ * - the LEADING field moves whenever that field list changes shape, so a stamp the old shape wrote is
+ *   invalid by construction rather than by luck;
+ * - `HASH_STORE_VERSION` is the schema half (`constants.ts` says when it must move), `CANON_VERSION`
+ *   and `ANCHOR_GENERATION` the persisted anchor set's generation;
+ * - the open-hook COUNT is the build fingerprint: module top-level pushes make an ADDITIONAL hook
+ *   mismatch every older stamp. LIMITATION: a SWAP keeps the count, so a semantic change to an
+ *   existing hook still needs the format bump; no time-varying state folds in.
+ */
 const META_VERSION_KEY = "version";
 const META_STAMP_KEY = "store_stamp";
 
@@ -371,26 +279,20 @@ function writeStoreStamp(db: DatabaseSync): void {
   db.prepare(
     "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(META_STAMP_KEY, storeGenerationStamp());
-  // SAFETY: HASH_STORE_VERSION is this module's own numeric literal constant, never input.
   db.exec(`PRAGMA user_version = ${HASH_STORE_VERSION}`);
 }
 
 /**
- * Whether one PERIODIC open item is due, judged by the last-run instant it stores under `key` — one
- * indexed single-row read, so ASKING costs no write and no lock. An item with no record, or with a
- * record that is not an instant, is due: the conservative direction for retention, and the direction
- * that keeps an item running exactly as it did before this mechanism existed.
+ * The generation and provenance sweep predicates, once per family: this file's open-time sweep and
+ * the store janitor's periodic sweep (`src/store-janitor.ts`) both ask them, and a second copy is
+ * how the two sweeps would come to delete different rows. The tables they read are created here,
+ * the schema owner (docs/spec/content-addressed-line-identity-mvcc.md §5.1).
  */
-// WHY: snapshot-store reads and writes these tables through HashSnapshotIO, so the DDL lives
-// WHY: in the schema owner (spec §5.1) and both modules share one definition.
-// WHY: the store's generation and provenance predicates live HERE, once per family, because TWO
-// WHY: callers ask them — this file's open-time sweep and the store janitor's periodic sweep
-// WHY: (`src/store-janitor.ts`). A second hand-written copy of any of them is how the two sweeps
-// WHY: would drift into deleting different rows, and "the swept rows" would stop being one set.
-// WHY: anchor-gated lease prefix — the middle component of the 3-part served snapshot hash
-// WHY: (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`) is the anchor generation, so a
-// WHY: canon-only change keeps leases while a generation change sweeps them; pre-rename `3:`
-// WHY: 2-part rows carry no middle component and never match, so they sweep as unknown.
+/**
+ * A served snapshot hash is `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`, so this pattern
+ * keeps leases across a canon-only change and sweeps them on a generation change; pre-rename
+ * two-part rows carry no middle component and never match, so they sweep as unknown.
+ */
 const FOREIGN_LEASE_LIKE = `%:${ANCHOR_GENERATION}:%`;
 
 /** `file_snapshots` rows whose persisted anchor generation is not the current one. */
@@ -412,13 +314,9 @@ export const DANGLING_LEASE_SQL =
   "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
   "AND fs.committed = 1)";
 
-// WHY: (ADR-0045) the ONE session-TTL boundary for served leases. An ACTIVE (un-retired) lease
-// WHY: whose `updated_at` is older than `now - SERVED_TTL_MS` has lost resolution authority: the
-// WHY: read/edit grant path treats it as absent, the janitor may delete it, and the vacuum's pin
-// WHY: probe already ignores it. Retirement is the OTHER terminal state and keeps its own 1-hour
-// WHY: grace (`VACUUM_RETIRED_PIN_MS`); an expired active lease is never judged by that grace.
+// Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
 
-/** The instant before which an un-retired lease has lost resolution authority (ADR-0045). */
+/** The instant before which an un-retired lease has lost resolution authority (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md). */
 export function servedLeaseExpiryCutoff(now: number): number {
   return now - SERVED_TTL_MS;
 }
@@ -441,7 +339,7 @@ export const RESOLVABLE_LEASE_SQL =
 
 /**
  * The JS form of the same predicate, for the in-memory grant path (`leaseSpanSource`). The grant
- * path used to trust any un-retired lease regardless of age; hard expiry (ADR-0045) makes the age
+ * path used to trust any un-retired lease regardless of age; hard expiry (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md) makes the age
  * part of the authority, so an expired row is dropped before a lease identity can be returned.
  */
 export function isExpiredActiveLease(
@@ -451,6 +349,16 @@ export function isExpiredActiveLease(
   return lease.retired_at === null && lease.updated_at < servedLeaseExpiryCutoff(now);
 }
 
+/**
+ * Create the line-identity tables, then run the open-time generation sweep.
+ * The sweep deletes foreign-generation snapshots, orphan lineage rows and dangling leases; a
+ * current-generation row survives, and the served mirror is never swept at all — its `snapshotId` is
+ * a load-epoch string (`v2|<path>|<ino>|...`), not a `file_snapshots` id, so no generation predicate
+ * can judge it and an absent mirror costs one fresh serve.
+ * The four deletes commit as one `BEGIN IMMEDIATE` unit. The fast-path gate lives HERE because both
+ * sweep call sites — `buildStore` and the snapshot-store hook's `ensureSnapshotSchema` — reach the
+ * sweep through this function; `openStamp` settles the same decision during an open's hook phase.
+ */
 export function ensureSnapshotTables(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS file_snapshots (" +
@@ -485,49 +393,12 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_snapshot_line_id " +
       "ON line_lineage (snapshot_id, line_id)",
   );
-  // WHY: versions the persisted snapshot anchor set — same idiom as file_undo:
-  // WHY: rows written before the column read as 0 (unknown/foreign), never current.
-  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values,
-  // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
-  // WHY: so an older-build row misses and re-derives.
   renameGenerationColumn(db, "file_snapshots");
-  // WHY: the stat identity a READ materialization saw for this path (ADR-0043): a later read whose
-  // WHY: `stat(2)` identity equals it adopts this snapshot's lineage without re-deriving anchors. NULL
-  // WHY: on every row the read path did not stamp (edit/undo materializations, pre-v11 stores), and
-  // WHY: NULL never matches a lookup — the fallback is always the content-hash path.
+  // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   addColumnIfMissing(db, "file_snapshots", "stat_key");
   db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_path_stat ON file_snapshots (path, stat_key)");
-  // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
-  // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
-  // WHY: behind. Current-generation rows survive untouched (same-version sessions
-  // WHY: keep their leases). The served mirror is TTL-owned, never swept: its
-  // WHY: snapshotId is a load-epoch string (`v2|<path>|<ino>|...`), not a
-  // WHY: file_snapshots id, so no generation predicate can judge it — TTL pruning
-  // WHY: at open owns it, and an absent mirror is recoverable only by a fresh serve.
-  // WHY: Runs wherever the schema is ensured, so every store open sweeps.
-  // WHY: The four deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error
-  // WHY: (the vacuum-evict transaction idiom): a crash between the snapshot sweep and
-  // WHY: the orphan-lease delete can no longer strand leases that name no live snapshot
-  // WHY: until the next open.
-  // WHY: anchor-gated lease prefix — the middle component of the 3-part key
-  // WHY: (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`) is the anchor generation, so a
-  // WHY: canon-only change keeps leases while a generation change sweeps them; pre-rename `3:`
-  // WHY: 2-part rows carry no middle component and never match, so they sweep as unknown.
-  // WHY: (#87c) THE FAST PATH, and the reason the check lives HERE: both sweep call sites funnel
-  // WHY: through this one function — `buildStore`'s own call and the snapshot-store open hook's
-  // WHY: re-entrant `ensureSnapshotSchema` — so a single check covers both, and a future caller of the
-  // WHY: sweep cannot forget it.
-  // WHY: (#87d) WHOSE DECISION THIS IS: the store's, read from its stamp — EXCEPT while an open owns this
-  // WHY: connection and is in its hook phase, where `buildStore` has already settled the sweep at the
-  // WHY: sweep's own site and the stamp is not written yet (`openStamp`): re-deciding from the row there
-  // WHY: would sweep a SECOND time on every slow open. Either way the slow path runs ONCE per open.
-  // WHY: the DDL above stays unconditional (and takes no write lock once applied) — see trap (a).
   if (sweepSettledByOpen(db) || storeStampMatches(db)) return;
 
-  // WHY: tables created later in the fresh-build path (served_leases) may not exist
-  // WHY: yet when this runs — the sweep touches only what is there.
-  // WHY: (#105 Q1) the ONE loud reader: a failed read throws instead of answering "absent",
-  // WHY: because "absent" here skips the sweep's two lease deletes while reporting success.
   const hasTable = (table: DdlTable): boolean => {
     try {
       return readTableColumns(db, table).size > 0;
@@ -542,26 +413,16 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   const hasLeases = hasTable("served_leases");
   const sweepGenerations = (): void => {
     if (hasLeases) {
-      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
+      // pi-lens-ignore: sql-injection -- the WHERE fragment is a module-level constant built from literals; no external input
       db.exec(`DELETE FROM served_leases WHERE ${FOREIGN_GENERATION_LEASE_SQL}`);
-      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
+      // pi-lens-ignore: sql-injection -- the WHERE fragment is a module-level constant built from literals; no external input
     }
-    // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
+    // pi-lens-ignore: sql-injection -- the WHERE fragment is a module-level constant built from literals; no external input
     db.exec(`DELETE FROM file_snapshots WHERE ${FOREIGN_GENERATION_SNAPSHOT_SQL}`);
-    // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
+    // pi-lens-ignore: sql-injection -- the WHERE fragment is a module-level constant built from literals; no external input
     db.exec(`DELETE FROM line_lineage WHERE ${ORPHAN_LINEAGE_SQL}`);
-    // WHY: one provenance rule as of this sweep — a lease that names no surviving
-    // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
-    // WHY: as generation 0 and are swept above: a one-time pairing-baseline reset). The grant
-    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ? AND committed = 1`),
-    // WHY: so a lease naming a hash that survives only in a foreign path's row — or only
-    // WHY: in an uncommitted row — goes with the orphans.
-    // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and
-    // WHY: may evict a snapshot pinned only by a retired-past-grace lease (the vacuum pin
-    // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
-    // WHY: (the generation-gated grant misses) and self-healing.
     if (hasLeases) {
-      // pi-lens-ignore: sql-injection -- Invariant: WHERE fragment is a module-level constant built from literals; no external input
+      // pi-lens-ignore: sql-injection -- the WHERE fragment is a module-level constant built from literals; no external input
       db.exec(`DELETE FROM served_leases WHERE ${DANGLING_LEASE_SQL}`);
     }
   };
@@ -583,7 +444,6 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
       try {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
         reportDiagnostic(
           "hash-store",
           "[hash-store] failed to rollback sweep transaction:",
@@ -595,13 +455,14 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   }
 }
 
-// WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here
-// WHY: (spec §5.1) so the store and the undo domain cannot drift apart.
-// WHY: (ticket-04b §4) `transaction_id` correlates the undo rows of one multi-file cut
-// WHY: transaction — a column on `file_undo`, deliberately not a new table (ruling); NULL is an
-// WHY: ordinary single-file edit. `cut_intent` is the durable intent record written BEFORE the
-// WHY: first rename of a cut transaction and deleted when every file of the transaction is
-// WHY: committed — its presence at open time marks a half-applied transaction for repair.
+/**
+ * The undo schema, and the durable half of a multi-file cut: `file_undo` is the single source of
+ * truth for undo history, its DDL owned here (docs/spec/content-addressed-line-identity-mvcc.md
+ * §5.1) so the store and the undo domain cannot drift apart. `transaction_id` correlates the undo
+ * rows of one cut transaction — a column, deliberately not a new table. `cut_intent` is the intent
+ * record written BEFORE the first rename and deleted once every file of the transaction is
+ * committed, so its presence at open marks a half-applied transaction for repair.
+ */
 const FILE_UNDO_DDL =
   "CREATE TABLE IF NOT EXISTS file_undo (" +
   "path TEXT PRIMARY KEY, " +
@@ -621,27 +482,12 @@ const CUT_INTENT_DDL =
   "created_at INTEGER NOT NULL" +
   ")";
 
-// WHY: (04b-rem P2-2/P2-3) `raw_pre` carries the file's RAW pre-transaction text — the decoded
-// WHY: bytes, not the canonical fold. The admission round-trip guard (E_LOSSY_TEXT) makes decode
-// WHY: and re-encode byte-identical by construction, so a rollback or repair that writes
-// WHY: `Buffer.from(raw_pre, "utf-8")` restores EXACTLY the bytes found before the first rename,
-// WHY: stray line-break spellings included; NULL is a pre-remediation row (or a single-file edit)
-// WHY: and falls back to the canonical serialization.
-// WHY: (04b-rem P2-1) `direction` on `cut_intent` marks what the durable record describes: NULL is
-// WHY: the forward cut (two renames, target first), "revert" is a correlated UNDO whose per-file
-// WHY: writes failed partway — next-run repair completes the revert instead of the cut.
-// WHY: (04b-rem P3-6) `transaction_id` is read by equality (`undoGetTransaction`) on EVERY apply
-// WHY: (repair scan) and every correlated undo, so it gets an index; the intent scan orders by the
-// WHY: unindexed `created_at` over a table that holds at most a handful of rows — ADR-0028 §3's
-// WHY: "one indexed SELECT" said otherwise and is corrected there, not here.
+// Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
 export function ensureFileUndoSchema(db: DatabaseSync): void {
   db.exec(FILE_UNDO_DDL);
   addColumnIfMissing(db, "file_undo", "snapshot_hash");
   addColumnIfMissing(db, "file_undo", "transaction_id");
   addColumnIfMissing(db, "file_undo", "raw_pre");
-  // WHY: versions the persisted anchor set — existing rows keep 0 (never current),
-  // WHY: so a pre-bump store is refused, not migrated, on first open after upgrade.
-  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values.
   renameGenerationColumn(db, "file_undo");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
@@ -649,9 +495,6 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
 }
 
 function buildStore(db: DatabaseSync): boolean {
-  // WHY: the open's stamp-due decision is made ONCE here and handed back through `openDb`: it gates the
-  // WHY: sweep below and the `version` upsert at the end, and it is what `openStore` owes a stamp write
-  // WHY: for once the last hook has succeeded (see `writeStoreStamp`). Nothing here writes the stamp.
   const stampDue = !storeStampMatches(db);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
@@ -659,9 +502,6 @@ function buildStore(db: DatabaseSync): boolean {
   db.exec(
     "CREATE TABLE IF NOT EXISTS meta (" + "key TEXT PRIMARY KEY, " + "value TEXT NOT NULL" + ")",
   );
-  // WHY: v7 normalized CAS tables are strictly additive and idempotent — buildStore
-  // WHY: never drops them on meta.version mismatch, so a version flap in
-  // WHY: mixed-version / multi-worktree environments cannot destroy leases, lineage, or undo pins.
   ensureSnapshotTables(db);
   db.exec(
     "CREATE TABLE IF NOT EXISTS served_leases (" +
@@ -689,11 +529,6 @@ function buildStore(db: DatabaseSync): boolean {
     "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
       "ON served_leases (file_path, retired_at)",
   );
-  // WHY: the vacuum's pin probe asks "does this (path, snapshot_hash) still have a lease?", and one
-  // WHY: path holds a lease per served line (thousands). `idx_leases_file_retired` can narrow only to
-  // WHY: the path, so the probe re-scanned that path's whole lease set once per snapshot — on a
-  // WHY: 518 MB / 408k-lease store that single query spent 2.2 s on every materialization. This
-  // WHY: composite covers the (path, snapshot_hash) probe and the retired/updated filter.
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_file_snapshot " +
       "ON served_leases (file_path, served_snapshot_hash, retired_at, updated_at)",
@@ -713,13 +548,6 @@ function buildStore(db: DatabaseSync): boolean {
       ")",
   );
   ensureFileUndoSchema(db);
-  // WHY: complete v6 compatibility shells keep un-restarted v6 sessions and concurrent
-  // WHY: worktrees free of missing-table errors and v6 drop-table wipes, while v7 state
-  // WHY: stays isolated in v7 tables. Only the ancient pre-session-keyed served shell is
-  // WHY: rebuilt — it is unusable by either version without session_id. The shell keeps its
-  // WHY: `canons` column for the same reason: v6 prepares a statement naming it at store open,
-  // WHY: so a dropped column would break every v6 store operation. v7 never reads or writes it —
-  // WHY: canon evidence is derived from `served_leases.canon_hash` (issue #151).
   if (tableColumns(db, "served").size > 0 && !tableColumns(db, "served").has("session_id")) {
     db.exec("DROP TABLE served");
   }
@@ -756,21 +584,12 @@ function buildStore(db: DatabaseSync): boolean {
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  // WHY: non-destructive column migrations keep pre-existing databases aligned without wipes.
   addColumnIfMissing(db, "served", "retired");
   addColumnIfMissing(db, "served", "canons");
   addColumnIfMissing(db, "served", "snapshotId");
   addColumnIfMissing(db, "served_session_meta", "outline_folds");
 
   addColumnIfMissing(db, "undo", "result_content");
-  // WHY: (#87c) the other half of the fast path: a stamp that is already current records this version
-  // WHY: and this generation, so re-writing either would take the write lock on every open to say what
-  // WHY: the store already says. The upsert stays exactly where it was — LAST, inside the retry loop and
-  // WHY: after the sweep's transaction — so a contended store records its version only once the rest of
-  // WHY: the build has settled.
-  // WHY: (#87d) this row is NOT one of the stamp's two halves — it is the row the gate also reads — and
-  // WHY: its value is a build constant, so it belongs to the build. The halves that certify the WHOLE
-  // WHY: open are owed to `openStore` instead: written here they would certify hook work that has not run.
   if (!stampDue) return false;
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
@@ -780,20 +599,15 @@ function buildStore(db: DatabaseSync): boolean {
 }
 
 /**
- * The SQLite database header — the 100-byte prefix of every database file, described by the file
- * format spec (`fileformat2.html` §1.3, "The Database Header"). Every field below is read from
- * those bytes directly, which is what makes the smoke check cheap: no page cache, no statement, no
- * lock — one read of the file's first page.
- *
- * WHAT EACH FIELD CARRIES, and the range this check holds it to:
+ * The SQLite database header — the 100-byte prefix of every database file (`fileformat2.html`
+ * §1.3, "The Database Header"), read from those bytes directly: no page cache, no statement, no lock.
  * - bytes 0-15: the magic string `SQLite format 3\000`. A file without it is not a database.
- * - bytes 16-17: the page size, big-endian, a power of two from 512 to 32768 inclusive — or the
+ * - bytes 16-17: the page size, big-endian, a power of two from 512 to 32768 inclusive, or the
  *   literal value 1, the format's encoding of 65536.
- * - bytes 28-31: the database size in pages, big-endian. The main file's page count only: WAL
- *   frames live outside it (measured — the field equals the file's own page count both while a WAL
- *   is pending and after a checkpoint, on the same store). Zero means "size unknown" to SQLite,
- *   which then derives the size from the file; no open of this store writes zero, so this check
- *   reads it as damage instead of guessing.
+ * - bytes 28-31: the database size in pages, big-endian, main file only — WAL frames live outside
+ *   it (measured: the field equals the file's own page count with a WAL pending and after a
+ *   checkpoint). Zero means "size unknown" to SQLite; no open of this store writes zero, so this
+ *   check reads it as damage instead of guessing.
  * - the file's length must then be exactly page size x page count.
  */
 const SQLITE_MAGIC = "SQLite format 3\0";
@@ -809,39 +623,18 @@ const SQLITE_MAX_PAGE_SIZE_ENCODING = 1;
 /**
  * The FAST path's integrity check (#87c): does this store FILE still look like one SQLite file?
  *
- * WHY a header read replaces the full `PRAGMA quick_check` here: the stamp gate removed the sweep,
- * so the integrity sweep became the dominant remaining cost of a stamp-matching open — it walks
- * every page of the store — and what it buys is EARLIER notice, not prevention. The remedy for a
- * damaged store is `quarantineStore` plus a rebuild from empty, because this store is a
- * disposable CACHE: the served mirror, the snapshots and their lineage are all re-derived from the
- * files on disk on the next read. Paying the dominant share of every process's open latency, on
- * every open, to move that notice a few statements earlier was the bad trade.
- *
- * WHAT IS DELIBERATELY NOT CHECKED, and where the check MOVES to instead: page-level damage inside
- * an otherwise well-formed file — a torn b-tree page, a freelist that disagrees with itself — is
- * not visible from the header. Such corruption surfaces LATER, at the statement that first touches
- * the damaged page, as its own error (`database disk image is malformed`, SQLITE_CORRUPT), never
- * as a silently wrong result: every honoring path re-derives from the bytes it is about (see the
- * trap-(c) block above). Issue #90 INHERITS the throttled deep check: its janitor sweep runs the
- * store's own maintenance off the tool-call path, so the deep pass is MOVED rather than lost.
+ * WHY a header read replaces the full `PRAGMA quick_check`: the sweep walked every page and bought
+ * only EARLIER notice, not prevention — the remedy is `quarantineStore` plus a rebuild from empty,
+ * because this store is a disposable CACHE whose rows are re-derived from the files on disk. Page
+ * damage inside a well-formed file is NOT checked here; it surfaces LATER, at the first statement
+ * that touches it, as `database disk image is malformed` (SQLITE_CORRUPT) and never as a silently
+ * wrong result. Issue #90 INHERITS the deep check: its janitor sweep MOVES the pass off the
+ * tool-call path rather than losing it.
  */
 function smokeCheckStoreFile(storePath: string): boolean {
   let fd: number | undefined;
   try {
     fd = openSync(storePath, "r");
-    // SAFETY: allocUnsafe is safe here because readSync fills all 100 bytes before any of them is
-    // SAFETY: read — the `read < SQLITE_HEADER_BYTES` guard below rejects a short read first.
-    // WHY: kept on purpose, uncovered though they are (#87c). The short-read guard, the magic
-    // WHY: comparison, the page-size range check and its power-of-two test are this check's ONLY
-    // WHY: arms whose refusal body never runs — in a whole-suite coverage run at 17f7e14 those
-    // WHY: four return statements execute 0 times while the four conditions run 601 times — and
-    // WHY: they are uncovered because NO SEAM REACHES THEM: SQLite's own first read of the file
-    // WHY: refuses every file they guard, so a file that would trip one never arrives here.
-    // WHY: Measured at 17f7e14, in a /tmp copy: deleting all four leaves the focused file green
-    // WHY: (11 tests) and the whole suite green (2264 passed | 2 skipped, the unchanged baseline).
-    // WHY: Do NOT delete them on that evidence; re-measure first. They are defence in depth —
-    // WHY: unreachable only while SQLite keeps refusing a malformed header at first read, and live
-    // WHY: work again the day a version stops — so four uncovered arms here are a KEPT decision.
     const header = Buffer.allocUnsafe(SQLITE_HEADER_BYTES);
     const read = readSync(fd, header, 0, SQLITE_HEADER_BYTES, 0);
     if (read < SQLITE_HEADER_BYTES) return false;
@@ -852,27 +645,15 @@ function smokeCheckStoreFile(storePath: string): boolean {
     if (pageSize < SQLITE_MIN_PAGE_SIZE || pageSize > SQLITE_MAX_PAGE_SIZE) return false;
     if ((pageSize & (pageSize - 1)) !== 0) return false;
     const pageCount = header.readUInt32BE(SQLITE_PAGE_COUNT_OFFSET);
-    // WHY: NOT one of the four above, and NOT uncovered: this arm's refusal body DID run (1
-    // WHY: execution in that same suite run). Deleting it is nonetheless invisible, for an
-    // WHY: ARITHMETIC reason instead — the length rule below refuses the same file by itself,
-    // WHY: because `pageSize * 0` is 0 and no store file's size equals 0 (measured in the /tmp
-    // WHY: copy with this line deleted: page size 4096, a 163840-byte store, still quarantined).
-    // WHY: FIVE arms here are invisible to mutation; only the four above are UNCOVERED. Coverage
-    // WHY: and mutation-sensitivity are different properties.
     if (pageCount === 0) return false;
     return fstatSync(fd).size === pageSize * pageCount;
   } catch {
-    // WHY: a file that cannot be read at all cannot be a healthy store — and the CALLER decides
-    // WHY: what that means (quarantine and rebuild), so this check reports only its verdict.
     return false;
   } finally {
     if (fd !== undefined) {
       try {
         closeSync(fd);
-      } catch {
-        // SAFETY: closing a read-only descriptor this call opened; a failure leaves no lock, no
-        // SAFETY: write and no state behind, and the verdict above is already decided.
-      }
+      } catch {}
     }
   }
 }
@@ -880,18 +661,13 @@ function smokeCheckStoreFile(storePath: string): boolean {
 /**
  * The SLOW path's integrity check: SQLite's own full pass over the store, unchanged. Runs when
  * there is no stamp to trust — a fresh store, a stamp mismatch, `existed === false`, or the open
- * that follows a quarantine — where the open is already building or rebuilding from empty, so a
- * pass over every page is not the latency being avoided.
+ * after a quarantine — where the open is already rebuilding from empty.
  *
- * WHY it is ALSO the periodic deep check, and which half of #100 that is: the fast path stopped
- * running this pass when it took the header smoke check instead, so page-level damage inside an
- * otherwise well-formed file had no detector left at open. `src/store-janitor.ts` runs this same
- * function on `session_start` and `session_shutdown`, off the tool-call hot path, and that run IS
- * the periodic half of issue #100: it closes "not detected at open" (this call finds the damage)
- * and "not healed on reopen" (its failure routes into `healUnhealthyStore`, which quarantines and
- * rebuilds through the one `quarantineStore` primitive), and it deliberately leaves "not quarantined
- * at use" — the FIRST FAILING STATEMENT as the trigger — to #100, which owns the use-time clause.
- * See the janitor's header for the full boundary statement.
+ * WHY it is ALSO the periodic deep check, half of #100: `src/store-janitor.ts` runs this function
+ * on `session_start` and `session_shutdown`, off the tool-call hot path. That closes "not detected
+ * at open" and "not healed on reopen" (a failure routes into `healUnhealthyStore`, the one
+ * `quarantineStore` primitive) and leaves "not quarantined at use" — the FIRST FAILING STATEMENT
+ * as the trigger — to #100. See the janitor's header for the full boundary statement.
  */
 export function isHealthy(db: DatabaseSync): boolean {
   try {
@@ -899,14 +675,6 @@ export function isHealthy(db: DatabaseSync): boolean {
     return row?.quick_check === "ok";
   } catch (error) {
     if (isCorruptionError(error)) return false;
-    // WHY: a failure that is NOT corruption reads as HEALTHY, and that direction is load-bearing:
-    // WHY: the remedy for a false verdict is `quarantineStore` plus a rebuild from empty, which
-    // WHY: renames the store file aside and rebuilds it from the DDL, so the undo rows in the old
-    // WHY: file become unreachable. `file_undo` is the table this file calls the single source of
-    // WHY: truth for undo history, and it is not among the rows a read re-derives (the served
-    // WHY: mirror, the snapshots and their lineage are). A probe that merely could not RUN must not
-    // WHY: destroy undo history; a store that really is broken fails closed at the first statement
-    // WHY: that touches the damage instead — #100's use-time clause.
     return true;
   }
 }
@@ -945,34 +713,16 @@ function shutdownDb(db: DatabaseSync): void {
 }
 
 /**
- * The HEAL half of the janitor's periodic deep check: when the open store fails `isHealthy`, quarantine
- * and rebuild as the open path's own recovery does — through the one `quarantineStore`, then
- * `openStore` — and report whether that happened. Called only by the store janitor
- * (`src/store-janitor.ts`), off the tool-call path.
- *
- * WHY it re-checks instead of trusting its caller's verdict: this is then safe to call from
- * anywhere and can never quarantine a healthy store, which is the property the open path's own
- * recovery has too (`if (... !isHealthy(db))`). The cost is one extra `PRAGMA quick_check` on a
- * store already known to be damaged.
- *
- * WHY it is HONEST on a LIVE store: the sequence it runs is its OWN, quoted here as it is —
- * `shutdownHashStore`, then `quarantineStore`, then `openStore` — and every piece of state it drops
- * is re-derivable, because the store is a disposable cache: the served mirror, the snapshots and
- * their lineage are all rebuilt from the files on disk. What it does NOT
- * do is reach a second QUARANTINE implementation: there is ONE (`quarantineStore`), with THREE
- * orchestrations calling it — this heal, the open path's own recovery, and the use-time trigger
- * (`triggerUseTimeHeal`), which skips the health re-check because the failing statement already
- * proved the damage — and it
- * does NOT touch a store that is currently inside a transaction of its own: the janitor runs at a
- * lifecycle boundary, where no tool call of this session is in flight, and any statement prepared on
- * the closed connection afterwards fails closed on the reopened one's absence rather than silently
- * reading a dead handle.
- *
- * WHAT IT LEAVES BEHIND, stated rather than implied: because the rebuild goes through `openStore`
- * and not around it, the store comes back COMPLETE — hooks run, the stamp written after them — so the
- * next open of that path takes the fast path over a store that really is current. The one handle this
- * leaves stale is the caller's own `db` argument, which the recovery closes: a caller must re-read the
- * store (`loadHashStore`) rather than reuse the connection it passed in.
+ * The HEAL half of the janitor's deep check: when the open store fails `isHealthy`, quarantine and
+ * rebuild through the one `quarantineStore`, then `openStore`. Called only by `src/store-janitor.ts`,
+ * off the tool-call path, where no tool call is in flight — so it never touches a store inside a
+ * transaction of its own, and a statement prepared on the closed connection fails closed. It
+ * re-checks rather than trusting its caller, so it can never quarantine a healthy store.
+ * The sequence is its OWN — `shutdownHashStore`, `quarantineStore`, `openStore` — never a second
+ * quarantine implementation: ONE `quarantineStore`, THREE orchestrations (this heal, the open path's
+ * recovery, `triggerUseTimeHeal`, which skips the re-check because the failing statement proved the
+ * damage). The rebuild runs through `openStore`, so the store comes back COMPLETE (hooks run, stamp
+ * written after them) and the caller's `db` is stale: re-read with `loadHashStore`, never reuse it.
  */
 export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> {
   const current = cachedOpenStore();
@@ -982,9 +732,6 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
     "hash-store",
     "[hash-store] deep check found the store damaged, quarantining and rebuilding",
   );
-  // WHY: the quarantine comes FIRST and on its own: the open path's fast branch accepts a store whose
-  // WHY: header is intact, and an intact header is exactly the case the janitor's deep pass exists to
-  // WHY: catch — so handing the open the same file would reopen the damage instead of repairing it.
   shutdownHashStore();
   await quarantineStore(current.path);
   await openStore(current.path, budget);
@@ -993,12 +740,10 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
 
 /**
  * The use-time quarantine's SEAM (#100): the single wrap point for the single cached handle.
- * `openStore` publishes the proxy into `cachedDb` and returns it, so both statement paths share
- * it with zero call-site changes — `loadHashStore` hands out `cachedDb.db`, and `withStore`
- * frames `BEGIN`/`COMMIT`/`ROLLBACK` on `cachedDb.db` directly while `fn`'s statements come from
- * a closure over a `loadHashStore` handle (`snapshotStmts(store.db)` inside `withStore(...)` in
- * snapshot-store and served-session). Guarding only `loadHashStore`'s return would leave the
- * framing statements unguarded; wrapping once here covers both.
+ * `openStore` publishes the proxy into `cachedDb` and returns it, so both statement paths share it:
+ * `loadHashStore` hands out `cachedDb.db`, and `withStore` frames `BEGIN`/`COMMIT`/`ROLLBACK` on
+ * `cachedDb.db` directly while `fn`'s statements come from a closure over a `loadHashStore` handle.
+ * Guarding only `loadHashStore`'s return would leave the framing statements unguarded.
  *
  * WHY a proxy: the handle must stay ONE object — `openStamp`, the hook phase and the `WeakMap`
  * statement caches all key on its identity — and `DatabaseSync` is a native class. Members outside
@@ -1006,11 +751,11 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
  * teardown (`shutdownDb`'s checkpoint, `close`) keeps working through the guard.
  */
 /**
- * WHY watched methods resolve through the LIVE prototype on every call instead of being captured
- * WHY: when the handle is wrapped: the suite patches `DatabaseSync.prototype` (statement tracers,
- * WHY: `quick_check` counters) and those patches must observe guarded-handle calls exactly as they
- * WHY: observe raw ones. Instance own-property doubles (`vi.spyOn`) are handled one layer up —
- * WHY: the traps return those directly — so this lookup never sees a double.
+ * The watched methods resolve through the LIVE prototype on every call rather than being captured
+ * when the handle is wrapped: the suite patches `DatabaseSync.prototype` (statement tracers,
+ * `quick_check` counters) and those patches must observe guarded-handle calls exactly as they
+ * observe raw ones. Instance own-property doubles (`vi.spyOn`) are handled one layer up — the traps
+ * return those directly — so this lookup never sees a double.
  */
 function realMethod(
   target: DatabaseSync | StatementSync,
@@ -1031,9 +776,6 @@ function guardDatabaseHandle(raw: DatabaseSync, storePath: string): DatabaseSync
   const guarded: DatabaseSync = new Proxy(raw, {
     get(target, property) {
       if (property === "prepare" || property === "exec") {
-        // WHY: own properties win — a double must observe every call, including the guard's own,
-        // WHY: or call-through doubles recurse. The guard stays armed underneath: the double
-        // WHY: reaches the real method through the live prototype below, never through this trap.
         if (Object.prototype.hasOwnProperty.call(target, property)) {
           const override: unknown = Reflect.get(target, property, target);
           return typeof override === "function" ? override.bind(target) : override;
@@ -1081,9 +823,6 @@ function guardStatement(
           const override: unknown = Reflect.get(target, property, target);
           return typeof override === "function" ? override.bind(target) : override;
         }
-        // WHY: resolve through the live prototype on every call (see `realMethod`): prototype
-        // WHY: patches must observe these calls exactly as raw ones, and own-property doubles are
-        // WHY: already returned above, so this lookup never sees a double.
         const raw = realMethod(target, property);
         if (property === "iterate") {
           return (...args: unknown[]) => {
@@ -1116,15 +855,14 @@ function guardStatement(
 }
 
 /**
- * WHY `next` is guarded too: `iterate` steps lazily, so damage it walks can throw long after the
- * `iterate` call returned. The proxy keeps the iteration protocol intact and watches only `next`.
+ * `next` is guarded too: `iterate` steps lazily, so damage it walks can throw long after the `iterate`
+ * call returned. The proxy keeps the iteration protocol intact and watches only `next`.
  */
 function guardIterator(
   iterator: IterableIterator<unknown>,
   generation: DatabaseSync,
   storePath: string,
 ): IterableIterator<unknown> {
-  // WHY: the capture mirrors the handle's — the same double-recursion hazard applies to `next`.
   const rawNext = iterator.next.bind(iterator) as (...args: unknown[]) => unknown;
   return new Proxy(iterator, {
     get(target, property) {
@@ -1173,16 +911,7 @@ function triggerUseTimeHeal(generation: DatabaseSync, storePath: string, error: 
  */
 async function runUseTimeHeal(storePath: string, generation: DatabaseSync): Promise<void> {
   try {
-    // WHY: the heal yields FIRST — the teardown below must not run inside the failing statement's
-    // WHY: own tick. Sibling statements on the same handle — the double-heal race's second
-    // WHY: corruption — still throw the ORIGINAL error against the still-open connection instead
-    // WHY: of a teardown artifact ("not open"), and only then does the generation guard below
-    // WHY: decide whether this generation still owns the cache.
     await Promise.resolve();
-    // WHY: the generation guard — heal ONLY if the cache still holds the generation that failed.
-    // WHY: a second trigger never gets here (the flag), and a trigger from a handle the cache
-    // WHY: has since replaced — notably a heal that already rebuilt the store — bails here instead
-    // WHY: of quarantining the FRESH file.
     const cached = cachedOpenStore();
     if (cached === null || cached.db !== generation) return;
     shutdownHashStore();
@@ -1199,8 +928,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
   shutdownHashStore();
 
   await initHasher();
-  // WHY: the retired artifacts are adopted BEFORE the store exists, so the pre-SQLite JSON store is
-  // WHY: read from one place — the state root this open is about to use.
   migrateLegacyState((message) => reportInfo("state-migration", message));
   await ensureStateRoot();
 
@@ -1216,12 +943,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
     opened = openDbWithBusyRetry(storePath, budget);
   }
   let db = opened.db;
-  // WHY: (#87c) WHICH integrity check an open pays follows from the stamp, because the stamp is the
-  // WHY: store's own record that its provenance is current. `existed` is read before the open and
-  // WHY: cleared by either recovery path below, so a store this open CREATED — or just rebuilt after
-  // WHY: quarantine — is never handed to the header check: it has no settled identity yet, and the
-  // WHY: open is already doing the expensive work. Both arms fence the same single failure shape,
-  // WHY: `false`, so the recovery below is shared rather than duplicated per check.
   const stampTrusted = existed && !opened.stampDue;
   if (stampTrusted ? !smokeCheckStoreFile(storePath) : !isHealthy(db)) {
     shutdownDb(db);
@@ -1231,9 +952,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
     db = opened.db;
   }
 
-  // WHY: the open's own stamp decision, in memory from here to the end of the open: the hooks' re-entrant
-  // WHY: ensures consult it (`sweepSettledByOpen`) rather than a stamp this open has not written yet, and
-  // WHY: the stamp write below is owed exactly when it says so.
   const stamp = { db, due: opened.stampDue };
   openStamp = stamp;
   try {
@@ -1241,17 +959,8 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
       await hook(db, { existed });
     }
 
-    // WHY: (#87d) THE STAMP IS THE OPEN'S LAST STEP: both halves, written together, and only now that
-    // WHY: EVERY hook has succeeded — they certify the whole open, the build, migrations and sweep that
-    // WHY: `openDb` ran included. Written inside the build they certify work that has not happened yet,
-    // WHY: so a hook that throws leaves a valid-looking stamp over an unfinished store and the next open
-    // WHY: takes the fast path over it. This write is also OUTSIDE `openDbWithBusyRetry`'s envelope (the
-    // WHY: open's last write, after the hook loop), so it carries its own retry: without one, a store that
-    // WHY: is merely busy this instant would fail an open that has already done all of its work.
     if (stamp.due) withBusyRetry(() => writeStoreStamp(db), budget);
 
-    // WHY: the publish wraps — this is the seam — the guarded handle is what `loadHashStore`
-    // WHY: hands out and what `withStore` frames on, so one wrap covers every consumer.
     const guarded = guardDatabaseHandle(db, storePath);
     setCachedOpenStore({ path: storePath, db: guarded });
 
@@ -1268,14 +977,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
 
     return { db: guarded, engine: "node:sqlite" };
   } finally {
-    // WHY: NOT housekeeping, and not defensive tidiness: this clear is what keeps the slot to the hook
-    // WHY: phase. The slot answers one question — "is an open in its hook phase on THIS connection" —
-    // WHY: and leaving it set lets the next ensure on the still-open connection read a spent decision:
-    // WHY: `sweepSettledByOpen` matches the live handle, so an ensure that runs OUTSIDE an open —
-    // WHY: `ensureSnapshotTables` called directly, which is how seven committed tests sweep after moving
-    // WHY: the stamp (`test/integration/undo-generation-bump.test.ts`, "generation bump refuses pre-v3
-    // WHY: anchors") — silently SKIPS the sweep it owes, and the rows it had to remove survive. Delete
-    // WHY: this line and those seven tests fail.
     openStamp = null;
   }
 }
@@ -1285,10 +986,6 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
  * callers pass nothing, and a cached open returns immediately without consulting it.
  */
 export function loadHashStore(budget?: BusyBudget): Promise<HashStore> {
-  // WHY: the join — a use-time heal armed by a just-thrown statement rebuilds the store beside
-  // WHY: this call. Waiting for it first is what makes the access after a loud failure land on
-  // WHY: the FRESH store: without it the caller would get the still-cached damaged handle back.
-  // WHY: No cycle: the heal reopens through `openStore` directly, never through here.
   const healing = useTimeHeal;
   if (healing !== null) return healing.promise.then(() => loadHashStore(budget));
   const storePath = hashStorePath();

@@ -4,18 +4,15 @@ import { getCached, withBusyRetry } from "../store-kernel/index.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
-// WHY: --- Global LRU vacuum (spec §3.6.1) ---
-// WHY: The CAS store is a bounded cache of file versions: 50 MB globally, and
-// WHY: `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path where
-// WHY: `snapshot_lineage_bytes ≈ 40 × line_count`. Eviction is global and oldest-`created_at`
-// WHY: first across all paths. Identity wins over budget: a snapshot a session can still resolve
-// WHY: through — an active lease, a `file_undo.snapshot_hash` restore target, or a lease retired
-// WHY: inside the 1-hour grace — is PINNED and never evicted, so the vacuum only drops versions
-// WHY: no live anchor points at. When every remaining candidate is pinned the vacuum defers,
-// WHY: permitting a soft overflow that in practice lapses with the 7-day lease TTL; `overSoftOverflow`
-// WHY: reports the deferred state and is the only thing the 100 MB ceiling governs.
-// WHY: These are the production budgets the store that owns `file_snapshots` / `line_lineage`
-// WHY: enforces; they are module-level policy, never call-site configuration.
+/**
+ * The CAS store is a bounded cache: 50 MB globally, and
+ * `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path, where
+ * `snapshot_lineage_bytes ≈ 40 × line_count`; eviction is global, oldest-`created_at` first.
+ * Identity wins over budget: a snapshot a live anchor can still resolve through — an active lease,
+ * an undo restore target, or a lease retired inside the 1-hour grace — is PINNED. An all-pinned
+ * candidate set defers instead: a soft overflow that lapses with the 7-day TTL, which
+ * `overSoftOverflow` reports and the 100 MB ceiling alone governs.
+ */
 
 export const VACUUM_GLOBAL_BUDGET_BYTES = 50 * 1024 * 1024;
 export const VACUUM_SOFT_OVERFLOW_BYTES = 100 * 1024 * 1024;
@@ -76,18 +73,10 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
     "SELECT snapshot_id, path, snapshot_hash, line_count, created_at FROM file_snapshots " +
       "WHERE committed = 1 ORDER BY created_at ASC, snapshot_id ASC",
   );
-  // WHY: pinning is a two-table predicate (spec §3.6.1): a lease that is still active inside the
-  // WHY: session TTL, a lease retired inside the 1-hour grace, or an undo restore target.
-  // WHY: the probe MUST stay index-covered. `file_path` alone is not enough — one path holds a lease
-  // WHY: per served line (thousands), so without `served_snapshot_hash` each snapshot re-scans the
-  // WHY: path's whole lease set. `idx_leases_file_snapshot` in the schema owner is that exact tuple
-  // WHY: and its covering order; dropping the hash column turns a ~35 ms pass into seconds.
   const pinnedStmt = db.prepare(
     "SELECT DISTINCT fs.snapshot_id AS snapshot_id FROM file_snapshots fs " +
       "WHERE fs.committed = 1 AND (" +
-      // WHY: (ADR-0045) the active half is the canonical expiry predicate, so the pin probe and
-      // WHY: the grant path cannot disagree about which active leases still resolve. `sl` is dropped
-      // WHY: from the subquery so the shared predicate can name `served_leases` itself.
+      // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
       "EXISTS (SELECT 1 FROM served_leases WHERE served_leases.file_path = fs.path " +
       "AND served_leases.served_snapshot_hash = fs.snapshot_hash " +
       `AND ((${RESOLVABLE_LEASE_SQL}) OR served_leases.retired_at >= ?)) ` +
@@ -107,7 +96,6 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
 }
 
 function lineageBytes(row: VacuumSnapshotRow, perLine: number): number {
-  // WHY: an empty file still owns one counter row, so its cost floors at one line.
   return perLine * Math.max(1, row.line_count);
 }
 
@@ -147,11 +135,7 @@ export function vacuumSnapshots(db: DatabaseSync, options: VacuumOptions = {}): 
       .listPinned(now - SERVED_TTL_MS, now - VACUUM_RETIRED_PIN_MS)
       .map((row) => row.snapshot_id),
   );
-  // WHY: an in-flight materialization protects its own row: it names the snapshot before the serve
-  // WHY: grants `served_leases`, so the sweep must treat it exactly like a live pin (spec §3.6.1).
   for (const id of options.protectSnapshotIds ?? []) pinned.add(id);
-  // WHY: rows are ascending by `created_at`, so the last row seen for a path is its newest version
-  // WHY: — the file size the per-path retention window is sized against.
   const newestLineCount = new Map<string, number>();
   const pathCounts = new Map<string, number>();
   let total = 0;
@@ -223,7 +207,6 @@ function deleteVacuumSnapshots(db: DatabaseSync, snapshotIds: number[]): void {
       try {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
         reportDiagnostic(
           "snapshot-store",
           "[snapshot-store] failed to rollback vacuum transaction:",

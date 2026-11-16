@@ -4,26 +4,12 @@ import { toLF } from "../../src/edit-diff.js";
 import { fileHashesFor } from "../../src/hashline/hash-identity.js";
 import { setupReadTest, withTempFile } from "../support/fixtures";
 
-// Provenance. The verbatim goldens below are static literals (verbatim renders no anchors).
-// The served goldens cannot be static literals: since file scoping, served anchors are seeded from
-// the served file's absolute path, and these tests read through the tool from per-run temp dirs —
-// a literal captured on one machine would be a lie on the next. So each served case pins its
-// content rows and pagination chrome literally through a builder over the whole-content assignment
-// for the SAME absolute path the tool served (`fileHashesFor(path, content)`), which the loader's
-// own derivation agrees with anchor for anchor (see test/core/anchor-walk-identity.test.ts). A
-// derivation change (width, seed, canon, stride) moves the builders' output and fails loudly here.
-// WHY: the walk must hold the split-based reader's pages, hints and refusals byte for byte — in BOTH
-// WHY: render modes, since the anchor array and the page now come out of one walk.
 const NL = Array.from({ length: 40 }, (_, i) => `l${i}`).join("\n") + "\n";
 const CRLF = "a\r\nb\r\nc\r\n";
 const LONE_CR = "one\rtwo\nthree";
 const NO_TRAILING = Array.from({ length: 5 }, (_, i) => `n${i}`).join("\n");
 
-// The per-file header every tool-level golden now opens with (spec §4.4). The line count is written
-// out per case rather than recomputed, so a count regression fails here instead of agreeing with itself.
 const servedHeader = (lines: number) => `[golden.txt (${lines} lines total)]\n`;
-// WHY: a partial page carries its shown range and the file's total in its header (#149, read-chrome);
-// WHY: whole-file and multi-window pages keep the bare total above.
 const servedRangeHeader = (start: number, end: number, lines: number) =>
   `[golden.txt (lines ${start}-${end} of ${lines} total)]\n`;
 const verbatimHeader = (lines: number) => `[golden.txt (verbatim, ${lines} lines total)]\n`;
@@ -199,10 +185,6 @@ async function readServed(
     const { readTool, ctx } = setupReadTest(cwd);
     const result = await readTool.execute("r1", { file, ...args }, undefined, undefined, ctx);
     text = result.content?.[0]?.text ?? "";
-    // WHY: the oracle is derived for the same absolute path the tool served — the loader's own
-    // WHY: derivation agrees with it anchor for anchor (probed in anchor-walk-identity), so the
-    // WHY: builders below still fail loudly on any derivation change. Normalized first: the tool
-    // WHY: hashes post-`toLF` text, and a lone `\r` only becomes a line break there.
     anchors = fileHashesFor(path, toLF(content));
   });
   return { text, anchors };
@@ -223,9 +205,6 @@ describe("a served page is what the split-based reader returned", () => {
 
 describe("the served read's refusals", () => {
   it("still names the line count at the cap boundary (the loader's own check)", async () => {
-    // WHY: a CR-only file slips past the streaming newline counter (no LF in the raw bytes), so
-    // WHY: the loader's own normalized-text check fires with the exact count against the served
-    // WHY: budget — the same seam the CR-only budget test in hashline-limit exercises.
     const content = "x\r".repeat(SERVED_MAX_LINES + 1);
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
@@ -242,9 +221,6 @@ describe("the served read's refusals", () => {
   });
 
   it("still refuses mid-decode above the cap (the early throw, no line count)", async () => {
-    // WHY: the streaming counter trips on raw newlines long before the loader's own check could
-    // WHY: name a total, so the refusal says "more than" against the served budget and carries no
-    // WHY: lineCount — the same wording the over-budget test in hashline-limit pins.
     const content = Array.from({ length: SERVED_MAX_LINES + 100 }, () => "x").join("\n") + "\n";
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);

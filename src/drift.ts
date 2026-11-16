@@ -13,17 +13,16 @@ import { createSessionHandle } from "./served-session/session.js";
 const DRIFT_NOTICE_HEADING = "[USER] drift:";
 
 /**
- * WHY (CAND-9, ADR-0023): the drift-notice episode identity is the drifted line's rebased
- * position in the CURRENT file — not its anchor string. An anchor is a spelling, not an
- * identity: one reported entry for a hash shared by two distinct lines silenced both
- * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an
- * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing
- * strings (schema unchanged); this base-62 encoding of the position at the configured width is the KEY VALUE.
- * Positions are bounded by `SERVED_MAX_LINES` (the served admission budget), which
- * already sits below the anchor-space ceiling, so the encoding is injective over
- * every reachable position.
- * An out-of-file position (never shown, never marked) keys on "" — not a valid stored entry, always
- * "not yet reported", matching the legacy behavior for unshown drift.
+ * WHY (CAND-9): the drift-notice episode identity is the drifted line's rebased position in the
+ * CURRENT file — not its anchor string. An anchor is a spelling, not an identity: one reported
+ * entry for a hash shared by two distinct lines silenced both (duplicate-hash collapse), and a
+ * lease rotation renamed the mirror anchor of an already-reported line, spuriously re-noticing it.
+ * The session's reported-set keeps storing strings (schema unchanged); this base-62 encoding of
+ * the position at the configured width is the KEY VALUE. Positions are bounded by
+ * `SERVED_MAX_LINES` (the served admission budget), below the anchor-space ceiling, so the
+ * encoding is injective over every reachable position. An out-of-file position keys on "" — never
+ * a valid stored entry, always "not yet reported", matching the legacy behavior for unshown drift.
+ * Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
  */
 export function driftEpisodeKey(position: number): string {
   const space = ALPHA.length ** HASH_LEN;
@@ -48,11 +47,12 @@ export interface ComputeDriftInput {
   resultLines: string[];
   range?: ResolvedRange;
   intervals?: ResolvedRange[];
-  /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — see CAND-9 WHY above. */
+  /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — the CAND-9
+   * identity rule is stated in that function's docblock. */
   reported: Set<string>;
   cap?: number;
-  /** WHY: canon digests parallel to `served`, derived from the served rows' leases.
-   * Absent/empty preserves legacy hash-equality (existing tests, old DBs). */
+  /** Canon digests parallel to `served`, derived from the served rows' leases; absent or empty
+   * preserves legacy hash-equality. */
   servedCanonDigests?: (string | null)[];
 }
 
@@ -85,11 +85,7 @@ function resolveServedRange(input: ComputeDriftInput): {
     servedStartIdx = startPositions[0]!;
     servedEndIdx = endPositions[0]!;
   } else {
-    // WHY: ADR-0023 position-fallback — an anchor is a spelling, not an identity. When the
-    // WHY: served hash names zero or several mirror positions there is no unambiguous
-    // WHY: anchor lookup, so the window degrades to the line-number coordinates the range
-    // WHY: carries — a judgment aid, not an identity claim; drift inside the window is
-    // WHY: excluded, drift near a mis-located boundary may over- or under-report lines.
+    // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
     servedStartIdx = range.startLine - 1;
     servedEndIdx = range.endLine - 1;
   }
@@ -109,10 +105,6 @@ function resolveIntervals(
   }
   return intervals.map((r) => {
     if (r.startLine > r.endLine) {
-      // WHY: zero-width insertion interval (ticket-01): it edits no served line, so the interval
-      // WHY: stays empty (`from > to` is never matched by `isInIntervals`) instead of degrading to
-      // WHY: a width-1 window that would mask the untouched neighbour lines. `deltaBefore` still
-      // WHY: shifts every served line after the insertion point by the inserted line count.
       return { from: r.startLine - 1, to: r.endLine - 1, delta: r.delta };
     }
     const startPositions = servedPositionsOf(input.served, r.startHash);
@@ -123,9 +115,6 @@ function resolveIntervals(
       s = startPositions[0]!;
       e = endPositions[0]!;
     } else {
-      // WHY: ADR-0023 position-fallback — same degradation as `resolveServedRange`: an
-      // WHY: ambiguous (0 or >1 hits) anchor is a spelling, not an identity, so the interval
-      // WHY: falls back to the range's line-number coordinates.
       s = r.startLine - 1;
       e = r.endLine - 1;
     }
@@ -149,7 +138,6 @@ function deltaBefore(
 
 type RotatedSurvivorCheck = (servedHash: string, servedPos: number) => boolean;
 
-/** WHY: edited served intervals mapped to current-file spans (result coordinates). */
 function currentEditedSpans(
   intervals: Array<{ from: number; to: number; delta: number }>,
 ): Array<{ from: number; to: number }> {
@@ -170,13 +158,6 @@ function isInSpans(p: number, spans: Array<{ from: number; to: number }>): boole
   return false;
 }
 
-/**
- * WHY: #68 hash-rotation vs content loss. Probing + blocked-hashes growth reassign
- * distinct hashes to identical duplicate lines across sequential edits, so a
- * served hash missing from the result set may still survive under a fresh hash.
- * Suppress those (consume one matching canon digest outside the edited spans); report
- * only canon deficit. Absent/empty `servedCanonDigests` keeps legacy hash-equality.
- */
 function buildRotatedSurvivorCheck(
   input: ComputeDriftInput,
   intervals: Array<{ from: number; to: number; delta: number }>,
@@ -191,9 +172,6 @@ function buildRotatedSurvivorCheck(
     remaining.set(c, (remaining.get(c) ?? 0) + 1);
   }
   return (_servedHash, servedPos) => {
-    // WHY: only the file-scoped canon digest the lease recorded at the served position counts. A
-    // WHY: hash->canon fallback is file-blind and an anchor collision would silently suppress real
-    // WHY: drift (#149); the digest is derived, never persisted (#151).
     const c = digests[servedPos] ?? null;
     if (c === null) return false;
     const left = remaining.get(c) ?? 0;
@@ -395,8 +373,6 @@ export async function scanDrift(input: {
     undefined,
     input.contentHash,
   );
-  // WHY: CAND-9 — the episode key is the drifted row's rebased position, not its anchor hash
-  // WHY: (see `driftEpisodeKey`). The handle keeps its string[] storage contract unchanged.
   await handle.markDriftReported(
     result.rows.filter((row) => row.drifted).map((row) => driftEpisodeKey(row.position)),
   );

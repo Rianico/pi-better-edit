@@ -22,7 +22,6 @@ export const TYPESCRIPT_SPAN_KINDS = {
   interface_declaration: "interface",
   enum_declaration: "enum",
   type_alias_declaration: "typeAlias",
-  // WHY: TS `module`/`namespace` declarations are namespaces; LSP Module would overstate them.
   module: "namespace",
   internal_module: "namespace",
 } as const satisfies SpanKindTable;
@@ -34,7 +33,6 @@ export const TYPESCRIPT_SPAN_KINDS = {
 export const TYPESCRIPT_DECORATION: DecorationSpec = {
   kinds: TYPESCRIPT_SPAN_KINDS,
   docCommentTypes: new Set(["comment"]),
-  // WHY: plain `//` and `/*` comments are not documentation; only `/** ... */` attaches.
   isDocComment: (node) => node.text?.trimStart().startsWith(JSDOC_PREFIX) ?? false,
   wrapperTypes: new Set(["export_statement", "ambient_declaration"]),
   assignmentNodeTypes: new Set(["variable_declarator", "public_field_definition"]),

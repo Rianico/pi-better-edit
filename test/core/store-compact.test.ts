@@ -95,8 +95,6 @@ describe("compaction after the lease GC (ADR-0046)", () => {
       const before = fileBytes(db);
       expect(freeBytes(db)).toBe(0);
 
-      // Inject a 1-byte floor so a small fixture exercises the real VACUUM path; the ratio gate
-      // still applies (the deleted leases dominate this file).
       const outcome = runJanitor({
         db,
         now: NOW,
@@ -110,7 +108,6 @@ describe("compaction after the lease GC (ADR-0046)", () => {
       expect(outcome.compacted.reclaimedBytes).toBeGreaterThan(0);
       expect(fileBytes(db)).toBeLessThan(before);
       expect(freeBytes(db)).toBe(0);
-      // The store is intact and usable after the rewrite.
       expect((db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }).n).toBe(
         0,
       );
@@ -152,8 +149,6 @@ describe("compaction after the lease GC (ADR-0046)", () => {
       const store = await loadHashStore();
       const db = store.db;
       seedExpiredLeases(db, 3_000);
-      // Free the pages first, so the only remaining write is the janitor's own GC (which also has
-      // to defer) and then the compaction.
       db.exec("DELETE FROM served_leases");
       expect(freeBytes(db)).toBeGreaterThan(0);
 
@@ -163,7 +158,6 @@ describe("compaction after the lease GC (ADR-0046)", () => {
         rival.prepare("INSERT INTO meta (key, value) VALUES ('rival', '1')").run();
 
         const deferred = runJanitor({ db, now: NOW, settings: SETTINGS, compactMinFreeBytes: 0 });
-        // The GC could not take the write lock, so the pass removed nothing and did not compact.
         expect(deferred.compacted.ran).toBe(false);
         expect(deferred.compacted.reason).toBe("skipped");
         expect(freeBytes(db)).toBeGreaterThan(0);
@@ -190,13 +184,10 @@ describe("compaction after the lease GC (ADR-0046)", () => {
 
       const other = new DatabaseSync(hashStorePath(), { timeout: 500 });
       try {
-        // A read transaction that started before the rewrite keeps its own snapshot in WAL.
         other.exec("BEGIN");
         const beforeCount = other.prepare("SELECT COUNT(*) AS n FROM meta").get() as { n: number };
 
         const outcome = runJanitor({ db, now: NOW, settings: SETTINGS, compactMinFreeBytes: 0 });
-        // Either the rewrite ran, or a concurrent reader made SQLite defer it; both are correct and
-        // neither may corrupt or fail the other connection's view.
         expect(outcome.ran).toBe(true);
 
         expect(other.prepare("SELECT COUNT(*) AS n FROM meta").get()).toEqual(beforeCount);

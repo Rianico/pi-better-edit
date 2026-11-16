@@ -5,10 +5,11 @@ import { createEditTool } from "../../src/edit-tool.js";
 import { assertReq, normReq } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
-// WHY: (ticket-04 §3) the admission analyzer now names the per-class failure reason, so the old
-// WHY: verbatim one-hint-for-everything prefix is gone; what every rejection still shares is the
-// WHY: canonical payload phrase.
-// WHY: (ADR-0036) the refusal now says "payload field"; the shared substring is the leading phrase.
+/**
+ * The substring every rejection still shares. Per-class reasons replaced the old one-hint-for-
+ * everything prefix, and the refusal wording names the "payload field", so only the canonical
+ * payload phrase is common to all of them.
+ */
 const PAYLOAD_HINT = "exactly one payload";
 
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {

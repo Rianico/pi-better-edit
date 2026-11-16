@@ -3,15 +3,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, it, expect } from "vitest";
 
-// WHY: pi resolves `pi.extensions` strictly from the package root. For package sources
-// (npm, git) a declared path that is missing on disk is dropped silently — the package
-// contributes zero extensions and no warning is printed, so the failure looks like
-// "tools did not register". See #163.
-//
-// WHY: ADR-0027 makes the built artifact the only entry on both install surfaces and keeps it
-// out of version control, so `git clean -fdx` removes it and `prepare` has to rebuild it.
-// The guards below are the ones a manifest alone cannot express: the artifact must be
-// gitignored, and neither `prepare` nor `prepack` may swallow a build failure.
+/**
+ * pi resolves `pi.extensions` strictly from the package root, and for package sources (npm, git) a
+ * declared path missing on disk is dropped silently: the package contributes zero extensions with no
+ * warning, so the failure looks like "tools did not register" (#163).
+ *
+ * ADR-0027 makes the built artifact the only entry on both install surfaces and keeps it out of
+ * version control, so `git clean -fdx` removes it and `prepare` has to rebuild it. The guards below
+ * are the ones a manifest alone cannot express: the artifact must be gitignored, and neither
+ * `prepare` nor `prepack` may swallow a build failure.
+ */
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
   files?: string[];
@@ -42,10 +43,6 @@ const isIgnoredByGit = (path: string): boolean => {
   }
 };
 
-// WHY: the entry is gitignored build output, so a fresh checkout has no file to assert on.
-// Building it here (exists -> no-op) keeps the file self-contained; a real build writes a
-// real directory, so the symlinked-dist traversal failure cannot recur. `execFileSync`
-// throws on a failed build, so a broken build fails the suite rather than the assertion.
 beforeAll(() => {
   for (const entry of entries) {
     if (!existsSync(join(process.cwd(), entry))) {

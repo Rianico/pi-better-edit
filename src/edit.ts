@@ -29,9 +29,9 @@ import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
 
 void EDIT_DESCRIPTION;
-/** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007 */
+/** SAFETY: @deprecated Import from "./payload-contract.js" — payload-contract is the single source (docs/.archive_adrs/0007-merged-edit-payload-hoisted-path.md). */
 export { assertReq };
-/** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. `replaceWithSchema` is REMOVED: the ticket-04 wire has no `replace_with` fold. */
+/** SAFETY: @deprecated Import from "./payload-contract.js" — payload-contract is the single source (docs/.archive_adrs/0007-merged-edit-payload-hoisted-path.md). Re-exports retained for compatibility until next MAJOR. `replaceWithSchema` is REMOVED: the ticket-04 wire has no `replace_with` fold. */
 export {
   editToolSchema,
   editItemSchema,
@@ -69,10 +69,7 @@ export function buildToolDef(
   const parameters = editToolSchema;
   const tool = createEditTool();
   const presenter = createTuiPresenter(
-    // SAFETY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview
-    // SAFETY: drops the compute if the serving session changed between arming and firing.
     (req, cwd) => {
-      // SAFETY: the fire-time read stays inside the call so the ctx names the session serving anchors now.
       const sessionManager = getSessionManager?.();
       return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
     },
@@ -85,8 +82,6 @@ export function buildToolDef(
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    // WHY: an admission refusal raised here carries no subject, so it must name the edit tool.
-    // WHY: Without the stamp the model reads the neutral wording — the analyzer names no caller.
     prepareArguments: (args: unknown) => {
       try {
         return prepareEditArguments(args);
@@ -95,13 +90,12 @@ export function buildToolDef(
       }
     },
     renderShell: "default",
-    // SAFETY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
       try {
         const res = await tool.execute(
           params,
+          // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
           signal as AbortSignal | undefined,
           // SAFETY: ctx is untyped at the pi boundary — cast validated by pi's runtime shape
           ctx as unknown as {
@@ -121,13 +115,6 @@ export function buildToolDef(
 }
 
 export function regEdit(pi: ExtensionAPI): void {
-  // WHY: (#165) pi's ToolRenderContext carries no session, so the preview pane's session is
-  // WHY: captured from the session_start ctx — the same session reads serve anchors to.
-  // WHY: session_start fires for startup/reload/new/resume/fork, so the capture tracks switches.
-  // WHY: (#168-class) tracking a switch is only safe if the *pending* compute re-checks it:
-  // WHY: buildToolDef below exposes getSessionId so DebouncedPreview binds the serving session
-  // WHY: at arm time and drops (cancels) a compute whose session changed before the timer fires,
-  // WHY: instead of verifying anchors against a session that never served them.
   let sessionManager: { getSessionId(): string } | undefined;
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;

@@ -1,32 +1,14 @@
 /**
- * SAFETY: serve-render — deep module owning the shared serve-row/rejection/verification surface.
+ * SAFETY: serve-render — deep module owning the shared serve-row/rejection/verification surface:
+ * the serve→mirror→lease→retire machine's pure render adapter. It builds the rows a serve shows
+ * and the rows a rejection shows, and it verifies the served rows themselves (served hash echo and
+ * prefix-mismatch gates, never-served shape scan, rejection bookkeeping, `verifyRebasedSpan`). It
+ * owns no session state: every input arrives as an argument, and the session module is the only writer.
  *
- * It is the serve→mirror→lease→retire machine's pure render adapter: it builds the rows a serve
- * shows (`buildRangeServeRows`/`denseServeRows`/`fmtServedRows`) and the rows a rejection shows
- * (`makeServedRejection`/`makeStaleAnchorRejection`/`makeTargetLostRejection`), and it verifies the
- * served rows themselves (the served hash echo and prefix-mismatch evidence gates, the never-served
- * shape scan, the rejection bookkeeping, and the lease seam's `verifyRebasedSpan`). It owns no
- * session state: every input arrives as an argument, and the session module is the only writer.
- *
- * This module absorbs the served-range verification sprawl previously in served.ts:
- *  - served span position lookup (servedPositionsOf)
- *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
- *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)
- *  - the dense serve-row projection (denseServeRows) — the single owner of the serve-record row shape
- *  - the reject-and-serve rejection builders (makeServedRejection / makeTargetLostRejection /
- *    makeStaleAnchorRejection)
- *
- * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
- * fail-closed with E_STALE_RANGE. Coordinate realignment is owned exclusively by MVCC
- * `pairSnapshots` + `line_lineage` upstream in the edit path.
- *
- * The lease seam owns verification for every edit it resolves (#151): `verifyRebasedSpan` checks the
- * whole served window by lease identity. The module's former mirror-vs-mirror decision table
- * (`ServedVerification`, `verifyServedRange`) served only the library-level seam — a caller with a
- * served mirror and no lease source — and had no live caller, so it is retired (#10).
- *
- * GLOSSARY.md terms preserved: serve, served state, served span, served-range
- * staleness, never-served, reject-and-serve, drift.
+ * Heuristic canon healing is retired (docs/.archive_adrs/0008-orphaned-serve-healing.md; spec §3.3): un-rebased coordinates reject
+ * fail-closed with E_STALE_RANGE; realignment belongs exclusively to MVCC `pairSnapshots` +
+ * `line_lineage` upstream. The lease seam verifies every edit by lease identity (#151); the former
+ * mirror-vs-mirror table (`ServedVerification`, `verifyServedRange`) had no live caller, retired (#10).
  */
 import { HASH_LEN, HASH_RE } from "../hashline/alphabet.js";
 import { HASH_SEP } from "../hashline/hash-identity.js";
@@ -41,10 +23,6 @@ import {
 } from "../domain-errors.js";
 import type { LeaseIdentityView, OutlineFoldRange } from "../hashline/resolve.js";
 
-// WHY: ---------------------------------------------------------------------------
-// WHY: Public contracts — mirrors served.ts so it can re-export without identity split
-// WHY: ---------------------------------------------------------------------------
-
 export { UNVERIFIED_HEADLINE, type RangeCause, type ServedRow };
 
 export interface FileSnapshotContext {
@@ -52,16 +30,7 @@ export interface FileSnapshotContext {
   fileLines: string[];
   filePath?: string;
 }
-
-// WHY: ---------------------------------------------------------------------------
-// WHY: Shared formatting helpers — owned by verification (reject-and-serve contract)
-// WHY: ---------------------------------------------------------------------------
-
-/**
- * WHY: rows carry position and hash only. Canon evidence is never stored: it is derived on demand
- * WHY: from the session's leases (`served_leases.canon_hash`), so a producer holding the file's lines
- * WHY: has nothing extra to stamp (issue #151).
- */
+/** The serve rows for a 1-based line range, capped at `SERVED_ROWS_CAP`. */
 export function buildRangeServeRows(
   startLine: number,
   endLine: number,
@@ -78,8 +47,6 @@ export function buildRangeServeRows(
   return rows;
 }
 
-// WHY: the serve-record shape has no owner; this is it — the dense projection of a file's whole
-// WHY: hash array to serve rows: position is the 0-based array index, hash the anchor at that index.
 export function denseServeRows(hashes: readonly string[]): ServedRow[] {
   return hashes.map((hash, position) => ({ position, hash }));
 }
@@ -88,8 +55,6 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
   return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
 }
 
-// WHY: the one continuation a rejected edit offers (read-chrome): the `windows` offset, not a bare
-// WHY: `offset`, because `offset` alone no longer continues anything a page footer used to name.
 function paginationHint(nextOffset: number, more: number): string {
   return `[... ${more} more — use windows: [{ offset: ${nextOffset} }]]`;
 }
@@ -101,10 +66,6 @@ export function servedPositionsOf(served: (string | null)[], hash: string): numb
   }
   return out;
 }
-
-// WHY: ---------------------------------------------------------------------------
-// WHY: Reject-and-serve builders + MVCC rebased-span contiguity gate (spec §3.1.1)
-// WHY: ---------------------------------------------------------------------------
 
 /** Builds the reject-and-serve served rows + rendered block for a current on-disk range. */
 function buildRangeServeBlock(
@@ -148,9 +109,9 @@ function assembleRejectAndServe(args: {
 
 /**
  * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose range cannot be
- * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
+ * identified (spec stale-identity-reject-and-serve D1/D6, docs/.archive_adrs/0018-region-scoped-rejection-serves.md decisions 1-2). The payload
  * carries no rows, no `Current range` heading and no retry hint. §D6's row-shape phrasing is
- * superseded in part by ADR-0021 d4: the code alone selects the remedy and row presence is a
+ * superseded in part by docs/.archive_adrs/0021-unified-error-and-warning-contract.md d4: the code alone selects the remedy and row presence is a
  * payload detail — target-side `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` producers serve rows,
  * the foreign leased wrap renders those codes with none, and consumers dispatch on the code.
  */
@@ -163,8 +124,6 @@ export function makeTargetLostRejection(opts: {
     servedLine: opts.servedLine,
     ...(opts.path !== undefined ? { path: opts.path } : {}),
     cause: opts.cause,
-    // WHY: the retired line is the offending line — preserved so `verify()` and
-    // WHY: downstream consumers keep the coordinate without a second lookup.
     firstOffendingLine: opts.servedLine,
   });
 }
@@ -185,9 +144,6 @@ export function makeServedRejection(opts: {
   cause: RangeCause;
 }): DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE"> {
   if (opts.code === "E_UNVERIFIED_RANGE") {
-    // WHY: the unverified payload renders the general headline, never the
-    // WHY: caller-supplied clause: the bound is unplaceable, so naming
-    // WHY: per-anchor positions would narrate lines never targeted.
     const { servedRows, rendered } = buildRangeServeBlock(
       opts.startLine,
       opts.endLine,
@@ -246,34 +202,16 @@ export function makeStaleAnchorRejection(opts: {
 }
 
 /**
- * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J). The caller resolved
- * each end anchor's leased `line_id`; this verifies the whole served window remapped onto
- * `rebasedStart..rebasedEnd` — the dynamic rebase path's rigid remap, and the fast path's identity
- * remap (`rebasedStart === servedStart ∧ rebasedEnd === servedEnd`), which is why both paths reach
- * the same verdicts (#151):
- *
- *  - a different window length means an external insert/delete landed strictly inside the range
- *    (Probe J) -> `E_STALE_RANGE`;
- *  - a served line whose mirror row was truncated away, or an anchor holding no lease -> `E_STALE_RANGE`
- *    (the diagnosis separates the two: the served record cannot be reconciled, and no served identity);
- *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity
- *    to verify, and the span's extent is already pinned by the two boundary leases this gate verifies
- *    plus the window-length check above. Only rows `0` and `servedLen - 1` — the anchors the model
- *    named — stay fail-closed on a `null`, because with no served row there is nothing to verify them
- *    against;
- *  - a multi-line span whose strict interior covers a recorded outline fold line that is still
- *    unserved in the mirror -> `E_STALE_RANGE` (tranche 3 fold-gate); single-line spans have no
- *    interior and skip it, and a later served read that fills the folded lines disarms it;
- *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: "retirement"`, and
- *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code
- *    with `cause: "served-range staleness"` (Probes A/E/K: never apply at a coordinate whose
- *    immutable `line_id` is not the one leased).
- *
- * No canon data is consulted: identity comes from the mirror row's lease, so a same-anchor collision
- * between an old served line and unrelated current content cannot satisfy the gate (issue #151).
- * Identity — not anchor spelling — is authoritative: a surviving line may legitimately present a
- * different (content-derived) anchor in the new snapshot, so a string mismatch is not by itself a
- * failure. Throwing happens before any write, so a rejection leaves the file byte-identical.
+ * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J): the caller resolved each end anchor's leased
+ * `line_id`, and this verifies the whole served window remapped onto `rebasedStart..rebasedEnd`, so the dynamic rebase path's
+ * rigid remap and the fast path's identity remap reach the same verdicts (#151).
+ *  - window length differs (external insert/delete strictly inside, Probe J), a truncated mirror row, an anchor holding no lease -> `E_STALE_RANGE`;
+ *  - an interior row the mirror never served (`null`) -> **accepted** (docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md): it carries no identity, and the two boundary
+ *    leases plus the length check pin the extent; rows `0` and `servedLen - 1` stay fail-closed on a `null`;
+ *  - a strict interior covering a still-unserved recorded outline fold line -> `E_STALE_RANGE` (tranche 3 fold-gate);
+ *  - a retired lease -> `E_STALE_RANGE` with `details.cause: "retirement"`, a displaced live `line_id` ->
+ *    `cause: "served-range staleness"` (Probes A/E/K). Identity — not anchor spelling — is authoritative (#151): no canon data
+ *    is consulted, and throwing happens before any write, so a rejection leaves the file byte-identical.
  */
 export function verifyRebasedSpan(args: {
   served: readonly (string | null)[];
@@ -314,11 +252,6 @@ export function verifyRebasedSpan(args: {
   for (let k = 0; k < servedLen; k++) {
     const servedAnchor = served[servedStart - 1 + k];
     const currentLine = rebasedStart + k;
-    // WHY: the served window can come from the leases' own `served_line_number` because a truncated
-    // WHY: serve dropped the mirror rows it no longer covers (spec §3.1.1): the lease outlives the
-    // WHY: mirror. An absent slot is that missing record, never "this line was never served", so the
-    // WHY: span fails closed on the truth (the served record cannot be reconciled) and the current
-    // WHY: range is served for a fresh read.
     if (servedAnchor === undefined) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
@@ -331,10 +264,7 @@ export function verifyRebasedSpan(args: {
       });
     }
     if (servedAnchor === null) {
-      // WHY: ADR-0024 narrows informed destruction to the boundaries: an unread interior row has no
-      // WHY: identity to check, and the two verified boundary leases already fix the span's extent, so
-      // WHY: refusing it only taxed a correct edit. A `null` boundary is the named anchor itself —
-      // WHY: unverifiable by construction — so it keeps the fail-closed diagnosis.
+      // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
       if (k === 0 || k === servedLen - 1) {
         throw makeServedRejection({
           code: "E_STALE_RANGE",
@@ -360,10 +290,6 @@ export function verifyRebasedSpan(args: {
         cause: "never-served",
       });
     }
-    // WHY: two distinct diagnoses, one per condition (spec §5.3): a terminal lease is a
-    // WHY: `retirement` — the identity is gone and only a re-read revives it — while a live lease
-    // WHY: whose `line_id` no longer sits at its expected coordinate is drift between the served
-    // WHY: record and the rebased span.
     if (lease.retiredAt !== null) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
@@ -387,19 +313,7 @@ export function verifyRebasedSpan(args: {
       });
     }
   }
-  // WHY: outline fold-gate (tranche 3): a multi-line replacement whose strict interior covers a
-  // WHY: line an outline read hid (a recorded fold) is refused fail-closed with `E_STALE_RANGE` while
-  // WHY: that line is still unserved — the fold must never be silently erased. Single-line spans
-  // WHY: (replacement or point insertion on a declaration anchor) have no interior and skip this gate.
-  // WHY: The gate requires a mirror-null interior: a later served read that fills the folded lines
-  // WHY: disarms it. Folds and the mirror are both recorded in served coordinates, so the interior is
-  // WHY: walked in that frame (`servedStart + k`), never in rebased coordinates: inside a batch an
-  // WHY: earlier size-changing item shifts the rebased span, and probing the mirror at rebased lines
-  // WHY: refused a fully served body over lines it never covered (the window-length check above
-  // WHY: already pins `servedLen === rebasedLen`, so the mapping is rigid). Absent or empty folds keep the gate inert (ADR-0024
-  // WHY: interior acceptance is unchanged for non-outline reads, which record no folds).
-  // WHY: `served-range staleness` is the diagnosis: the span no longer resolves against the served
-  // WHY: record the session holds, and a re-read revives it — never a retry mandate (issue #149).
+  // Ref: docs/adr/0016-outline-mode-point-anchors.md
   if (outlineFolds !== undefined && outlineFolds.length > 0 && servedEnd > servedStart) {
     for (const fold of outlineFolds) {
       const startLine = fold.startLine;
@@ -417,7 +331,6 @@ export function verifyRebasedSpan(args: {
         }
       }
       if (!stillFolded) continue;
-      // WHY: the diagnosis names current coordinates, like every other headline of this gate.
       const shift = rebasedStart - servedStart;
       const hiddenStart = overlapStart + shift;
       const hiddenEnd = overlapEnd + shift;
@@ -434,10 +347,6 @@ export function verifyRebasedSpan(args: {
   }
 }
 
-// WHY: ---------------------------------------------------------------------------
-// WHY: Resolved-range contract (shared with apply/pipeline)
-// WHY: ---------------------------------------------------------------------------
-
 export interface ResolvedRange {
   startLine: number;
   endLine: number;
@@ -449,17 +358,11 @@ export interface ResolvedRange {
 /**
  * SAFETY: ServedHashEcho — one evidence predicate for the served hash echo condition.
  *
- * WHY: this section lives here (with the serve-row builders) rather than beside the edit path: the
- * WHY: evidence it judges is a served row, so the module that renders served rows also owns the
- * WHY: gates that read them. Callers keep passing every input explicitly (no session handle).
- *
- * GLOSSARY.md served hash echo: a candidate line
- * triggers only with evidence — it begins (after one optional leading `+`,
- * `-`, or space diff marker) with an anchor served for this session and path
- * at any position, AND the remainder reproduces the served content for that
- * anchor (`canonDigest(remainder) === served_leases.canon_hash`). One
- * such row suffices. No canon data means no evidence, so the candidate stays
- * silent — the tool never gates on the shape of a line.
+ * GLOSSARY.md served hash echo: a candidate line triggers only with evidence — after one optional
+ * leading `+`, `-` or space diff marker it begins with an anchor served for this session and path
+ * at any position, and the remainder reproduces the served content (`canonDigest(remainder) ===
+ * served_leases.canon_hash`). One such row suffices. No canon data means no evidence, so the
+ * candidate stays silent — the tool never gates on the shape of a line.
  */
 export interface ServedHashEchoMatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -569,9 +472,6 @@ export function findServedHashEcho(
   return undefined;
 }
 
-// WHY: the ad-hoc `ServedHashEchoError` subclass is retired (spec D1): the edit
-// WHY: and write seams throw `DomainError` with `E_SUSPICIOUS_TEXT` instead, so
-// WHY: `servedRows`, `servedBlock`, `cause`, and `details` keep their shape.
 export { DomainError as ServedHashEchoError };
 
 export interface ServedPrefixMismatch {
@@ -588,15 +488,13 @@ export interface ServedPrefixMismatch {
 /**
  * SAFETY: Served prefix mismatch — the middle tier beside the served hash echo gate.
  *
- * A candidate reports here when it opens with an anchor served for this session
- * and file, yet its remainder canon digest matches none of the digests the
- * leases recorded for that anchor's served line. Position-agnostic like the
- * gate: `start` only shifts the reported `line` and never narrows matching.
- * Empty or all-null `canonDigests` means no
- * served content to compare against, so the result stays empty — never a
- * shape-only report. Exact reproductions are excluded (the gate owns them),
- * so callers scan for this tier only after the gate stays silent.
- * Pure with no retained state: fires per occurrence, never suppressed.
+ * A candidate reports here when it opens with an anchor served for this session and file, yet its
+ * remainder canon digest matches none of the digests the leases recorded for that anchor's served
+ * line. Position-agnostic like the gate: `start` only shifts the reported `line` and never narrows
+ * matching. Empty or all-null `canonDigests` means no served content to compare against, so the
+ * result stays empty — never a shape-only report. Exact reproductions are excluded (the gate owns
+ * them), so callers scan for this tier only after the gate stays silent. Pure with no retained
+ * state: fires per occurrence, never suppressed.
  */
 export function findServedPrefixMismatches(
   lines: readonly string[],
@@ -710,16 +608,15 @@ export function findNeverServedAnchorShapes(
 
 /**
  * SAFETY: Soft hint for an applied edit carrying never-served anchor-shaped lines.
- * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
- * no rewrite. Once per `edit` call however many offending lines it holds — `count`
- * states how many replacement lines match the tool's own row shape with anchors
- * never served for this session and file. The trailing conditional clause is deliberate:
- * gated on `if ... unintended`, it names the affordance that exists in that case
- * (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
+ * Applied-only, bytes untouched, never blocks: the bytes were written as-is with no rewrite. Once per
+ * `edit` call however many offending lines it holds — `count` states how many replacement lines match
+ * the tool's own row shape with anchors never served for this session and file. The trailing
+ * conditional clause is deliberate: gated on `if ... unintended`, it names the affordance that exists
+ * in that case (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
  * order, carrying no run prefix. Both applied-hint builders (this one and
  * `buildServedEditPrefixNote`) carry the clause byte-identically, pinned by
- * test/core/served-prefix-note.test.ts.
- * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
+ * test/core/served-prefix-note.test.ts. Surfaced through the warnings seam (rendered by warnBlock)
+ * on the model-visible channel.
  */
 export function buildNeverServedEditHint(args: { count: number }): string {
   return `${formatWarning("W_NEVER_SERVED_SHAPE", { count: args.count })} ${ANCHOR_PREFIX_REMEDY}`;
@@ -732,7 +629,7 @@ type RefusalEntry = {
 
 /**
  * SAFETY: the refusal tally beside the served hash echo gate — one flat composite-key
- * cache (`${sessionKey}\0${absolutePath}`). Serves are session-keyed (ADR-0002), so one
+ * cache (`${sessionKey}\0${absolutePath}`). Serves are session-keyed (docs/.archive_adrs/0002-session-keyed-served-state.md), so one
  * session's count must never leak into another session refusing the same path. The flat
  * key keeps lookup, size, and eviction O(1) with no per-session scan. The `\0` separator
  * is enforced, never assumed (`refusalKey` rejects a part carrying one), so two scopes
@@ -754,12 +651,6 @@ const servedRefusalTracker = new Map<string, RefusalEntry>();
  */
 export const SERVED_REFUSAL_MAX_ENTRIES = 256;
 
-// WHY: `sessionKey` and `absolutePath` travel as two primitives through `refusalKey`,
-// WHY: `clearServedRefusals`, and both `trackServed*` seams, mirroring the established
-// WHY: `(sessionKey, path)` convention (`createSessionHandle`,
-// WHY: `clearNoopLoop`): a refusal scope is a pair of already-typed values, so a
-// WHY: `RefusalScope` wrapper would add an allocation per refusal without narrowing the
-// WHY: interface or preventing an argument-order slip.
 /**
  * SAFETY: the one encoding of a refusal scope. The `\0` separator is enforced, never
  * assumed: a part carrying one is rejected outright, because two scopes that fused into a
@@ -778,13 +669,8 @@ function trackRefusal(sessionKey: string, absolutePath: string, payload: string)
   const key = refusalKey(sessionKey, absolutePath);
   const existing = servedRefusalTracker.get(key);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  // WHY: `Map.set` on an existing key keeps its original position, so the delete is what
-  // WHY: refreshes recency — a resubmitted refusal moves to the tail and survives eviction.
   servedRefusalTracker.delete(key);
   servedRefusalTracker.set(key, { payload, count });
-  // WHY: a `while`, not an `if`: the cap must hold for whatever a future caller inserts in
-  // WHY: one refusal, and evicting after the insert keeps the head invariant obvious — the
-  // WHY: head is always the least recently refused key.
   while (servedRefusalTracker.size > SERVED_REFUSAL_MAX_ENTRIES) {
     for (const oldest of servedRefusalTracker.keys()) {
       servedRefusalTracker.delete(oldest);

@@ -1,22 +1,14 @@
 /**
  * Selection-range note replay — the measurement half of the note's acceptance gate.
  *
- * WHY this parses pi session JSONL directly: the transcripts already record every tool call and
- * result the model saw, so the replay needs no new log format and no runtime dependency. One pass
- * pairs assistant `toolCall` entries with their `toolResult`, then measures two external facts:
- * how often a served read carried a selection-range note (and from which provider source), and how
- * often a served read is followed by another read of the same file.
+ * Parses pi session JSONL directly: the transcripts already record every tool call and result
+ * the model saw, so the replay needs no new log format and no runtime dependency. One pass
+ * pairs assistant `toolCall` entries with their `toolResult`, then measures how often a served
+ * read carried a selection-range note (and from which provider source), and how often a served
+ * read is followed by another read of the same file.
  *
- * WHY the note is read back out of the served header instead of re-running the seam: the gate must
- * measure what the model actually saw, not a second implementation of the decision that could
- * drift from it. A transcript recorded without the note therefore exposes no treatment, and this
- * module reports that absence rather than inventing one.
- *
- * WHY the re-read share is unchanged from the retired widening gate: it is the external fact the
- * gate exists to move, it is blind to what the read contained, and keeping it is what makes a
- * before/after pair comparable. What changed is the question: the note claims not a fall, but a
- * measurable movement, and the report states when a movement is inside noise instead of gating on
- * an arbitrary target.
+ * The note is read back out of the served header rather than re-running the seam, so the gate
+ * measures what the model actually saw; the re-read share is the before/after fact it compares.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, normalize, resolve } from "node:path";
@@ -296,8 +288,6 @@ function notesInPage(text) {
     if (window === undefined) continue;
     const note = clauseOf(line);
     if (note === undefined) continue;
-    // WHY: the whole-file rule needs the page total, which a served window does not carry; it travels
-    // beside the window so the recorded window keeps only the span a reader expects.
     notes.push({
       note,
       window: { start: window.start, end: window.end },
@@ -308,17 +298,15 @@ function notesInPage(text) {
 }
 
 /**
- * The ADR-0014 legality rule the note owes a reader, in the order this predicate checks it: a window
- * that covers its whole file is illegal whatever the clause says, the named span must contain the
- * served window's first line, must not be the window itself, and — when the clause prints one — must
- * carry the preposition the containment implies. `in` claims the span reaches the window's end;
- * `starts in` claims the window escapes it. A legacy clause prints no preposition, so its corpus
- * stays valid.
+ * The ADR-0014 legality rule the note owes a reader, in the order this predicate checks it: a
+ * window covering its whole file is illegal whatever the clause says; the named span must
+ * contain the window's first line, must not be the window itself, and — when the clause prints a
+ * preposition — must carry the one containment implies (`in` reaches the window's end, `starts
+ * in` escapes it). A legacy clause prints none, so its corpus stays valid.
  *
- * The whole-file rule needs the page total, which a served window does not carry: `totalLines` is the
- * page's own total, passed beside the window so the recorded window stays the two fields the report
- * publishes. Nothing larger can enclose the file, and the renderer never notes such a window, so a
- * note on one is a violation by construction rather than a measurement.
+ * `totalLines` is the page's own total, passed beside the window: a served window does not carry
+ * it, and nothing larger can enclose the file, so a note on a whole-file window is a violation
+ * by construction rather than a measurement.
  */
 function isLegalNote(note, window, totalLines) {
   if (window.start === 1 && window.end === totalLines) return false;

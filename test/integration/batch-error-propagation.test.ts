@@ -38,7 +38,6 @@ describe("multi-item edit error propagation", () => {
             file: "bad-anchor.txt",
             edits: [
               { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
-              // A `HASH│row` copied out of served output: `resEdit` rejects the item's anchor syntax.
               { anchor_from: `${hashes[1]}│beta`, anchor_to: hashes[1]!, text: "BETA" },
             ],
           },
@@ -48,8 +47,6 @@ describe("multi-item edit error propagation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      // The item keeps its OWN code: `E_BATCH_ABORT` is reserved for overlapping/nested spans, and a
-      // model sent hunting for coordinate overlap instead of fixing the anchor string retries wrong.
       expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (bad-anchor.txt)");
@@ -64,9 +61,6 @@ describe("multi-item edit error propagation", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await servedHashes(ctx, readTool, "apply-loop.txt");
 
-      // Item 0 applies to the in-memory working buffer, then item 1's replacement contains a served hash echo
-      // served for the line it replaces: the failure is raised in the sequential apply loop, after an
-      // earlier item has already been applied to the buffer.
       const rejection = (await editTool
         .execute(
           "e1",
@@ -87,7 +81,6 @@ describe("multi-item edit error propagation", () => {
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (apply-loop.txt) failed");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // The earlier item reached only the in-memory buffer: the file keeps its pre-call bytes.
       expect(await readFile(path, "utf-8")).toBe(content);
     });
   });
@@ -99,8 +92,6 @@ describe("multi-item edit error propagation", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await servedHashes(ctx, readTool, "apply-failure.txt");
 
-      // Out-of-band write retires the leased line identity the item's anchor names, so item 1 fails
-      // the served-state gate even though item 0 is still fine.
       await writeFile(path, drifted, "utf-8");
 
       const rejection = (await editTool
@@ -132,8 +123,6 @@ describe("multi-item edit error propagation", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await servedHashes(ctx, readTool, "apply-payload.txt");
 
-      // Item 0 applies to the working buffer; item 1 asks for a `before` placement on a multi-line
-      // span, which the apply seam refuses with E_BAD_PAYLOAD.
       const rejection = (await editTool
         .execute(
           "e1",
@@ -151,8 +140,6 @@ describe("multi-item edit error propagation", () => {
         .catch((error: unknown) => error)) as Error;
 
       const message = rejection.message;
-      // WHY: the single-call path already pins one header, and it provably cannot catch this
-      // WHY: defect: this batch rendered the NEUTRAL clause with exactly one header.
       expect(message.match(/\[E_BAD_PAYLOAD\]/g)?.length).toBe(1);
       expect(message).toContain("[E_BAD_PAYLOAD] The edit payload is not valid:");
       expect(message).not.toContain("The payload is not valid:");
@@ -167,7 +154,6 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
   const nineLines = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
   const driftedLines = nineLines.replace("l5\n", "L5X\n");
 
-  /** Serves the whole file, then drifts one interior line on disk — the failing item's own diagnosis. */
   async function serveThenDrift(
     ctx: unknown,
     readTool: any,
@@ -209,13 +195,11 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         )
         .catch((error: unknown) => error)) as Caught;
 
-      // The failing item keeps its own code and retry rows — never a relabel, never a re-read.
       expect(rejection.code).toBe("E_STALE_RANGE");
       expect(rejection.message).toContain("[E_STALE_RANGE]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (batch-serve.txt)");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // The pre-rendered serve block survives the abort instead of degrading to "".
       expect(typeof rejection.servedBlock).toBe("string");
       expect(rejection.servedBlock!.length).toBeGreaterThan(0);
       const rows = rejection.servedRows ?? [];
@@ -227,11 +211,8 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
       for (const row of rows) {
         expect(rejection.servedBlock).toContain(`${row.hash}│`);
       }
-      // The block renders the failing item's window (lines 3-7), content-exact.
       expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "L5X", "l6", "l7"]);
-      // The batch envelope keeps the failing item's own diagnosis.
       expect(rejection.details?.cause).toBe("retirement");
-      // Atomicity: the clean sibling reached only the buffer.
       expect(await readFile(path, "utf-8")).toBe(driftedLines);
     });
   });
@@ -262,11 +243,9 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         .catch((error: unknown) => error)) as Caught;
 
       expect(rejection.code).toBe("E_STALE_RANGE");
-      // Sibling feedback keys stay per item: exactly the failing index is named.
       expect(rejection.message).toContain("edit[1]");
       expect(rejection.message).not.toContain("edit[0]");
       expect(rejection.message.match(/edit\[\d+\]/g)).toEqual(["edit[1]"]);
-      // No sibling bytes leak into the envelope: the block holds the failing window only.
       const blockLines = (rejection.servedBlock ?? "")
         .split("\n")
         .filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
@@ -278,9 +257,6 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
   });
 });
 
-// WHY: (#122) the invariant has to survive its own fix: an anchor that carries the sentinel is
-// WHY: harmless, and a leak in the CONTENT column must still fail — the flake and the teeth are
-// WHY: pinned together so neither can regress alone.
 describe("content column of a served block (#122)", () => {
   it("strips the anchor, so an anchor containing the sentinel is harmless", () => {
     expect(contentColumn("L1jg│l4\nHQPZ│l3")).toBe("l4\nl3");

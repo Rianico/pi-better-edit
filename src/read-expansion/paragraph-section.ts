@@ -38,7 +38,6 @@ export function findParagraph(
   }
   if (runStart >= 0) paragraphs.push({ start: runStart + 1, end: lines.length });
 
-  // WHY: a blank-free file is one run but has no paragraph delimiter; choose the exact read instead.
   if (!hasBlankLine) return null;
   return (
     paragraphs.find(

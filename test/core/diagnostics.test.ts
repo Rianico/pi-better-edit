@@ -54,8 +54,6 @@ describe("diagnostics sink", () => {
   });
 
   it("names the log beside the store", () => {
-    // WHY: the invariant is "same directory as the store", not "same literal string"; the directory
-    // WHY: rule itself is covered where the override ladder lives.
     expect(diagnosticsLogPath().endsWith(DIAGNOSTICS_LOG_NAME)).toBe(true);
     expect(dirname(diagnosticsLogPath())).toBe(dirname(hashStorePath()));
   });
@@ -63,8 +61,6 @@ describe("diagnostics sink", () => {
   it("rotates one generation when the cap is crossed", async () => {
     clearDiagnostics();
     await rm(`${diagnosticsLogPath()}.1`, { force: true });
-    // WHY: a zero-byte record is impossible, so the cap is crossed by a pre-filled log; the incoming
-    // WHY: record must then land in a FRESH file, or a single oversized record would never be written.
     await mkdir(dirname(diagnosticsLogPath()), { recursive: true });
     await writeFile(diagnosticsLogPath(), "x".repeat(DIAGNOSTICS_LOG_MAX_BYTES), "utf-8");
 
@@ -90,7 +86,6 @@ describe("diagnostics sink", () => {
       const previous = process.env["PI_BETTER_EDIT_CONFIG_DIR"];
       process.env["PI_BETTER_EDIT_CONFIG_DIR"] = join(blocker, "nested");
       try {
-        // WHY: the caller is a hook that must never turn a lost diagnostic into a failed tool call.
         expect(() => reportDiagnostic("store", "cannot land", new Error("EACCES"))).not.toThrow();
         await expect(stat(join(blocker, "nested"))).rejects.toThrow();
       } finally {

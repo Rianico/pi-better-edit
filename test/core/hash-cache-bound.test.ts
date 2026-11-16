@@ -4,9 +4,6 @@ import { HASH_CACHE_MAX_ENTRIES } from "../../src/hashline/hash-identity.js";
 import { SERVED_MAX_LINES } from "../../src/constants.js";
 import { initHasher } from "../../src/hashline/hasher.js";
 
-// WHY: `xxh32` throws until the module's `xxhash()` promise resolves, and this file derives anchors
-// WHY: synchronously (`contentOnlyHashes`) — the import graph used to buy that time, an explicit init
-// WHY: is what makes it deterministic instead of a race the CI host lost.
 beforeAll(async () => {
   await initHasher();
 });

@@ -1,15 +1,6 @@
 /**
  * SAFETY: edit-diff - row-intrinsic invisible-code-point annotation (issue #231).
  *
- * WHY: in-scope code points are a vanishingly small share of real-corpus characters,
- * WHY: so fatigue is not the risk; a missed disclosure is a silent byte change. The
- * WHY: annotation therefore lives on the diff rows themselves instead of a sentence:
- * WHY: each `-` row lists its own in-scope code points as `removed`, each `+` row
- * WHY: lists its own as `added`, in column order on one sub-row placed immediately
- * WHY: after its row. There is no cross-row pairing and no aggregation - block
- * WHY: rewrites annotate both sides independently - and context rows never get
- * WHY: sub-rows. The sub-row carries no file-line slot: adjacency to its diff row,
- * WHY: whose anchors map to the file line, carries the line.
  */
 import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
@@ -58,13 +49,6 @@ function entryToken(codePoint: number): string {
   return name === undefined ? hexToken(codePoint) : `${hexToken(codePoint)} ${name}`;
 }
 
-/**
- * WHY: the sub-row is row-intrinsic - it lists only the in-scope code points of
- * WHY: its own row, in column order, with the direction word naming the row kind.
- * WHY: The caret points at the first entry's column; past the byte cap the caret
- * WHY: and its padding are dropped rather than pointed at nothing, while every
- * WHY: entry keeps its column and full name.
- */
 function subRowForLine(line: string, direction: "removed" | "added"): string | undefined {
   const found = scanInvisibleLine(line);
   if (found.length === 0) return undefined;
@@ -125,9 +109,7 @@ function pushRemovedLines(
   }
   const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
   for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
-  // WHY: ADR-0024 — the model sees the deletion's head, tail, and exact size; the hidden rows still
-  // WHY: advance the cursor so every later row keeps its exact old line number and hash.
-  // WHY: #169 — the marker's count is the exact deleted span and uses the unified `lines deleted` diction.
+  // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
   output.push(` - ... [${omitted} lines deleted] ...`);
   oldLineNum.value += omitted;
   for (const line of displayLines.slice(-DIFF_REMOVED_EDGE)) emit(line);
@@ -145,36 +127,25 @@ function contextLinesToShow(
     skipStart = Math.max(0, displayLines.length - contextLines);
     linesToShow = displayLines.slice(skipStart);
   } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
-    // WHY: #170 — slice(-0) returns the whole array, so at context 0 the tail is taken
-    // WHY: explicitly; the gap then renders marker-only with the count covering the full span.
     const tail = contextLines === 0 ? [] : displayLines.slice(-contextLines);
     linesToShow = [...displayLines.slice(0, contextLines), UNTOUCHED_MARKER, ...tail];
     skipMiddle = displayLines.length - contextLines * 2;
   } else if (!nextPartIsChange && linesToShow.length > contextLines) {
-    // WHY: #166 — only trailing gaps may be sliced away silently; a middle gap renders whole
-    // WHY: below 2×context, otherwise hidden rows would desync the anchors that follow it.
     linesToShow = linesToShow.slice(0, contextLines);
   }
   return { linesToShow, skipStart, skipMiddle };
 }
 /**
- * genDiff is the single diff projection (#169). Return contract:
- * - every emitted row's anchor equals the true new-file line content hash at that
- *   position; removed rows carry the true old-file hash when old hashes are provided.
- * - every emitted marker's count equals the span it hides:
- *   ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING
- *   emitted anchor at its true file position; whether the hidden rows are addressable is a property
- *   of the serve that carries this projection (rows rendered through serve paths are leased there),
- *   not of this renderer, and ` - ... [N lines deleted] ...` advances the old cursor past
- *   N deleted rows (cursor-exact).
- * - collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172);
- *   at context 0 every non-empty middle gap collapses to a single counted untouched
- *   marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.
- * - servedRows mirror exactly the rendered context/addition rows (position + hash).
- * - `firstChangedLine`/`lastChangedLine` bracket the changed new-content lines (1-indexed,
- *   `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the
- *   position where the removed text sat, so an end-of-file deletion may name one line past the
- *   last new line — exactly as `firstChangedLine` already can, and both are absent on a no-op.
+ * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that
+ * position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
+ * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file
+ * position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
+ * ` - ... [N lines deleted] ...` advances the old cursor past N deleted rows (cursor-exact).
+ * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses
+ * to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows`
+ * mirror exactly the rendered context/addition rows (position + hash). `firstChangedLine`/`lastChangedLine` bracket the changed
+ * new-content lines (1-indexed, `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the position
+ * where the removed text sat, so an end-of-file deletion may name one line past the last new line, and both are absent on a no-op.
  */
 export function genDiff(
   oldContent: string,
@@ -182,8 +153,6 @@ export function genDiff(
   contextLines = 2,
   newContentHashes?: string[],
   oldContentHashes?: string[],
-  // WHY: required only when the caller omits precomputed hashes — the diff
-  // WHY: renderer must never derive content-only anchors for a file.
   filePath?: string,
 ): {
   diff: string;
@@ -229,9 +198,6 @@ export function genDiff(
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
       }
-      // WHY: a pure deletion names the position where the removed text sat, and an added part can
-      // WHY: push nothing; clamping to `firstChangedLine` keeps last >= first for every consumer
-      // WHY: that pairs them.
       if (lastChangedLine < (firstChangedLine ?? lastChangedLine)) {
         lastChangedLine = firstChangedLine;
       }
@@ -255,8 +221,6 @@ export function genDiff(
       }
       for (const line of linesToShow) {
         if (isUntouchedMarker(line)) {
-          // WHY: #169 — a hidden middle span is a counted `lines untouched` marker; both cursors
-          // WHY: advance past the exact hidden count, so anchors after it stay aligned.
           output.push(` ... [${skipMiddle} lines untouched] ...`);
           newLineNum += skipMiddle;
           oldLineNum += skipMiddle;

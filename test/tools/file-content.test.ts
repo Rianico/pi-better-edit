@@ -57,9 +57,6 @@ describe("FileContent — deep seam", () => {
   });
 
   it("serves the anchors the snapshot store already holds, instead of recomputing them", async () => {
-    // WHY: the read path passes `noPersist`, so nothing it does writes this snapshot: seeding it directly
-    // WHY: is the only way to prove the cache is consulted rather than coincidentally agreeing. The
-    // WHY: seeded anchors are deliberately unreachable from `hello\n`, so recomputation would fail here.
     await withTempFile("cache.txt", "hello\n", async ({ cwd }) => {
       const store = await loadHashStore();
       const content = "hello\n";

@@ -11,9 +11,6 @@ import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor, type ServedLease } from "../../src/served-session/session";
 
-// WHY: CAND-3 requirement (c): one scenario needs `writeAtomic` itself to fail mid-undo so the
-// store-mutation ordering is observable. The gate passes every other call through to the real
-// implementation (the read/edit setup in the same file must keep writing normally).
 const writeAtomicGate = vi.hoisted(() => ({ failNext: false }));
 vi.mock("../../src/fs-write.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/fs-write.js")>();
@@ -116,12 +113,9 @@ describe("CAND-3 unified post-write commit transaction", () => {
         store.db.exec("DROP TRIGGER cand3_edit_mirror_fail");
       }
 
-      // The bytes are on disk (§3.6.2): success + the ONE deferred-sync warning, never a rollback.
       expect(await readFile(path, "utf-8")).toBe(EDITED);
       expect(text).toContain("Successfully edited");
       expect(text).toContain("Store synchronization deferred");
-      // Requirement (a): no `served_leases` rows for the new snapshot while the mirror lacks
-      // them — both queried directly, and the reverse (snapshot/lineage without the mirror too).
       expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED)).toEqual([]);
       expect(mirrorHashes(store, sessionKeyFor(ctx), path)).toBe(mirrorBefore);
       expect(snapshotExists(store, path, EDITED)).toBe(false);
@@ -167,9 +161,6 @@ describe("CAND-3 unified post-write commit transaction", () => {
 
       expect(await readFile(path, "utf-8")).toBe(EDITED);
       expect(text).toContain("Store synchronization deferred");
-      // The reverse torn state: the grant failed INSIDE the transaction, so the mirror write
-      // rolled back with it — no dense serve rows without leases (pre-CAND-3, `recordDiff`
-      // committed the mirror in a separate transaction anyway).
       expect(mirrorHashes(store, sessionKeyFor(ctx), path)).toBe(mirrorBefore);
       expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED)).toEqual([]);
     });
@@ -225,24 +216,18 @@ describe("CAND-3 unified post-write commit transaction", () => {
         store.db.exec("DROP TRIGGER cand3_undo_mirror_fail");
       }
 
-      // Bytes restored, tool reports success with the deferred-sync warning (§3.6.2).
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);
       expect(text).toContain("Undone last edit");
       expect(text).toContain("Store synchronization deferred");
       expect(warnings?.some((w) => w.includes("Store synchronization deferred"))).toBe(true);
-      // Requirement (b): the adopt + retirement + displaced retire rolled back with the mirror —
-      // the restored snapshot has no LIVE leases while its mirror rows are missing. (Retired rows
-      // from the earlier read/edit legitimately pre-exist; the failed adopt must not revive them.)
       const originalLeases = leasesForSnapshot(store, sessionKey, path, ORIGINAL);
       expect(originalLeases.filter((lease) => lease.retired_at === null)).toEqual([]);
       expect(originalLeases.length).toBeGreaterThan(0);
       expect(mirrorHashes(store, sessionKey, path)).toBe(mirrorBefore);
-      // The in-transaction retirement rolled back too: the edited line's lease is still live.
       const stillLive = loadLeases(store, sessionKey, path).find(
         (lease) => lease.anchor === editedAnchor,
       );
       expect(stillLive?.retired_at).toBeNull();
-      // The displaced-anchor retire rode the same transaction: the legacy set is unchanged.
       expect(mirrorRetired(store, sessionKey, path)).toBe(retiredBefore);
     });
   });
@@ -278,9 +263,6 @@ describe("CAND-3 unified post-write commit transaction", () => {
         store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
       ).n;
 
-      // Requirement (c): fail the write itself — an uncommitted restore must leave the store
-      // untouched. Pre-CAND-3, the displaced-anchor retire ran BEFORE `writeAtomic` and had
-      // already rewritten `served.retired` when the write failed.
       writeAtomicGate.failNext = true;
       await expect(
         undoTool.execute("u1", { path: "cand3_undo_ordering.txt" }, undefined, undefined, ctx),
@@ -339,7 +321,6 @@ describe("CAND-3 unified post-write commit transaction", () => {
         store.db.exec("DROP TRIGGER cand3_undo_text_fail");
       }
 
-      // Requirement (d): the failure case names the warning instead of overstating the serve.
       expect(text).toContain("Store synchronization deferred");
       expect(text).not.toContain("carry fresh anchors");
       expect(text).toContain("not anchored for follow-up edits");
@@ -377,13 +358,10 @@ describe("CAND-3 unified post-write commit transaction", () => {
       );
       const text = getText(undone);
 
-      // Success-path wording is byte-identical to the pre-CAND-3 claim.
       expect(text).toContain("File reverted; diff rows carry fresh anchors for follow-up edits.");
       expect(text).not.toContain("Store synchronization deferred");
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);
 
-      // The one transaction wrote leases AND mirror: every live restored lease's anchor appears
-      // in the mirror at its served position (the shape the old two-transaction pair produced).
       const store = await loadHashStore();
       const sessionKey = sessionKeyFor(ctx);
       const mirror = JSON.parse(mirrorHashes(store, sessionKey, path) ?? "[]") as (string | null)[];

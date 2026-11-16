@@ -34,8 +34,6 @@ function assertPayloadPreserved(envelope: RejectionEnvelope, expectedCode: strin
   for (const row of rows) {
     expect(block).toContain(row.hash);
   }
-  // WHY: the range-family codes serve the current on-disk range as a fresh read with no mandate
-  // WHY: (issue #149) — the block is what the model decides from.
   expect(envelope.message).toContain("Current range (fresh read):");
 }
 
@@ -75,8 +73,6 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
       const single = await servedAnchors(ctx, readTool, "single.txt");
       const batch = await servedAnchors(ctx, readTool, batchName);
 
-      // Interior drift under live bounds: the bound anchors stay live
-      // while the served interior no longer matches.
       await writeFile(path, drifted, "utf-8");
       await writeFile(join(cwd, batchName), drifted, "utf-8");
 
@@ -111,22 +107,15 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
         )
         .catch((error: unknown) => error)) as RejectionEnvelope;
 
-      // The item keeps its own code: overlap relabelling would send the
-      // model hunting for coordinate overlap instead of the stale interior.
       expect(envelope.code).toBe("E_STALE_RANGE");
       expect(envelope.message).toContain(`edit[1] (${batchName})`);
       expect(envelope.message).toContain(
         "The whole edit call was rejected and NOTHING was written",
       );
       assertPayloadPreserved(envelope, "E_STALE_RANGE");
-      // WHY: file-scoped anchors make other-file block equality false by design —
-      // WHY: the verbatim reference for the batch item is the batch file's own
-      // WHY: served range, re-derived for the drifted on-disk content (the read
-      // WHY: predates the drift; the envelope renders the current range).
       const driftedHashes = await fileHashesFor(join(cwd, batchName), drifted);
       const driftedLines = drifted.split("\n");
       const batchRangeRows = [1, 2, 3].map((i, k) => ({
-        // WHY: range-relative 1-based positions, as the envelope carries them.
         position: k + 1,
         hash: driftedHashes[i]!,
       }));

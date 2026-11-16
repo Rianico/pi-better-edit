@@ -15,10 +15,8 @@ describe("disjoint batch drift gap", () => {
         ctx,
       );
       const text = getText(firstRead);
-      // Get hashes for b (line2) and h (line8) for disjoint edits
       const bRef = extractHash(text.split("\n").find((l) => l.includes("│b"))!);
       const hRef = extractHash(text.split("\n").find((l) => l.includes("│h"))!);
-      // External drift: change e (line5, in gap) and j (line10, outside)
       await writeFile(path, "a\nb\nc\nd\nE\nf\ng\nh\ni\nJ\n", "utf-8");
 
       const result = await editTool.execute(
@@ -35,23 +33,12 @@ describe("disjoint batch drift gap", () => {
         ctx,
       );
       const resultText = getText(result);
-      // C4: interval-aware drift — no Batch drift note, gap drift is now surfaced
       expect((result as any).details?.warnings?.join("\n") ?? "").not.toContain("Batch drift note");
       expect(resultText).not.toContain("Batch drift note");
-      // Gap drift (E) is now reported as drift because per-interval scan excludes only edited spans
-      // Since J is at line10 outside union 2..8, it should be considered drift if served and changed.
-      // But note file after edits: a,B,c,d,E,f,g,H,i,J -> J is still at 10, outside.
-      // Compute expected: drift should include J if outside.
-      // We check at least drift handling didn't crash and file content is correct.
       expect(await readFile(path, "utf-8")).toBe("a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n");
-      // Verify gap drift (E) and outside drift (J) are surfaced in driftNotice
       const gapDrift = (result as any).details?.driftNotice ?? "";
       expect(gapDrift).toContain("│E");
-      // Verify file hashes for B and H are correctly applied.
       const _hashes = await lineHashes("a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n", path);
-      // If drift for J is reported, resultText should contain J's hash row when not already reported
-      // For this single drift episode, J should be in drift notice unless capped.
-      // We don't assert strict drift content, just that warning exists and no crash.
       expect(resultText).toContain("Successfully edited");
     });
   });

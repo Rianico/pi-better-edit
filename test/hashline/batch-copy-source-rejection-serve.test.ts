@@ -44,10 +44,6 @@ export const END = 0;
 `;
 const LINES = SAMPLE.split("\n");
 
-// WHY: a same-file `text_ref` copy source is not a destructive span, so the baseline disjointness
-// WHY: check lets a later item copy lines an earlier item already rewrote. Its source verification
-// WHY: then refuses with rows rendered from the changed (uncommitted) batch buffer — reached through
-// WHY: public input alone, with no outline read and no mock.
 describe("copy-source rejection inside a changed batch buffer (served-or-absent)", () => {
   it("serves and records no buffer rows, names a current-file read, and keeps a standalone edit valid", async () => {
     await withTempFile("sample.ts", SAMPLE, async ({ cwd, path }) => {
@@ -71,7 +67,6 @@ describe("copy-source rejection inside a changed batch buffer (served-or-absent)
           {
             file: "sample.ts",
             edits: [
-              // WHY: rewrites line 6 into five lines, changing the buffer the copy source is read from.
               {
                 anchor_from: at(6),
                 anchor_to: at(6),
@@ -100,7 +95,6 @@ describe("copy-source rejection inside a changed batch buffer (served-or-absent)
         "An anchored read of current-file lines 5-8 would serve that range.",
       );
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
-      // WHY: the rejection left the persistent served record exactly as the read wrote it.
       expect(await mirror.load()).toEqual(servedBefore);
 
       const result = await editTool.execute(

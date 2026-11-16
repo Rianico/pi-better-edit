@@ -75,7 +75,6 @@ describe("undo_last_edit adopts the pinned canonical snapshot", () => {
 
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);
 
-      // The pinned snapshot is a cache hit: the counter must not have moved (zero allocations).
       expect(nextCounter(store, path)).toBe(counterAfterEdit);
 
       const pinned = snapshotHashFor(ORIGINAL);
@@ -85,12 +84,10 @@ describe("undo_last_edit adopts the pinned canonical snapshot", () => {
       expect(restored!.retired_at).toBeNull();
       expect(restored!.served_snapshot_hash).toBe(pinned);
 
-      // The authoritative writer retired the lease of the line the revert removed.
       const removed = leases.find((lease) => lease.anchor === editedAnchor);
       expect(removed).toBeDefined();
       expect(removed!.retired_at).not.toBeNull();
 
-      // No active lease may reference a line absent from the adopted lineage.
       const anchors = lineageAnchors(store, path, pinned);
       const active: ServedLease[] = leases.filter((lease) => lease.retired_at === null);
       for (const lease of active) expect(anchors).toContain(lease.anchor);

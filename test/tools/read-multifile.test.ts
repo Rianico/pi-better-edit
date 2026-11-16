@@ -100,8 +100,7 @@ describe("read tool — single file", () => {
         ctx,
       );
       const text = getText(result);
-      // WHY: verbatim renders plain text with no anchors and grants no lease (ADR-0041 D3: the
-      // WHY: mode lives top-level only, so there is no per-file override to consult).
+      // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
       expect(text).toContain(SIX.trimEnd().split("\n")[0]!);
       expect(text).not.toContain(`│${SIX.trimEnd().split("\n")[0]!}`);
       const anchorRows = text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
@@ -112,8 +111,6 @@ describe("read tool — single file", () => {
   it("rejects the retired `{ files: [...] }` outer shape with windows (ADR-0041 D1)", async () => {
     await withTempFile("legacy.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: one file per call — the outer array is gone, so a `files`-shaped payload fails
-      // WHY: validation (no top-level `file`), never partially reads.
       await expect(
         readTool.execute(
           "r1",
@@ -129,7 +126,6 @@ describe("read tool — single file", () => {
   it("rejects the retired bare `{ files: [...] }` outer shape (ADR-0041 D1)", async () => {
     await withTempFile("legacy.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: the retired alias for one file — rejected at the schema, not read.
       await expect(
         readTool.execute("r1", { files: [{ file: "legacy.ts" }] }, undefined, undefined, ctx),
       ).rejects.toThrow(/Schema validation failed/);
@@ -154,8 +150,6 @@ describe("read tool — single file", () => {
   it("accepts the recorded `path`/`offset`/`limit` payload as one window", async () => {
     await withTempFile("aliased.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: D17 folds a recorded flat payload onto the canonical single-window shape before
-      // WHY: schema validation, so it reads exactly like `{ file, windows: [{ offset, limit }] }`.
       const whole = await readTool.execute("r1", { path: "aliased.ts" }, undefined, undefined, ctx);
       expect(rowsOf(getText(whole))).toHaveLength(12);
 
@@ -203,9 +197,6 @@ describe("read tool — single file", () => {
         offset: index + 1,
         limit: 1,
       }));
-      // WHY: the registered schema (`maxItems`) and admission both name this cap, and the preview's
-      // WHY: runtime mirror is what a DIRECT `fmtReadPreview` caller hits — so the mirror must use the
-      // WHY: same message, not a third spelling of the same limit.
       await expect(fmtReadPreview(TWELVE, { windows: tooMany }, undefined, path)).rejects.toThrow(
         MAX_READ_WINDOWS_MESSAGE,
       );
@@ -213,8 +204,6 @@ describe("read tool — single file", () => {
   });
 
   it("rejects a call that names no file at all", async () => {
-    // WHY: under ADR-0041 D1 the schema itself requires `file`, so the empty call fails
-    // WHY: validation before admission runs — the same refusal, one layer up from admission.
     await withTempFile("none.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await expect(readTool.execute("r1", {}, undefined, undefined, ctx)).rejects.toThrow(
@@ -278,8 +267,6 @@ describe("read windows — interval algebra", () => {
       expect(text).toContain("[Lines 1-3 of 12 total]");
       expect(text).toContain("[Lines 2-4 of 12 total]");
       expect(text).toContain("[Lines 4-5 of 12 total]");
-      // WHY: a shared or abutting line is retained once by the merged walk and still belongs to every
-      // WHY: window that named it, so the rows of each section stay exactly what it asked for.
       expect(
         text.split("[Lines 2-4 of 12 total]")[1]!.split("[Lines 4-5 of 12 total]")[0]!.match(/│/g),
       ).toHaveLength(3);
@@ -392,8 +379,6 @@ describe("read windows — around_anchor", () => {
         ctx,
       );
       const anchor = anchorsByLine(getText(served)).get("line 9")!;
-      // WHY: the file is replaced wholesale, so the served line's identity has no coordinate in the
-      // WHY: new content — the lease is retired and the window is omitted instead of guessing a line.
       await writeFile(join(cwd, "retired.ts"), "totally\ndifferent\ncontent\n", "utf-8");
       const result = await readTool.execute(
         "r2",
@@ -441,7 +426,6 @@ describe("read payload contract", () => {
         mode: "served",
       }),
     ).toBe(true);
-    // WHY: the outer array is a stated removal (ADR-0041 D1): schema refusal, not absence.
     expect(validator.Check({ files: [{ file: "a.ts" }] })).toBe(false);
     expect(
       validator.Check({
@@ -466,8 +450,6 @@ describe("read payload contract", () => {
   });
 
   it("rejects the retired `{ files: [...] }` outer shape at the schema (ADR-0041 D1)", () => {
-    // WHY: one file per call — the outer array is gone, so a `files`-shaped payload fails
-    // WHY: validation (no `file` property). This states the removal as contract, not absence.
     expect(validator.Check({ file: "a.ts" })).toBe(true);
     expect(validator.Check({ files: [{ file: "a.ts" }] })).toBe(false);
     expect(validator.Check({ files: [{ file: "a.ts" }, { file: "b.ts" }] })).toBe(false);
@@ -507,21 +489,12 @@ describe("read retired shape — the removed fan-out", () => {
     await withTempDir("read-files-", async (dir) => {
       for (const name of ["a.ts", "b.ts"]) await writeFile(join(dir, name), SIX, "utf-8");
       const { ctx, readTool } = setupIntegrationTest(dir);
-      // WHY: one file per call — a two-entry `files` payload fails validation (no `file`
-      // WHY: property), so fan-out is refused, never silently partially read. The flat shape
-      // WHY: still reads fine on the same setup (pinned by the single-file tests above).
       const failure = await readTool
         .execute("r2", { files: [{ file: "a.ts" }, { file: "b.ts" }] }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (error: Error) => error,
         );
-      // WHY: LIMIT OF THIS ASSERTION — the wording asserted here is OUR test double's construction
-      // WHY: (test/support/fixtures.ts:165-173), not pi's: this repo carries typebox 1.3.27 while pi
-      // WHY: bundles 1.3.7, and the SDK's own refusal reads `Validation failed for tool "read":`.
-      // WHY: So this pins the harness's imitation of the runtime wording and would stay green if
-      // WHY: pi's wording changed. The load-bearing claim — that the schema fires BEFORE `execute` —
-      // WHY: is asserted behaviourally in the unwrapped-definition test below.
       expect(failure?.message).toContain("Schema validation failed");
     });
   });
@@ -531,8 +504,6 @@ describe("read retired shape — the removed fan-out", () => {
       for (const name of ["a.ts", "b.ts"]) await writeFile(join(dir, name), SIX, "utf-8");
       const ctx = { cwd: dir, sessionManager: testSessionManager };
       const tool = unvalidatedReadTool();
-      // WHY: without the schema in front, admission is the only thing keeping the shape true —
-      // WHY: a `files`-shaped payload has no `file`, so it fails with the field's own message.
       await expect(
         tool.execute("r1", { files: [{ file: "a.ts" }] }, undefined, undefined, ctx),
       ).rejects.toThrow('Read request field "file" must be a non-empty path.');
@@ -560,10 +531,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
         await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
       );
       expect(text.startsWith("[a.ts (6 lines total)]\n")).toBe(true);
-      // WHY: the header is chrome — the rows stay strictly `HASH│content`, with no line numbers.
       expect(rowsOf(text)).toEqual(SIX.trimEnd().split("\n"));
-      // WHY: every line carrying a `HASH│` separator must BE a served row with the 4-char anchor
-      // WHY: prefix — a numbered (`12│line`) or unanchored row fails the prefix or stops being a row.
       const rowLines = text.split("\n").filter((line) => line.includes("│"));
       expect(rowLines).toHaveLength(SIX.trimEnd().split("\n").length);
       expect(rowLines.every((line) => /^[A-Za-z0-9]{4}│/.test(line))).toBe(true);
@@ -591,7 +559,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       expect(text.startsWith("[a.ts (12 lines total)]\n")).toBe(true);
       expect(text).toContain("[Lines 2-3 of 12 total]\n");
       expect(text).toContain("[Lines 6-7 of 12 total]\n");
-      // WHY: four served rows (2 + 2), each strictly `HASH│content` — never a numbered row.
       const rowLines = text.split("\n").filter((line) => line.includes("│"));
       expect(rowLines).toHaveLength(4);
       expect(rowLines.every((line) => /^[A-Za-z0-9]{4}│/.test(line))).toBe(true);
@@ -610,11 +577,8 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
         ctx,
       );
       const text = getText(result);
-      // WHY: exact bytes — a `HASH│` prefix or a row-level line number breaks this equality, so the
-      // WHY: assertion discriminates where the shape checks it replaces could not.
       expect(text).toBe(`[README.md (verbatim, 45 lines total)]\n${readme.trimEnd()}`);
-      // WHY: the lease half of the verbatim contract (§4.4): a served read would have left this
-      // WHY: session one lease per row — the verbatim read leaves none.
+      // Ref: docs/spec/search-and-read-evolution.md
       const store = await loadHashStore();
       expect(loadLeases(store, TEST_SESSION_ID, await resolveTarget(path))).toEqual([]);
     });
@@ -632,7 +596,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
           ctx,
         ),
       );
-      // WHY: no footer (spec §4.4) — a partial page states its range in the header instead.
       expect(text).toContain("[app.ts (lines 1-50 of 200 total)]");
       expect(text).not.toContain("Use windows");
     });
@@ -650,8 +613,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
           ctx,
         ),
       );
-      // WHY: the flattening unifies single-window reads on the §4.4 page form — the retired
-      // WHY: files-shaped canonical read rendered the bounded-ask sub-banner with no footer.
       expect(text).toContain("[app.ts (lines 1-50 of 200 total)]");
       expect(text).not.toContain("Use windows");
       expect(text).not.toContain("[Lines ");
@@ -659,8 +620,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
   });
 
   it("reads a file exactly the served budget with no inline refusal", async () => {
-    // WHY: BUDGET_EXACT fits the call's budget on its own (exactly SERVED_MAX_LINES lines): with one
-    // WHY: file per call there is no sibling to draw first, so the budget gate has nothing to refuse.
     await withTempFile("exact.ts", BUDGET_EXACT, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
@@ -676,7 +635,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
       );
-      // WHY: the header names the range it actually showed and where it stopped, not a footer.
       expect(text).toContain("[a.ts (lines 1-2000 of 2500 total)]");
       expect(text).not.toContain("Use windows");
     });
@@ -685,9 +643,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
   it("names the missing file in the call refusal", async () => {
     await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: one file per call, so an unreadable file fails the call — and the refusal names the
-      // WHY: file, which is what the model must re-read past. (The E_NOT_FOUND code itself is
-      // WHY: pinned by the sibling test below.)
       await expect(
         readTool.execute("r1", { file: "missing.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(/File not found: missing\.ts/);
@@ -697,7 +652,6 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
   it("refuses a non-text file with E_UNSUPPORTED_FILE", async () => {
     await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: one file per call, so a directory target fails the call with the tool's own refusal.
       await expect(
         readTool.execute("r1", { file: "." }, undefined, undefined, ctx),
       ).rejects.toThrow(/\[E_UNSUPPORTED_FILE\]/);
@@ -768,7 +722,6 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
         "[plain.txt (verbatim, 12 lines total)]\n" +
           "[Window warning: Anchor 'a1b2' not found; window omitted]",
       );
-      // WHY: a verbatim read is a reference read — it grants no lease and writes no served state.
       const store = await loadHashStore();
       expect(loadLeases(store, TEST_SESSION_ID, await resolveTarget(path))).toEqual([]);
     });
@@ -791,13 +744,8 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
         undefined,
         ctx,
       );
-      // WHY: spec §4.3 resolves `around_anchor` against the target file's active lineage for the
-      // WHY: session and carries NO mode qualifier, so this anchor genuinely resolves even though the
-      // WHY: target renders verbatim. §4.4's verbatim contract constrains RENDERING (plain lines, no
-      // WHY: anchors) and LEASES (none granted) only — never resolution. The default radius 10 clamps
-      // WHY: the window to the whole file.
+      // Ref: docs/spec/search-and-read-evolution.md
       expect(getText(verbatim)).toBe(`[plain.txt (verbatim, 12 lines total)]\n${TWELVE.trimEnd()}`);
-      // WHY: resolution renders no anchor and writes no served state — the leases are untouched.
       expect(loadLeases(store, TEST_SESSION_ID, absolute)).toEqual(before);
     });
   });
@@ -807,9 +755,6 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const served = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       const anchor = anchorsByLine(getText(served)).get("line 3")!;
-      // WHY: one file per call — the store opens for the verbatim target's own anchor window
-      // WHY: (needsStore keys on verbatim+anchor), resolving against the lineage s1 served above;
-      // WHY: the resolved window renders as PLAIN lines (§4.4), not served rows.
       const text = getText(
         await readTool.execute(
           "v1",
@@ -839,8 +784,6 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
           ctx,
         ),
       );
-      // WHY: opening the store for a verbatim target must not make a FOREIGN anchor resolve — §4.3
-      // WHY: keeps the one wording for unknown, expired and foreign alike.
       expect(text).toBe(
         "[b.ts (verbatim, 12 lines total)]\n" +
           `[Window warning: Anchor '${foreign}' not found; window omitted]`,
@@ -871,9 +814,6 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       const served = await readTool.execute("s1", { file: "a.ts" }, undefined, undefined, ctx);
       const anchor = anchorsByLine(getText(served)).get("line 4")!;
 
-      // WHY: one file per call — the genuine anchor resolves to its window (§4.3) while the
-      // WHY: unresolvable anchor in the second window leaves the warning; windows proceed
-      // WHY: independently within the one file.
       const text = getText(
         await readTool.execute(
           "r1",
@@ -923,8 +863,6 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
           };
         });
       try {
-        // WHY: one file per call — a session-write failure stays the call's failure (the
-        // WHY: single-file contract), even though every row is already rendered.
         await expect(
           readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
         ).rejects.toThrow("mirror phase boom");

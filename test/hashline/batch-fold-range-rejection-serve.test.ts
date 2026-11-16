@@ -14,12 +14,15 @@ import {
   withTempFile,
 } from "../support/fixtures";
 
-// WHY: (R3) drives the REAL fold gate in a changed batch buffer to pin the range-end relabel. A
-// WHY: same-file `text_ref` copy is not a destructive span, so the baseline disjointness gate only
-// WHY: resolves its target — its SOURCE is resolved later, inside the mutate loop, after the
-// WHY: preceding item grew line 1. The source (tail, served lines 9-14) has the unread outline fold
-// WHY: 10-13 in its interior, so `verifyRebasedSpan` emits `line 14-17` in working-buffer
-// WHY: coordinates (shift +4); the rowless rewrite must re-anchor BOTH ends to current-file 10-13.
+/**
+ * R3: drives the REAL fold gate in a changed batch buffer to pin the range-end relabel.
+ * A same-file `text_ref` copy is not a destructive span, so the baseline disjointness
+ * gate only resolves its target; its SOURCE resolves later, inside the mutate loop,
+ * after the preceding item grew line 1. The source (tail, served lines 9-14) has the
+ * unread outline fold 10-13 in its interior, so `verifyRebasedSpan` emits `line 14-17`
+ * in working-buffer coordinates (shift +4) and the rowless rewrite must re-anchor BOTH
+ * ends to current-file 10-13.
+ */
 useTestHome();
 
 type Tool = {
@@ -113,14 +116,11 @@ describe("fold-range rejection inside a changed batch buffer (range-end relabel)
       expect(message).not.toContain("Current range (fresh read):");
       expect(message).toContain("is hidden by an outline fold");
       expect(message).toContain("none grant leases and none were recorded as served");
-      // WHY: the buffer range 14-17 is re-anchored to current-file 10-13 — BOTH ends, so neither a
-      // WHY: whole buffer range nor a start-only relabel (`line 10-17`) leaks.
       expect(message).toContain("line 10-13");
       expect(message).not.toContain("line 14-17");
       expect(message).not.toContain("line 10-17");
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
 
-      // WHY: the rejection left the served record untouched, so a standalone edit still applies.
       const result = await editTool.execute(
         "e2",
         {

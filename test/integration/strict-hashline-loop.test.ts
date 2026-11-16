@@ -27,8 +27,6 @@ describe("strict hashline tool loop", () => {
         ctx,
       );
 
-      // The replaced line's leased identity is retired with no live unshifted bound, so the same
-      // anchor is [E_TARGET_LOST] with no rows, not [E_STALE_ANCHOR] (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e2",

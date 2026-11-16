@@ -1,28 +1,14 @@
 /**
- * #100 — the USE-TIME corruption quarantine trigger: the first statement that fails with a
- * corruption error quarantines and rebuilds the store, instead of leaving the damage for the
- * next open or the janitor's periodic deep check.
+ * #100 — the USE-TIME corruption quarantine trigger: the first statement that fails with a corruption
+ * error quarantines and rebuilds the store. The open path accepts a store whose header is intact
+ * (#87c) and the janitor only deep-checks at lifecycle boundaries, so damage inside page 2+ sits live
+ * until something touches it; the guarded handle makes that first touch the trigger, arms exactly one
+ * heal (shutdown, `quarantineStore`, reopen) and rethrows the ORIGINAL error.
  *
- * WHY this file exists: the open path accepts a store whose header is intact (the #87c smoke
- * check) and the janitor deep-checks only at lifecycle boundaries, so damage inside page 2+
- * sits live until something touches it. The guarded handle makes that first touch the trigger:
- * it arms exactly one heal — shutdown, `quarantineStore`, reopen — and rethrows the ORIGINAL
- * error, so the failure stays loud and no success is ever synthesized.
- *
- * WHAT THE TESTS PIN, and why each is refutable:
- * - The REPRO itself: a stamped store with a corrupted table root still opens (the probe table
- *   survives the open, so no rebuild happened there), then the first statement touching the
- *   damage throws the engine's own `SQLITE_CORRUPT`, exactly one `.corrupt-*` lands beside the
- *   store, and the next access is fresh (the probe table is gone, the rebuilt store is empty).
- *   The damage is proved engine-visible first, from a copy, so the test cannot pass on damage
- *   SQLite would read cleanly.
- * - The double-heal race: two statements failing before the heal completes arm exactly ONE
- *   quarantine, and BOTH callers still hear the original corruption error rather than a
- *   teardown artifact.
- * - The invariance: syntax, constraint, busy and closed-handle failures never quarantine and
- *   leave the store intact — the discriminator decides, not the guard. The closed-handle case
- *   doubles as the stale-handle rule: a pre-heal proxy wraps a closed db, so reusing it after a
- *   heal must fail closed, never heal again.
+ * The tests pin the repro (damage proved engine-visible first, so the test cannot pass on damage
+ * SQLite reads cleanly), the double-heal race (two statements arm ONE quarantine and both hear the
+ * original error), and the invariance (syntax, constraint, busy and closed-handle failures never
+ * quarantine; a pre-heal proxy reused after a heal fails closed).
  */
 import { describe, expect, it, vi } from "vitest";
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -62,7 +48,6 @@ async function withStoreDir(run: (dir: string) => Promise<void>): Promise<void> 
  * beside it, so the count that must read exactly one filters on the database file's own name.
  */
 async function quarantinedMain(dir: string): Promise<string[]> {
-  // WHY the state subdir: the override names the extension's root, the store lives in `<root>/state`.
   const names = await readdir(join(dir, "state"));
   return names.filter((name) => name.startsWith("hash-store.sqlite.corrupt-"));
 }
@@ -143,11 +128,8 @@ describe("use-time corruption quarantine (#100)", () => {
     await withStoreDir(async (dir) => {
       await seedProbeStore();
       await corruptProbeRoot();
-      // The engine itself refuses these bytes at statement time ...
       const verdict = (await engineVerdictOnProbe()) as { errcode?: unknown } | undefined;
       expect(verdict?.errcode).toBe(11);
-      // ... yet the stamped open still takes the fast path over them: the probe table survives
-      // the open, so no rebuild happened there.
       const store = await loadHashStore();
       expect(
         store.db.prepare("SELECT name FROM sqlite_schema WHERE name = 'probe'").get(),
@@ -160,7 +142,6 @@ describe("use-time corruption quarantine (#100)", () => {
       }
       expect(isCorruptionError(thrown)).toBe(true);
       expect((thrown as { errcode?: unknown })?.errcode).toBe(11);
-      // The statement above armed the heal; joining it is what makes this access fresh.
       const fresh = await loadHashStore();
       expect(await quarantinedMain(dir)).toHaveLength(1);
       expect(
@@ -241,9 +222,7 @@ describe("use-time corruption quarantine (#100)", () => {
       } finally {
         try {
           rival.exec("ROLLBACK");
-        } catch {
-          // The lock is already released; the rollback is best-effort cleanup.
-        }
+        } catch {}
         rival.close();
       }
       expect(await quarantinedMain(dir)).toHaveLength(0);
@@ -266,7 +245,6 @@ describe("use-time corruption quarantine (#100)", () => {
       expect(thrown).toBeDefined();
       expect(isCorruptionError(thrown)).toBe(false);
       expect(await quarantinedMain(dir)).toHaveLength(0);
-      // The store itself reopens fine afterwards — failing closed cost nothing.
       const reopened = await loadHashStore();
       expect(reopened.db.prepare("SELECT 1 AS one").get()).toEqual({ one: 1 });
     });

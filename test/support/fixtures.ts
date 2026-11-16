@@ -34,14 +34,12 @@ export function readDiagnostics(): DiagnosticRecord[] {
       .filter((line) => line.length > 0)
       .map((line) => JSON.parse(line) as DiagnosticRecord);
   } catch {
-    // WHY: an absent log is the honest reading of "nothing was reported".
     return [];
   }
 }
 
 /** Drop the records written so far, so a test can assert on its own slice of the log. */
 export function clearDiagnostics(): void {
-  // SAFETY: best effort — a missing file already means "no records".
   rmSync(diagnosticsLogPath(), { force: true });
 }
 export async function getWritableTempRoot(): Promise<string> {
@@ -59,8 +57,6 @@ export async function setupTestHome(): Promise<{
   const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY: (#190) the two roots this extension resolves are the agent directory and the XDG state
-  // WHY: directory; an inherited value would point them at the developer's real ones.
   vi.stubEnv("XDG_STATE_HOME", "");
   vi.stubEnv("PI_CODING_AGENT_DIR", "");
   const testPath = join(tmpHome, "test.txt");
@@ -91,7 +87,10 @@ export function useTestHome(): { testPath: string } {
   return state;
 }
 
-// NOTE (#89/#190): with the setupFiles seam active the store no longer follows this HOME stub, so a test that needs a HOME-derived state dir must clear the seam with an empty PI_BETTER_EDIT_CONFIG_DIR.
+/**
+ * With the setupFiles seam active the store does not follow this HOME stub, so a test that needs
+ * a HOME-derived state dir must clear the seam with an empty `PI_BETTER_EDIT_CONFIG_DIR`.
+ */
 export function withHome(home: string | undefined): () => void {
   const previousHome = process.env.HOME;
   const previousXdg = process.env.XDG_CONFIG_HOME;
@@ -188,18 +187,12 @@ export async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
   process.env.HOME = dir;
   process.env.XDG_CONFIG_HOME = "";
-  // WHY (#89): the setupFiles seam is always set, so without clearing it here the store would be one per
-  // WHY: file; HOME is repointed per call, so clearing it restores per-call freshness under this temp HOME.
   process.env.PI_BETTER_EDIT_CONFIG_DIR = "";
-  // WHY (#190): with the seam cleared the two roots now come from HOME, so any inherited XDG state
-  // WHY: or agent directory would outrank the per-call temp HOME this helper just published.
   process.env.XDG_STATE_HOME = "";
   process.env.PI_CODING_AGENT_DIR = "";
   return dir;
 }
 
-// WHY: (#165) tool contexts must carry a session — sessionKeyFor fails loud without one — so the
-// WHY: shared fixture ctx supplies this fixed session to keep read/preview/execute agreeing.
 export const TEST_SESSION_ID = "fixture-session";
 export const testSessionManager = { getSessionId: () => TEST_SESSION_ID };
 
@@ -294,9 +287,9 @@ export function extractHash(line: string): string {
 }
 
 /**
- * The served rows of a read result: every `HASH│content` line, with the per-file header (spec §4.4)
- * and any inline warning left out. WHY: a test that read `split("\n")[N]` or counted its length was
- * addressing rows, and the header is chrome, not a row.
+ * The served rows of a read result: every `HASH│content` line, with the per-file header
+ * (spec §4.4) and any inline warning left out. A test that indexes `split("\n")[N]` or counts
+ * its length is addressing rows; the header is chrome, not a row.
  */
 export function anchorRows(text: string): string[] {
   return text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
@@ -318,12 +311,11 @@ export function expectedEditContent(
 }
 
 /**
- * `lineHashes` with the store side effect named (arch-03).
- *
- * WHY: the serve/lease tests below derive a file's anchors and then read the snapshot/lineage back;
- * WHY: that used to happen through the retired process-global IO, which silently chose a store from
- * WHY: the environment. This threads the same store explicitly, so the call still materializes the
- * WHY: snapshot the test asserts on without any ambient fallback to leak into src.
+ * `lineHashes` with the store side effect named (arch-03): the serve/lease tests below derive a
+ * file's anchors and then read the snapshot/lineage back, which used to happen through the
+ * retired process-global IO that silently chose a store from the environment. This threads the
+ * same store explicitly, so the call still materializes the snapshot the test asserts on
+ * without any ambient fallback leaking into src.
  */
 export async function materializedLineHashes(
   content: string,

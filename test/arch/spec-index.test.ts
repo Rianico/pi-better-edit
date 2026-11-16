@@ -16,7 +16,6 @@ function linkedSpecFiles(text: string): string[] {
   return out;
 }
 
-/** The index-table rows of the README: the tables are the index, so prose links stay out. */
 function indexTableText(readme: string): string {
   return readme
     .split("\n")
@@ -24,7 +23,6 @@ function indexTableText(readme: string): string {
     .join("\n");
 }
 
-/** Names linked more than once, in first-duplicate order. */
 function duplicates(names: readonly string[]): string[] {
   const seen = new Set<string>();
   const dupes: string[] = [];
@@ -46,15 +44,11 @@ function specDirFiles(): string[] {
 
 describe("spec index", () => {
   it("links every spec record exactly once", () => {
-    // WHY: the index is the only discoverable map of the specification set, so
-    // WHY: a duplicated or missing entry silently misdirects a reader.
     const readme = readFileSync(join("docs", "spec", "README.md"), "utf-8");
     expect(duplicates(linkedSpecFiles(indexTableText(readme)))).toEqual([]);
   });
 
   it("registers every spec file on disk", () => {
-    // WHY: a new spec record that is never registered is the sibling defect of
-    // WHY: a duplicated row — present but unreachable through the index.
     const readme = readFileSync(join("docs", "spec", "README.md"), "utf-8");
     const linked = new Set(linkedSpecFiles(readme));
     for (const name of specDirFiles()) {

@@ -1,23 +1,13 @@
 /**
  * Closed downstream (`Rianico/dsh-better-edit`) issues re-verified against the line-identity MVCC
- * redesign (bd3a8f2).
- *
- * Why re-verify at all: several of those closes rested on mechanisms the redesign *replaced*, so
- * "closed" is not inherited evidence —
- *   - #31 (freed anchors re-bind to identical-content lines) was closed by ADR-0013 epoch `strictPos`,
- *     which the spec rejects as dead code and supersedes with leases;
- *   - #48 (epoch-lifecycle remainder — full-read gating) rested on the epoch concurrency model that
- *     ADR-0017 supersedes with the LRU vacuum; its upstream sibling `pi-better-edit#70` (dense
- *     re-serve after write) described the same epoch-era serve path;
- *   - #51 (anchor-space exhaustion reported as `E_LARGE_FILE`) rested on the accumulation of
- *     session-retired anchors;
- *   - #53 (incomplete served refresh after multi-entry batches) and #38 (boundary duplicate removal)
- *     sit on the apply/serve path the redesign rewrote.
- *
- * Each `it` pins the property the close depended on. Issues whose path the redesign never touched are
- * covered by existing green suites (cited per case) rather than duplicated here. Downstream closes
- * that are DSH-port-only (#71, #69, #43 — the `str_replace_editor` shadow and the agent-scope router)
- * are out of reach of this package: `rg` finds no such seam here.
+ * redesign (bd3a8f2). Several closes rested on mechanisms the redesign replaced, so "closed" is
+ * not inherited evidence:
+ *   - #31 (freed anchors re-bind) rested on ADR-0013 epoch `strictPos`, superseded by leases;
+ *   - #48 (full-read gating) rested on the epoch model ADR-0017 supersedes with the LRU vacuum;
+ *   - #51 (anchor-space exhaustion) rested on accumulated session-retired anchors;
+ *   - #53 / #38 sit on the apply/serve path the redesign rewrote.
+ * Each `it` pins the property the close depended on; downstream closes that are DSH-port-only
+ * (#71, #69, #43) name seams this package does not carry.
  */
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
@@ -52,7 +42,6 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
       const line3 = first[2]!.hash;
       expect(line1).not.toBe(line3);
 
-      // delete line 1: line 3's `aaa` shifts up, and line 1's anchor is retired
       await editTool.execute(
         "e1",
         { file: "twins.txt", edits: [{ anchor_from: line1, anchor_to: line1, text: "" }] },
@@ -62,7 +51,6 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
       );
       expect(await readFile(path, "utf-8")).toBe("bbb\naaa\n");
 
-      // reuse the deleted anchor: must fail closed, never re-bind onto the surviving `aaa`
       await expect(
         editTool.execute(
           "e2",
@@ -105,10 +93,8 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
 
       const after = (await readFile(path, "utf-8")).split("\n");
       const mirror = await createSessionHandle(sessionKeyFor(ctx as never), path).load();
-      // denseness: the whole file stays served (never a hole inside the length)
       expect(mirror.slice(0, after.length - 1).every((h) => h !== null)).toBe(true);
 
-      // chain: a diff-row anchor is usable without a re-read
       const diff = (batch.details as { diff?: string }).diff ?? "";
       const anchor = diff
         .split("\n")
@@ -179,7 +165,7 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
             ),
           ),
         );
-        const victim = served[0]!.hash; // retire the first line's anchor every round
+        const victim = served[0]!.hash;
         await editTool.execute(
           `e${round}`,
           { file: "churn.txt", edits: [{ anchor_from: victim, anchor_to: victim, text: "" }] },
@@ -241,13 +227,11 @@ describe("closed #23/#60 — BOM and encoding handling", () => {
   });
 
   it("flags non-UTF-8 input on read instead of failing silently", async () => {
-    // GBK-encoded "中文" — invalid UTF-8
     await withTempBytes("gbk.txt", Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0a]), async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
         await readTool.execute("r1", { file: "gbk.txt" }, undefined, undefined, ctx),
       );
-      // #34's contract: readable, with the lossy-decoding disclosure
       expect(text).toContain("Non-UTF-8 bytes shown as U+FFFD");
     });
   });
@@ -257,12 +241,9 @@ describe("multi-session — session key authority", () => {
   it("fails loudly at the boundary when the context carries no sessionManager", async () => {
     await withTempFile("fallback.txt", "alpha\n", async ({ cwd }) => {
       const { readTool } = setupIntegrationTest(cwd);
-      const bareA = { cwd }; // no sessionManager
-      const bareB = { cwd }; // a second context, also without one
+      const bareA = { cwd };
+      const bareB = { cwd };
 
-      // WHY: (#165) the removed fallback memoized ONE process-wide key that had never served
-      // WHY: anything, so lease lookups missed and surfaced a misleading E_UNKNOWN_ANCHOR.
-      // WHY: Session-less entrypoints now fail at the boundary with the real cause.
       expect(() => sessionKeyFor(bareA as never)).toThrow(/no session/);
       expect(() => sessionKeyFor(bareB as never)).toThrow(/no session/);
 

@@ -386,15 +386,7 @@ describe("computeDrift", () => {
 });
 
 describe("drift-notice episode identity (CAND-9, ADR-0023)", () => {
-  // The reported set must key on the drifted line's rebased position, not its anchor STRING:
-  // an anchor is a spelling, not an identity. A reported entry for one line may not silence
-  // a distinct line that happens to share the anchor.
   it("does not collapse distinct duplicate-hash drifted lines into one reported episode", () => {
-    // Two distinct served positions share the anchor "dup" (ambiguous hash — exactly the
-    // shape resolveServedRange refuses to trust). Both lines drifted to different content.
-    // `reported` holds one entry for the shared anchor: under the string key BOTH lines are
-    // "already reported" and their current content is never shown. Under the position key a
-    // raw anchor string reports nothing.
     const result = computeDrift({
       served: ["h00", "dup", "dup", "h03"],
       resultHashes: ["h00", "P01", "P02", "h03"],
@@ -411,11 +403,6 @@ describe("drift-notice episode identity (CAND-9, ADR-0023)", () => {
     expect(result).toBeDefined();
     expect(result!.total).toBe(2);
     expect(result!.allAlreadyReported).toBe(false);
-    // The nearest-surviving rebase maps BOTH duplicate lines onto current position 1 (a
-    // pinned helper floor — see drift-helpers.test.ts), so one row carries the drift flag
-    // and the other's line still shows as its context row. The fixed behavior is the
-    // point: a single shared-anchor reported entry no longer collapses the episode to a
-    // pointer; the current content of both lines is served.
     expect(result!.rows.filter((r) => r.drifted).map((r) => r.hash)).toEqual(["P01"]);
     expect(result!.rows.map((r) => r.hash)).toContain("P02");
   });
@@ -437,12 +424,7 @@ describe("drift-notice episode identity (CAND-9, ADR-0023)", () => {
     expect(first).toBeDefined();
     const drifted = first!.rows.filter((r) => r.drifted);
     expect(drifted).toHaveLength(1);
-    // The episode advances exactly as scanDrift does: mark what the notice showed.
     const reported = new Set(drifted.map((r) => driftEpisodeKey(r.position)));
-    // Lease rotation renames the re-served mirror anchor "n01" → "r01" without a fresh read,
-    // and the line's content changes again. Under the string key the marked "n01" no longer
-    // matches the mirror's rotated "r01" and the line spuriously re-notices; the position key
-    // is rotation-stable.
     const second = computeDrift({
       served: ["h00", "r01", "h02", "h03"],
       resultHashes: ["h00", "x02", "h02", "h03"],
@@ -462,12 +444,6 @@ describe("drift-notice episode identity (CAND-9, ADR-0023)", () => {
 });
 
 describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: deltaBefore arithmetic)", () => {
-  // WHY: a zero-width insertion interval (`startLine > endLine`) edits no served line, so it can
-  // WHY: never be matched by `isInIntervals`; its ONLY effect is positional — every served line at
-  // WHY: or after the insertion point shifts by the inserted line count. These cases pin that
-  // WHY: arithmetic directly: no served hash survives into the result, so the drifted position
-  // WHY: comes from the floor `servedIndex + deltaBefore(index)` — the nearest-survivor tiers
-  // WHY: cannot rescue an off-by-one here.
   const zeroWidth = (startLine: number, endLine: number, delta: number) => ({
     startLine,
     endLine,
@@ -477,8 +453,6 @@ describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: 
   });
 
   it("shifts served lines at/after the insertion point by the inserted count, lines before unmoved", () => {
-    // Insertion after 1-based line 2 → zero-width {startLine: 3, endLine: 2} with 2 lines added.
-    // 0-based served lines 0,1 keep their positions; lines 2,3 shift +2 → 4,5.
     const result = computeDrift({
       served: ["s0", "s1", "s2", "s3"],
       resultHashes: ["r0", "r1", "r2", "r3", "r4", "r5"],
@@ -499,8 +473,6 @@ describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: 
   });
 
   it("an insertion at the file start shifts every served line", () => {
-    // Zero-width {startLine: 1, endLine: 0}: the resolved interval is {from: 0, to: -1}, so
-    // `to < p` holds for every 0-based served position — all three lines shift +1.
     const result = computeDrift({
       served: ["s0", "s1", "s2"],
       resultHashes: ["r0", "r1", "r2", "r3"],
@@ -519,8 +491,6 @@ describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: 
   });
 
   it("an insertion after the last served line shifts nothing", () => {
-    // Zero-width {startLine: 4, endLine: 3} on a 3-line served mirror: `to = 2`, no served
-    // position p satisfies `2 < p` — every drifted line keeps its position.
     const result = computeDrift({
       served: ["s0", "s1", "s2"],
       resultHashes: ["r0", "r1", "r2", "r3", "r4"],
@@ -539,8 +509,6 @@ describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: 
   });
 
   it("two zero-width insertions stack their deltas for lines past both", () => {
-    // Insertions after 1-based lines 2 and 4 (2 and 1 lines): 0-based served p≥2 shifts +2,
-    // p≥4 shifts +2+1 — the last served line (p=4) lands at 7, proving addition across intervals.
     const result = computeDrift({
       served: ["s0", "s1", "s2", "s3", "s4"],
       resultHashes: ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"],
@@ -554,8 +522,6 @@ describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: 
   });
 
   it("a large delta after the whole mirror moves no position — the shift is conditional, not unconditional", () => {
-    // Zero-width {startLine: 6, endLine: 5} (to = 4): every served position is below the
-    // insertion point, so even a +10-line insertion leaves positions 0,1,2 untouched.
     const result = computeDrift({
       served: ["s0", "s1", "s2"],
       resultHashes: ["r0", "r1", "r2"],

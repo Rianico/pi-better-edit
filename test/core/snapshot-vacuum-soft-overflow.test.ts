@@ -41,8 +41,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   const home = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-soft-overflow-"));
   vi.stubEnv("HOME", home);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests count rows across the whole file_snapshots table, so they need a store dir that
-  // WHY: is fresh per call — opt out of the worker-wide setupFiles seam and resolve through HOME.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(home);
@@ -161,8 +159,6 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("never throws when the diagnostic channel fails", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      // WHY: a directory where the log file should be makes the append fail for real, so this
-      // WHY: still proves the caller survives a broken sink.
       await mkdir(diagnosticsLogPath(), { recursive: true });
 
       expect(() => reportVacuumSoftOverflow(store.db, overSoftOverflowResult())).not.toThrow();

@@ -23,7 +23,6 @@ interface CpRow {
  * representative rows at the bottom.
  */
 const DISPOSITIONS: CpRow[] = [
-  // Table 1 — the frozen 28-cp NORMALIZE class (6 + 3 + 11 + 5 + 3).
   { cp: "\u0009", name: "TAB U+0009", disposition: "normalize" },
   { cp: "\u000A", name: "LF U+000A", disposition: "normalize" },
   { cp: "\u000B", name: "VT U+000B", disposition: "normalize" },
@@ -52,7 +51,6 @@ const DISPOSITIONS: CpRow[] = [
   { cp: "\u200E", name: "LEFT-TO-RIGHT MARK U+200E", disposition: "normalize" },
   { cp: "\u200F", name: "RIGHT-TO-LEFT MARK U+200F", disposition: "normalize" },
   { cp: "\uFEFF", name: "ZERO WIDTH NO-BREAK SPACE U+FEFF", disposition: "normalize" },
-  // Table 2 — the explicitly SIGNIFICANT controls that must survive canon untouched.
   { cp: "\u200B", name: "ZERO WIDTH SPACE U+200B", disposition: "significant" },
   { cp: "\u200C", name: "ZERO WIDTH NON-JOINER U+200C", disposition: "significant" },
   { cp: "\u200D", name: "ZERO WIDTH JOINER U+200D", disposition: "significant" },
@@ -63,8 +61,6 @@ const DISPOSITIONS: CpRow[] = [
   { cp: "\u001D", name: "GROUP SEPARATOR U+001D", disposition: "significant" },
   { cp: "\u001E", name: "RECORD SEPARATOR U+001E", disposition: "significant" },
   { cp: "\u001F", name: "UNIT SEPARATOR U+001F", disposition: "significant" },
-  // C1 sample rows for named visibility; the full U+0080–U+009F range (except U+0085 NEL, which
-  // normalizes) is asserted by the range check below, so enumerating all 31 here would be noise.
   { cp: "\u0080", name: "PADDING CHARACTER U+0080", disposition: "significant" },
   { cp: "\u0081", name: "HIGH OCTET PRESET U+0081", disposition: "significant" },
   { cp: "\u009F", name: "APPLICATION PROGRAM COMMAND U+009F", disposition: "significant" },
@@ -108,10 +104,7 @@ describe("canon v3 disposition table — executable record (issue #22)", () => {
   it("carries the disposition through the canon, not through the anchor (ADR-0013)", () => {
     const base = _lineHashesPure("ab\n");
     for (const cp of ["\u00A0", "\u2003", "\u3000", "\uFEFF"]) {
-      // WHY: the canon folds the code point away, so canon evidence still matches...
       expect(canon(`a${cp}b`), `normalize ${cp.codePointAt(0)}`).toBe(canon("ab"));
-      // WHY: ...while the anchor does not: identity is the raw line, so the substitution is a
-      // WHY: different line and cannot reuse the old anchor (issue #230).
       expect(_lineHashesPure(`a${cp}b\n`)[0], `raw ${cp.codePointAt(0)}`).not.toBe(base[0]);
     }
     for (const cp of ["\u200B", "\u00AD", "\u2060"]) {

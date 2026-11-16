@@ -4,20 +4,18 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 
-// WHY: the numbers behind "page the file", as this probe measures them: a 29,888,890-byte, one-million-line
-// WHY: text costs +47.2 MB of heap as `split("\n")` — 50 B per line — while a fifty-line page walked out of
-// WHY: the same text costs +38.8 KB, and counting every line costs +20.6 KB. A heap delta moves a little
-// WHY: run to run, so the JSON is authoritative and those figures are one run of it. (The brief's 4.56x
-// WHY: figure was measured on a fixture with shorter lines and is not this probe's number.) Behind
-// WHY: RUN_EVAL because a delta is only comparable on an idle, warmed process: run `pnpm run eval:heap`.
+/**
+ * The numbers behind "page the file", as this probe measures them, on a 29,888,890-byte
+ * one-million-line text: `split("\n")` costs +47.2 MB of heap (50 B per line), a fifty-line
+ * page walked out of the same text +38.8 KB, and counting every line +20.6 KB. A heap delta
+ * moves run to run, so the JSON this prints is authoritative. Behind RUN_EVAL because a
+ * delta is only comparable on an idle, warmed process: run `pnpm run eval:heap`.
+ */
 const RUN = process.env.RUN_EVAL === "1";
 const LINES = 1_000_000;
 const PAGE = 50;
 
-/**
- * WHY: the materialized value is handed back to the caller so the measurement cannot be flattered by a
- * collection of a result nothing holds any more.
- */
+/** Hands the materialized value back so a collection cannot flatter the measurement. */
 function heapDelta(run: () => unknown): { delta: number; kept: unknown } {
   const before = process.memoryUsage().heapUsed;
   const kept = run();

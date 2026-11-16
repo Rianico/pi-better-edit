@@ -21,7 +21,6 @@ describe("undo schema — no forwarder between the store and its consumers (#103
   it("undo-store exports no ensureUndoSchema forwarder", async () => {
     const mod = await import("../../src/undo-store.js");
     expect("ensureUndoSchema" in mod).toBe(false);
-    // the store-open hook reaches the schema owner directly instead of through a wrapper
     expect(readFileSync(UNDO_MODULE, "utf-8")).toContain("ensureFileUndoSchema(db)");
   });
 

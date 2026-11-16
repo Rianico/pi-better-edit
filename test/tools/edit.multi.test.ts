@@ -88,8 +88,6 @@ describe("edit multi-item tool", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      // The failing item keeps its OWN code — the retired lease is what the model must fix — plus the
-      // atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
       expect(rejection.message).toContain("[E_TARGET_LOST]");
       expect(rejection.message).toContain("edit[1] (sample.ts) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
@@ -474,16 +472,13 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      // Both invalid items are named in ONE rejection — no fix-one-resubmit-and-fail-again turn.
       expect(rejection.message).toContain("- edit[1]: ");
       expect(rejection.message).toContain("- edit[3]: ");
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
       expect(rejection.message).not.toContain("- edit[0]: ");
       expect(rejection.message).not.toContain("- edit[2]: ");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // Uniform code is preserved on the envelope so the failure keeps its typed route.
       expect((rejection as { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
-      // Atomicity: zero bytes written.
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\nddd\neee\n");
     });
   });
@@ -512,7 +507,6 @@ describe("edit multi-item batch error aggregation", () => {
 
       expect(rejection.message).toContain("edit[1] (sample.ts) failed");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // Exactly one failing item — no aggregation separator for a second item.
       expect((rejection.message.match(/\(sample\.ts\) failed/g) ?? []).length).toBe(1);
       expect(rejection.message).not.toContain("; edit[");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
@@ -587,13 +581,10 @@ describe("edit multi-item batch error aggregation", () => {
         expect(rejection.message).toContain("- edit[1]: ");
         expect(rejection.message).toContain("- edit[2]: ");
         expect(rejection.message).toContain(ATOMICITY_TRAILER);
-        // First failure's code routes the envelope; every item keeps its own code inline.
         expect(rejection.code).toBe("E_UNVERIFIED_RANGE");
         expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
         expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
-        // Disagreeing diagnoses suppress details — neither item's cause is promoted to the envelope.
         expect(rejection.details).toBeUndefined();
-        // The stale range's retry rows survive aggregation (union, in item order).
         expect(Array.isArray(rejection.servedRows) && rejection.servedRows.length > 0).toBe(true);
         expect(typeof rejection.servedBlock === "string" && rejection.servedBlock.length > 0).toBe(
           true,
@@ -628,7 +619,6 @@ describe("edit multi-item batch error aggregation", () => {
       expect(rejection.message).toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[0]");
       expect(rejection.message).toContain("edit[1]");
-      // Both conflicting intervals are shown so the caller sees the overlap.
       expect(rejection.message).toContain("lines 1-2");
       expect(rejection.message).toContain("lines 2-3");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");

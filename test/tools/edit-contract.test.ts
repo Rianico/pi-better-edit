@@ -1,3 +1,15 @@
+/**
+ * The wire-shape pins (ticket-04 §3, ADR-0003): our payload is `file` plus `edits` of
+ * `{ anchor_from, anchor_to, text | text_ref }`; retired spellings stay rejected, never folded.
+ *
+ * pi-lens ships a shape-adapter registry over third-party edit tools (`dist/clients/mutating-tool.js`)
+ * that recognizes `set_line` / `replace_lines`, `operations` / `ops` batches, `remove_from` +
+ * `remove_to` + `replacement_lines`, and resolves bare 4-char anchors through a content-hash port
+ * (`dist/clients/hashline-anchor.js`). Our payload matches none of those, which keeps its read-guard
+ * inert (`reasonKind: "no_line_info"`); its path resolver takes `path` / `filePath` / `file_path`,
+ * never our `file`. Adding one of those keys — or renaming ours — would arm that adapter to judge
+ * MVCC line identity with a divergent scheme, producing false "stale" and "out of range" verdicts.
+ */
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { Compile } from "typebox/compile";
@@ -32,7 +44,6 @@ describe("edit payload contract", () => {
         edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
       }),
     ).toBe(false);
-    // WHY: (ticket-04 §3) tuple items are refused outright — the legacy fold is gone.
     expect(validator.Check({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] })).toBe(false);
     expect(validator.Check({ file: "sample.ts", anchor_from: "aB3" })).toBe(false);
     expect(validator.Check(["sample.ts", ["aB3", "cD4"], "new"])).toBe(false);
@@ -57,17 +68,6 @@ describe("edit payload contract", () => {
   });
 
   it("pins the wire-shape key set against third-party shape adapters", () => {
-    // WHY: pi-lens ships a shape-adapter registry over third-party edit tools
-    // WHY: (`dist/clients/mutating-tool.js`): it recognizes `set_line` / `replace_lines`,
-    // WHY: `operations` / `ops` batches and `remove_from` + `remove_to` + `replacement_lines`,
-    // WHY: and it resolves bare 4-char anchors through a content-hash port
-    // WHY: (`dist/clients/hashline-anchor.js`). Our payload matches none of those shapes, which is
-    // WHY: exactly what keeps its read-guard inert for our edits (`reasonKind: "no_line_info"`);
-    // WHY: its path resolver takes `path` / `filePath` / `file_path`, never our `file`.
-    // WHY: Adding one of those keys — or renaming ours — would arm that adapter and let it judge
-    // WHY: MVCC line identity with a divergent scheme, producing false "stale" and "out of range"
-    // WHY: verdicts on edits our own verification accepts. Change this list deliberately, never
-    // WHY: casually: the coupling is the consequence.
     const root = editToolSchema as unknown as {
       properties: Record<string, unknown>;
       additionalProperties?: unknown;
@@ -100,7 +100,6 @@ describe("edit payload contract", () => {
       "remove_to",
       "replacement_lines",
       "replacement_text",
-      // WHY: (ticket-04 §3) the retired wire spellings must not sneak back in either.
       "replace_with",
       "op",
     ];
@@ -126,8 +125,6 @@ describe("edit payload contract", () => {
       ],
     });
     expect(() => assertReq(normalized)).not.toThrow();
-    // WHY: (ticket-04 §3) tuples and legacy item keys are REFUSED, not folded: `normReq`
-    // WHY: passes the raw input through untouched.
     const tupleReq = { file: "sample.ts", edits: [["aB3", "cD4", "new"]] };
     expect(normReq(tupleReq)).toBe(tupleReq);
     const legacyKeys = {

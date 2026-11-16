@@ -22,7 +22,6 @@ export function toCwd(filePath: string, cwd: string): string {
   const expanded = expand(filePath);
   if (expanded.includes("\0"))
     throw new DomainError("E_INTERNAL_INVARIANT", { message: "Path contains null byte" });
-  // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
   const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
   if (!isAbsolute(resolved))
     throw new DomainError("E_INTERNAL_INVARIANT", { message: "Resolved path must be absolute" });

@@ -1,45 +1,14 @@
 /**
- * The store janitor — the store's PERIODIC maintenance item, wired to the lifecycle events that are
- * OFF the tool-call hot path. Ticket #90; the open-time half is `src/hash-store.ts`'s stamp-gated
- * sweep, which this module REUSES rather than restates (see the exported `*_SQL` predicates there).
- *
- * WHAT ONE RUN DOES, in order, and why that order:
- * 1. THROTTLE — `due(db, JANITOR_META_KEY, intervalMs, now)`, the primitives the served-mirror
- *    prune already uses (#87c). Not due means the run ends here, having issued no DELETE and no
- *    `PRAGMA quick_check`. The interval is resolved from the shared config ladder
- *    (`src/store-config.ts`), defaulting to a day.
- * 2. GC — foreign-generation, dangling and expired rows, deleted in statements of at most
- *    `batchSize` rows. Expiry covers BOTH terminal states (ADR-0045): a retired lease past its
- *    1-hour grace and an ACTIVE lease past the 7-day session TTL.
- *    Batching is about HOLD TIME, not statement count: one unbounded DELETE scans and holds the write
- *    lock for its whole scan, so a rival writer waits on a maintenance pass; a loop of bounded
- *    statements releases the lock between batches and lets a rival interleave. The batch width
- *    defaults to 64, the width the snapshot store already deletes in (`STAT_BATCH`).
- * 3. MARK — `markRun` records the run, and it is written BEFORE the deep check because a
- *    detected failure may close this connection (step 4).
- * 4. DEEP CHECK — the open path's own `PRAGMA quick_check` (`isHealthy`, never reimplemented), on a
- *    store the fast path no longer checks (PR #101 replaced it there with the header smoke check).
- *    A failing check routes into `healUnhealthyStore`, the janitor's orchestration over the one
- *    `quarantineStore` primitive; the open path's own recovery is its other caller.
- *
- * NO CHECKPOINT HERE, deliberately: `shutdownDb` owns `PRAGMA wal_checkpoint(TRUNCATE)`, registered
- * once by `openStore` on `exit`, `SIGINT` and `SIGTERM`. The janitor therefore adds no second
- * checkpoint site and no second owner of the same WAL; its writes ride the WAL and are truncated by
- * the close path that already truncates it, and `wal_checkpoint(TRUNCATE)` on an already-truncated
- * WAL is a no-op. One writer, one checkpoint, measured on close — see the report for the WAL numbers.
- *
- * THE #90 / #100 BOUNDARY, stated here in this module's own header. Issue #100's three clauses, its
- * own words: "not detected at open, not quarantined at use, not healed on reopen."
- * - CLOSED HERE: "not detected at open" — the fast path stopped running `PRAGMA quick_check` (#87c),
- *   so page-level damage was detected by nothing at all; this janitor detects it periodically, on a
- *   store the fast path accepts.
- * - CLOSED HERE: "not healed on reopen" — a detected failure routes into the SAME quarantine-and-
- *   rebuild the open path performs (`healUnhealthyStore`), so the store is rebuilt rather than left
- *   damaged until someone deletes it by hand.
- * - LEFT TO #100: "not quarantined at use" — nothing triggers on the FIRST FAILING STATEMENT. A
- *   statement that hits a damaged page still surfaces its own error and leaves the file damaged until
- *   the next janitor run. That is a USE-TIME trigger, #100's own scope; this module must not grow a
- *   half-implemented one, and it does not.
+ * The store janitor — the store's PERIODIC maintenance item on lifecycle events that are OFF the
+ * tool-call hot path (ticket #90); its open-time half is `src/hash-store.ts`'s stamp-gated sweep, REUSED.
+ * ONE RUN, in order: THROTTLE (`due`, #87c — not due ends it: no DELETE, no `quick_check`);
+ * GC of foreign-generation, dangling and expired rows in batches of at most `batchSize` — batching is
+ * HOLD TIME, not statement count, since one unbounded DELETE holds the write lock for its whole scan —
+ * expiry covering BOTH terminal states (docs/.archive_adrs/0045-ttl-ends-lease-resolution.md); MARK (`markRun`, before the deep check, which may
+ * close this connection); DEEP CHECK (`isHealthy`, never reimplemented, on a store the fast path stops
+ * checking — PR #101), a failure routing into `healUnhealthyStore` over the one `quarantineStore`.
+ * NO checkpoint here: `shutdownDb` owns the only `wal_checkpoint(TRUNCATE)` (docs/.archive_adrs/0037-store-janitor-lifecycle-maintenance-model.md holds the model).
+ * #90 / #100: "not detected at open" and "not healed on reopen" CLOSE HERE; "not quarantined at use" — the FIRST FAILING STATEMENT — is LEFT TO #100.
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -74,17 +43,13 @@ export const JANITOR_META_KEY = "janitor_at";
 
 /**
  * The lifecycle events the janitor is wired to: the two that are OFF the tool-call hot path.
- * `session_shutdown` (reason quit|reload|new|resume|fork) had no consumer in this repo before this
- * module, so it is wired deliberately: it is the one event that fires while a session's work is
- * finished and before the runtime is torn down, which is where a maintenance pass belongs.
- *
- * NEVER SUBSCRIBE THIS JANITOR TO — the hot path, where a janitor run would be paid by every tool
- * call of the session and could hold the write lock a call is waiting on:
- *   `tool_call`, `tool_result`, `tool_execution_start`, `tool_execution_update`,
- *   `tool_execution_end`, `context`, `before_provider_request`.
- * These are forbidden, not merely unused: a run there is the latency regression #90 exists to avoid,
- * so a future reader adding one must see that it is prohibited rather than think it is untried.
- * A background timer is not an option either: the extension API exposes no idle timer and no
+ * `session_shutdown` (reason quit|reload|new|resume|fork) is wired deliberately: it is the one event
+ * that fires while a session's work is finished and before the runtime is torn down.
+ * NEVER SUBSCRIBE THIS JANITOR TO the hot path — `tool_call`, `tool_result`,
+ * `tool_execution_start`, `tool_execution_update`, `tool_execution_end`, `context`,
+ * `before_provider_request` — where a run would be paid by every tool call and could hold the write
+ * lock a call is waiting on. These are forbidden, not merely unused: the latency regression #90
+ * exists to avoid. A timer is not an option either: the extension API exposes no idle timer and no
  * `deactivate` event, so a timer-based trigger is impossible rather than unimplemented.
  */
 export const JANITOR_EVENTS = ["session_start", "session_shutdown"] as const;
@@ -99,7 +64,7 @@ interface JanitorDeletions {
 }
 
 /**
- * What the compaction step did (ADR-0046). `freeBytesBefore` is the reclaimable page space the
+ * What the compaction step did (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md). `freeBytesBefore` is the reclaimable page space the
  * sweep left behind; `reclaimedBytes` is the logical file space the VACUUM actually returned.
  * `reason` is present exactly when `ran` is false, so a caller can tell "nothing to do" from
  * "contended" from "failed" without parsing prose.
@@ -162,12 +127,10 @@ function skipped(reason: "off" | "throttled"): JanitorOutcome {
  * the store's own busy budget (`withBusyRetry`) rather than the janitor inventing a retry.
  *
  * WHY `rowid IN (SELECT rowid ... LIMIT ?)`: `DELETE ... LIMIT` needs a SQLite build option this
- * runtime does not guarantee, while every table here is an ordinary rowid table, so the bounded
- * delete is spelled with a subquery instead. `table` admits only `JanitorTable` members, so the
- * two interpolated table slots cannot name a table no call site passes (#105 rider).
- *
- * A short final batch ends the loop: no statement re-reads rows it could have deleted twice, because
- * nothing in this store re-creates foreign-generation or expired rows while a janitor run is open.
+ * runtime does not guarantee, while every table here is an ordinary rowid table. `table` admits only
+ * `JanitorTable` members, so the two interpolated table slots cannot name a table no call site
+ * passes (#105 rider). A short final batch ends the loop: it does not re-read rows it could have
+ * deleted twice, because nothing re-creates foreign-generation or expired rows during a run.
  */
 /** The only tables the janitor's batched deletes may name (#105 rider). */
 type JanitorTable = "file_snapshots" | "line_lineage" | "served_leases";
@@ -201,7 +164,7 @@ export function runJanitor(input: {
   readonly now: number;
   readonly settings: StoreJanitorSettings;
   /**
-   * Injection seam for the reclaim floor (ADR-0046): tests use a small value to exercise a VACUUM
+   * Injection seam for the reclaim floor (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md): tests use a small value to exercise a VACUUM
    * on a tiny store. Production omits it and takes `STORE_COMPACT_MIN_FREE_BYTES`.
    */
   readonly compactMinFreeBytes?: number;
@@ -211,29 +174,15 @@ export function runJanitor(input: {
   if (!due(db, JANITOR_META_KEY, settings.intervalMs, now)) return skipped("throttled");
 
   const batchSize = settings.batchSize;
-  // WHY: the generation family, in the sweep's own order: leases are swept before the snapshots they
-  // WHY: name (a lease whose snapshot a later batch removes is swept as dangling), and lineage after
-  // WHY: the snapshots that cascade it. All four predicates are the sweep's, imported — not restated.
   const deletions = collectGarbage(db, now, batchSize);
-  // WHY: (ADR-0046) a GC pass leaves free pages in the file; compaction is the only step that gives
-  // WHY: them back to the filesystem. It runs after the sweep, in autocommit, on this maintenance
-  // WHY: boundary — never inside a read/edit transaction — and it defers rather than waits when a
-  // WHY: rival writer holds the store. A failed sweep skips it: a damaged store is the deep check's
-  // WHY: business, and VACUUM on damage can only fail again.
+  // Ref: docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md
   const compacted =
     deletions === undefined
       ? NOTHING_COMPACTED
       : compactStore(db, input.compactMinFreeBytes ?? STORE_COMPACT_MIN_FREE_BYTES);
 
-  // WHY: the mark is written only by a run whose GC COMPLETED: the primitives' contract is that
-  // WHY: "ran" means "did something", and a sweep that threw did not — so a failed sweep stays due
-  // WHY: and is retried at the next lifecycle event instead of being hidden for a full interval.
-  // WHY: the mark precedes the deep check because a detected failure may close this connection.
   if (deletions !== undefined) markRun(db, JANITOR_META_KEY, now);
 
-  // WHY: the deep check runs even when the GC threw, and that ordering is the point of ticket #100:
-  // WHY: a store whose pages are damaged is exactly a store the GC may fail on, and detection must
-  // WHY: not be conditional on the cleanup it is meant to trigger a heal for.
   return {
     ran: true,
     deleted: deletions ?? NOTHING_DELETED,
@@ -271,10 +220,7 @@ function collectGarbage(
     );
     const lineage = deleteInBatches(db, "line_lineage", ORPHAN_LINEAGE_SQL, [], batchSize);
     const dangling = deleteInBatches(db, "served_leases", DANGLING_LEASE_SQL, [], batchSize);
-    // WHY: (ADR-0045) hard expiry makes an ACTIVE lease past the session TTL a dead row: it has no
-    // WHY: resolution authority and no pin authority, but it still inflated every lease index and the
-    // WHY: vacuum's per-snapshot EXISTS probe. It is deleted AFTER the dangling sweep (a dead lease
-    // WHY: whose snapshot was evicted is already gone) and in the same bounded, off-path manner.
+    // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
     const expiredActive = deleteInBatches(
       db,
       "served_leases",
@@ -296,8 +242,6 @@ function collectGarbage(
       expiredLeases: expiredActive + expiredRetired,
     };
   } catch (error) {
-    // SAFETY: a failed sweep removes nothing and is retried by the next due run; the deep check below
-    // SAFETY: is what decides whether this store needs the open path's recovery instead.
     reportDiagnostic("store-janitor", "[store-janitor] GC pass failed:", error);
     return undefined;
   }
@@ -321,23 +265,18 @@ function pragmaNumber(db: DatabaseSync, sql: string): number {
 }
 
 /**
- * Reclaim free pages into the file after a maintenance sweep (ADR-0046).
+ * Reclaim free pages into the file after a maintenance sweep (docs/.archive_adrs/0046-compaction-runs-after-maintenance-sweep.md).
  *
  * One `VACUUM` in autocommit, gated on the reclaimable share, with a SHORT busy budget for STARTING
- * it: if a rival writer holds the store the pass returns `busy` and the next maintenance pass
- * retries. The VACUUM itself is not interruptible once started (SQLite owns it); the janitor never
- * runs on the tool path, so a tool call never triggers this rewrite, and the store's existing busy
- * budget covers a concurrent writer for the duration. Any failure is reported through the OUTCOME
- * and never thrown out of a lifecycle hook.
+ * it: if a rival writer holds the store the pass returns `busy` and the next pass retries. The
+ * VACUUM itself is not interruptible once started (SQLite owns it). Any failure is reported through
+ * the OUTCOME and never thrown out of a lifecycle hook.
  *
- * WHY this function writes NOTHING itself — neither console nor log: a console call here cannot see
- * the per-event surface map, so it would print on `session_shutdown` too, where the console is
- * already torn down (#199). The warning pipeline renders this outcome on the surface its event owns,
- * and the record it writes carries the reason and the error text.
+ * WHY this function writes NOTHING itself — neither console nor log: a console call cannot see the
+ * per-event surface map, so it would print on `session_shutdown` too, where the console is already
+ * torn down (#199). The warning pipeline renders this outcome on the surface its event owns.
  */
 function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome {
-  // WHY: VACUUM cannot run inside a transaction. The janitor runs in autocommit, so this is a
-  // WHY: defensive deferral for a caller that hands in a transaction, not an expected path.
   // SAFETY: node:sqlite exposes `isTransaction` at runtime although DatabaseSync's public type omits it;
   // SAFETY: a missing flag reads as autocommit, which is the janitor's own normal state.
   const inTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
@@ -378,9 +317,6 @@ function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome
     try {
       db.exec(`PRAGMA busy_timeout = ${previousTimeout}`);
     } catch (error) {
-      // SAFETY: best-effort restore — the compaction outcome is authoritative, and the next open
-      // SAFETY: re-applies the store's own busy timeout. Log-only, never the console: this catch is
-      // SAFETY: reachable from the shutdown surface, where the console is already torn down (#199).
       reportDiagnostic("store-janitor", "[store-janitor] failed to restore busy timeout:", error);
     }
   }
@@ -411,8 +347,6 @@ export interface JanitorPassOptions {
 export async function janitorPass(options: JanitorPassOptions = {}): Promise<JanitorOutcome> {
   const settings =
     options.settings ?? resolveStoreJanitorSettings(options.cwd ?? process.cwd(), options.onWarn);
-  // WHY: the early return: mode `off` means "leave this store untouched", so it must not even OPEN
-  // WHY: the store — an open is the store's own maintenance boundary (sweep, TTL prune, vacuum).
   if (settings.mode === "off") return skipped("off");
 
   const db = options.db ?? (await loadHashStore()).db;
@@ -447,21 +381,18 @@ const WARNING_SURFACE_BY_EVENT: Record<(typeof JANITOR_EVENTS)[number], JanitorW
  * formatter owns "did anything observable happen" (#197), so `null` is the only decision left — and
  * it means write nothing, on either surface.
  *
- * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and a
- * module that read the state root itself could not be tested without one. Resolving it at the call
- * site also means the damaged-store shape points at the file this process is actually writing.
+ * WHY the log path is resolved here and handed down: the formatter is pure by contract (#197), and
+ * resolving it here keeps the damaged-store shape pointed at the file this process is writing.
  *
  * WHY the level picks the sink helper (`reportInfo` / `reportWarning`) rather than `reportDiagnostic`:
  * that one writes level `error`, and a routine cleanup filed as an error would make the log's
- * severity column lie about the run it describes.
+ * severity column lie.
  */
 function publishJanitorWarning(outcome: JanitorOutcome, surface: JanitorWarningSurface): void {
   const warning = formatJanitorWarning(outcome, { logPath: diagnosticsLogPath() });
   if (warning === null) return;
   if (surface === "console") printJanitorWarning(warning);
   const report = warning.level === "info" ? reportInfo : reportWarning;
-  // WHY: one record joined by newlines — the damaged-store lines stay separate so a reader can quote
-  // WHY: one alone, and a JSONL record escapes the breaks while keeping every line intact.
   report("store-janitor", recordBody(outcome, warning));
 }
 
@@ -493,9 +424,7 @@ function printJanitorWarning(warning: JanitorWarning): void {
       if (warning.level === "info") console.info(line);
       else console.error(line);
     }
-  } catch {
-    // SAFETY: best-effort notice — the diagnostics record written next is the surface that survives.
-  }
+  } catch {}
 }
 
 /**
@@ -520,10 +449,6 @@ export function registerJanitorHooks(
     try {
       publishJanitorWarning(await deps.runJanitor(), surface);
     } catch (error) {
-      // SAFETY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
-      // SAFETY: (every step is idempotent and its own work is its own throttle record), so the
-      // SAFETY: session continues and the next lifecycle event retries. The publish step itself
-      // SAFETY: cannot throw (see `printJanitorWarning`), so this catch stays the pass's alone.
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };
@@ -533,7 +458,6 @@ export function registerJanitorHooks(
   const register = (pi as unknown as { on: (event: string, handler: () => Promise<void>) => void })
     .on;
   for (const event of JANITOR_EVENTS) {
-    // SAFETY: narrowed to the handler signature the widened `on` above declares.
     register.call(pi, event, handlerFor(WARNING_SURFACE_BY_EVENT[event]));
   }
 }

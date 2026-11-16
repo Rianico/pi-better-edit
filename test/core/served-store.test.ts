@@ -802,7 +802,6 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       expect(blocked.has("abcc")).toBe(true);
       expect(blocked.has("deff")).toBe(false);
       expect(blocked.has("ghii")).toBe(false);
-      // other session not affected
       const other = createSessionHandle("sessionB", "/p.ts", store);
       expect(await other.loadBlockedHashes()).toEqual(new Set());
     });
@@ -826,8 +825,6 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
         snapshotId: "v2|/p.ts|1|2|3|4",
       });
       expect(await h.loadBlockedHashes()).toEqual(new Set());
-      // WHY: no canon is stored anywhere (#151). A record that granted no lease reports no evidence,
-      // WHY: and the documented absence policy — silence, never a shape refusal — holds.
       expect(await h.loadCanonDigests()).toEqual([]);
       expect(await h.loadEpochId()).toBe("v2|/p.ts|1|2|3|4");
     });
@@ -848,7 +845,6 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
         snapshotId: "snap-1",
         isFullRead: true,
       });
-      // partial that overwrites position 0
       await h.recordEpoch({
         rows: [{ position: 0, hash: "cccc" }],
         lineCount: 2,
@@ -866,7 +862,6 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
     await withTempHome(async (home) => {
       const { contentChecksum: _contentChecksum } = await import("../../src/hashline/hasher.js");
       const _homePath = home;
-      // create initial DB without retired column via direct SQL, then reopen to trigger migration
       const { DatabaseSync } = await import("node:sqlite");
       const { hashStorePath } = await import("../../src/hash-store.js");
       const store1 = await loadHashStore();
@@ -874,9 +869,7 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const h1 = createH("sessionA", "/rebound.txt", store1);
       await h1.record([{ position: 0, hash: "AAAA" }]);
       const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store");
-      // need store path
       const dbPath = hashStorePath();
-      // simulate old DB by dropping retired column
       const { shutdownHashStore } = await import("../../src/hash-store.js");
       shutdownHashStore();
       const db = new DatabaseSync(dbPath);
@@ -884,14 +877,11 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
         db.exec("ALTER TABLE served DROP COLUMN retired");
       } catch {}
       db.close();
-      // reopen triggers migration that deletes snapshots
       const { loadHashStore: load2 } = await import("../../src/hash-store.js");
       const store2 = await load2();
       const h2 = createH("sessionA", "/rebound.txt", store2);
       expect(await h2.load()).toEqual(["AAAA"]);
-      // snapshots should be gone - check via snapshot store
       const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store");
-      // we didn't create snapshot, but ensure no crash
       expect(await h2.loadBlockedHashes()).toEqual(new Set());
     });
   });
@@ -955,8 +945,6 @@ describe("served_leases — universal lease granting (issue #81)", () => {
         true,
       );
 
-      // The undo/revert path re-adopts an OLDER canonical snapshot: a cache hit, not a miss. It is an
-      // authoritative materialization (the bytes are on disk), so it retires the absent leases.
       await upsertSnapshotFor(
         {
           path: LEASE_PATH,
@@ -984,8 +972,6 @@ describe("served_leases — universal lease granting (issue #81)", () => {
         ).map((row) => row.line_id),
       );
       expect(adoptedLineage.size).toBe(2);
-      // Exactly the leases whose identity is absent from the adopted lineage are retired; the
-      // survivors (same `line_id`) stay active.
       for (const lease of leases) {
         expect(lease.retired_at === null).toBe(adoptedLineage.has(lease.line_id));
       }
@@ -1016,15 +1002,12 @@ describe("served_leases — universal lease granting (issue #81)", () => {
         loadLeases(store, "sessionA", seeded.absolutePath).every((l) => l.retired_at === null),
       ).toBe(true);
 
-      // the read path — the single authoritative materialization — sees the new on-disk content
       const next = "alpha\ndelta\n";
       await writeFile(filePath, next, "utf-8");
       await readNormFile("lease.ts", home, { store });
 
       const leases = loadLeases(store, "sessionA", seeded.absolutePath);
       expect(leases).toHaveLength(3);
-      // `alpha` survives the external rewrite and keeps its identity; `bravo` and `charlie` are
-      // both absent from S_curr, so their leases are retired by the authoritative writer.
       const alphaLease = leases.find((lease) => lease.anchor === seeded.fileHashes[0]!);
       expect(alphaLease!.retired_at).toBeNull();
       const retiredAnchors = leases
@@ -1040,8 +1023,6 @@ describe("served_leases — universal lease granting (issue #81)", () => {
       const store = await loadHashStore();
       await seedLeases(store);
 
-      // Same content as the "newly materialized snapshot" case, but not declared authoritative:
-      // in-memory working-buffer hashing must leave every active lease alone (issue #81 §3.2.4).
       await materializedLineHashes("alpha\nbravo\ncharlie\ndelta\n", LEASE_PATH);
 
       const leases = loadLeases(store, "sessionA", LEASE_PATH);
@@ -1058,7 +1039,6 @@ describe("served_leases — universal lease granting (issue #81)", () => {
         (lease) => lease.served_line_number === 3,
       )!;
 
-      // external insert moves charlie from line 3 to line 4 without changing its text
       const drifted = "alpha\nbravo\ninserted\ncharlie\n";
       const driftedHashes = await materializedLineHashes(drifted, LEASE_PATH);
       const movedAnchor = driftedHashes[3]!;
@@ -1075,9 +1055,6 @@ describe("served_leases — universal lease granting (issue #81)", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.retired_at).toBeNull();
       expect(rows[0]!.served_line_number).toBe(4);
-      // The re-served lease keeps the line's identity: the insert shifted the coordinate, not the
-      // line, so `line_id` is inherited from S_latest (spec §3.1.3.2) while the served snapshot is
-      // restamped to the re-served version.
       expect(rows[0]!.line_id).toBe(before.line_id);
       expect(rows[0]!.served_snapshot_hash).not.toBe(before.served_snapshot_hash);
     });
@@ -1200,10 +1177,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-served-test-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests read the store file directly at sqlitePath(home) and count rows across
-  // WHY: the whole table, so they need a store dir that is fresh per CALL — what the HOME-derived
-  // WHY: path gives. The worker-wide setupFiles seam would hand them one shared, already-populated
-  // WHY: dir, so opt out for the duration of this helper.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(tmpHome);

@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 /**
  * Reproduces pi's git-install lifecycle for one package manager and asserts the artifact is
- * produced with devDependencies omitted.
- *
- * WHY (ADR-0027): pi clones a git source, runs `git clean -fdx` — which removes the
- * gitignored artifact — and then runs the package manager with devDependencies omitted. The
- * install must therefore produce the artifact from scratch with no bundler in the tree, and
- * it must fail when it cannot: pi drops a manifest entry whose path does not exist without a
- * message, and its dependency repair cannot see a missing artifact, so a silent skip would
- * persist across every future update.
+ * produced with devDependencies omitted (ADR-0007): pi clones a git source, runs `git clean
+ * -fdx` — which removes the gitignored artifact — and installs with devDependencies omitted,
+ * so the install must produce the artifact from scratch with no bundler in the tree, and must
+ * fail when it cannot. pi drops a manifest entry whose path does not exist without a message,
+ * and its dependency repair cannot see a missing artifact, so a silent skip would persist.
  *
  * Usage: node scripts/install-surface-check.mjs --manager npm|pnpm|bun [--keep]
  */
@@ -73,11 +70,9 @@ function install(manager, cwd, env) {
 }
 
 /**
- * Removes the manager's install state so the next install is genuinely cold.
- *
- * WHY: a warm install short-circuits. pnpm and bun report "Already up to date", run no
- * lifecycle scripts at all, and exit 0 — `prepare` never runs, so a probe that only deletes
- * the artifact proves nothing about the build failing loudly.
+ * Removes the manager's install state so the next install is genuinely cold: a warm install
+ * short-circuits — pnpm and bun report "Already up to date", run no lifecycle scripts and exit
+ * 0 — so a probe that only deletes the artifact proves nothing about the build failing loudly.
  */
 function makeInstallCold(tree) {
   rmSync(join(tree, "node_modules"), { recursive: true, force: true });

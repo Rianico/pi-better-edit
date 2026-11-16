@@ -59,12 +59,7 @@ describe("served prefix mismatch predicate", () => {
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    // WHY: premise guard — the `not.toContain` below is vacuous unless every
-    // WHY: real anchor is live-width; a foreign-width `hashes` array would pass
-    // WHY: without exercising the prefix tier.
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
-    // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
-    // WHY: this fixture reddens (not just its differential) if a flip strands it.
     expect(HASH_RE.test("Zz99")).toBe(true);
     expect(hashes).not.toContain("Zz99");
     expect(findServedPrefixMismatches([`Zz99${HASH_SEP}literal`], served, canonDigests, 1)).toEqual(
@@ -73,10 +68,6 @@ describe("served prefix mismatch predicate", () => {
   });
 
   it("fires on the fixture token when served with a mismatched digest (tier live)", () => {
-    // WHY: drives the fixture token itself — "Zz99" served with a mismatched
-    // WHY: tail digest must hit, proving the token is row-shaped and the tier
-    // WHY: consults the served set. At any width where Zz99 is not row-shaped
-    // WHY: this reddens (no hit), so the F1 vacuity cannot recur silently.
     const content = "one\ntwo\nthree";
     const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];

@@ -104,11 +104,6 @@ function cleanup() {
 function runPi(extraArgs, prompt) {
   const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
     cwd: root,
-    // WHY the whole sandbox map and not just the override: #190 moved the store to
-    // WHY: `<root>/state/`, but the retired sources are still read from $HOME and $XDG_CONFIG_HOME
-    // WHY: and their `.corrupt-*` dumps are DELETED — so a run that pinned only the override would
-    // WHY: walk this developer's real `~/.config/pi-better-edit`. `sandboxEnv` pins every variable
-    // WHY: the walk can read, all at `isolatedStore` (created by `setup`).
     env: { ...process.env, ...sandboxEnv(isolatedStore) },
     encoding: "utf-8",
     timeout: runTimeoutMs,
@@ -121,7 +116,6 @@ function runPi(extraArgs, prompt) {
 }
 
 function readServedHashes() {
-  // The store lives under the override's state root (#190).
   const storePath = join(isolatedStore, "state", "hash-store.sqlite");
   if (!existsSync(storePath)) return null;
   const db = new DatabaseSync(storePath, { timeout: 2000 });

@@ -1,17 +1,14 @@
 /**
  * #90 / #198 — the janitor's lifecycle hooks: what a handler DOES with the pass it runs.
- *
- * WHY this file exists: a background timer is impossible (the extension API exposes no idle timer and
- * no `deactivate` event), so the janitor hangs on a lifecycle event, and a maintenance item must not
- * break the session it runs in — so the failure path is asserted here. #198 adds the second half: a
- * run that DID something must be visible to the operator. The two surfaces are the whole rule —
- * `session_start` still has a live console, `session_shutdown` does not — so each is asserted
- * separately, and the formatter's `null` is asserted to write nothing on BOTH, because a warning on
- * every session is noise and a shutdown that prints into a torn-down console is lost text.
- *
- * The TRIGGER itself (which outcomes warrant a warning, and its prose) is #197's, asserted in
- * `store-janitor-warning.test.ts`; this file never re-derives it. The tool-call exclusion that makes
- * the trigger safe stays in `store-janitor.test.ts`.
+ * A background timer is impossible (the extension API exposes no idle timer and no
+ * `deactivate` event), so the janitor hangs on a lifecycle event and a maintenance item must
+ * not break the session it runs in — hence the failure path here. #198 adds the second half:
+ * a run that DID something must be visible to the operator. `session_start` still has a live
+ * console and `session_shutdown` does not, so each surface is asserted separately, and the
+ * formatter's `null` writes nothing on BOTH: a warning every session is noise, and a shutdown
+ * printing into a torn-down console loses text. The TRIGGER (which outcomes warrant a
+ * warning, and its prose) is #197's, asserted in `store-janitor-warning.test.ts`; the
+ * tool-call exclusion that makes it safe stays in `store-janitor.test.ts`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -108,8 +105,6 @@ function fakePi(): {
     },
     handlerFor(event: string) {
       const found = subscriptions.find((entry) => entry.event === event);
-      // WHY throw rather than return undefined: a missing subscription must fail the test that names
-      // the event, not silently assert nothing about a handler that was never wired.
       if (found === undefined) throw new Error(`the janitor was not wired to ${event}`);
       return found.handler;
     },
@@ -169,8 +164,6 @@ describe("the janitor's failure containment", () => {
     const run = vi.fn(async () => {
       throw new Error("store unavailable");
     });
-    // WHY the log file and not the console: a maintenance failure must stay out of the terminal
-    // WHY Pi's renderer owns; the containment contract is "reported, never thrown".
     clearDiagnostics();
     registerJanitorHooks(pi as never, { runJanitor: run });
     await expect(subscriptions[0]?.handler()).resolves.toBeUndefined();
@@ -211,8 +204,6 @@ describe("the janitor's session_start surface", () => {
 
     expect(consoleSpy.info).not.toHaveBeenCalled();
     expect(consoleSpy.error).toHaveBeenCalledTimes(3);
-    // WHY the last line and not all three: the damaged-store prose is #197's and is pinned there.
-    // Here the assertion is that the CALL SITE resolved the real log path and handed it down.
     expect(consoleSpy.error.mock.calls.at(-1)?.[0]).toBe(
       `${JANITOR_WARNING_PREFIX} Details: ${diagnosticsLogPath()}`,
     );
@@ -234,9 +225,6 @@ describe("the janitor's session_start surface", () => {
 
     expect(consoleSpy.info).not.toHaveBeenCalled();
     expect(consoleSpy.error).toHaveBeenCalledTimes(2);
-    // WHY the last line and not both: the failure prose is the formatter's and is pinned in
-    // WHY `store-janitor-warning.test.ts`; here the assertion is that the call site resolved the real
-    // WHY log path and handed it down.
     expect(consoleSpy.error.mock.calls.at(-1)?.[0]).toBe(
       `${JANITOR_WARNING_PREFIX} Details: ${diagnosticsLogPath()}`,
     );
@@ -244,8 +232,6 @@ describe("the janitor's session_start surface", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.level).toBe("warn");
     expect(records[0]?.message).toContain("could not be compacted");
-    // WHY the exception is asserted in the LOG: the Details line points there, so a record
-    // without the error would leave the pointer a dead end.
     expect(records[0]?.message).toContain("disk I/O error");
   });
 
@@ -317,8 +303,6 @@ describe("the janitor's session_shutdown surface", () => {
       clearDiagnostics();
       const outcomes: JanitorOutcome[] = [];
       registerJanitorHooks(pi as never, {
-        // WHY a real `janitorPass` and not a hand-built outcome: #199's defect lived INSIDE the
-        // pass (`compactStore` printed on its own), so a mocked `runJanitor` cannot see it.
         runJanitor: async () => {
           const outcome = await janitorPass({
             db,
@@ -333,8 +317,6 @@ describe("the janitor's session_shutdown surface", () => {
 
       await handlerFor("session_shutdown")();
 
-      // The real VACUUM really ran: the fixture clears the 1 MiB floor and the quarter-file
-      // share, so the branch whose console write #199 reports is the one taken.
       expect(outcomes[0]?.compacted.ran).toBe(true);
       expect(outcomes[0]?.compacted.reclaimedBytes).toBeGreaterThan(0);
       expect(consoleSpy.info).not.toHaveBeenCalled();

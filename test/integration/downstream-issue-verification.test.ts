@@ -63,7 +63,6 @@ describe("downstream #62 — anchor stability across interleaved partial reads",
       expect(step1.length).toBe(7);
       expect(step3.map((r) => r.hash)).toEqual(step1.map((r) => r.hash));
       expect(step5.map((r) => r.hash)).toEqual(step1.map((r) => r.hash));
-      // the file is unchanged, so the served text must be unchanged too
       expect(step3.map((r) => r.text)).toEqual(step1.map((r) => r.text));
       expect(step5.map((r) => r.text)).toEqual(step1.map((r) => r.text));
     });
@@ -73,11 +72,11 @@ describe("downstream #62 — anchor stability across interleaved partial reads",
     await withTempFile("small.cpp", SMALL_CPP, async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
 
-      const first = rows(await read(readTool, ctx, "r1", 8, 7)); // lines 8–14
+      const first = rows(await read(readTool, ctx, "r1", 8, 7));
       const f2Guard = first.find((r) => r.text === "\tif (x > 0) {")!;
       expect(f2Guard).toBeDefined();
 
-      await read(readTool, ctx, "r2", 15, 7); // f3 group
+      await read(readTool, ctx, "r2", 15, 7);
 
       const after = rows(await read(readTool, ctx, "r3", 8, 7));
       const sameText = after.filter((r) => r.text === "\tif (x > 0) {");
@@ -105,11 +104,11 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
     await withTempFile("small.cpp", SMALL_CPP, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const first = rows(await read(readTool, ctx, "r1", 8, 7)); // lines 8–14
-      const line9Hash = first[1]!.hash; // f2 guard, canonical `\tif (x > 0) {`
+      const first = rows(await read(readTool, ctx, "r1", 8, 7));
+      const line9Hash = first[1]!.hash;
       expect(first[1]!.text).toBe("\tif (x > 0) {");
 
-      await read(readTool, ctx, "r2", 15, 7); // interleaved f3 window
+      await read(readTool, ctx, "r2", 15, 7);
 
       let applied = false;
       try {
@@ -125,7 +124,6 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
         );
         applied = true;
       } catch (error) {
-        // fail-closed is acceptable; a wrong-line write is not
         expect(String(error)).toMatch(/E_STALE_(ANCHOR|RANGE)/);
       }
 
@@ -134,7 +132,6 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
         .map((text, index) => ({ text, number: index + 1 }))
         .filter((l) => l.text === "\tif (x > 999) {");
 
-      // exactly one guard may be rewritten, and only when it is the served line (line 9)
       expect(guards.length).toBe(applied ? 1 : 0);
       if (applied) expect(guards[0]!.number).toBe(9);
     });
@@ -165,8 +162,6 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
   });
 });
 
-// #63 is cured by dropping the shape refusal: literal `HASH│` bytes now write through
-// byte-exact, while a verbatim served row still refuses via the evidence gate.
 describe("downstream #63 — literal HASH│ content in text", () => {
   it("writes literal `abc│text` / `KEY│value` lines whose hashes are not anchors of the file", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
@@ -196,7 +191,7 @@ describe("downstream #63 — literal HASH│ content in text", () => {
 
       const served = rows(await read(readTool, ctx, "r1", 1, 3, "sample.txt"));
       const line2Hash = served[1]!.hash;
-      const echo = `${served[1]!.hash}│two`; // real anchor of this file
+      const echo = `${served[1]!.hash}│two`;
 
       await expect(
         editTool.execute(

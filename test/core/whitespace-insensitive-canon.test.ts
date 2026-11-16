@@ -33,16 +33,11 @@ describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22
     for (const variant of variants) {
       expect(canon(variant.slice(0, -1))).toBe(canon("func hello"));
     }
-    // WHY: the fold is the canon's job. Identity is the raw line, so every variant is its own
-    // WHY: line and takes its own anchor (issue #230).
     for (const variant of variants) {
       expect((await contentOnlyHashes(variant))[0]).not.toBe(base[0]);
     }
   });
 
-  // WHY: frozen v3 (ADR-0029 amending ADR-0005, issue #22): NBSP/U+2003 normalize, so the
-  // WHY: v3 class treats them as ordinary whitespace in the CANON. The anchor keys on raw bytes,
-  // WHY: so the pre-#230 `toBe` pins on the hashing surface inverted with ADR-0013.
   it("folds NBSP and Unicode whitespace in the canon, not in the anchor", async () => {
     const ascii = await contentOnlyHashes("func hello\n");
     const nbsp = await contentOnlyHashes("func\u00A0hello\n");
@@ -104,8 +99,6 @@ describe("stable mapping — byte-exact reuse (ADR-0013)", () => {
       hashes: old,
       removedHashes: new Set([old[0]!]),
     });
-    // WHY: `func  hello` is not `func hello` — the changed line takes a fresh anchor while its
-    // WHY: untouched neighbour keeps its own.
     expect(mapped[1]).not.toBe(old[1]);
     expect(mapped[2]).toBe(old[2]);
   });
@@ -126,8 +119,6 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
     const tmp = await mkdtemp(join(await getWritableTempRoot(), "pi-canon-version-test-"));
     vi.stubEnv("HOME", tmp);
     vi.stubEnv("XDG_CONFIG_HOME", "");
-    // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-    // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
     vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
     try {
       await run(tmp);

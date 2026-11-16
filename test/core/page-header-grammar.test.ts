@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { formatPageHeader, formatSectionHeader } from "../../src/file-content/served-header.js";
 import { setupReadTest, withTempFile } from "../support/fixtures";
 
-// WHY: the header is the only page chrome (spec §4.4), and this table IS the contract: one bracket
-// WHY: grammar for every seam, so a change here is a change to what the model reads.
+/**
+ * The page header is the only page chrome (spec §4.4), and this table IS the contract:
+ * one bracket grammar for every seam, so a change here is a change to what the model
+ * reads.
+ * Ref: docs/spec/content-addressed-line-identity-mvcc.md
+ */
 describe("page chrome grammar (spec §4.4)", () => {
   it("names a whole file by its total", () => {
     expect(formatPageHeader({ file: "src/app.ts", totalLines: 40 })).toBe(
@@ -97,8 +101,6 @@ describe("page chrome grammar (spec §4.4)", () => {
 
 describe("the read tool's page header", () => {
   it("reports the byte stop on a page the byte budget cut", async () => {
-    // WHY: 800 lines of 100 bytes overrun pi's 50KB byte budget long before the line budget, so the
-    // WHY: header must say where the page stopped — the footer that used to is gone.
     const content = Array.from(
       { length: 800 },
       (_, i) => `${String(i).padStart(4, "0")}${"x".repeat(96)}`,

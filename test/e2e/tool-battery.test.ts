@@ -12,31 +12,33 @@ import {
   testSessionManager,
 } from "../support/fixtures";
 
-// WHY: per-scenario verdicts recovered from the deleted comparator
-// WHY: (`f6c83a7:scripts/eval-compare.mjs` EXPECTED + `verdict()`). `outcome` and
-// WHY: `preserve` semantics mirror `verdict()`; `byteIdentity` pins noop
-// WHY: scenarios to byte-identical content (their `preserve` would be a
-// WHY: substring of the pre-edit file and could never fail).
-// WHY: `preserve` entries below are verbatim from that table except the
-// WHY: two noop scenarios, which use `byteIdentity` instead (see above);
-// WHY: entries on applied scenarios are derived from each scenario's own
-// WHY: replacement text in this file (marked DERIVED). Without them the
-// WHY: battery records outcomes it never compares and cannot fail.
+/**
+ * The deterministic edit battery: 27 scenarios driven end to end through the
+ * registered tools, each compared against the expectation table below.
+ *
+ * `outcome` and `preserve` mirror the deleted comparator's `verdict()`
+ * (`f6c83a7:scripts/eval-compare.mjs`): an outcome must match, a rejection must
+ * carry a code, and preserved content must survive in the final file. Noop
+ * scenarios carry `byteIdentity` instead, because a `preserve` taken from their own
+ * text is a substring of the pre-edit file and could never fail. `preserve` entries
+ * are verbatim from that table except the two noops; applied scenarios derive theirs
+ * from the replacement text in this file.
+ */
 type Verdict = { outcome: "success" | "rejected"; preserve?: string; byteIdentity?: boolean };
 const EXPECTED: Record<string, Verdict> = {
-  "B1 single-line replace": { outcome: "success", preserve: "BBB" }, // DERIVED
-  "B2 range replace": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B1 single-line replace": { outcome: "success", preserve: "BBB" },
+  "B2 range replace": { outcome: "success", preserve: "X\nY" },
   "B3 interior drift must-not-silently-overwrite": {
     outcome: "rejected",
     preserve: "CCC",
   },
-  "B4 out-of-range in-place change": { outcome: "success", preserve: "X\nY" }, // DERIVED
-  "B5 deletion-above-range positional-shift": { outcome: "success", preserve: "X\nY" }, // DERIVED
-  "B6 change-then-revert interior": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B4 out-of-range in-place change": { outcome: "success", preserve: "X\nY" },
+  "B5 deletion-above-range positional-shift": { outcome: "success", preserve: "X\nY" },
+  "B6 change-then-revert interior": { outcome: "success", preserve: "X\nY" },
   "B7 unread interior paged-read-gap now applies (ADR-0024)": {
     outcome: "success",
     preserve: "X\nY\nZ\nW\nV",
-  }, // DERIVED: behavior changed since the deleted table (ADR-0024)
+  },
   "B8 blind-edit no-read never-served-boundary": {
     outcome: "rejected",
     preserve: "aaa\nbbb\nccc\n",
@@ -48,22 +50,22 @@ const EXPECTED: Record<string, Verdict> = {
   },
   "B11 noop replace": { outcome: "success", byteIdentity: true },
   "B12 noop-with-out-of-range-drift": { outcome: "success", byteIdentity: true },
-  "B13 chained-edit-from-diff-rows-no-reread": { outcome: "success", preserve: "B2" }, // DERIVED
-  "B14 empty-file insert": { outcome: "success", preserve: "first\nsecond" }, // DERIVED
+  "B13 chained-edit-from-diff-rows-no-reread": { outcome: "success", preserve: "B2" },
+  "B14 empty-file insert": { outcome: "success", preserve: "first\nsecond" },
   "B15 large-range drift capped-feedback": {
     outcome: "rejected",
     preserve: "line 1",
   },
-  "B16a undo after replace": { outcome: "success", preserve: "bbb" }, // DERIVED
+  "B16a undo after replace": { outcome: "success", preserve: "bbb" },
   "B16b undo after external change": { outcome: "rejected" },
-  "B17 reversed-range autocorrect": { outcome: "success", preserve: "X\nY" }, // DERIVED
-  "B18 boundary-dup autocorrect": { outcome: "success", preserve: "a\nX" }, // DERIVED
-  "B19 sub-agent-session-does-not-wipe-main": { outcome: "success", preserve: "BBB" }, // DERIVED
-  "B20 main-and-sub-agent-both-edit": { outcome: "success", preserve: "B\nC" }, // DERIVED
+  "B17 reversed-range autocorrect": { outcome: "success", preserve: "X\nY" },
+  "B18 boundary-dup autocorrect": { outcome: "success", preserve: "a\nX" },
+  "B19 sub-agent-session-does-not-wipe-main": { outcome: "success", preserve: "BBB" },
+  "B20 main-and-sub-agent-both-edit": { outcome: "success", preserve: "B\nC" },
   "B21 same-session-restart-keeps-served-state": {
     outcome: "success",
     preserve: "BBB",
-  }, // DERIVED
+  },
   "B22 sub-agent-serves-not-visible-to-main": { outcome: "rejected" },
   "B23 duplicate-canon silent-miswrite prevention (Probe E / #61)": {
     outcome: "rejected",
@@ -943,10 +945,6 @@ describe("tool battery (deterministic edit scenarios)", () => {
 
     expect(results).toHaveLength(27);
     expect(results.filter((r) => r.outcome === "error")).toEqual([]);
-    // WHY: the recovered comparator — every recorded outcome, code, and
-    // WHY: preserved content is compared, not just counted. `verdict()`
-    // WHY: semantics: outcome must match; a rejection must carry a code;
-    // WHY: preserved content must survive in the final file.
     for (const rec of results) {
       const exp = EXPECTED[rec.scenario];
       expect(exp, `missing expectation for ${rec.scenario}`).toBeDefined();

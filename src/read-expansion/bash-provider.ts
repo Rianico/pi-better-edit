@@ -47,7 +47,6 @@ function collectFunctions(node: unknown, out: BashFunction[]): void {
   if (node === null || typeof node !== "object") return;
   const record = node as Record<string, unknown>;
   if (record["type"] === "Function") out.push(node as BashFunction);
-  // WHY: Word.parts is a prototype getter, so Object.entries cannot see command substitutions.
   if (record["type"] === "Word") collectFunctions((record as { parts?: unknown }).parts, out);
   for (const [key, value] of Object.entries(record)) {
     if (key === "source") continue;
@@ -94,7 +93,6 @@ export function createBashSpanProvider(options: BashSpanProviderOptions = {}): S
       } catch {
         return { refusal: "provider_declined" };
       }
-      // WHY: partial parses cannot prove a boundary; criterion 4 fails closed exactly like #202.
       if (hasParseErrors(script)) return { refusal: "provider_declined" };
 
       const requestedEnd = window.offset + window.limit - 1;

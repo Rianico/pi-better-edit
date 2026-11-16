@@ -170,12 +170,6 @@ describe("scanInvisibleLine", () => {
 
 describe("invisible classifier source — frozen data discipline", () => {
   it("keeps the module pattern-free: no literal, no constructor, no property escape", () => {
-    // WHY: (A2) the class sets are frozen explicit lists — a property escape
-    // WHY: would drift with engine versions, the same reason CANON_CODE_POINTS
-    // WHY: in hash-identity.ts is an explicit list. A future edit adding a
-    // WHY: pattern must consciously remove this guard first. (A3) the class
-    // WHY: sets are sets, never patterns, so a pattern of any kind — literal
-    // WHY: or constructed — is a drift risk, not a style choice.
     const source = readFileSync("src/file-content/invisible.ts", "utf-8");
     expect(source).not.toContain("\\p{");
     expect(source).not.toContain("\\P{");

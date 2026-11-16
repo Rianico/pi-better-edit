@@ -116,9 +116,6 @@ describe("state artifact adoption", () => {
   });
 
   it("moves artifacts out of the override's own root into <override>/state", async () => {
-    // WHY: an override user's pre-change layout put every artifact directly in <override>; the new
-    // WHY: layout puts them in <override>/state, so the override root is the strongest retired
-    // WHY: source and its abandoned store is the one worth naming.
     await seed(join(storeDir, "hash-store.json"), JSON.stringify({ version: 1 }));
     await seed(join(storeDir, "diagnostics.log"), '{"message":"old"}\n');
     await seed(join(storeDir, "hash-store.sqlite"), "sqlite bytes");
@@ -129,7 +126,6 @@ describe("state artifact adoption", () => {
     expect(await readFile(join(stateRoot(), "hash-store.json"), "utf-8")).toContain('"version"');
     expect(await readFile(join(stateRoot(), "diagnostics.log"), "utf-8")).toContain('"old"');
     expect(existsSync(join(storeDir, "hash-store.json"))).toBe(false);
-    // The trio stays where the old session owns it, and the report names THAT path.
     expect(existsSync(join(storeDir, "hash-store.sqlite"))).toBe(true);
     expect(existsSync(join(stateRoot(), "hash-store.sqlite"))).toBe(false);
     expect(reports.some((line) => line.includes(join(storeDir, "hash-store.sqlite")))).toBe(true);
@@ -220,7 +216,6 @@ describe("the store's fail-fast on an unusable state root", () => {
     expect((failure as DomainError).code).toBe("E_ACCESS");
     expect((failure as DomainError).message).toContain("[E_ACCESS]");
     expect((failure as DomainError).message).toContain(blockedRoot);
-    // No fallback directory is created anywhere: the refusal is the whole response.
     expect(existsSync(blockedRoot)).toBe(false);
     expect(existsSync(join(blocker, "nested"))).toBe(false);
   });

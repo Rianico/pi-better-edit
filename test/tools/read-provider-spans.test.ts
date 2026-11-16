@@ -12,9 +12,6 @@ import { withTempFile } from "../support/fixtures";
 
 const reader = (text: string) => async () => text;
 
-// WHY the expectations below wrap in `{ spans: [...] }`: the seam now answers an
-// innermost-first chain anchored on the window's first line (selectionRange), not one span.
-
 describe("provider witnesses: enclosingChain answers per source", () => {
   it("markdown answers the heading section", async () => {
     const text = "# Guide\n\nIntro.\n\n## Language\n\nAlpha.\nBeta.\n\n## Next\n\ntail\n";
@@ -122,7 +119,6 @@ describe("provider witness: AST through a primed grammar fixture", () => {
       const bytes = gunzipSync(
         readFileSync(join("test", "fixtures", "grammars", "tree-sitter-tsx.wasm.gz")),
       );
-      // WHY inside withTempFile: the cache path derives from HOME, which the fixture repoints.
       primeGrammarForTests("tsx", bytes);
       const provider = createAstSpanProvider({
         loadGrammar: async () => handle,

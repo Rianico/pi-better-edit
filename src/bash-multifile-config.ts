@@ -1,18 +1,14 @@
 /**
- * `bash.multiFile` — the multi-file view caps (ADR-0049 M6), the sibling of `bash.view`.
- *
- * WHY the caps are settings: they are operator policy over how much one bash result may spend, not
- * a correctness bound (the ADR's safety bound IS the allowed range — a config can only lower a cap,
- * never raise it past the hard maximum). They resolve per KEY through the shared project/global
- * ladder so "the project file is set" never stands in for "this key came from the project file".
- *
- * WHY an out-of-range value warns instead of falling through silently: ADR-0049 M6 requires the
- * warning, and a dropped cap changes how much the session serves — the silent drop this ladder
- * refuses to make at file level is the same drop one level down. A MISSING key still warns about
- * nothing, and a broken file keeps warning exactly once through `readScopeConfig`.
- *
- * This module never touches the filesystem itself: reads go through `readScopeConfig`, writes
- * through `updateConfigFile`, so the config file keeps one owner.
+ * `bash.multiFile` — the multi-file view caps (docs/.archive_adrs/0049-multi-file-bash-views.md M6), the sibling of `bash.view`.
+ * WHY the caps are settings: operator policy over how much one bash result may spend, not a
+ * correctness bound — the ADR's safety bound IS the allowed range, so a config can only lower a
+ * cap, never raise it past the hard maximum. They resolve per KEY through the shared project/global
+ * ladder, so "the project file is set" never stands in for "this key came from the project file".
+ * WHY an out-of-range value warns instead of falling through silently: docs/.archive_adrs/0049-multi-file-bash-views.md M6 requires it,
+ * and a dropped cap changes how much the session serves — the same silent drop this ladder refuses
+ * at file level, one level down. A MISSING key still warns about nothing, and a broken file keeps
+ * warning exactly once through `readScopeConfig`. This module never touches the filesystem: reads
+ * and writes go through `readScopeConfig`/`updateConfigFile`, so the config file keeps one owner.
  */
 import { DomainError } from "./domain-errors.js";
 import {
@@ -35,7 +31,7 @@ export interface BashMultiFileSettings {
 /** One scope file's accepted keys; every key is optional and absent means "not set here". */
 export type BashMultiFilePatch = Partial<BashMultiFileSettings>;
 
-/** The key ADR-0049 M6 puts under `bash`. */
+/** The key docs/.archive_adrs/0049-multi-file-bash-views.md M6 puts under `bash`. */
 const BASH_MULTI_FILE_SUBTREE = "multiFile";
 
 /** The per-key names, in report order. */
@@ -48,7 +44,7 @@ const BASH_MULTI_FILE_KEYS = {
 export const BASH_MULTI_FILE_DEFAULTS: BashMultiFileSettings = { maxFiles: 10, maxRows: 2000 };
 
 /**
- * WHY the ranges are closed at the top: ADR-0049 M6 fixes them, and the upper bound is the safety
+ * WHY the ranges are closed at the top: docs/.archive_adrs/0049-multi-file-bash-views.md M6 fixes them, and the upper bound is the safety
  * bound (the row cap fits the built-in bash result cap). Lowering is allowed — an operator may want
  * a tighter page — raising is not a supported way to exceed it.
  */

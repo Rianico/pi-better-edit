@@ -45,9 +45,6 @@ function ctxFor(cwd: string): unknown {
   return { cwd, ui: { notify() {} }, sessionManager: testSessionManager };
 }
 
-// WHY: the same declaration sample as `test/tools/read-outline.test.ts`, so the fold under test is
-// WHY: the body the outline hides: lines 3-4 (`return VERSION;`, `}`) sit between the served
-// WHY: declaration rows for line 2 (`function helper() {`) and line 5 (`export class Rectangle {`).
 const SAMPLE = `const VERSION = "1.0";
 function helper() {
   return VERSION;
@@ -91,8 +88,6 @@ describe("outline fold gate (acceptance for #263)", () => {
         ),
       );
       const anchors = anchorsByContent(text);
-      // WHY: both bounds are live declaration leases, so only the unserved fold between them —
-      // WHY: lines 3-4, never shown by the outline — can refuse this span.
       const from = anchors.get("function helper() {");
       const to = anchors.get("export class Rectangle {");
       expect(from).toBeDefined();
@@ -114,16 +109,11 @@ describe("outline fold gate (acceptance for #263)", () => {
         caught = error;
       }
       expect(caught).toBeInstanceOf(Error);
-      // WHY: the tool seam throws `instanceof Error`-plain with the envelope stamped on (the
-      // WHY: documented error-envelope design) — the code rides `readEnvelope`, never the class.
       const envelope = readEnvelope(caught);
       expect(envelope?.code).toBe("E_STALE_RANGE");
       const message = caught instanceof Error ? caught.message : String(caught);
       expect(message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
-      // WHY: the range-family contract serves the current range for a fresh read — the model
-      // WHY: re-decides from visible rows instead of blindly retrying over the hidden fold.
       expect(message).toContain("Current range (fresh read):");
-      // WHY: fail-closed — the refusal lands before any write, so the bytes never move.
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
     });
   });
@@ -144,9 +134,6 @@ describe("outline fold gate (acceptance for #263)", () => {
       const version = anchorsByContent(text).get('const VERSION = "1.0";');
       expect(version).toBeDefined();
 
-      // WHY: `parseText` is the edit path's own text semantics (`src/hashline/parse.ts`): one
-      // WHY: string becomes the replacement lines, so the expected bytes spell the same splice the
-      // WHY: replace arm of `resToSpan` (`src/hashline/apply.ts`) computes — line 1 swapped in place.
       const replacement = 'const VERSION = "2.0";';
       expect(parseText(replacement)).toEqual([replacement]);
       const edited = await editTool.execute(
@@ -181,9 +168,6 @@ describe("outline fold gate (acceptance for #263)", () => {
       const helper = anchorsByContent(text).get("function helper() {");
       expect(helper).toBeDefined();
 
-      // WHY: the `after` arm of `insertionSpan` (`src/hashline/apply.ts`) splices zero-width after
-      // WHY: the target line's content — `replacement` is `"\n" + inserted` at the line end — so the
-      // WHY: expected bytes name that same position; `parseText` pins the inserted lines first.
       const note = "// outline-visible note";
       expect(parseText(note)).toEqual([note]);
       const edited = await editTool.execute(
@@ -221,9 +205,6 @@ describe("outline fold gate (acceptance for #263)", () => {
       const rectangle = anchorsByContent(text).get("export class Rectangle {");
       expect(rectangle).toBeDefined();
 
-      // WHY: the `before` arm of `insertionSpan` splices zero-width before the target line —
-      // WHY: `replacement` is `inserted + "\n"` at the line start — so the expected bytes name that
-      // WHY: same position; `parseText` pins the inserted lines first.
       const note = "// outline-visible note";
       expect(parseText(note)).toEqual([note]);
       const edited = await editTool.execute(
@@ -248,9 +229,6 @@ describe("outline fold gate (acceptance for #263)", () => {
     await withTempFile("sample.ts", SAMPLE, async ({ cwd, path }) => {
       const { readTool, editTool } = toolsWithOutline(SYMBOLS);
       const ctx = ctxFor(cwd);
-      // WHY: a served (non-outline) partial read leases lines 1-2 and 5 while leaving the interior
-      // WHY: lines 3-4 unserved — the exact ADR-0024 shape. No outline read ran, so no fold is recorded
-      // WHY: and the fold-gate stays inert: the multi-line replacement below must still apply.
       const text = getText(
         await readTool.execute(
           "r1",
@@ -284,8 +262,6 @@ describe("outline fold gate (acceptance for #263)", () => {
         ctx,
       );
       expect(edited.content[0]?.text).toContain("Successfully edited");
-      // WHY: the replace arm of `resToSpan` (`src/hashline/apply.ts`) swaps lines 1-5 for the
-      // WHY: replacement lines in place — the expected bytes spell that same splice.
       const rest = SAMPLE.split("\n").slice(5).join("\n");
       expect(await readFile(path, "utf8")).toBe(`${replacement}\n${rest}`);
     });

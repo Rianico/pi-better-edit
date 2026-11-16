@@ -1,18 +1,13 @@
 /**
- * Bash view setting — the `bash.view` key of the shared config file, resolved
- * through the shared ladder: env override, then project file, then global file,
- * then the default.
- *
- * WHY the interception is configurable at all: the view replacement swaps bash
- * stdout for anchored lines, which is a display decision about the model's own
- * session — an operator who would rather see raw output turns one key off, and
- * every other session keeps the default without restating it.
- *
- * WHY a warning is part of the contract here: a dropped setting changes what the
- * session shows, so an existing-but-unusable file is reported through `onWarn`
- * while the value falls through the ladder. A missing file warns about nothing,
- * and a value outside the accepted shape is ignored exactly as the sibling
- * ladders ignore one. Nothing here throws on the read side.
+ * Bash view setting — the `bash.view` key of the shared config file, resolved through the shared
+ * ladder: env override, then project file, then global file, then the default.
+ * WHY the interception is configurable: the view replacement swaps bash stdout for anchored lines,
+ * a display decision about the model's own session — an operator who would rather see raw output
+ * turns one key off, and every other session keeps the default without restating it.
+ * WHY a warning is part of the contract: a dropped setting changes what the session shows, so an
+ * existing-but-unusable file is reported through `onWarn` while the value falls through the ladder.
+ * A missing file warns about nothing, and a value outside the accepted shape is ignored exactly as
+ * the sibling ladders ignore one. Nothing here throws on the read side.
  */
 import { DomainError } from "./domain-errors.js";
 import {
@@ -147,8 +142,6 @@ export function saveBashViewConfig(
   }
 
   const path = configFilePath(scope, cwd);
-  // WHY: only `bash.view` is ours to set — an existing `$schema` is a deliberate editor-time
-  // WHY: choice and unknown top-level or `bash.*` keys belong to the user, so all of them survive.
   updateConfigFile(path, (existing) => ({
     ...existing,
     bash: { ...(isRecord(existing.bash) ? existing.bash : {}), [BASH_VIEW_KEY]: mode },

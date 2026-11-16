@@ -22,18 +22,11 @@ describe("edit noop-loop counter commit boundary", () => {
         edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
       };
 
-      // WHY: two identical no-ops arm the counter to the warn tier (2x); the
-      // WHY: third identical resend must refuse (3x).
       const first = await editTool.execute("e1", noop, undefined, undefined, ctx);
       expect(getText(first)).toContain("No changes made");
       const second = await editTool.execute("e2", noop, undefined, undefined, ctx);
       expect(getText(second)).toContain("[W_NOOP]");
 
-      // WHY: item 0 applies to the in-memory working buffer, then item 1's
-      // WHY: replacement reproduces a served row, so the loop rejects after an
-      // WHY: earlier item applied in memory — the batch rolls back with zero
-      // WHY: bytes written. A commit-boundary clear must leave the counters
-      // WHY: intact here; an in-loop clear wipes them despite the rollback.
       const rejection = (await editTool
         .execute(
           "e3",
@@ -53,8 +46,6 @@ describe("edit noop-loop counter commit boundary", () => {
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
       expect(await readFile(file, "utf-8")).toBe("aaa\nbbb\nccc\nddd\n");
 
-      // WHY: the counters survived the rollback, so the identical resend is
-      // WHY: the third strike and refuses.
       const third = (await editTool
         .execute("e4", noop, undefined, undefined, ctx)
         .catch((error: unknown) => error)) as Error;
@@ -77,10 +68,6 @@ describe("edit noop-loop counter commit boundary", () => {
       const second = await editTool.execute("e2", noop, undefined, undefined, ctx);
       expect(getText(second)).toContain("[W_NOOP]");
 
-      // WHY: the applied item reaches the in-memory buffer, then the atomic
-      // WHY: write fails and the undo restores the pre-call bytes — zero bytes
-      // WHY: changed. The counters must survive: the post-commit clear site is
-      // WHY: never reached.
       const fsWrite = await import("../../src/fs-write");
       const spy = vi.spyOn(fsWrite, "writeAtomic").mockRejectedValueOnce(new Error("disk full"));
       try {
@@ -122,8 +109,6 @@ describe("edit noop-loop counter commit boundary", () => {
       await editTool.execute("e1", noop, undefined, undefined, ctx);
       await editTool.execute("e2", noop, undefined, undefined, ctx);
 
-      // WHY: a committed apply resets the loop tracker, so a fresh resend
-      // WHY: starts from zero — no warn tier, no refusal.
       const applied = await editTool.execute(
         "e3",
         {

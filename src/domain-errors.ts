@@ -1,31 +1,14 @@
 /**
- * Domain error registry — the closed, type-safe contract for every
- * negative-path rejection (spec docs/spec/unified-error-and-warning-contract.md
- * section 4, D1). Its only import is the dependency-free alphabet leaf
- * (`./hashline/alphabet.js`, which itself imports nothing), so any seam can
- * still throw without wiring a store, session, or hasher.
- *
- * INVARIANT (the point of this module): a code is never declared without a
- * producer. Every `DomainErrorCode` member must have at least one
- * `new DomainError(code, payload)` site in src/, and every code passed at a
- * throw site must be a union member. Asserted BOTH directions in
- * test/arch/domain-error-registry.test.ts. This is what makes the registry a
- * contract instead of a list.
- *
- * WHY: payload text reports facts. A served `Options:` section may appear only
- * when it is neutral, unharmful and fail-closed, AND the evidence pins a single
- * cause. Neutral means an explicit list of admissible next moves that keeps the
- * model's choice — never one directive, because a biased suggestion steers the
- * model's next action. A code with no neutral option declares none and renders
- * facts only.
- *
- * WHY: options live on the refusal, never in a prompt or on a success path. They
- * render only for `MODEL` audience. `E_LARGE_FILE` stays fact-only until its
- * payload can name the invoking tool, because read and edit need different
- * options. `E_SUSPICIOUS_TEXT` is the reference: two options, and the payload
- * arm selects text vs content.
- *
- * See ADR-0047.
+ * Domain error registry — the closed, type-safe contract for every negative-path rejection (spec
+ * docs/spec/unified-error-and-warning-contract.md section 4, D1). Its only import is the leaf
+ * `./hashline/alphabet.js` (imports nothing), so a seam throws with no store, session or hasher.
+ * INVARIANT: a code is never declared without a producer — every `DomainErrorCode` member has a
+ * `new DomainError(code, payload)` site in src/, and every throw-site code is a union member;
+ * asserted BOTH directions in test/arch/domain-error-registry.test.ts.
+ * Payload text reports facts. `Options:` renders only for `MODEL`, only on the refusal (never
+ * in a prompt or a success path), and only when the moves are neutral, unharmful and fail-closed
+ * with the evidence pinning one cause: an explicit list, never one directive; no neutral option,
+ * no `Options:` (docs/.archive_adrs/0047-remediation-options-are-refusal-scoped-and-neutral.md).
  */
 
 import { HASH_LEN } from "./hashline/alphabet.js";
@@ -63,9 +46,6 @@ export type DomainErrorCode =
  */
 export type PayloadSubject = "read" | "edit" | "undo_last_edit";
 
-// WHY: this is the runtime companion of the `PayloadSubject` union, like `isDomainErrorCode`.
-// WHY: Only a member may name a tool.
-// WHY: A non-member renders the neutral wording instead.
 const PAYLOAD_SUBJECTS: readonly PayloadSubject[] = ["read", "edit", "undo_last_edit"];
 
 export function isPayloadSubject(value: unknown): value is PayloadSubject {
@@ -99,9 +79,10 @@ export interface ServedRow {
   hash: string;
 }
 
-// WHY: user-facing diagnosis carried as `details.cause` on range-family
-// WHY: rejections. Never a model remedy: the code alone selects the retry.
-// WHY: Values are GLOSSARY.md glossary terms.
+/**
+ * User-facing diagnosis only — never a model remedy, because the code alone selects the retry.
+ * Values are GLOSSARY.md glossary terms.
+ */
 export type RangeCause =
   | "retirement"
   | "never-served"
@@ -109,10 +90,10 @@ export type RangeCause =
   | "anchor staleness"
   | "served span";
 
-// WHY: the runtime companion of the `RangeCause` union, mirroring `isDomainErrorCode`:
-// WHY: the envelope reader (`src/error-envelope.ts`) validates diagnosis values so
-// WHY: `MutationFailure.cause` stays honest to its union. Values are registry-owned —
-// WHY: a non-registry string is an unknown diagnosis, never a typed one.
+/**
+ * `src/error-envelope.ts` validates through this list, so `MutationFailure.cause` cannot claim a
+ * diagnosis outside the union; a non-registry string stays unknown.
+ */
 const RANGE_CAUSES: readonly RangeCause[] = [
   "retirement",
   "never-served",
@@ -166,9 +147,10 @@ export interface ErrorPayloadMap {
     firstOffendingLine?: number;
   };
   E_UNVERIFIED_RANGE: {
-    // WHY: (remediation-2 item A) the foreign pass-through renders this code with NO rows, which
-    // WHY: needs a file-attributing headline; target-side producers keep passing
-    // WHY: `UNVERIFIED_HEADLINE` and a non-empty `servedBlock`, so their render is byte-identical.
+    /**
+     * (remediation-2 item A) the rowless foreign pass-through needs a file-attributing headline;
+     * target-side producers keep `UNVERIFIED_HEADLINE` and a block, byte-identical.
+     */
     headline?: string;
     servedRows: ServedRow[];
     servedBlock: string;
@@ -274,9 +256,6 @@ const FRESH_READ_HEADING = "Current range (fresh read):";
 export const UNVERIFIED_HEADLINE =
   "a bound of this range no longer resolves to the line identity it was served with.";
 
-// WHY: the anchor width is owned by `HASH_LEN` (`./hashline/alphabet.js`, a
-// WHY: dependency-free leaf), so this module derives the count word instead of
-// WHY: stating it.
 function suspiciousTail(count: number): string {
   if (count < 2) return "";
   return ` Identical refusal submitted ${count} times — the bytes still reproduce a served row.`;
@@ -374,9 +353,6 @@ function foreignAnchorFormat(payload: ErrorPayloadMap["E_FOREIGN_ANCHOR"]): stri
 export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[K]> } = {
   E_BAD_PAYLOAD: {
     audience: "MODEL",
-    // WHY: the same refusal reaches the model from read, edit and undo_last_edit.
-    // WHY: Naming the caller's own tool is what tells it which payload to repair.
-    // WHY: A subject outside the union cannot name a tool, so it renders the neutral clause.
     format: ({ message, subject }) =>
       isPayloadSubject(subject)
         ? `The ${subject} payload is not valid: ${message}`
@@ -384,11 +360,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_INTERNAL_INVARIANT: {
     audience: "MODEL",
-    // WHY: one code covers all internal guards: every re-homed site is a tool-facing
-    // WHY: invariant failure with no model-actionable field fix, so one remedy-free
-    // WHY: rendering serves all of them. The optional subject keeps the payload
-    // WHY: attribution channel, stamped by the same `withPayloadSubject` helper that
-    // WHY: stamps `E_BAD_PAYLOAD` — a re-homed refusal changes code and remedy only.
     format: ({ message, subject }) =>
       isPayloadSubject(subject)
         ? `The ${subject} invariant failed: ${message}`
@@ -412,15 +383,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_STALE_RANGE: {
     audience: "MODEL",
-    // WHY: the same fresh-read contract as `E_UNVERIFIED_RANGE` (issue #149): the rows served are
-    // WHY: the current on-disk range, but a stale served canon is indistinguishable from real disk
-    // WHY: drift, so the model must inspect them and decide — never a blind retry with the anchors
-    // WHY: that just failed.
-    // WHY: (remediation-2 item A) `servedBlock === ""` means NO rows are in the served set for
-    // WHY: this rejection — render headline only. Every target-side producer passes a non-empty
-    // WHY: block, so their renders stay byte-identical.
-    // WHY: (04b §12.2) an empty headline over an empty block would render a header with no
-    // WHY: information, so the pair is refused AT CONSTRUCTION, not silently defaulted.
     format: ({ headline, servedBlock }) => {
       if (servedBlock === "" && headline === "") {
         throw new TypeError("E_STALE_RANGE: headline must be non-empty when servedBlock is empty");
@@ -435,11 +397,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_UNVERIFIED_RANGE: {
     audience: "MODEL",
-    // WHY: same served-or-absent rule as `E_STALE_RANGE`: the fresh-read section appears exactly
-    // WHY: when rows are served; an absent-rows rejection renders its headline only.
-    // WHY: (04b §12.2) `headline: ""` passed `??` (which only rejects null/undefined) and admitted
-    // WHY: the render "[MODEL] [E_UNVERIFIED_RANGE] " — header, no information. An absent headline
-    // WHY: takes the non-empty default; an EMPTY one is refused at construction.
     format: ({ headline, servedBlock }) => {
       const resolved = headline ?? UNVERIFIED_HEADLINE;
       if (servedBlock === "" && resolved === "") {
@@ -457,9 +414,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_SUSPICIOUS_TEXT: {
     audience: "MODEL",
     format: suspiciousFormat,
-    // WHY: the replacement reproduces a served hash echo for this session, path and line.
-    // WHY: the refusal proves the served hash echo; two neutral moves leave intent with the model.
-    // WHY: the write arm guards `content` and the edit arm `text`, so the first option branches.
     options: ({ target }) =>
       target === "write"
         ? [
@@ -493,13 +447,10 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
         (servedBlock ? `Current range:\n${servedBlock}` : `No current range is served.`)
       );
     },
-    // WHY: both moves are structural and preserve intent; neither is preferred.
     options: ["merge the overlapping items into one span", "split them across separate calls"],
   },
   E_NOOP_LOOP: {
     audience: "MODEL",
-    // WHY: both arms state the refusal that happened; neither names an item because a wrapped
-    // WHY: call already prefixes `edit[i] (path) failed:`.
     format: ({ removeFrom, removeTo, count, batch, servedBlock, note }) => {
       const verdict = batch ? "Rejecting the batch." : "Rejected.";
       const base =
@@ -532,24 +483,16 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: ({ path }) =>
       `Cannot persist undo history to the hash store. The edit was not applied. ${path} is unchanged.`,
-    // WHY: the edit did not apply, so retry is safe; write is the fallback, not the order.
     options: ["retry the edit", "use write if the store stays unavailable"],
   },
   E_LOSSY_TEXT: {
     audience: "MODEL",
-    // WHY: (04b-rem P2-3) the admission round-trip guard: anchors are derived from the DECODED
-    // WHY: text, so bytes that do not re-encode identically cannot be line-addressed without
-    // WHY: destruction — the refusal happens before any mutation, and the cause is OBSERVED (the
-    // WHY: decode/encode comparison), never assumed.
     format: ({ path }) =>
       `Cannot edit ${path}: its bytes do not round-trip UTF-8. ` +
       `A line-addressed rewrite would destroy the original bytes.`,
   },
   E_UNDO_REVERT_FAILED: {
     audience: "MODEL",
-    // WHY: (04b-rem P2-1) a correlated revert defeated mid-window: some members are already at
-    // WHY: their pre bytes, others still at post. Nothing is cleared and nothing is re-attempted
-    // WHY: blindly — the durable revert-intent record describes the state and repair completes it.
     format: ({ path }) =>
       `Undo of the cut transaction was interrupted: ${path} could not be restored while other ` +
       `files of the transaction already were. No undo history was cleared; the files stay in the ` +
@@ -563,8 +506,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_LARGE_FILE: {
     audience: "MODEL",
     format: largeFileFormat,
-    // WHY: no options — read needs `mode: "verbatim"` and edit needs a split, but the payload
-    // WHY: names neither tool. Add `subject` before serving advice (ADR-0047).
+    // Ref: docs/.archive_adrs/0047-remediation-options-are-refusal-scoped-and-neutral.md
   },
 };
 
@@ -664,9 +606,6 @@ export const WARNING_REGISTRY: {
     audience: "USER",
     format: noopWarnFormat,
   },
-  // WHY: (ticket-04 §3.6) an empty `text` with "before"/"after" is a NO-OP, not a rejection: the
-  // WHY: bytes stay unchanged, the item counts as a noop, and the model channel learns why — the
-  // WHY: audience is MODEL because the fix belongs to the next submission, not to the human.
   W_NOOP_INSERT: {
     audience: "MODEL",
     format: ({ ref, removeFrom, removeTo }) =>
@@ -790,9 +729,10 @@ export function withPayloadSubject<T>(
   return new DomainError("E_BAD_PAYLOAD", { ...payload, subject });
 }
 
-// WHY: the batch-abort wrapper carries the inner code as a plain field — this
-// WHY: guard keeps errno-style codes (ENOENT, EACCES) and unknown strings out
-// WHY: of the domain contract: only registry members route the typed path.
+/**
+ * The batch-abort wrapper carries the inner code as a plain field, so this guard keeps errno-style
+ * codes (ENOENT, EACCES) out of the domain contract: only registry members pass.
+ */
 export function isDomainErrorCode(code: unknown): code is DomainErrorCode {
   return typeof code === "string" && code.startsWith("E_") && code in ERROR_REGISTRY;
 }

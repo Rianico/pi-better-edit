@@ -13,9 +13,12 @@ import { createReadSpanProvider } from "./src/read-expansion/read-provider.js";
 
 export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
+/**
+ * The extension entry point. The IO-bridge adapter subscribes both seams before any tool can
+ * serve or mutate a file, so the session's first read, edit or write is already mirrored
+ * whenever a bridge is present.
+ */
 export default function (pi: ExtensionAPI): void {
-  // WHY: expansion is a built-in capability; the provider fetches its pinned grammar on first use
-  // WHY: and returns null (today's exact read) whenever the grammar cannot be loaded.
   regRead(pi, { spanProvider: createReadSpanProvider() });
 
   regEdit(pi);
@@ -24,8 +27,6 @@ export default function (pi: ExtensionAPI): void {
 
   registerSearchHook(pi);
   registerLensCommand(pi);
-  // WHY: the adapter subscribes both seams before any tool can serve or mutate a file, so the first
-  // WHY: read, edit or write of the session is already mirrored whenever a bridge is present.
   attachIOBridgeAdapter();
 
   const hooks = createLifecycleHooks();
@@ -43,8 +44,5 @@ export default function (pi: ExtensionAPI): void {
     hooks.onToolResult as unknown as never,
   );
 
-  // WHY: the store janitor is wired to the lifecycle events that are OFF the tool-call hot path
-  // WHY: (`session_start`, `session_shutdown`) and to no other event: see JANITOR_EVENTS in
-  // WHY: src/store-janitor.ts for the never-subscribe list and the reason it is a prohibition.
   registerJanitorHooks(pi);
 }

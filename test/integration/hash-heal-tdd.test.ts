@@ -54,7 +54,6 @@ describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
       const text = getText(firstRead);
       const tHash = extractHash(text.split("\n").find((l) => l.includes("│const t"))!);
       await writeFile(path, `a\n${collidingInsert}\n${target}\nc`, "utf-8");
-      // No try/catch retry: the lease identity survives the shift, so this must apply first try.
       const result = await editTool.execute(
         "e1",
         {

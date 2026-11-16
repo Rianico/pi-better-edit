@@ -39,7 +39,6 @@ describe("fmtReadPreview", () => {
 
   it("carries no footer when limit is less than total lines", async () => {
     const result = await fmtReadPreview("a\nb\nc\n", { limit: 2 }, undefined, home.testPath);
-    // WHY: the page's chrome is its header (spec §4.4) — `nextOffset` is a `details` fact, not text.
     expect(result.text).not.toContain("Use windows");
     expect(result.nextOffset).toBe(3);
     expect(result.shownRange).toEqual({ startLine: 1, endLine: 2 });

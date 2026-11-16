@@ -1,23 +1,14 @@
 /**
- * The retired per-user roots are a SET, not a list (#190).
+ * The retired per-user roots are a SET, not a list (#190): with `$XDG_CONFIG_HOME` unset it
+ * resolves to `<home>/.config`, which is also the last rung, and the pass over those roots
+ * DELETES `.corrupt-*` dumps and reports the abandoned store — so a duplicated rung would
+ * visit one artifact twice (a second delete fails, the operator is told twice).
  *
- * `retiredConfigRoots()` answers "where might the pre-relocation files be", and two of its rungs can
- * name the SAME directory: with `$XDG_CONFIG_HOME` unset it resolves to `<home>/.config`, which is
- * also the last rung. The pass over those roots is not read-only — it DELETES `.corrupt-*` dumps and
- * reports the abandoned store — so a duplicated rung would visit one artifact twice: the second
- * delete fails on a file that is already gone and the operator is told the same thing twice. The
- * array length alone cannot show that, so the assertions below count the actual renames and the
- * actual lines the pass reports.
+ * The rename count is taken through a pass-through `node:fs` spy: the move's repetition is
+ * silent at the filesystem level, so counting calls is the only observable of "visited once".
  *
- * WHY the rename count is taken through a pass-through spy on `node:fs`: the move is the only
- * action whose repetition is silent at the filesystem level (the destination already exists after
- * the first one), so counting calls is the only way to observe "visited once" rather than "ended up
- * right". The spy wraps the real implementation, so every rename below still happens for real.
- *
- * WHY a RELATIVE `$XDG_CONFIG_HOME` is pinned here: the retired side has to ignore it for the same
- * reason the new side never reads it — a relative base resolves against whatever cwd the host
- * process happens to have, so honouring it would make adoption read a directory that depends on
- * where the editor was started.
+ * A RELATIVE `$XDG_CONFIG_HOME` is pinned here too: it resolves against the host cwd, and
+ * honouring it would make adoption read a directory that depends on where the editor started.
  */
 import * as fs from "node:fs";
 import { existsSync } from "node:fs";

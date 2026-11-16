@@ -1,35 +1,14 @@
 /**
- * One-shot adoption of the STATE artifacts left in the retired per-user directories (#190).
- *
- * WHY the retired side is an ORDERED LIST and not one directory: before the relocation the layout
- * resolved to `PI_BETTER_EDIT_CONFIG_DIR` when set, else `$XDG_CONFIG_HOME/pi-better-edit` or
- * `$HOME/.config/pi-better-edit`. All three held the same artifacts, so a user who set the override
- * or relocated with `XDG_CONFIG_HOME` has their old store and log somewhere the default root never
- * looks. `retiredConfigRoots()` orders them strongest first.
- *
- * WHY a pass at all: the settings file is adopted by the ladder in `json-config.ts`, but the store
- * and the log are not settings — they are written by the extension itself, so nobody would ever
- * read the old copies by asking for them. Without this pass an upgraded install would silently
- * start a second, empty state root and leave the old log (the one that explains the bug the user
- * is reporting) behind.
- *
- * WHY the SQLite store is NOT migrated: an older pi process may still be using the old file, and
- * copying or renaming a live SQLite database corrupts one of the two owners. The store's contract
- * is therefore "fresh start, old file abandoned in place", and the only action left is to say
- * where it is — once, deduped by a marker file in the new root so a log reader is not told the
- * same thing every session.
- *
- * WHY everything here is best-effort: this runs underneath the diagnostics sink and the store open,
- * both of which have their own failure contracts. A migration that threw would turn "the user's
- * config moved" into "the tool stopped working", which is a worse outcome than a stale log. The
- * marker is written only when every attempted MOVE succeeded, so a partial run is retried rather
- * than recorded as done. A failed DELETION does not withhold the marker: it is reported, and retrying
- * it would mean re-walking a directory on every session forever for a file we already stopped
- * caring about.
- *
- * WHY the reporting sink is a parameter instead of an import of `diagnostics.ts`: this module runs
- * BEFORE the diagnostics sink's first write (that is the point — the old log has to be in place
- * first), and importing the sink would make the two modules import each other.
+ * One-shot adoption of the STATE artifacts in the retired per-user directories (#190): the store
+ * and the log are written by the extension itself, so only this pass reads the old copies.
+ * The retired side is an ORDERED LIST: `PI_BETTER_EDIT_CONFIG_DIR` when set, else
+ * `$XDG_CONFIG_HOME/pi-better-edit` or `$HOME/.config/pi-better-edit`, all three holding the same
+ * artifacts, strongest first per `retiredConfigRoots()`.
+ * WHY the SQLite store is NOT migrated: an older pi process may still own the old file and copying
+ * or renaming a live database corrupts one owner — "fresh start, old file abandoned in place".
+ * WHY best-effort: it never throws, and the marker is written only when every attempted MOVE
+ * succeeded. WHY `report` is a parameter, not an import: this module runs before the diagnostics
+ * sink's first write, so importing it would make the two modules import each other.
  */
 import {
   copyFileSync,
@@ -75,23 +54,14 @@ export function migrateLegacyState(report: (message: string) => void): void {
   running = true;
   try {
     const root = stateRoot();
-    // WHY: the marker, not a module flag — a re-pointed override (tests do this) must migrate its own
-    // WHY: root, and the marker is what makes "already done" a fact about the DIRECTORY.
     if (existsSync(join(root, STATE_MIGRATION_MARKER))) return;
-    // SAFETY: the state root is created here (not by the caller) because the artifacts below have
-    // SAFETY: to land inside it; a failure is swallowed by the enclosing catch and surfaces later as
-    // SAFETY: the store open's own [E_ACCESS] refusal, which is where a caller can act on it.
     mkdirSync(root, { recursive: true });
     const outcome: MigrationOutcome = { moveFailed: false };
     adoptArtifacts(root, report, outcome);
-    // SAFETY: the marker means "nothing is left to move". A failed move keeps it unwritten so the
-    // SAFETY: next session tries again; a completed copy counts as moved, and a failed DELETION is
-    // SAFETY: only reported — see the header for why that does not withhold the marker.
     if (!outcome.moveFailed) {
       writeFileSync(join(root, STATE_MIGRATION_MARKER), `${new Date().toISOString()}\n`, "utf-8");
     }
   } catch {
-    // SAFETY: best-effort by contract — the marker was not written, so the next call retries.
   } finally {
     running = false;
   }
@@ -178,8 +148,6 @@ function copyAcrossDevices(
   try {
     unlinkSync(from);
   } catch (error: unknown) {
-    // WHY: the destination holds the bytes, so the move's purpose is served and the stale source is
-    // WHY: inert history the destination wins over anyway.
     report(`copied ${from} → ${to} but left the original in place: ${reasonOf(error)}`);
     return;
   }
@@ -191,7 +159,6 @@ function deleteCorruptDumps(retired: string, report: (message: string) => void):
   try {
     entries = readdirSync(retired);
   } catch {
-    // WHY: an absent retired directory is the ordinary state of a fresh install.
     return;
   }
   for (const name of entries) {

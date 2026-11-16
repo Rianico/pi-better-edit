@@ -1,22 +1,14 @@
 /**
  * The two directories this extension owns, and the only module that names any of their paths.
  *
- * WHY two roots rather than one: settings belong to the pi agent tree (an operator reads them
- * beside the other extensions they configure), while the store, the legacy JSON and the
- * diagnostics log are STATE — machine-written, disposable, and never edited by hand. The XDG
- * state directory is where a machine-written artifact belongs, and keeping settings out of it is
- * what stops a `rm -rf` of the state root from deleting the user's configuration.
+ * WHY two roots: settings belong to the pi agent tree, while the store, the legacy JSON and the
+ * diagnostics log are STATE — machine-written, disposable, never edited by hand — so they live
+ * under an XDG state root where an `rm -rf` cannot reach the user's configuration. Every RETIRED
+ * path is spelled here too: `test/arch/config-ladder-single-owner.test.ts` pins one naming module.
  *
- * WHY this is its own module rather than a corner of `hash-store.ts`: the diagnostics sink has to
- * answer "where is my directory?" on its very first line, and `hash-store.ts` is one of its
- * callers. Importing the directory rule from the store made a cycle (diagnostics → hash-store →
- * hash-identity → diagnostics) whose partial initialisation reached the schema as `undefined`
- * columns. The directory rule has no dependency on the store, so it lives where nothing forces a
- * cycle: below both of them.
- *
- * WHY every RETIRED path is spelled here too: `test/arch/config-ladder-single-owner.test.ts` pins
- * exactly one module naming the config-file locations. A second copy of a retired literal is how
- * an adoption chain silently reads a path nobody meant it to.
+ * WHY its own module: the diagnostics sink reads it on its first line and `hash-store.ts` is a
+ * caller, so the import made a cycle (diagnostics → hash-store → hash-identity → diagnostics)
+ * whose partial initialisation reached the schema as `undefined` columns.
  */
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -120,22 +112,16 @@ export const SETTINGS_FILE_NAME = "settings.json";
 export const PROJECT_SETTINGS_REL = ".pi/agents/pi-better-edit/settings.json";
 
 /**
- * The retired per-user config directories, strongest first: each one held the settings file AND
- * every state artifact before #190, which is exactly the coupling this relocation breaks. Read once
- * for adoption, never written again.
+ * The retired per-user config directories, strongest first: each held the settings file AND every
+ * state artifact before #190, the coupling this relocation breaks. Read once for adoption, never
+ * written again. WHY the override first: it is the strongest statement of where that user meant
+ * their files to live.
  *
- * WHY the override comes first: a user who set `PI_BETTER_EDIT_CONFIG_DIR` before the relocation
- * kept `pi-better-edit.json`, `hash-store.json` and the logs directly in that directory, and the
- * override is still the strongest statement about where that user meant their files to live.
- *
- * WHY the XDG base is read HERE and only here: the pre-#190 ladder honoured `$XDG_CONFIG_HOME`, so a
- * user who relocated the old directory through it has their settings and state under that base.
- * Adoption is the one job that has to look where the old ladder looked — every NEW path is derived
- * from the agent dir and the state home, so changing this variable never moves a file written by
- * this version. A relative value is ignored, as it was.
- *
- * WHY deduped: an unset `$XDG_CONFIG_HOME` resolves to `<home>/.config`, so two rungs collapse into
- * one and a single artifact must not be visited, moved or reported twice.
+ * WHY `$XDG_CONFIG_HOME` is read HERE and only here: the pre-#190 ladder honoured it, so adoption
+ * must look where the old ladder looked — every NEW path derives from the agent dir and the state
+ * home, so changing this variable never moves a file written by this version. A relative value is
+ * ignored, as it was. WHY deduped: an unset `$XDG_CONFIG_HOME` resolves to `<home>/.config`, so two
+ * rungs collapse into one and a single artifact must not be visited, moved or reported twice.
  */
 export function retiredConfigRoots(): readonly string[] {
   const override = configDirOverride();

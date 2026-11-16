@@ -12,8 +12,6 @@ import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 import { sandboxEnv } from "./lib/sandbox-env.mjs";
 const root = new URL("../", import.meta.url).pathname;
-// WHY: the bundle must live inside the repo so its bare imports resolve from the repo's
-// WHY: node_modules (`.tmp/` is gitignored), never from a sibling package's copy.
 const work = join(root, ".tmp");
 await mkdir(work, { recursive: true });
 const bundle = join(work, "bench-adopt.mjs");
@@ -21,8 +19,6 @@ const storeDir = await mkdtemp(join(tmpdir(), "pi-bench-adopt-store-"));
 
 try {
   await build({
-    // WHY: the bundle lives outside the repo, so every bare import must resolve from the repo's
-    // WHY: node_modules — running the process with `cwd: root` is what makes that work.
     entryPoints: [join(root, "scripts/bench-adopt.ts")],
     bundle: true,
     platform: "node",

@@ -80,7 +80,6 @@ describe("read mode outline", () => {
         ctx,
       );
       const text = getText(result);
-      // WHY: one served row per declaration line, byte-for-byte through the serve seam.
       expect(anchorRows(text).map((row) => row.slice(row.indexOf("│") + 1))).toEqual([
         'const VERSION = "1.0";',
         "function helper() {",
@@ -88,12 +87,9 @@ describe("read mode outline", () => {
         "  area(): number {",
         "export function create(): number {",
       ]);
-      // WHY: interiors stay unserved — no body line may appear as an anchored row.
       expect(text).not.toMatch(/^[A-Za-z0-9]{4}│  return /m);
       expect(text).not.toMatch(/^[A-Za-z0-9]{4}│\}/m);
 
-      // WHY: the served rows are live leases — a single-line replacement on the first
-      // WHY: declaration anchor applies cleanly.
       const [first] = anchorRows(text);
       const edited = await editTool.execute(
         "e1",
@@ -148,7 +144,6 @@ describe("read mode outline", () => {
       const text = getText(result);
       expect(anchorRows(text)).toHaveLength(SYMBOLS.length);
       expect(text).not.toMatch(/^[A-Za-z0-9]{4}│  return VERSION;/m);
-      // WHY: the drop is never silent — one `[Window warning: ...]` line names it.
       expect(text).toContain(OUTLINE_IGNORED_WINDOWS_WARNING);
     });
   });
@@ -159,13 +154,10 @@ describe("read mode outline", () => {
       offset: index + 1,
       limit: 1,
     }));
-    // WHY: the fan-out cap still binds every mode except outline — the schema mirrors the
-    // WHY: admission split per-variant, so a 17-window served call fails validation here.
     expect(validator.Check({ file: "sample.ts", windows: callerWindows })).toBe(false);
     expect(validator.Check({ file: "sample.ts", windows: callerWindows, mode: "served" })).toBe(
       false,
     );
-    // WHY: outline ignores caller windows, so the same width validates and serves.
     expect(validator.Check({ file: "sample.ts", windows: callerWindows, mode: "outline" })).toBe(
       true,
     );
@@ -231,7 +223,6 @@ describe("read mode outline", () => {
         ctxFor(cwd),
       );
       const text = getText(result);
-      // WHY: 18 > MAX_READ_WINDOWS (16) — derived outline rows are not caller fan-out.
       expect(anchorRows(text)).toHaveLength(18);
     });
   });

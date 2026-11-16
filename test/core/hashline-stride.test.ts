@@ -19,10 +19,12 @@ function gcd(a: number, b: number): number {
   return a;
 }
 
-// WHY: the stride `3907 = 62^2 + 62 + 1` increments only the low three base-62
-// WHY: digits, so consecutive 4-char anchors always differ in positions 1–3
-// WHY: while the most-significant char may coincide — the helper below pins
-// WHY: exactly that, not the width-3 "every character differs" claim.
+/**
+ * The stride `3907 = 62^2 + 62 + 1` increments only the low three base-62 digits, so
+ * consecutive 4-char anchors always differ in positions 1–3 while the most-significant
+ * char may coincide — the helper below pins exactly that, not a width-3 "every
+ * character differs" claim.
+ */
 function lowThreeCharsDiffer(a: string, b: string): boolean {
   return a[1] !== b[1] && a[2] !== b[2] && a[3] !== b[3];
 }
@@ -30,9 +32,6 @@ function lowThreeCharsDiffer(a: string, b: string): boolean {
 describe("hash probe stride", () => {
   it("is coprime with the hash space so probing visits every index", () => {
     expect(gcd(HASH_PROBE_STRIDE, HASH_SPACE)).toBe(1);
-    // WHY: the probe cycles the raw bitset where reserved indices are just set
-    // WHY: bits — coprimality with the usable space too is what keeps that
-    // WHY: cycling (and exhaustion detection) exact after the reservation.
     expect(gcd(HASH_PROBE_STRIDE, USABLE_HASH_SPACE)).toBe(1);
   });
 

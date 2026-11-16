@@ -26,8 +26,6 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-snapshot-test-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
-  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
-  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
   vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(tmpHome);
@@ -116,8 +114,6 @@ function standardizedHash(content: string): string {
 
 describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
   it("misses a version-2 snapshot key after the file-scoped derivation bump", async () => {
-    // WHY: C7 — the file-scoped derivation bump (ANCHOR_GENERATION 1) changes every anchor,
-    // WHY: so a pre-change snapshot planted under the old key must miss (and recompute) rather than hit.
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "hello\nworld\n";
@@ -241,8 +237,6 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
           (r) => r.line_id,
         );
         expect(firstBlock).toEqual([1, 2, 3]);
-        // Survivors inherit their exact previous `line_id`s (spec §3.1.3.2), so deleting the
-        // trailing line allocates nothing and the counter does not move.
         expect(secondBlock).toEqual([1, 2]);
         expect(nextId(db, "/p.ts")).toBe(4);
 
@@ -524,9 +518,6 @@ describe("snapshot-store — pruneMissing", () => {
 
       await pruneMissing(store);
 
-      // Spec §3.6.3: the counter is never dropped while the path holds a snapshot or a lease. The
-      // guard is evaluated BEFORE the purge deletes those rows, so the id block survives and a
-      // re-created file can never re-issue a `line_id` a surviving anchor still claims.
       expect(counterRows(store.db, "/gone.ts")).toHaveLength(1);
       expect(nextId(store.db, "/gone.ts")).toBe(counterBefore);
       const db = openRaw(home);
@@ -543,7 +534,6 @@ describe("snapshot-store — pruneMissing", () => {
       const store = await loadHashStore();
       put(store, "/gone.ts", "old\n", ["ZZZZ"]);
       expect(counterRows(store.db, "/gone.ts")).toHaveLength(1);
-      // Simulate the LRU vacuum that evicted the path's last snapshot: only the counter row is left.
       store.db.prepare("DELETE FROM file_snapshots WHERE path = ?").run("/gone.ts");
       expect(counterRows(store.db, "/gone.ts")).toHaveLength(1);
 
