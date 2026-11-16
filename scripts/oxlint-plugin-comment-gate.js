@@ -25,7 +25,7 @@ import {
 
 const MESSAGES = {
   [RULE.prose]:
-    "Comment carries no allowlisted tag. Prefix it with SAFETY:, TODO(#<issue>):, HACK:, Ref: docs/<repo-path> or Ref: https://<link>; a Gherkin step is Given /When /Then /And /But (capitalized, trailing space) or a Feature:/Scenario: heading. A `/** */` block that carries a WHY: or Invariant: tag is prose too. Prefer deleting the comment until the code explains itself.",
+    "Comment carries no allowlisted tag. Prefix it with SAFETY:, TODO(#<issue>):, HACK:, Ref: docs/<repo-path> or Ref: https://<link>; a tool directive (eslint-disable*, oxlint-disable*, pi-lens-ignore) is allowed when a `--` follows it with a stated reason; a Gherkin step is Given /When /Then /And /But (capitalized, trailing space) or a Feature:/Scenario: heading. A `/** */` block that carries a WHY: or Invariant: tag is prose too. Prefer deleting the comment until the code explains itself.",
   [RULE.bodyDoc]:
     "`/** */` block sits inside a function body (the body starts at line {{line}}). Documentation belongs at module scope, on the declaration it describes: rename or extract until the code explains itself, and put the reason in a `//` tag comment.",
   [RULE.blockCap]:

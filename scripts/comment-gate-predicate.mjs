@@ -35,19 +35,24 @@ export const RETIRED_TAG_RE = /(?:WHY|Invariant):/;
 /**
  * Directive comments whose keyword must open the line for its tool to honour it, with the
  * justification after a `--` separator. Anchoring alone would force these to choose between being
- * honoured and being explained, so the reason is matched at the start of the remainder.
+ * honoured and being explained, so the reason lives in the remainder. The reason is free-form prose:
+ * the directive already names the rule it suppresses, so the only thing left to require is that a
+ * reason EXISTS — an unexplained suppression is the debt this gate exists to make visible.
  */
 export const DIRECTIVE_PREFIX_RE =
   /^(?:eslint-disable(?:-next-line|-line)?|oxlint-disable(?:-next-line|-line)?|pi-lens-ignore)(?::\s*[\w@./-]+)?(?:\s+[\w@./-]+)*\s+--\s+/;
 
 /**
- * Does a tag open this text — either directly, or at the start of a directive's `--` reason?
+ * Does this text state a reason — an allowlisted tag at its start, or a tool directive followed by a
+ * `--` and something to say? The directive's reason is not held to the tag vocabulary (see
+ * `DIRECTIVE_PREFIX_RE`); a directive whose `--` carries nothing is prose.
  * @param {string} text trimmed comment value
  */
-export function hasTagAtStart(text) {
+export function hasStatedReason(text) {
   if (ALLOWLIST_RE.test(text)) return true;
   const directive = DIRECTIVE_PREFIX_RE.exec(text);
-  return directive !== null && ALLOWLIST_RE.test(text.slice(directive[0].length));
+  if (directive === null) return false;
+  return text.slice(directive[0].length).trim() !== "";
 }
 
 /** Gherkin steps: Title Case keyword plus a mandatory trailing space. Case-sensitive. */
@@ -112,7 +117,7 @@ export function isJSDoc(comment) {
 export function isAllowedText(rawValue) {
   const trimmed = rawValue.trim();
   if (trimmed === "") return true;
-  if (hasTagAtStart(trimmed)) return true;
+  if (hasStatedReason(trimmed)) return true;
   return GHERKIN_STEP_RE.test(trimmed) || GHERKIN_HEADING_RE.test(trimmed);
 }
 

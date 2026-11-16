@@ -176,6 +176,16 @@ const CORPUS: readonly Shape[] = [
     rules: [],
   },
   {
+    shape: "directive with a free-form reason after `--` is allowed",
+    code: "// eslint-disable-next-line no-control-regex -- these code points ARE the notice's subject.\nconst probe = /\\u0000/u;\n",
+    rules: [],
+  },
+  {
+    shape: "directive whose `--` carries nothing is prose",
+    code: "// eslint-disable-next-line no-control-regex --\nconst probe = /\\u0000/u;\n",
+    rules: ["prose"],
+  },
+  {
     shape: "directive with no reason is prose",
     code: "// eslint-disable-next-line no-control-regex\nconst probe = /\\u0000/u;\n",
     rules: ["prose"],

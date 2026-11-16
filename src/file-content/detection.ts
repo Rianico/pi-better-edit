@@ -183,7 +183,7 @@ export async function loadFileKindAndText(
  * code points that reach the model invisibly, so a verbatim read names them instead of escaping
  * them — see docs/spec/search-and-read-evolution.md §6.
  */
-// eslint-disable-next-line no-control-regex -- HACK: these code points ARE the notice's subject.
+// eslint-disable-next-line no-control-regex -- these code points ARE the notice's subject.
 const NON_PRINTABLE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 
 export interface ControlCharReport {
