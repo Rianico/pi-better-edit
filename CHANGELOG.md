@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Build System
+
+* **lint:** hold tests and tooling to the comment grammar instead of `src/` alone. `harness/no-comments` now runs over `test/**` and `scripts/**`, the generator's scan scope matches the rule (418 files), the 4,213 violations those surfaces held are drained, and a `#!` line is recognised as an interpreter directive rather than a comment. `Ref:` is the only citation tag, and a tool directive (`eslint-disable*`, `oxlint-disable*`, `pi-lens-ignore`) may state its reason as free-form prose after `--`.
+
 ### Documentation
 
 * **read:** teach the outline workflow in the served prompts: start with outline above about 200 lines, read a span under 150 lines in one call, use a 60-line window for a larger function, and do not read the whole file to verify. (#275)
