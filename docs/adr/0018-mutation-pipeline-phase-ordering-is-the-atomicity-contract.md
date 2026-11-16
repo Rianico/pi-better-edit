@@ -1,4 +1,4 @@
-# ADR-0017. Mutation Pipeline Phase Ordering Is the Atomicity Contract
+# ADR-0018. Mutation Pipeline Phase Ordering Is the Atomicity Contract
 
 Date: 2026-11-15
 
@@ -18,7 +18,7 @@ The measurements behind this conversion come from `.lane/replies/20261115T090259
 
 ## Decision
 
-We will hold the mutation pipeline's phase ordering in a decision record rather than in a file header, and cite it from the source with one `// Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md` line.
+We will hold the mutation pipeline's phase ordering in a decision record rather than in a file header, and cite it from the source with one `// Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md` line.
 
 1. **The ordering is the contract.** The phase list below is normative. A reorder is an architecture change, not a refactor: it must update the drift, undo and serve invariants in the same commit or it is wrong.
 2. **The citation is a path, not a number.** A comment that names an ADR by bare number rots silently when the record moves; a path is resolvable by the reader and checkable by a test. `docs/.archive_adrs/` moves already rotted this repository's own tooling once.
@@ -89,7 +89,7 @@ Vocabulary is the glossary's: range, span, served span, drift, drift notice, rej
 - **Keep the header and exempt it from the comment cap** — rejected. An exemption for the one block the rule exists to shrink is how a ratchet stops ratcheting, and the header's `SAFETY:` tag still guarded nothing.
 - **Move the text into `GLOSSARY.md`** — rejected. The glossary defines terms; the phase order is a behavioural contract with an ordering failure mode, which is what the ADR log is for. Burying it in 42 KB of vocabulary makes it unlinkable from the file it governs.
 - **Keep a prose summary in the source and the full text in the ADR** — rejected. Two statements of one contract drift, and the summary is the one a reader trusts because it sits beside the code. One citation line, one owner.
-- **Cite `ADR-0017` by bare number** — rejected. 267 bare `ADR-\d{4}` refs already exist and only one uses a path; a number survives a move silently and points at the wrong record after a renumber. A path is what a liveness test can check.
+- **Cite `ADR-0018` by bare number** — rejected. 267 bare `ADR-\d{4}` refs already exist and only one uses a path; a number survives a move silently and points at the wrong record after a renumber. A path is what a liveness test can check.
 
 ## Consequences
 

@@ -1,5 +1,5 @@
 import { reportDiagnostic } from "../diagnostics.js";
-// Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md
+// Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md
 
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";

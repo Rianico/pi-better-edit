@@ -392,10 +392,6 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
       });
     },
     parameters: readToolSchema,
-    // SAFETY: the normalizer returns the canonical shape when it can; an invalid legacy payload
-    // SAFETY: falls through to schema validation, which is exactly where it must be refused.
-    // WHY: (#272) the union validator reports the outline variant's missing `mode` beside a rejected
-    // WHY: `windows`, so the guard runs BEFORE it and the model reads the window contract instead.
     prepareArguments: (args: unknown) => {
       try {
         const prepared = normalizeReadPayload(args as RawReadParams);

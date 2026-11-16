@@ -137,7 +137,7 @@ const CORPUS: readonly Shape[] = [
   },
   {
     shape: "Ref: docs path",
-    code: "// Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst a = 1;\n",
+    code: "// Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst a = 1;\n",
     rules: [],
   },
   {
@@ -172,7 +172,7 @@ const CORPUS: readonly Shape[] = [
   },
   {
     shape: "directive with a Ref: reason after `--` is allowed",
-    code: "// eslint-disable-next-line no-control-regex -- Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst probe = /\\u0000/u;\n",
+    code: "// eslint-disable-next-line no-control-regex -- Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst probe = /\\u0000/u;\n",
     rules: [],
   },
   {
@@ -299,7 +299,7 @@ const CORPUS: readonly Shape[] = [
   },
   {
     shape: "module-scope JSDoc citing a record with Ref: is legal",
-    code: "/**\n * Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\n */\nexport const a = 1;\n",
+    code: "/**\n * Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\n */\nexport const a = 1;\n",
     rules: [],
   },
   {
@@ -501,7 +501,7 @@ describe("comment gate ratchet", () => {
     quietly(() => main(["--update"], root));
     writeFileSync(
       join(root, "src/a.ts"),
-      "// Ref: docs/adr/0017-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst a = 1;\n",
+      "// Ref: docs/adr/0018-mutation-pipeline-phase-ordering-is-the-atomicity-contract.md\nconst a = 1;\n",
     );
     expect(quietly(() => main(["--check"], root))).toBe(1);
     expect(quietly(() => main(["--update"], root))).toBe(0);
