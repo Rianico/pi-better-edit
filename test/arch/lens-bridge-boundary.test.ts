@@ -79,11 +79,9 @@ describe("lens bridge boundary", () => {
   });
 
   it("keeps the read payload flat and window-scoped", () => {
-    const variants = (readToolSchema as unknown as { anyOf: Array<{ properties: object }> }).anyOf;
-    expect(variants).toHaveLength(2);
-    for (const variant of variants) {
-      expect(Object.keys(variant.properties).sort()).toEqual(["file", "mode", "windows"]);
-    }
+    const schema = readToolSchema as unknown as { type: string; properties: object };
+    expect(schema.type).toBe("object");
+    expect(Object.keys(schema.properties).sort()).toEqual(["file", "mode", "windows"]);
   });
 
   it("wires the command and the unified adapter from the extension entry point", () => {
