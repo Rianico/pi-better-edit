@@ -187,7 +187,7 @@ describe("read tool — single file", () => {
       }));
       await expect(
         readTool.execute("r1", { file: "a.ts", windows: seventeen }, undefined, undefined, ctx),
-      ).rejects.toThrow(new RegExp(`must not have more than ${MAX_READ_WINDOWS} items`));
+      ).rejects.toThrow(MAX_READ_WINDOWS_MESSAGE);
     });
   });
 
@@ -438,15 +438,7 @@ describe("read payload contract", () => {
   it("refuses shapes outside the contract", () => {
     expect(validator.Check({} as never)).toBe(false);
     expect(validator.Check({ file: "a.ts", windows: [{ around_anchor: "abc" }] })).toBe(false);
-    expect(
-      validator.Check({
-        file: "a.ts",
-        windows: Array.from({ length: MAX_READ_WINDOWS + 1 }, (_, index) => ({
-          offset: index + 1,
-          limit: 1,
-        })),
-      }),
-    ).toBe(false);
+    expect(validator.Check({ file: "a.ts", mode: "raw" })).toBe(false);
   });
 
   it("rejects the retired `{ files: [...] }` outer shape at the schema (ADR-0041 D1)", () => {

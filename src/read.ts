@@ -123,34 +123,20 @@ const readAnchorWindowSchema = Type.Object(
 const readWindowSchema = Type.Union([readAnchorWindowSchema, readOffsetWindowSchema]);
 
 // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
-export const readToolSchema = Type.Union(
-  [
-    Type.Object({
-      file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
-      windows: Type.Optional(
-        Type.Array(readWindowSchema, {
-          description:
-            "One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; ignored in outline mode, which serves only symbol declaration lines",
-        }),
-      ),
-      mode: Type.Literal("outline", { description: OUTLINE_MODE_DESCRIPTION }),
-    }),
-    Type.Object({
-      file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
-      windows: Type.Optional(
-        Type.Array(readWindowSchema, {
-          maxItems: MAX_READ_WINDOWS,
-          description:
-            "One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; in the default `served` mode every window's rows are served, so anchors from all of them work in a single `edit`",
-        }),
-      ),
-      mode: Type.Optional(
-        Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
-          description: OUTLINE_MODE_DESCRIPTION,
-        }),
-      ),
-    }),
-  ],
+export const readToolSchema = Type.Object(
+  {
+    file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
+    windows: Type.Optional(
+      Type.Array(readWindowSchema, {
+        description: `One or more line ranges in this file, each either { offset, limit } or { around_anchor, radius }; at most ${MAX_READ_WINDOWS} in the default \`served\` mode, where every window's rows are served so anchors from all of them work in a single \`edit\`; ignored in outline mode, which serves only symbol declaration lines`,
+      }),
+    ),
+    mode: Type.Optional(
+      Type.Union([Type.Literal("served"), Type.Literal("verbatim"), Type.Literal("outline")], {
+        description: OUTLINE_MODE_DESCRIPTION,
+      }),
+    ),
+  },
   { description: OUTLINE_MODE_DESCRIPTION },
 );
 

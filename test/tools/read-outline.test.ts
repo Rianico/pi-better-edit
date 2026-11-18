@@ -154,10 +154,6 @@ describe("read mode outline", () => {
       offset: index + 1,
       limit: 1,
     }));
-    expect(validator.Check({ file: "sample.ts", windows: callerWindows })).toBe(false);
-    expect(validator.Check({ file: "sample.ts", windows: callerWindows, mode: "served" })).toBe(
-      false,
-    );
     expect(validator.Check({ file: "sample.ts", windows: callerWindows, mode: "outline" })).toBe(
       true,
     );
