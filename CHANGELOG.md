@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.19.1] - 2026-11-18
+
 ### Bug Fixes
 
 * **read:** emit the `read` parameters as one root `type: "object"` instead of a root-level `anyOf`, so Gemini 4 on Vertex (`functionCallingConfig.mode: "VALIDATED"`) stops rejecting every request with `400 INVALID_ARGUMENT`. `mode` is now one optional `served | verbatim | outline` enum; the outline-exempt 16-window cap is enforced by admission as before, so an over-cap served call now fails with `Read request accepts at most 16 windows.` instead of a schema-validation message. (#282)
