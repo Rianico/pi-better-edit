@@ -146,6 +146,69 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
     const served = await fmtReadPreview(text, {}, undefined, home.testPath, 10);
     expect(served.text).toContain("content not shown because hashline anchors require full lines");
   });
+
+  it("renders ordinary rows beside an oversized line without anchors (#293)", async () => {
+    const big = "x".repeat(60000);
+    const text = `short first line\n\n${big}\nshort last line\n`;
+    const verbatim = await fmtReadPreview(text, { render: "verbatim" }, undefined, home.testPath);
+    const rows = verbatim.text.split("\n");
+    expect(rows.slice(0, 2)).toEqual(["short first line", ""]);
+    expect(rows[2]).toMatch(/^\[Line 3 is .*exceeds 50\.0KB; content not shown\./);
+    expect(rows[3]).toBe("short last line");
+    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).not.toContain(big);
+    expect(verbatim.text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
+    expect(verbatim.served).toEqual([]);
+    expect(verbatim.shownRange).toEqual({ startLine: 1, endLine: 4 });
+  });
+
+  it("renders a verbatim window mixing ordinary and oversized lines (#293)", async () => {
+    const big = "x".repeat(60000);
+    const text = `alpha\n${big}\nomega\n`;
+    const verbatim = await fmtReadPreview(
+      text,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 2 },
+          { offset: 3, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+    );
+    expect(verbatim.text).toContain("alpha\n[Line 2 is ");
+    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).toContain("[Lines 3-3 of 3 total]\nomega");
+    expect(verbatim.text).not.toContain(big);
+    expect(verbatim.served).toEqual([]);
+  });
+});
+
+describe("read tool — verbatim page with an oversized line (#293)", () => {
+  it("serves a bounded preview instead of throwing", async () => {
+    const big = "x".repeat(60000);
+    await withTempFile(
+      "demo.txt",
+      `short first line\n${big}\nshort last line\n`,
+      async ({ cwd }) => {
+        const { ctx, readTool } = setupIntegrationTest(cwd);
+        const result = await readTool.execute(
+          "r1",
+          { file: "demo.txt", mode: "verbatim" },
+          undefined,
+          undefined,
+          ctx,
+        );
+        const text = result.content[0].text as string;
+        expect(text).toContain("short first line\n[Line 2 is ");
+        expect(text).toContain("short last line");
+        expect(text).toContain("content not shown; line exceeds the read byte budget");
+        expect(text).not.toContain(big);
+        expect(result.details.snapshotId).toBeUndefined();
+      },
+    );
+  });
 });
 
 describe("read tool — served (default) mode", () => {
