@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.19.2] - 2026-11-20
+
 ### Bug Fixes
 
 * **read:** render a `verbatim` page that mixes ordinary lines with an over-budget line instead of throwing `preview row 0 has no selected line`. The oversized path no longer asks for an anchor `verbatim` never prints, so the ordinary rows that fit are shown with the warning naming the oversized line. (#294)
