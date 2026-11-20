@@ -22,52 +22,57 @@ beforeAll(async () => {
   await initHasher();
 });
 
-describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22)", () => {
-  it("reports canon version 3", () => {
-    expect(CANON_VERSION).toBe(3);
+describe("canon — trim-only v4 whitespace class (issue #292, ADR-0005 superseded by issue #22)", () => {
+  it("reports canon version 4", () => {
+    expect(CANON_VERSION).toBe(4);
   });
 
-  it("folds whitespace variants of a line in the canon, not in the anchor (ADR-0013)", async () => {
+  it("folds edge whitespace variants of a line in the canon, not in the anchor (ADR-0013)", async () => {
     const base = await contentOnlyHashes("func hello\n");
-    const variants = ["func  hello\n", "  func hello\n", "func hello \n", "func\thello\n"];
-    for (const variant of variants) {
+    const edgeVariants = ["  func hello\n", "func hello \n", "\tfunc hello\n"];
+    for (const variant of edgeVariants) {
       expect(canon(variant.slice(0, -1))).toBe(canon("func hello"));
     }
-    for (const variant of variants) {
+    const interiorVariants = ["func  hello\n", "func\thello\n"];
+    for (const variant of interiorVariants) {
+      expect(canon(variant.slice(0, -1))).not.toBe(canon("func hello"));
+    }
+    for (const variant of [...edgeVariants, ...interiorVariants]) {
       expect((await contentOnlyHashes(variant))[0]).not.toBe(base[0]);
     }
   });
 
-  it("folds NBSP and Unicode whitespace in the canon, not in the anchor", async () => {
+  it("keeps interior NBSP and EM SPACE significant while their edges still fold", async () => {
     const ascii = await contentOnlyHashes("func hello\n");
     const nbsp = await contentOnlyHashes("func\u00A0hello\n");
     const em = await contentOnlyHashes("func\u2003hello\n");
-    expect(canon("func\u00A0hello")).toBe(canon("func hello"));
-    expect(canon("func\u2003hello")).toBe(canon("func hello"));
+    expect(canon("func\u00A0hello")).not.toBe(canon("func hello"));
+    expect(canon("func\u2003hello")).not.toBe(canon("func hello"));
+    expect(canonDigest("func\u00A0hello")).not.toBe(canonDigest("func hello"));
+    expect(canonDigest("func\u2003hello")).not.toBe(canonDigest("func hello"));
+    expect(canonDigest("func\u00A0hello")).not.toBe(canonDigest("func\u2003hello"));
+    expect(canon("\u00A0func hello\u00A0")).toBe(canon("func hello"));
     expect(nbsp[0]).not.toBe(ascii[0]);
     expect(em[0]).not.toBe(ascii[0]);
     expect(nbsp[0]).not.toBe(em[0]);
   });
 
-  it("normalizes v3 class code points anywhere in the line's canon (issue #22)", async () => {
+  it("trims v4 class code points only at the line's edges (issue #292)", async () => {
     const ascii = await _lineHashesPure("func hello\n");
     const nbspMiddle = await _lineHashesPure("func\u00A0hello\n");
     const emMiddle = await _lineHashesPure("func\u2003hello\n");
     const nbspPadded = await _lineHashesPure("\u00A0func hello \u00A0\n");
     const bomInside = await _lineHashesPure("func\uFEFF hello\n");
-    for (const variant of [
-      "func\u00A0hello",
-      "func\u2003hello",
-      "\u00A0func hello \u00A0",
-      "func\uFEFF hello",
-    ]) {
-      expect(canon(variant)).toBe(canon("func hello"));
+    expect(canon("\u00A0func hello \u00A0")).toBe(canon("func hello"));
+    for (const variant of ["func\u00A0hello", "func\u2003hello", "func\uFEFF hello"]) {
+      expect(canon(variant)).not.toBe(canon("func hello"));
+      expect(canonDigest(variant)).not.toBe(canonDigest("func hello"));
     }
+    expect(canonDigest("func\u00A0hello")).not.toBe(canonDigest("func\u2003hello"));
     expect(nbspMiddle[0]).not.toBe(ascii[0]);
     expect(emMiddle[0]).not.toBe(ascii[0]);
     expect(nbspPadded[0]).not.toBe(ascii[0]);
     expect(bomInside[0]).not.toBe(ascii[0]);
-    expect(canonDigest("func\u00A0hello")).toBe(canonDigest("func\u2003hello"));
     expect(canonDigest("func\u200Bhello")).not.toBe(canonDigest("func hello"));
   });
 

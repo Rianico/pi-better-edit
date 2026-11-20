@@ -39,3 +39,9 @@ Harder, and accepted: the canon cannot be used as a guard, and code must not tre
 Load-bearing assumption, confidence high: a line's identity must be computable from that line alone, because a stored digest is re-derived from a single line. Revisit only if line identity stops being content-addressed per line.
 
 Deep analysis: [`docs/articles/formatter-whitespace-churn-js-ts.md`](../articles/formatter-whitespace-churn-js-ts.md). Issue #230.
+
+## Amendment (issue #292, 2026-11-20)
+
+The purity invariant is unchanged: `canon(line)` stays a pure function of one line — still not position-aware, still no lexical state. What changed is scope. At `CANON_VERSION = 4` the canon is trim-only: it strips one leading and one trailing run of the frozen 28-code-point class and no longer discards interior whitespace, so `const s = "a`+NBSP+`b"` and `const s = "a b"` no longer share a canon. The `## Consequences` paragraph above claiming "the over-broad strip remains" is therefore superseded for interior positions.
+
+Edge tolerance is preserved, so formatter tolerance at the edges is too: tab↔space indentation, 2↔4-space re-indent and trailing-whitespace strip stay canon-equal. The position-aware option above stays rejected for the same invariant reason — trim-only narrows where the canon looks, it does not give it lexical state.

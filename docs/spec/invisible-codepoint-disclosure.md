@@ -36,7 +36,7 @@ The classifier layer stays as the foundation that work consumes:
 table, `classifyCodepoint`, `invisibleName`, `scanInvisibleLine`, with the
 control-set priority and the canon coupling), pinned by
 `test/core/invisible-codepoints.test.ts` and the coupling assertion in
-`test/core/canon-v3-disposition.test.ts`.
+`test/core/canon-v4-disposition.test.ts`.
 
 ## Implementation Decisions
 
