@@ -6,6 +6,12 @@
 
 * **canon:** narrow `canon(line)` to trim-only, so an external writer that changes whitespace inside a string literal no longer pairs with the served line: one leading and one trailing run of the frozen 28-code-point class is stripped, interior bytes stay significant, and `CANON_VERSION` moves 3 → 4 so pre-v4 snapshot rows are inert cache misses with no migration. Re-indentation and a trailing-whitespace strip still rebase cleanly; an intra-literal rewrite now retires the lease and rejects `[E_TARGET_LOST]` with the bytes untouched. (#292)
 
+## [2.19.2] - 2026-11-20
+
+### Bug Fixes
+
+* **read:** render a `verbatim` page that mixes ordinary lines with an over-budget line instead of throwing `preview row 0 has no selected line`. The oversized path no longer asks for an anchor `verbatim` never prints, so the ordinary rows that fit are shown with the warning naming the oversized line. (#294)
+
 ## [2.19.1] - 2026-11-18
 
 ### Bug Fixes

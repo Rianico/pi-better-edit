@@ -152,12 +152,16 @@ function buildOversizedPreview(params: {
     if (row.bytes > maxBytes) {
       return `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`;
     }
-    const hash = selectedHashes[index];
     const line = selected[index];
-    if (hash === undefined || line === undefined) {
+    if (line === undefined) {
       throw new Error(`preview row ${index} has no selected line`);
     }
-    return fmtRows([hash], [line], verbatim);
+    if (verbatim) return line;
+    const hash = selectedHashes[index];
+    if (hash === undefined) {
+      throw new Error(`preview row ${index} has no anchor`);
+    }
+    return fmtRows([hash], [line], false);
   });
   const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
   const shownRowCount =
