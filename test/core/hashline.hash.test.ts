@@ -7,10 +7,10 @@ import { useTestHome } from "../support/fixtures";
 const home = useTestHome();
 
 describe("strict hashline contract", () => {
-  it("does not fold internal ASCII whitespace into the anchor (ADR-0013)", async () => {
+  it("keeps internal ASCII whitespace significant in the canon while the anchor rotates (ADR-0013)", async () => {
     const hashes = await lineHashes("a b", home.testPath);
     const hashes2 = await lineHashes("ab", home.testPath);
-    expect(canon("a b")).toBe(canon("ab"));
+    expect(canon("a b")).not.toBe(canon("ab"));
     expect(hashes[0]).not.toBe(hashes2[0]);
   });
 

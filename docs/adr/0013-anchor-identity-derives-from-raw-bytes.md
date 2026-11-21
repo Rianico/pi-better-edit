@@ -69,3 +69,7 @@ The before/after pairs this record rests on, all on this worktree, before the ch
 | A pre-rewrite anchor after an external token change | `[E_TARGET_LOST]` | `[E_TARGET_LOST]` |
 
 The content-only spellings are environment-independent (`contentBaseIndex` has no path seed); the file-scoped rows are path-seeded and were measured through the tool seam on a temp path.
+
+## Amendment (issue #292, 2026-11-20)
+
+Raw-byte anchor identity is untouched: `contentBaseIndex`, `fileBaseIndex` and `ANCHOR_GENERATION = 2` all stand, because the canon never derived an anchor here. `canon` remains not position-aware but is now narrower — trim-only at `CANON_VERSION = 4`, folding only the leading and trailing runs of the frozen class. That is exactly the axis separation items 3 and 4 describe: a canon-only change misses the snapshot cache through the `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}` key and leaves anchor state alone, so no migration runs and pre-v4 rows are inert cache misses. Item 3's sentence "The canon is not position-aware and is not narrowed" is superseded in its "not narrowed" half only.

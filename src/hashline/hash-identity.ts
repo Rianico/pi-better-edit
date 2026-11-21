@@ -85,13 +85,18 @@ export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
 export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 /**
- * CANON_VERSION 3 (issue #22): the frozen 28-code-point whitespace class below replaces the v2 ASCII-only class of
- * docs/.archive_adrs/0005-whitespace-insensitive-anchors.md; the amendment and the migration notes are in
- * docs/.archive_adrs/0029-canon-v3-frozen-whitespace-class.md. Snapshot keys carry the version as their first component
- * (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so pre-v3 rows are inert cache misses rebuilt on the next read — no
- * pre-v3 constant is retained.
+ * CANON_VERSION 4 (issue #292): the canon is trim-only. It strips one leading and one trailing run of the frozen
+ * 28-code-point whitespace class below, never an interior run, so intra-line whitespace is significant: a foreign
+ * writer that rewrites whitespace inside a line — inside a string literal too, `"a b"` -> `"ab"` — changes the canon
+ * string, so `canonDigest` no longer reproduces the digest the lease recorded, pairing breaks and the edit rejects
+ * fail-closed on the retired lease.
+ * Prior versions: v3 (issue #22) fixed the frozen 28-code-point class below, replacing the v2 ASCII-only class of
+ * docs/.archive_adrs/0005-whitespace-insensitive-anchors.md; the amendment and migration notes are in
+ * docs/.archive_adrs/0029-canon-v3-frozen-whitespace-class.md. Snapshot keys carry the version first
+ * (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so pre-v4 rows are inert cache misses rebuilt on the next
+ * read — no migration needed, and no pre-v4 constant is retained.
  */
-export const CANON_VERSION = 3;
+export const CANON_VERSION = 4;
 
 /**
  * ANCHOR_GENERATION 2 (issue #230, docs/adr/0013-anchor-identity-derives-from-raw-bytes.md): the file-scoped anchor-derivation
@@ -119,13 +124,19 @@ const CANON_CODE_POINTS = [
   0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f,
   0x3000, 0x200e, 0x200f, 0xfeff,
 ] as const;
-const CANON_RE = new RegExp(
-  `[${CANON_CODE_POINTS.map((cp) => `\\u${cp.toString(16).padStart(4, "0")}`).join("")}]+`,
-  "g",
+const CANON_CLASS = CANON_CODE_POINTS.map((cp) => `\\u${cp.toString(16).padStart(4, "0")}`).join(
+  "",
 );
+/**
+ * Anchored and trim-only (#292): each class matches one run at an edge, never an interior one, because the
+ * dropped `g` class also stripped interior runs and folded `"a b"` into `"ab"` — letting a foreign writer
+ * rewrite a literal's interior and still pair with the served line.
+ */
+const CANON_LEAD_RE = new RegExp(`^[${CANON_CLASS}]+`);
+const CANON_TRAIL_RE = new RegExp(`[${CANON_CLASS}]+$`);
 
 export function canon(line: string): string {
-  return line.replace(CANON_RE, "");
+  return line.replace(CANON_LEAD_RE, "").replace(CANON_TRAIL_RE, "");
 }
 
 /**

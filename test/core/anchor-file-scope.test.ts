@@ -278,8 +278,8 @@ describe("anchor file scope", () => {
     expect(fileHashesFor("/x/a.ts/", content)).toEqual(plain);
   });
 
-  it("C7: CANON_VERSION is 3", () => {
-    expect(CANON_VERSION).toBe(3);
+  it("C7: CANON_VERSION is 4", () => {
+    expect(CANON_VERSION).toBe(4);
   });
 
   it("C8: reservation survives file-scoped seeding, including the fast path", () => {
