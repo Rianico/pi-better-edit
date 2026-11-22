@@ -232,6 +232,42 @@ interface DelegatedImageBlock {
 /** One entry of the call's `content` array: rendered text, or a routed image block. */
 type RoutedContent = { type: "text"; text: string } | DelegatedImageBlock;
 
+/**
+ * What a programmatic caller such as a codemode script receives, mirroring the builtin read: the
+ * text for a text read, or the image block with the text that accompanies it as `note`. The host
+ * hands a script `structuredContent` only for a tool that declares `outputSchema`, and the text
+ * blocks otherwise, which loses the image.
+ * The shape mirrors the builtin read; re-check it whenever the pi dev host moves.
+ */
+const readOutputSchema = Type.Union([
+  Type.String(),
+  Type.Object({
+    type: Type.Literal("image"),
+    data: Type.String(),
+    mimeType: Type.String(),
+    note: Type.String(),
+  }),
+]);
+
+/**
+ * Spread into the definition: the pinned pi dev host predates the typed field. Drop the
+ * indirection once the devDependency moves to a host that declares `outputSchema`.
+ */
+const readOutputContract = { outputSchema: readOutputSchema };
+
+function withReadOutput<T extends { content: readonly RoutedContent[] }>(
+  result: T,
+): T & { structuredContent: Static<typeof readOutputSchema> } {
+  const text = result.content.find((block) => block.type === "text")?.text ?? "";
+  const image = result.content.find((block) => block.type === "image");
+  return {
+    ...result,
+    structuredContent: image
+      ? { type: "image", data: image.data, mimeType: image.mimeType, note: text }
+      : text,
+  };
+}
+
 /** One target's outcome in request order: a rendered file (or its refusal), or routed image blocks. */
 type OrderedOutcome =
   | { kind: "file"; entry: FileResult }
@@ -378,10 +414,13 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
       });
     },
     parameters: readToolSchema,
+    ...readOutputContract,
     prepareArguments: (args: unknown) => {
       try {
         const prepared = normalizeReadPayload(args as RawReadParams);
         guardWindowsArray(prepared);
+        // SAFETY: `normalizeReadPayload` emits the admitted schema shape (legacy aliases folded, windows guarded).
+        // SAFETY: TypeScript cannot express that relation; pi validates the returned value against `readToolSchema` next.
         return prepared as unknown as Static<typeof readToolSchema>;
       } catch (error) {
         throw withPayloadSubject(error, "read");
@@ -553,7 +592,9 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
           });
           if (prepared.kind === "image") {
             const imageResult = await readImageViaBuiltin(prepared.absolutePath);
-            return imageResult;
+            return "structuredContent" in imageResult && imageResult.structuredContent !== undefined
+              ? imageResult
+              : withReadOutput(imageResult);
           }
           if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
           ordered.push({
@@ -635,7 +676,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               reportDiagnostic("read", "Failed to clear outline fold record:", error);
             }
           }
-          return {
+          return withReadOutput({
             content,
             details:
               single?.mode === "verbatim"
@@ -648,7 +689,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                     ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
                     metrics,
                   },
-          };
+          });
         }
 
         const sessionKey = sessionFromContext(
@@ -727,7 +768,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
             content: entry.prepared.normalized,
           });
         }
-        return {
+        return withReadOutput({
           content,
           details: single
             ? {
@@ -740,7 +781,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
                 metrics,
               },
-        };
+        });
       } catch (error) {
         throw withPayloadSubject(error, "read");
       }
