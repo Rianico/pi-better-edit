@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **read:** state oversized-line limits as facts instead of recommending Bash. An oversized row now reads `[Line 2: 205.1KB; not shown.]` and the trailing notice says `[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]`, so hosts without Bash and remote filesystem backends receive no unrunnable `sed` command or path placeholder. Row anchors, pagination, and truncation behavior are unchanged.
+
 ## [2.19.3] - 2026-11-22
 
 ### Bug Fixes

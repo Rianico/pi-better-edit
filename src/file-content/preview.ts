@@ -106,10 +106,10 @@ function emptyFilePreview(
   };
 }
 
-function oversizedWarning(oversized: { lineNumber: number }[]): {
+function oversizedLineFacts(oversized: { lineNumber: number }[]): {
   lineLabel: string;
   verb: string;
-  addresses: string;
+  pronoun: "it" | "them";
 } {
   const [firstOversized] = oversized;
   const lineLabel =
@@ -117,8 +117,8 @@ function oversizedWarning(oversized: { lineNumber: number }[]): {
       ? `Line ${firstOversized.lineNumber}`
       : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
   const verb = oversized.length === 1 ? "exceeds" : "exceed";
-  const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
-  return { lineLabel, verb, addresses };
+  const pronoun = oversized.length === 1 ? "it" : "them";
+  return { lineLabel, verb, pronoun };
 }
 
 function buildOversizedPreview(params: {
@@ -150,7 +150,7 @@ function buildOversizedPreview(params: {
   const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
   const rows = rowSizes.map((row, index) => {
     if (row.bytes > maxBytes) {
-      return `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`;
+      return `[Line ${row.lineNumber}: ${formatSize(row.bytes)}; not shown.]`;
     }
     const line = selected[index];
     if (line === undefined) {
@@ -167,11 +167,8 @@ function buildOversizedPreview(params: {
   const shownRowCount =
     skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
   const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
-  const { lineLabel, verb, addresses } = oversizedWarning(oversized);
-  const reason = verbatim
-    ? "content not shown; line exceeds the read byte budget"
-    : "content not shown because hashline anchors require full lines";
-  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; ${reason}. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
+  const { lineLabel, verb, pronoun } = oversizedLineFacts(oversized);
+  const warning = `[${lineLabel} ${verb} the ${formatSize(maxBytes)} limit; the read tool cannot show ${pronoun}.]`;
   // Ref: docs/spec/search-and-read-evolution.md
   const preview = `${skippedTruncation.content}\n\n${warning}`;
   const nextOffset =

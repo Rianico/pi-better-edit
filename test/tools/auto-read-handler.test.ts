@@ -313,8 +313,8 @@ describe("auto-read handler", () => {
       const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
       expect(text).toContain("│small");
       expect(text).not.toContain("│Q");
-      expect(text).toContain("exceeds 50.0KB");
-      expect(text).toContain("sed -n '1p'");
+      expect(text).toContain("exceeds the 50.0KB limit");
+      expect(text).toContain("[Line 1 exceeds the 50.0KB limit; the read tool cannot show it.]");
     });
   });
 });
