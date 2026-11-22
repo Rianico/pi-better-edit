@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.19.3] - 2026-11-22
+
 ### Bug Fixes
 
 * **read:** restore image attachments in codemode on hosts with structured tool results: `tools.read()` returns the image data, MIME type, and accompanying note instead of just the note. Text-only results and model-facing content are unchanged. (#298)
