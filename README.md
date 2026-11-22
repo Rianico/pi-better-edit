@@ -182,6 +182,7 @@ read({
 - **Disjoint Multi-Window Leases**: In the default `served` mode, every row across all returned windows receives an active lease, enabling batched edits across distant parts of the file in the subsequent turn.
 - **Large-Line Protection**: Individual lines exceeding pi's `DEFAULT_MAX_BYTES` (50 KB) are replaced with a concise unservable placeholder marker to prevent context explosion.
 - **Outline Mode**: Pass `mode: "outline"` to serve symbol declaration lines as leased point anchors for rapid orientation in large files without reading bodies.
+- **Codemode**: On Pi hosts that support structured tool results, `await tools.read({ file })` resolves to the first text block for text-only results. When Pi returns an image attachment, the script receives `{ type: "image", data, mimeType, note }`, which you can pass to `image()`.
 
 ### 2. `edit`
 Applies atomic single or batched modifications.

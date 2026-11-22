@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+* **read:** restore image attachments in codemode on hosts with structured tool results: `tools.read()` returns the image data, MIME type, and accompanying note instead of just the note. Text-only results and model-facing content are unchanged. (#298)
 * **canon:** narrow `canon(line)` to trim-only, so an external writer that changes whitespace inside a string literal no longer pairs with the served line: one leading and one trailing run of the frozen 28-code-point class is stripped, interior bytes stay significant, and `CANON_VERSION` moves 3 → 4 so pre-v4 snapshot rows are inert cache misses with no migration. Re-indentation and a trailing-whitespace strip still rebase cleanly; an intra-literal rewrite now retires the lease and rejects `[E_TARGET_LOST]` with the bytes untouched. (#296)
 
 ## [2.19.2] - 2026-11-20
