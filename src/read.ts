@@ -237,6 +237,7 @@ type RoutedContent = { type: "text"; text: string } | DelegatedImageBlock;
  * text for a text read, or the image block with the text that accompanies it as `note`. The host
  * hands a script `structuredContent` only for a tool that declares `outputSchema`, and the text
  * blocks otherwise, which loses the image.
+ * The shape mirrors the builtin read; re-check it whenever the pi dev host moves.
  */
 const readOutputSchema = Type.Union([
   Type.String(),
@@ -248,7 +249,10 @@ const readOutputSchema = Type.Union([
   }),
 ]);
 
-/** Spread into the definition: hosts older than the codemode contract do not type the field. */
+/**
+ * Spread into the definition: the pinned pi dev host predates the typed field. Drop the
+ * indirection once the devDependency moves to a host that declares `outputSchema`.
+ */
 const readOutputContract = { outputSchema: readOutputSchema };
 
 function withReadOutput<T extends { content: readonly RoutedContent[] }>(
@@ -415,6 +419,8 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
       try {
         const prepared = normalizeReadPayload(args as RawReadParams);
         guardWindowsArray(prepared);
+        // SAFETY: `normalizeReadPayload` emits the admitted schema shape (legacy aliases folded, windows guarded).
+        // SAFETY: TypeScript cannot express that relation; pi validates the returned value against `readToolSchema` next.
         return prepared as unknown as Static<typeof readToolSchema>;
       } catch (error) {
         throw withPayloadSubject(error, "read");
