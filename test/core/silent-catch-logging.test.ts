@@ -6,7 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { initHasher } from "../../src/hashline/hasher.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
-import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
+import { createSessionHandle } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";
 import {
   getWritableTempRoot,
@@ -15,7 +15,6 @@ import {
   getText,
   withTempFile,
   readDiagnostics,
-  clearDiagnostics,
 } from "../support/fixtures.js";
 
 /**
@@ -62,20 +61,6 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       });
     }
     expect(offenders).toEqual([]);
-  });
-
-  it("ensureServedSchema logs a migration failure without throwing", () => {
-    clearDiagnostics();
-    const db = {
-      exec: vi.fn(),
-      prepare: vi.fn(() => {
-        throw new Error("migration boom");
-      }),
-    } as unknown as DatabaseSync;
-    expect(() => ensureServedSchema(db)).not.toThrow();
-    const records = readDiagnostics();
-    expect(records).toHaveLength(1);
-    expect(records[0]?.message).toMatch(/served/i);
   });
 
   it("lease grant failure logs once and keeps the serve (best-effort)", async () => {
@@ -172,7 +157,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
 
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER undo_mirror_boom BEFORE UPDATE OF hashes ON served " +
+        "CREATE TRIGGER undo_mirror_boom BEFORE UPDATE OF hashes ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'undo mirror boom'); END;",
       );
       try {

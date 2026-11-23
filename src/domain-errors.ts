@@ -24,6 +24,7 @@ export type DomainErrorCode =
   | "E_STALE_RANGE"
   | "E_TARGET_LOST"
   | "E_UNVERIFIED_RANGE"
+  | "E_UNSERVED_RANGE"
   | "E_MALFORMED_ANCHOR"
   | "E_SUSPICIOUS_TEXT"
   | "E_BATCH_ABORT"
@@ -68,7 +69,8 @@ export type DomainWarningCode =
   | "W_LITERAL_BYPASS"
   | "W_NOOP"
   | "W_NOOP_INSERT"
-  | "W_EOL_REWRITTEN";
+  | "W_EOL_REWRITTEN"
+  | "W_UNSERVED_INTERIOR";
 
 /**
  * SAFETY: one served row — position is 0-based, hash is the anchor string. Canon evidence is not a
@@ -155,6 +157,13 @@ export interface ErrorPayloadMap {
     headline?: string;
     servedRows: ServedRow[];
     servedBlock: string;
+    cause: RangeCause;
+    firstOffendingLine?: number;
+  };
+  E_UNSERVED_RANGE: {
+    headline: string;
+    servedRows: [];
+    servedBlock: "";
     cause: RangeCause;
     firstOffendingLine?: number;
   };
@@ -408,6 +417,15 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       return servedBlock === "" ? resolved : `${resolved}\n${FRESH_READ_HEADING}\n${servedBlock}`;
     },
   },
+  E_UNSERVED_RANGE: {
+    audience: "MODEL",
+    format: ({ headline }) => {
+      if (headline === "") {
+        throw new TypeError("E_UNSERVED_RANGE: headline must be non-empty");
+      }
+      return headline;
+    },
+  },
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
     format: ({ rawAnchor, reason }) => `The anchor "${rawAnchor}" is not valid: ${reason}.`,
@@ -550,6 +568,11 @@ export interface WarningPayloadMap {
     source: "env" | "project" | "global" | "file" | "system";
     changed: number;
   };
+  W_UNSERVED_INTERIOR: {
+    count: number;
+    from: number;
+    to: number;
+  };
 }
 
 function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
@@ -661,6 +684,11 @@ export const WARNING_REGISTRY: {
     format: ({ target, source, changed }) =>
       `EOL normalized to ${target} (${source}): ${changed} terminators changed. ` +
       "Undo restores normalized content.",
+  },
+  W_UNSERVED_INTERIOR: {
+    audience: "MODEL",
+    format: ({ count, from, to }) =>
+      `Span replaced ${count} unserved interior line(s) (lines ${from}-${to}). Edits should only modify lines previously read and served (enforced under strict mode); verify this uninspected replacement was intended.`,
   },
 };
 

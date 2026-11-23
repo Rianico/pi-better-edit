@@ -152,9 +152,12 @@ const MIGRATION_COLUMNS = {
     effective_ending: "TEXT",
     pre_image_mixed: "INTEGER",
   },
-  served_session_meta: { outline_folds: "TEXT" },
-  served: { retired: "TEXT", canons: "TEXT", snapshotId: "TEXT" },
-  undo: { result_content: "TEXT NOT NULL DEFAULT ''" },
+  served_session_meta: {
+    outline_folds: "TEXT",
+    hashes: "TEXT",
+    blocked_hashes: "TEXT",
+    epoch_id: "TEXT",
+  },
 } as const;
 
 /** Tables carrying a migrated column from the map above. */
@@ -209,8 +212,9 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
       try {
         // pi-lens-ignore: sql-injection -- the identifier comes from a closed MigrationTable/GenerationTable literal union; no external input
         db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
-        // pi-lens-ignore: error-swallowing -- the legacy column stops being read either way; a table that refuses the drop keeps an inert column
-      } catch {}
+      } catch (dropError: unknown) {
+        reportDiagnostic("hash-store", "skipped DROP COLUMN canon_version:", dropError);
+      }
       return;
     }
   }
@@ -554,53 +558,19 @@ function buildStore(db: DatabaseSync): boolean {
       "file_path TEXT NOT NULL, " +
       "reported TEXT, " +
       "outline_folds TEXT, " +
+      "hashes TEXT, " +
+      "blocked_hashes TEXT, " +
+      "epoch_id TEXT, " +
       "updated_at INTEGER NOT NULL, " +
       "PRIMARY KEY (session_id, file_path)" +
       ")",
   );
   ensureFileUndoSchema(db);
-  if (tableColumns(db, "served").size > 0 && !tableColumns(db, "served").has("session_id")) {
-    db.exec("DROP TABLE served");
-  }
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS snapshots (" +
-      "path TEXT PRIMARY KEY, " +
-      "checksum TEXT NOT NULL, " +
-      "line_count INTEGER NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-      ")",
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS undo (" +
-      "path TEXT PRIMARY KEY, " +
-      "content TEXT NOT NULL, " +
-      "bom TEXT NOT NULL, " +
-      "ending TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "result_content TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-      ")",
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS served (" +
-      "session_id TEXT NOT NULL, " +
-      "path TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL DEFAULT '[]', " +
-      "reported TEXT, " +
-      "retired TEXT, " +
-      "canons TEXT, " +
-      "snapshotId TEXT, " +
-      "updated_at INTEGER NOT NULL DEFAULT 0, " +
-      "PRIMARY KEY (session_id, path)" +
-      ")",
-  );
-  addColumnIfMissing(db, "served", "retired");
-  addColumnIfMissing(db, "served", "canons");
-  addColumnIfMissing(db, "served", "snapshotId");
   addColumnIfMissing(db, "served_session_meta", "outline_folds");
+  addColumnIfMissing(db, "served_session_meta", "hashes");
+  addColumnIfMissing(db, "served_session_meta", "blocked_hashes");
+  addColumnIfMissing(db, "served_session_meta", "epoch_id");
 
-  addColumnIfMissing(db, "undo", "result_content");
   if (!stampDue) return false;
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
@@ -664,8 +634,9 @@ function smokeCheckStoreFile(storePath: string): boolean {
     if (fd !== undefined) {
       try {
         closeSync(fd);
-        // pi-lens-ignore: error-swallowing -- a close failure must not mask the verdict this check already computed
-      } catch {}
+      } catch (closeError: unknown) {
+        reportDiagnostic("hash-store", "failed to close the header probe fd:", closeError);
+      }
     }
   }
 }

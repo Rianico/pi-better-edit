@@ -72,3 +72,4 @@ Warnings accompany successful tool executions (`status: "applied"`). They inform
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a second consecutive time without changing range text; file was left unmodified. | Warning emitted; a third consecutive submission triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion (`text: ""`) placed with `at: "before"` or `at: "after"`. | No bytes written; call succeeds with diagnostic warning. |
 | `[W_EOL_REWRITTEN]` | `[MODEL]` | The write changed at least one pre-image terminator's bytes while normalizing the file to its effective EOL. | Applied; reports the target EOL, its source, and the number of pre-image terminators changed. A new line's terminator is not counted. |
+| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced ≥1 interior line the session never served. | Applied; names count and line range. |

@@ -63,7 +63,7 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
     expect(verbatim.text).not.toContain("content not shown");
 
     const served = await fmtReadPreview(text, {}, undefined, home.testPath, 51200);
-    expect(served.text).toContain("content not shown");
+    expect(served.text).toContain("[Line 1: 50.0KB; not shown.]");
   });
 
   it("renders [File is empty.] for an empty file with no anchor row", async () => {
@@ -130,7 +130,7 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
     expect(verbatim.served).toEqual([]);
   });
 
-  it("uses a mode-neutral oversize clause under verbatim (fix 5)", async () => {
+  it("uses the same neutral oversize notice in both modes", async () => {
     const text = `${"x".repeat(40)}\n${"y".repeat(40)}\n`;
     const verbatim = await fmtReadPreview(
       text,
@@ -139,12 +139,16 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       home.testPath,
       10,
     );
-    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).toContain(
+      "[Lines 1, 2 exceed the 10B limit; the read tool cannot show them.]",
+    );
     expect(verbatim.text).not.toContain("hashline anchors require full lines");
     expect(verbatim.served).toEqual([]);
 
     const served = await fmtReadPreview(text, {}, undefined, home.testPath, 10);
-    expect(served.text).toContain("content not shown because hashline anchors require full lines");
+    expect(served.text).toContain(
+      "[Lines 1, 2 exceed the 10B limit; the read tool cannot show them.]",
+    );
   });
 
   it("renders ordinary rows beside an oversized line without anchors (#293)", async () => {
@@ -153,9 +157,11 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
     const verbatim = await fmtReadPreview(text, { render: "verbatim" }, undefined, home.testPath);
     const rows = verbatim.text.split("\n");
     expect(rows.slice(0, 2)).toEqual(["short first line", ""]);
-    expect(rows[2]).toMatch(/^\[Line 3 is .*exceeds 50\.0KB; content not shown\./);
+    expect(rows[2]).toMatch(/^\[Line 3: .*; not shown\.\]$/);
     expect(rows[3]).toBe("short last line");
-    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).toContain(
+      "[Line 3 exceeds the 50.0KB limit; the read tool cannot show it.]",
+    );
     expect(verbatim.text).not.toContain(big);
     expect(verbatim.text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
     expect(verbatim.served).toEqual([]);
@@ -177,8 +183,10 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       undefined,
       home.testPath,
     );
-    expect(verbatim.text).toContain("alpha\n[Line 2 is ");
-    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).toContain("alpha\n[Line 2: ");
+    expect(verbatim.text).toContain(
+      "[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]",
+    );
     expect(verbatim.text).toContain("[Lines 3-3 of 3 total]\nomega");
     expect(verbatim.text).not.toContain(big);
     expect(verbatim.served).toEqual([]);
@@ -201,9 +209,9 @@ describe("read tool — verbatim page with an oversized line (#293)", () => {
           ctx,
         );
         const text = result.content[0].text as string;
-        expect(text).toContain("short first line\n[Line 2 is ");
+        expect(text).toContain("short first line\n[Line 2: ");
         expect(text).toContain("short last line");
-        expect(text).toContain("content not shown; line exceeds the read byte budget");
+        expect(text).toContain("[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]");
         expect(text).not.toContain(big);
         expect(result.details.snapshotId).toBeUndefined();
       },
@@ -367,7 +375,9 @@ describe("read tool — mode: verbatim", () => {
       const mirrorCount = () =>
         (
           store.db
-            .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+            .prepare(
+              "SELECT COUNT(*) AS n FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+            )
             .get(TEST_SESSION_ID, absolute) as { n: number }
         ).n;
 

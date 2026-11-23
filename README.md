@@ -139,6 +139,13 @@ The response returns a unified diff with newly allocated anchors for modified li
   d2xX│   }
 ```
 
+A removed row the session never served renders with an empty anchor gutter (`-    │content`) instead of a hash, so the diff never offers an anchor it cannot honour:
+
+```text
+-    │   let total = 0;
+-m2zX│     total += item.price;
+```
+
 ---
 
 ## Configuration & Settings
@@ -402,6 +409,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not the targeted one. | — |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
+| `[E_UNSERVED_RANGE]` | Strict mode only: an interior line of the target span was never served in this session; nothing was written. | — |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without stable anchor bounds. | — |
 | `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor prefix. | Omit anchor prefixes or set `mode: "literal"`. |
 | `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge overlapping spans or split calls. |
@@ -430,6 +438,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a 2nd consecutive time without changing range text. Resend triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion with `before`/`after` writes zero bytes. |
 | `[W_EOL_REWRITTEN]` | `[MODEL]` | EOL normalized to the effective EOL; names the target, source, number of pre-image terminators changed, and the normalized-undo consequence. |
+| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced interior lines this session never served; names the count and range. Strict mode refuses such spans instead. |
 
 
 ### Read Warnings (`[W_*]`)

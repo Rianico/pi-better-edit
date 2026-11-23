@@ -39,20 +39,22 @@ vi.mock("../../src/fs-write.js", async (importOriginal) => {
 const ORIGINAL = "alpha\nbravo\ncharlie\n";
 const EDITED = "alpha\nbravo edited\ncharlie\n";
 
-/** The raw served-mirror JSON for one (session, path), read directly from the `served` table. */
+/** The raw served-mirror JSON for one (session, path), read from `served_session_meta.hashes`. */
 function mirrorHashes(store: HashStore, sessionKey: string, path: string): string | undefined {
   const row = store.db
-    .prepare("SELECT hashes FROM served WHERE session_id = ? AND path = ?")
-    .get(sessionKey, path) as { hashes: string } | undefined;
-  return row?.hashes;
+    .prepare("SELECT hashes FROM served_session_meta WHERE session_id = ? AND file_path = ?")
+    .get(sessionKey, path) as { hashes: string | null } | undefined;
+  return row?.hashes ?? undefined;
 }
 
-/** The legacy retired-set JSON for one (session, path), read directly from the `served` table. */
+/** The blocked-hash set JSON for one (session, path), read from `served_session_meta`. */
 function mirrorRetired(store: HashStore, sessionKey: string, path: string): string | null {
   const row = store.db
-    .prepare("SELECT retired FROM served WHERE session_id = ? AND path = ?")
-    .get(sessionKey, path) as { retired: string | null } | undefined;
-  return row?.retired ?? null;
+    .prepare(
+      "SELECT blocked_hashes FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+    )
+    .get(sessionKey, path) as { blocked_hashes: string | null } | undefined;
+  return row?.blocked_hashes ?? null;
 }
 
 function snapshotExists(store: HashStore, path: string, content: string): boolean {
@@ -93,7 +95,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       expect(mirrorBefore).toBeDefined();
 
       store.db.exec(
-        "CREATE TRIGGER cand3_edit_mirror_fail BEFORE UPDATE OF hashes ON served " +
+        "CREATE TRIGGER cand3_edit_mirror_fail BEFORE UPDATE OF hashes ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
       let text = "";
@@ -197,7 +199,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       )!.anchor;
 
       store.db.exec(
-        "CREATE TRIGGER cand3_undo_mirror_fail BEFORE UPDATE OF hashes ON served " +
+        "CREATE TRIGGER cand3_undo_mirror_fail BEFORE UPDATE OF hashes ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
       let text = "";
@@ -304,7 +306,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
 
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER cand3_undo_text_fail BEFORE UPDATE OF hashes ON served " +
+        "CREATE TRIGGER cand3_undo_text_fail BEFORE UPDATE OF hashes ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
       let text = "";

@@ -118,14 +118,21 @@ function pushAddedLines(
     newLineNum.value++;
   }
 }
+/**
+ * Render the removed side of one diff part. `served` is the pre-batch positional served mirror in
+ * ORIGINAL line coordinates: a `null` slot renders its row with the empty gutter, and the rows the
+ * deleted-span marker hides are counted as unserved in that marker's own text.
+ */
 function pushRemovedLines(
   displayLines: string[],
   oldContentHashes: string[] | undefined,
   oldLineNum: { value: number },
   output: string[],
+  served?: readonly (string | null)[],
 ): void {
   const emit = (line: string): void => {
-    const hash = oldContentHashes?.[oldLineNum.value - 1];
+    const unserved = served?.[oldLineNum.value - 1] === null;
+    const hash = unserved ? undefined : oldContentHashes?.[oldLineNum.value - 1];
     output.push(fmtDiffLine("-", line, hash));
     const subRow = subRowForLine(line, "removed");
     if (subRow !== undefined) output.push(subRow);
@@ -136,12 +143,19 @@ function pushRemovedLines(
     return;
   }
   const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
+  let foldedUnserved = 0;
+  for (let k = 0; k < omitted; k++) {
+    if (served?.[oldLineNum.value + DIFF_REMOVED_EDGE - 1 + k] === null) foldedUnserved++;
+  }
   for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
   // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
-  output.push(` - ... [${omitted} lines deleted] ...`);
+  output.push(
+    ` - ... [${omitted} lines deleted${foldedUnserved > 0 ? ` (${foldedUnserved} unserved)` : ""}] ...`,
+  );
   oldLineNum.value += omitted;
   for (const line of displayLines.slice(-DIFF_REMOVED_EDGE)) emit(line);
 }
+
 function contextLinesToShow(
   displayLines: string[],
   lastWasChange: boolean,
@@ -163,12 +177,25 @@ function contextLinesToShow(
   }
   return { linesToShow, skipStart, skipMiddle };
 }
+
+function collectUnservedRemoved(
+  displayLines: string[],
+  firstOldLine: number,
+  served: readonly (string | null)[] | undefined,
+  out: number[],
+): void {
+  if (served === undefined) return;
+  for (let k = 0; k < displayLines.length; k++) {
+    const line = firstOldLine + k;
+    if (served[line - 1] === null) out.push(line);
+  }
+}
 /**
  * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that
  * position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
  * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file
  * position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
- * ` - ... [N lines deleted] ...` advances the old cursor past N deleted rows (cursor-exact).
+ * ` - ... [N lines deleted] ...` advances the old cursor past N deleted rows (cursor-exact); a served mirror adds the unserved count.
  * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses
  * to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows`
  * mirror exactly the rendered context/addition rows (position + hash). `firstChangedLine`/`lastChangedLine` bracket the changed
@@ -182,11 +209,18 @@ export function genDiff(
   newContentHashes?: string[],
   oldContentHashes?: string[],
   filePath?: string,
+  served?: readonly (string | null)[],
 ): {
   diff: string;
   firstChangedLine: number | undefined;
   lastChangedLine: number | undefined;
   servedRows: ServedRow[];
+  /**
+   * Every removed OLD line the pre-batch served mirror marks `null`, ascending, independent of the
+   * fold cap the rendered diff applies. Empty when no mirror is supplied or every removed line was
+   * served.
+   */
+  unservedRemovedLines: number[];
 } {
   const effectiveNewHashes =
     newContentHashes ??
@@ -206,6 +240,7 @@ export function genDiff(
   let lastWasChange = false;
   let firstChangedLine: number | undefined;
   let lastChangedLine: number | undefined;
+  const unservedRemovedLines: number[] = [];
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -222,7 +257,8 @@ export function genDiff(
         lastChangedLine = newLineNum - 1;
       } else {
         const o = { value: oldLineNum };
-        pushRemovedLines(displayLines, oldContentHashes, o, output);
+        collectUnservedRemoved(displayLines, oldLineNum, served, unservedRemovedLines);
+        pushRemovedLines(displayLines, oldContentHashes, o, output, served);
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
       }
@@ -269,5 +305,11 @@ export function genDiff(
     lastWasChange = false;
   }
 
-  return { diff: output.join("\n"), firstChangedLine, lastChangedLine, servedRows };
+  return {
+    diff: output.join("\n"),
+    firstChangedLine,
+    lastChangedLine,
+    servedRows,
+    unservedRemovedLines,
+  };
 }

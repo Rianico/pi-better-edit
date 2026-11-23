@@ -22,6 +22,7 @@ import { HASH_LEN } from "../hashline/alphabet.js";
 import { denseServeRows, type ResolvedRange } from "../served-session/serve-render.js";
 import { resolveLeasedEdit } from "../hashline/lease-resolve.js";
 import type { FileSnapshotContext } from "../served-session/serve-render.js";
+import { resolveSpanMode, type SpanMode } from "../span-mode-config.js";
 import {
   DomainError,
   formatWarning,
@@ -123,6 +124,7 @@ interface ApplyOneEditInput {
   store: HashStore;
   isPreview: boolean;
   mode?: "general" | "literal";
+  spanMode: SpanMode;
   /**
    * The working buffer's own `line_id` map (spec §3.2.4 step 1), entry `i` naming line `i + 1`.
    * Present for a live batch: identity resolution reads it directly instead of re-deriving positions
@@ -194,6 +196,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       ...(input.canonDigests !== undefined ? { canonDigests: input.canonDigests } : {}),
       identity,
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
+      spanMode: input.spanMode,
     });
   } catch (error) {
     if (error instanceof DomainError) {
@@ -728,6 +731,7 @@ async function runMutations(
 ): Promise<ProcessedEditFile> {
   const path = request.file;
   const mode = request.mode ?? "general";
+  const spanMode = resolveSpanMode(cwd);
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = requireSessionKey(options?.sessionKey);
   const { items, cuts: foreignCuts } = await materializeForeignReferences(request.edits, {
@@ -791,6 +795,7 @@ async function runMutations(
       }),
       sessionKey,
       absolutePath,
+      spanMode,
       isPreview,
       path,
       originalHashes,
@@ -878,6 +883,7 @@ async function runMutations(
       store: hashStore,
       isPreview,
       mode,
+      spanMode,
       ...(isPreview ? {} : { currentIds }),
       ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       onRejected: async (error) => {
@@ -1057,6 +1063,7 @@ async function runMutations(
     editedIntervals,
     literalDeclarations,
     foreignCuts,
+    ...(spanMode === "hint" ? { served } : {}),
   };
 }
 
@@ -1108,7 +1115,21 @@ async function finishCommittedFile(
     1,
     file.resultHashes,
     file.originalHashes,
+    undefined,
+    file.served,
   );
+  const [firstUnserved] = diffInfo.unservedRemovedLines;
+  if (firstUnserved !== undefined) {
+    const lastUnserved =
+      diffInfo.unservedRemovedLines[diffInfo.unservedRemovedLines.length - 1] ?? firstUnserved;
+    file.warnings.push(
+      formatWarning("W_UNSERVED_INTERIOR", {
+        count: diffInfo.unservedRemovedLines.length,
+        from: firstUnserved,
+        to: lastUnserved,
+      }),
+    );
+  }
   const denseRows = denseServeRows(file.resultHashes);
   try {
     // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md

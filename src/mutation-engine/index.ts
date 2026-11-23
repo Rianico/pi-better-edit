@@ -3,8 +3,6 @@
  *
  * One seam, small interface, deep implementation. Internal pipeline phases
  * (load, parse, mutate, finalize, drift, persist, serve) stay private.
- * Two adapters justify the seam: SQLiteSnapshotStore (prod) vs
- * MemorySnapshotStore (tests) — local-substitutable.
  *
  * Callers cross this seam via `execute` / `preview` and switch on the
  * discriminated `MutationResult` (`ok:true` vs `ok:false`). No `any`,

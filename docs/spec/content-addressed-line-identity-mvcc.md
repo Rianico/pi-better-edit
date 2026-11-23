@@ -345,7 +345,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                                STORAGE TIER                                      │
-│  src/hash-store.ts & src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}          │
+│  src/hash-store.ts & src/snapshot-store/{index.ts,vacuum.ts}                     │
 │  - file_snapshots: (snapshot_id PK, path, snapshot_hash, line_count, committed)  │
 │  - line_lineage: (snapshot_id, line_number PK) -> (line_id, canon, anchor)       │
 │  - line_id_counters: (path PK, next_id) [Atomic integer block allocation]       │
@@ -448,11 +448,15 @@ ON served_leases (session_id, file_path, served_line_number);
 CREATE INDEX IF NOT EXISTS idx_leases_file_retired
 ON served_leases (file_path, retired_at);
 
--- 5. Session Drift Notice Metadata (Preserving `reported` dedup set)
+-- 5. Session Exposure Facts (mirror, drift dedup, blocked hashes, epoch, outline folds)
 CREATE TABLE IF NOT EXISTS served_session_meta (
     session_id TEXT NOT NULL,
     file_path TEXT NOT NULL,
     reported TEXT,                        -- JSON array of already-reported drift hashes
+    outline_folds TEXT,                   -- JSON array of unserved fold ranges (ADR-0016)
+    hashes TEXT,                          -- JSON array of served anchors, null = never served here
+    blocked_hashes TEXT,                  -- JSON array of blocked (retired) hashes
+    epoch_id TEXT,                        -- Load epoch the served rows belong to
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (session_id, file_path)
 );
@@ -469,17 +473,6 @@ CREATE TABLE IF NOT EXISTS file_undo (
     updated_at INTEGER NOT NULL
 );
 
--- 7. Operational Upgrade Policy & Backward-Compatible Table Staging:
--- To prevent breaking active, un-restarted v6 sessions or concurrent worktrees sharing ${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/hash-store.sqlite,
--- buildStore does NOT drop legacy tables. Instead, it creates/maintains complete v6 compatibility shells:
---   CREATE TABLE IF NOT EXISTS snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL);
---   CREATE TABLE IF NOT EXISTS served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL DEFAULT '[]', reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (session_id, path));
---   CREATE TABLE IF NOT EXISTS undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL);
---
--- Complete schema alignment prevents lingering v6 processes from failing with "no such column: retired" on their startup query,
--- and prevents v6's internal migration from triggering "DELETE FROM snapshots; DELETE FROM undo".
--- Furthermore, isolating v7's undo state in `file_undo` ensures that when an un-restarted v6 process executes its version-change drop
--- ("DROP TABLE IF EXISTS undo"), v7's undo history is 100% immune from deletion.
 --
 -- Operational Cutover:
 -- Upgrading to v7 requires all active editor and agent sessions on the host to be restarted.
@@ -492,7 +485,7 @@ CREATE TABLE IF NOT EXISTS file_undo (
 -- MANDATE: v7's buildStore MUST NEVER drop its own normalized tables (file_snapshots, line_id_counters, line_lineage,
 -- served_leases, served_session_meta, file_undo) on version mismatch.
 -- v7 initialization is strictly additive and idempotent:
---   1. Executes CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS for all normalized v7 tables and compatibility shells.
+--   1. Executes CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS for all normalized v7 tables.
 --   2. Executes non-destructive column migrations (e.g. ALTER TABLE ... ADD COLUMN ...).
 --   3. Rewrites meta.version = '7'.
 -- This guarantees that when meta.version flaps in mixed-version / multi-worktree environments, active v7 sessions NEVER suffer
@@ -659,7 +652,7 @@ The iff selects the coordinate space, never the verification: the fast path is t
 | Inverted anchors (`anchor_from` after `anchor_to`) | `resolve.ts` | `[MODEL] [E_REVERSED_ANCHORS]` | Heals or rejects reversed anchors |
 | Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` or `[MODEL] [E_TARGET_LOST]` (boundary rule) | Serves the named window or nothing |
 
-**Blocked hashes' two live jobs — the second is retired (#10), leaving the allocation guard.** `blockedHashes` is never a lease state and never a second identity authority — ADR-0017 explicitly rejected that; `tryHealOrphanedSpan`, `removedByContent` and epoch/`strictPos` are retired (§3.3). Its first job is the hash-allocation guard: `contentOnlyHashes` and the production file-scoped `fileScopedHashes` / `mapStableHashes` paths (`src/hashline/hash-identity.ts`) mark every blocked hash used, so a freed anchor never re-binds for the session (plumbed via `src/hashline/hash.ts:105-134`, stored as `served.retired` in `src/served-session/session.ts:804-815`). Its second job was the verification signal, confined to the library-level seam and retired with it (#10): the code in `src/hashline/served-verification.ts` that rejected a blocked-hash boundary hash as `[E_UNVERIFIED_RANGE]` (fresh read, `details.cause: "blocked-hash"`) and a blocked-hash interior as `[E_STALE_RANGE]` (retry, same cause) for a caller that presented a served mirror and **no** lease source has been deleted. A session edit resolves every span through `served_leases`, where a retired lease supersedes blocked hashes with `details.cause: "retirement"` (issue #151).
+**Blocked hashes' two live jobs — the second is retired (#10), leaving the allocation guard.** `blockedHashes` is never a lease state and never a second identity authority — ADR-0017 explicitly rejected that; `tryHealOrphanedSpan`, `removedByContent` and epoch/`strictPos` are retired (§3.3). Its first job is the hash-allocation guard: `contentOnlyHashes` and the production file-scoped `fileScopedHashes` / `mapStableHashes` paths (`src/hashline/hash-identity.ts`) mark every blocked hash used, so a freed anchor never re-binds for the session (plumbed via `src/hashline/hash.ts:105-134`, stored as `served_session_meta.blocked_hashes` in `src/served-session/session.ts`). Its second job was the verification signal, confined to the library-level seam and retired with it (#10): the code in `src/hashline/served-verification.ts` that rejected a blocked-hash boundary hash as `[E_UNVERIFIED_RANGE]` (fresh read, `details.cause: "blocked-hash"`) and a blocked-hash interior as `[E_STALE_RANGE]` (retry, same cause) for a caller that presented a served mirror and **no** lease source has been deleted. A session edit resolves every span through `served_leases`, where a retired lease supersedes blocked hashes with `details.cause: "retirement"` (issue #151).
 
 **Rejection payloads carry `details.cause`.** Every range-family producer emits it as a user-facing diagnosis — never the model remedy, the code alone selects that (`src/mutation-engine/engine.ts:35-47` preserves it onto the failure). As built (`src/hashline/served-verification.ts:36-44`): the `stale` branch reports `retirement` for both its codes (`src/hashline/lease-resolve.ts:216-230`); the leased-span gate reports `retirement` for a terminal interior lease, `never-served` for an interior row the mirror never served and for an anchor holding no lease, and `served-range staleness` for a truncated-away mirror row and for a live lease whose identity moved off its coordinate (`verifyRebasedSpan`); the blocked-hash checks reported `blocked-hash` (the interior one ran before the general digest clause, which would otherwise subsume it; retired with the mirror seam, #10); an unleased anchor reports `never-served` (`lease-resolve.ts:130`), as do a never-served interior (`served-verification.ts:734`) and an unplaceable bound (`:790`); drift, length and hash mismatches report `served-range staleness` (`:356,393,561,748,761`); a content-path mismatch reports `anchor staleness` (`src/hashline/apply.ts:266`). `served span` stays a reserved glossary value with no current producer. No headline interpolates a canon digest: a 32-bit number names nothing the model can act on.
 
@@ -687,10 +680,10 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 
 ### Stage 1 — CAS Storage, Migrations & Universal Leases
 
-- Seams: `src/hash-store.ts`, `src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}`, `src/undo-store.ts`, `src/served-session/session.ts`, `src/edit-undo.ts`, `src/read.ts`, `src/constants.ts`
-- Bump `HASH_STORE_VERSION = 7` in `src/constants.ts`. To avoid breaking concurrent/pre-existing v6 sessions across worktrees, `buildStore` maintains full v6 compatibility shells (`snapshots`, `served`, `undo`) rather than dropping them.
+- Seams: `src/hash-store.ts`, `src/snapshot-store/{index.ts,vacuum.ts}`, `src/undo-store.ts`, `src/served-session/session.ts`, `src/edit-undo.ts`, `src/read.ts`, `src/constants.ts`
+- Bump `HASH_STORE_VERSION = 7` in `src/constants.ts`.
 - Implement `PRAGMA foreign_keys = ON;`, create normalized tables (`file_snapshots`, `line_lineage`, `line_id_counters`, `served_leases`, `served_session_meta`, `file_undo`), and add indexes (`idx_leases_file_retired`, `idx_leases_line_num`, `idx_snapshots_created`).
-- Re-architect `src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}` to implement `HashSnapshotIO` (`getSnapshot` / `upsertSnapshot`) backed directly by normalized `file_snapshots` and `line_lineage` (ordered by `line_number ASC`), replacing legacy serialized JSON blobs while preserving verbatim presentation anchors across reads (`index.ts` re-exports, so every existing import path still resolves).
+- Re-architect `src/snapshot-store/{index.ts,vacuum.ts}` to implement `HashSnapshotIO` (`getSnapshot` / `upsertSnapshot`) backed directly by normalized `file_snapshots` and `line_lineage` (ordered by `line_number ASC`), replacing legacy serialized JSON blobs while preserving verbatim presentation anchors across reads (`index.ts` re-exports, so every existing import path still resolves).
 - Re-architect `src/undo-store.ts` and `src/edit-undo.ts` to persist undo history in `file_undo` (including `snapshot_hash` pinning), structurally isolated from v6 version drops.
 - Standardize checksum on `CANON_VERSION:xxh64`.
 - Retain drift notice deduplication by writing/reading the `reported` set in `served_session_meta`.
@@ -704,7 +697,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
   - Carve-out: `read` with `mode: "verbatim"` is a reference read — it grants no leases and writes no served state, so `recordEpoch` is not on its path; the universal-lease rule above applies to the default `"served"` read only.
 - **Stage 1 Test Modernization**:
   - Modernize `test/tools/served-session.test.ts` (lines 27, 85) to assert `served_leases` upsert and `retired_at` lifecycle instead of legacy mirror nulling on duplicate hashes.
-  - Modernize `test/core/served-store.test.ts` (update raw SQL queries targeting deprecated `served` table to `served_leases` / `served_session_meta`).
+  - Modernize `test/core/served-store.test.ts` (raw SQL targets `served_leases` / `served_session_meta`; the retired `served` table is gone).
   - Modernize `test/core/snapshot-store.test.ts:98,138` (update raw SQL queries targeting deprecated `snapshots` table to `file_snapshots` / `line_lineage`).
   - Modernize `test/tools/preview-no-persist.test.ts:90,106` (update corrupt helper targeting `snapshots` to `line_lineage`).
   - Modernize `test/core/whitespace-insensitive-canon.test.ts:119,135` (semantic rewrite: query `file_snapshots.snapshot_hash` and assert standardized `CANON_VERSION:xxh64` format).

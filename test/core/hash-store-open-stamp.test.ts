@@ -301,7 +301,7 @@ describe("stamp-gated open (#87c)", () => {
       {
         half: "the generation half",
         apply: (db: DatabaseSync) =>
-          db.exec(`UPDATE meta SET value = '2:1' WHERE key = '${STAMP_KEY}'`),
+          db.prepare("UPDATE meta SET value = ? WHERE key = ?").run("2:1", STAMP_KEY),
         mismatched: { stamp: "2:1" },
       },
     ] as const) {
@@ -344,9 +344,12 @@ describe("stamp-gated open (#87c)", () => {
       plantForeignGenerationRow(store.db, "/poisoned.ts");
       const count = Number((readStamp().stamp as string).split(":")[4]);
       expect(Number.isInteger(count)).toBe(true);
-      store.db.exec(
-        `UPDATE meta SET value = '1:${HASH_STORE_VERSION}:${CANON_VERSION}:${ANCHOR_GENERATION}:${count + 1}' WHERE key = '${STAMP_KEY}'`,
-      );
+      store.db
+        .prepare("UPDATE meta SET value = ? WHERE key = ?")
+        .run(
+          `1:${HASH_STORE_VERSION}:${CANON_VERSION}:${ANCHOR_GENERATION}:${count + 1}`,
+          STAMP_KEY,
+        );
       shutdownHashStore();
 
       const trace = startTrace();
@@ -371,9 +374,9 @@ describe("stamp-gated open (#87c)", () => {
       const store = await loadHashStore();
       plantForeignGenerationRow(store.db, "/poisoned.ts");
       const value = readStamp().stamp as string;
-      store.db.exec(
-        `UPDATE meta SET value = '0:${value.split(":").slice(1).join(":")}' WHERE key = '${STAMP_KEY}'`,
-      );
+      store.db
+        .prepare("UPDATE meta SET value = ? WHERE key = ?")
+        .run(`0:${value.split(":").slice(1).join(":")}`, STAMP_KEY);
       shutdownHashStore();
 
       const trace = startTrace();
@@ -597,7 +600,7 @@ describe("periodic served-mirror prune (#87c)", () => {
   function plantMirrorRows(store: HashStore): { expired: string[]; fresh: string } {
     const now = Date.now();
     const insert = store.db.prepare(
-      "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?,?,?,?)",
+      "INSERT INTO served_session_meta (session_id, file_path, hashes, updated_at) VALUES (?,?,?,?)",
     );
     for (const id of ["old-a", "old-b"])
       insert.run(id, `/gone/${id}.ts`, "[]", now - SERVED_TTL_MS - 1);
@@ -606,14 +609,15 @@ describe("periodic served-mirror prune (#87c)", () => {
   }
 
   function mirrorSessions(db: DatabaseSync): string[] {
-    return (
-      db.prepare("SELECT session_id FROM served ORDER BY session_id").all() as unknown as {
-        session_id: string;
-      }[]
-    ).map((row) => row.session_id);
+    const rows = db
+      .prepare(
+        "SELECT session_id FROM served_session_meta WHERE hashes IS NOT NULL ORDER BY session_id",
+      )
+      .all() as unknown as { session_id: string }[];
+    return rows.map((row) => row.session_id);
   }
 
-  it("a due prune deletes exactly the expired rows", async () => {
+  it("a due prune clears exactly the expired mirror columns", async () => {
     await withStoreDir(async () => {
       const store = await loadHashStore();
       const { expired, fresh } = plantMirrorRows(store);
@@ -644,7 +648,7 @@ describe("periodic served-mirror prune (#87c)", () => {
       expect(
         countRows(
           notDue.db,
-          "SELECT COUNT(*) AS n FROM served WHERE updated_at < ?",
+          "SELECT COUNT(*) AS n FROM served_session_meta WHERE hashes IS NOT NULL AND updated_at < ?",
           Date.now() - SERVED_TTL_MS,
         ),
       ).toBe(2);
