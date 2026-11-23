@@ -13,6 +13,7 @@ import { splitLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { resolveLeasedEdit, type LeasedEditResolution } from "../hashline/lease-resolve.js";
 import { swapReversedRanges, type HEdit, type LeaseSpanSource } from "../hashline/resolve.js";
+import type { SpanMode } from "../span-mode-config.js";
 import {
   buildRangeServeRows,
   fmtServedRows,
@@ -98,6 +99,7 @@ interface BaselineSpan {
 export interface BaselineSpanContext {
   served: (string | null)[];
   identity: LeaseSpanSource;
+  spanMode?: SpanMode;
   sessionKey: string;
   absolutePath: string;
   isPreview: boolean;
@@ -164,6 +166,7 @@ async function resolveBaselineSpans(
       snapshot: { fileHashes, fileLines, filePath: ctx.path },
       served: ctx.served,
       source: ctx.identity,
+      ...(ctx.spanMode !== undefined ? { spanMode: ctx.spanMode } : {}),
     });
   } catch (error) {
     return abort(error);
@@ -178,6 +181,7 @@ async function resolveBaselineSpans(
         snapshot: { fileHashes, fileLines, filePath: ctx.path },
         served: ctx.served,
         source: ctx.identity,
+        ...(ctx.spanMode !== undefined ? { spanMode: ctx.spanMode } : {}),
       });
     } catch (error) {
       return abort(error);

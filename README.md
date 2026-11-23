@@ -389,6 +389,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not the targeted one. | — |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
+| `[E_UNSERVED_RANGE]` | Strict mode only: an interior line of the target span was never served in this session; nothing was written. | — |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without stable anchor bounds. | — |
 | `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor prefix. | Omit anchor prefixes or set `mode: "literal"`. |
 | `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge overlapping spans or split calls. |

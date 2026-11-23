@@ -174,6 +174,7 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_STALE_RANGE",
   "E_TARGET_LOST",
   "E_UNVERIFIED_RANGE",
+  "E_UNSERVED_RANGE",
   "E_MALFORMED_ANCHOR",
   "E_SUSPICIOUS_TEXT",
   "E_BATCH_ABORT",
@@ -213,6 +214,13 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     servedRows: [{ position: 0, hash: "abc" }],
     servedBlock: "abcc│alpha",
     cause: "retirement",
+  },
+  E_UNSERVED_RANGE: {
+    headline: "line 4-6 in probe.ts were never served in this session.",
+    servedRows: [],
+    servedBlock: "",
+    cause: "never-served",
+    firstOffendingLine: 4,
   },
   E_MALFORMED_ANCHOR: { rawAnchor: "wUp│x", reason: "anchor carries a row suffix" },
   E_SUSPICIOUS_TEXT: {

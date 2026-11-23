@@ -24,6 +24,7 @@ export type DomainErrorCode =
   | "E_STALE_RANGE"
   | "E_TARGET_LOST"
   | "E_UNVERIFIED_RANGE"
+  | "E_UNSERVED_RANGE"
   | "E_MALFORMED_ANCHOR"
   | "E_SUSPICIOUS_TEXT"
   | "E_BATCH_ABORT"
@@ -154,6 +155,13 @@ export interface ErrorPayloadMap {
     headline?: string;
     servedRows: ServedRow[];
     servedBlock: string;
+    cause: RangeCause;
+    firstOffendingLine?: number;
+  };
+  E_UNSERVED_RANGE: {
+    headline: string;
+    servedRows: [];
+    servedBlock: "";
     cause: RangeCause;
     firstOffendingLine?: number;
   };
@@ -405,6 +413,15 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
         );
       }
       return servedBlock === "" ? resolved : `${resolved}\n${FRESH_READ_HEADING}\n${servedBlock}`;
+    },
+  },
+  E_UNSERVED_RANGE: {
+    audience: "MODEL",
+    format: ({ headline }) => {
+      if (headline === "") {
+        throw new TypeError("E_UNSERVED_RANGE: headline must be non-empty");
+      }
+      return headline;
     },
   },
   E_MALFORMED_ANCHOR: {

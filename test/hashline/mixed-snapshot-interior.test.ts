@@ -13,6 +13,7 @@ import { initHasher } from "../../src/hashline/hasher";
 import type { HEdit, LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
 import { verifyRebasedSpan } from "../../src/served-session/serve-render";
 import { DomainError } from "../../src/domain-errors.js";
+import type { SpanMode } from "../../src/span-mode-config.js";
 
 beforeAll(async () => {
   await initHasher();
@@ -106,6 +107,7 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
     served: (string | null)[];
     leasedRetired?: number;
     moved?: number;
+    spanMode?: SpanMode;
   }): DomainError | undefined {
     const leases = new Map<string, LeaseIdentityView>();
     for (let i = 0; i < 3; i++) {
@@ -129,6 +131,7 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
         snapshot,
         leaseFor: (anchor) => leases.get(anchor),
         rebasedLineOf: (lineId) => (overrides.moved === lineId ? lineId + 1 : positions[lineId]),
+        ...(overrides.spanMode !== undefined ? { spanMode: overrides.spanMode } : {}),
       });
       return undefined;
     } catch (error) {
@@ -140,6 +143,7 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
     served: (string | null)[];
     leasedRetired?: number;
     moved?: number;
+    spanMode?: SpanMode;
   }): DomainError {
     const caught = run(overrides);
     expect(caught).toBeInstanceOf(DomainError);
@@ -156,6 +160,16 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
 
   it("accepts an explicitly cleared interior mirror slot — no identity to verify (ADR-0024)", () => {
     expect(run({ served: [hashes[0]!, null, hashes[2]!] })).toBeUndefined();
+  });
+
+  it("refuses an interior mirror slot the session never served under strict mode", () => {
+    const err = span({ served: [hashes[0]!, null, hashes[2]!], spanMode: "strict" });
+    expect(err.code).toBe("E_UNSERVED_RANGE");
+    expect(err.servedRows).toEqual([]);
+    expect(err.servedBlock).toBe("");
+    expect(err.details.cause).toBe("never-served");
+    expect(err.message.startsWith("[MODEL] [E_UNSERVED_RANGE] ")).toBe(true);
+    expect(err.message).toContain("line 2");
   });
 
   it("reports a retired interior lease as retirement", () => {
