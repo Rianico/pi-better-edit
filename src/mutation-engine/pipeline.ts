@@ -4,6 +4,11 @@ import { reportDiagnostic } from "../diagnostics.js";
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { genDiff, restoreEndings } from "../edit-diff.js";
+import {
+  changedTerminatorCount,
+  endingName,
+  resolveEffectiveEolFromCounts,
+} from "../eol-config.js";
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
@@ -757,6 +762,7 @@ async function runMutations(
     hadUtf8DecodeErrors,
     absolutePath,
     served,
+    endingCounts,
   } = await loadEditFile({
     path,
     cwd,
@@ -767,6 +773,7 @@ async function runMutations(
     ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
   });
 
+  const effectiveEnding = resolveEffectiveEolFromCounts(endingCounts, cwd);
   // Ref: docs/reference/error-and-warning-contract.md
   if (hadUtf8DecodeErrors) {
     throw new DomainError("E_LOSSY_TEXT", { path });
@@ -972,6 +979,16 @@ async function runMutations(
     warnings.push(buildNeverServedEditHint({ count: neverServedTotal }));
   }
 
+  const changed = changedTerminatorCount(endingCounts, effectiveEnding.value);
+  const eolRewriteWarning =
+    changed > 0
+      ? formatWarning("W_EOL_REWRITTEN", {
+          target: endingName(effectiveEnding.value),
+          source: effectiveEnding.source,
+          changed,
+        })
+      : undefined;
+
   const result = currentContent;
   let resultHashes = currentHashes;
   if (appliedCount > 0 && lastApplied) {
@@ -1022,6 +1039,8 @@ async function runMutations(
     result,
     bom,
     originalEnding,
+    effectiveEnding: effectiveEnding.value,
+    eolRewriteWarning,
     warnings,
     originalHashes,
     resultHashes,
@@ -1365,8 +1384,9 @@ export async function apply(
       abortIf(options?.signal);
       await writeAtomic(
         file.absolutePath,
-        file.bom + restoreEndings(file.result, file.originalEnding),
+        file.bom + restoreEndings(file.result, file.effectiveEnding),
       );
+      if (file.eolRewriteWarning !== undefined) file.warnings.push(file.eolRewriteWarning);
     } catch (error) {
       await undo.restore();
       throw error;

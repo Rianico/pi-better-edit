@@ -6,7 +6,7 @@
  * Mirrors `bash.view`: a missing file is silent, an existing-but-unusable file warns and falls
  * through, a value outside the enum is ignored at its rung, and the read side never throws.
  */
-import { countLineEndings, type LineEnding } from "./edit-diff.js";
+import { countLineEndings, type LineEnding, type LineEndingCounts } from "./edit-diff.js";
 import {
   readScopeConfig,
   type ConfigOnWarn,
@@ -128,16 +128,37 @@ export interface ResolvedEffectiveEol {
 }
 
 /**
- * The most frequent terminator kind: a CRLF pair counts once, ties prefer LF, then CRLF, then CR.
- * `undefined` means the content carries no terminator at all, so the caller falls back to the OS.
+ * The most frequent terminator kind from pre-image counts: ties prefer LF, then CRLF, then CR.
+ * `undefined` means no terminator at all, so the caller falls back to the OS.
  */
-export function dominantEnding(content: string): LineEnding | undefined {
-  const counts = countLineEndings(content);
+function dominantFromCounts(counts: LineEndingCounts): LineEnding | undefined {
   const best = Math.max(counts.crlf, counts.lf, counts.cr);
   if (best === 0) return undefined;
   if (counts.lf === best) return "\n";
   if (counts.crlf === best) return "\r\n";
   return "\r";
+}
+
+/** The most frequent terminator kind of `content`: a CRLF pair counts once; ties prefer LF. */
+export function dominantEnding(content: string): LineEnding | undefined {
+  return dominantFromCounts(countLineEndings(content));
+}
+
+/** The name a warning spells for one terminator, matching the `eol` setting's spelling. */
+export function endingName(value: LineEnding): "LF" | "CRLF" | "CR" {
+  if (value === "\r\n") return "CRLF";
+  if (value === "\r") return "CR";
+  return "LF";
+}
+
+/**
+ * How many pre-image terminators a write to `target` REWRITES: every terminator minus the ones
+ * already spelled `target`. A kept terminator counts zero, so the report describes the bytes that
+ * moved rather than the file's size.
+ */
+export function changedTerminatorCount(counts: LineEndingCounts, target: LineEnding): number {
+  const kept = target === "\r\n" ? counts.crlf : target === "\r" ? counts.cr : counts.lf;
+  return counts.crlf + counts.lf + counts.cr - kept;
 }
 
 /** The terminator a file with no terminator of its own gets on this platform. */
@@ -147,10 +168,11 @@ function systemEnding(): LineEnding {
 
 /**
  * The EOL one write uses, with what decided it: a forced setting names its own ladder rung,
- * `AUTO` names `"file"` for the file's dominant terminator, and `"system"` when it has none.
+ * `AUTO` names `"file"` for the dominant terminator, and `"system"` when the file has none.
+ * Takes pre-image counts, so one decode feeds both the choice and the write.
  */
-export function resolveEffectiveEol(
-  content: string,
+export function resolveEffectiveEolFromCounts(
+  counts: LineEndingCounts,
   cwd: string,
   onWarn?: ConfigOnWarn,
 ): ResolvedEffectiveEol {
@@ -158,7 +180,19 @@ export function resolveEffectiveEol(
   if (isForcedSetting(setting)) {
     return { value: FORCED_ENDINGS[setting.value], source: setting.source };
   }
-  const dominant = dominantEnding(content);
+  const dominant = dominantFromCounts(counts);
   if (dominant !== undefined) return { value: dominant, source: "file" };
   return { value: systemEnding(), source: "system" };
+}
+
+/**
+ * The content form of the counts resolver: one `countLineEndings` scan, then the same decision,
+ * so a caller that holds only text reaches the identical ladder and dominant-kind rule.
+ */
+export function resolveEffectiveEol(
+  content: string,
+  cwd: string,
+  onWarn?: ConfigOnWarn,
+): ResolvedEffectiveEol {
+  return resolveEffectiveEolFromCounts(countLineEndings(content), cwd, onWarn);
 }

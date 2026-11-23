@@ -67,7 +67,8 @@ export type DomainWarningCode =
   | "W_UNICODE_LITERAL"
   | "W_LITERAL_BYPASS"
   | "W_NOOP"
-  | "W_NOOP_INSERT";
+  | "W_NOOP_INSERT"
+  | "W_EOL_REWRITTEN";
 
 /**
  * SAFETY: one served row — position is 0-based, hash is the anchor string. Canon evidence is not a
@@ -539,6 +540,16 @@ export interface WarningPayloadMap {
     removeFrom: string;
     removeTo: string;
   };
+  /**
+   * `target` and `source` mirror `LineEnding` and the `eol` ladder rungs respectively, spelled
+   * inline because this module sits below edit-diff and eol-config in the import graph and
+   * importing them would cycle.
+   */
+  W_EOL_REWRITTEN: {
+    target: "LF" | "CRLF" | "CR";
+    source: "env" | "project" | "global" | "file" | "system";
+    changed: number;
+  };
 }
 
 function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
@@ -611,6 +622,12 @@ export const WARNING_REGISTRY: {
     format: ({ ref, removeFrom, removeTo }) =>
       `Empty insertion ${ref} (${removeFrom} → ${removeTo}) with "before"/"after" and text "" writes ` +
       "nothing. Provide text or drop the item.",
+  },
+  W_EOL_REWRITTEN: {
+    audience: "MODEL",
+    format: ({ target, source, changed }) =>
+      `EOL normalized to ${target} (${source}): ${changed} terminators changed. ` +
+      "Undo restores normalized content.",
   },
 };
 

@@ -53,7 +53,18 @@ export interface ProcessedEditFile {
   originalNormalized: string;
   result: string;
   bom: string;
+  /** The terminator the pre-image was read with; the undo record's restore spelling. */
   originalEnding: LineEnding;
+  /** The terminator this plan's bytes are written with, resolved once when the file was loaded. */
+  effectiveEnding: LineEnding;
+  /**
+   * The `[W_EOL_REWRITTEN]` line this plan's write would disclose, or `undefined` when no pre-image
+   * terminator changes. Disclosure belongs to the write that acts on it, not to the plan: the
+   * ordinary write path pushes it only after a successful normalizing write, while the cut
+   * transaction leaves it unwritten because ADR-0019 §5 keeps that window byte-exact until #313
+   * records the undo row's `effective_ending`.
+   */
+  eolRewriteWarning: string | undefined;
   warnings: string[];
   originalHashes: string[];
   resultHashes: string[];
