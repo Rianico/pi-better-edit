@@ -147,7 +147,20 @@ Settings are partitioned into two distinct roots ([ADR-0005](docs/adr/0005-store
 1. **Settings Root** (human configuration): `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` (global) or `.pi/agents/pi-better-edit/settings.json` (project-local).
 2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, `diagnostics.log`, and `selection-range.log`).
 
-Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
+Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_EOL`, `PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
+
+### Line Endings
+
+Every `edit` writes one EOL: the **effective EOL**. A forced `eol` value (`LF`, `CRLF`, `CR`) wins; otherwise `AUTO` uses the file's most frequent terminator (`CRLF`, `LF`, or `CR`; ties -> `LF`, then `CRLF`, then `CR`), and the system terminator (`\r\n` on Windows, `\n` elsewhere) when the file has none. The value resolves through the usual env > project > global > default ladder. See [ADR-0019](docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md).
+
+| Key | Values | Default | Env |
+| :--- | :--- | :--- | :--- |
+| `eol` | `AUTO` \| `LF` \| `CRLF` \| `CR` | `AUTO` | `PI_BETTER_EDIT_EOL` |
+
+- `AUTO` preserves an existing file's dominant terminator; a forced value normalizes any file to that terminator.
+- A mixed file's `read` page appends one lean warning after its rows, separated by a blank line: `[W_MIXED_EOL] Mixed EOL: 2 CRLF, 1 LF. All edits normalize to CRLF (file).` An edit whose write changes a pre-image terminator's bytes emits `[MODEL] [W_EOL_REWRITTEN] EOL normalized to CRLF (file): N terminators changed. Undo restores normalized content.` A terminator introduced by a new line is not counted.
+- `undo_last_edit` restores the previous content at the effective EOL; the pre-edit mixture is not restored. Correlated cut reverts and next-run repair remain byte-exact.
+- `write` is untouched: new-file EOL is the writer's responsibility. `.editorconfig` is not read in v1.
 
 ### Interactive Settings & Slash Commands
 
@@ -228,7 +241,7 @@ The EOF rule: `at: "after"` on the final anchor splices after the last line's co
 - **Foreign-source cut**: `{ anchor_from: "m2zX", anchor_to: "m2zX", text_ref: { anchor_from: "g7tX", anchor_to: "h3sX", file: "src/helper.ts", mode: "cut" } }`
 
 ### 3. `undo_last_edit`
-Restores the exact previous file content, BOM, line endings, and original anchors.
+Restores the previous content at the effective EOL recorded by the edit, plus the original anchors. A pre-edit line-ending mixture is not restored; the read warning disclosed it and the edit warning reports the rewrite. Correlated cut transactions still revert byte-exactly.
 ```typescript
 undo_last_edit({ path: "src/index.ts" })
 ```
@@ -416,6 +429,14 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[W_LITERAL_BYPASS]` | `[USER]` | Served-echo check bypassed by literal declaration. |
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a 2nd consecutive time without changing range text. Resend triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion with `before`/`after` writes zero bytes. |
+| `[W_EOL_REWRITTEN]` | `[MODEL]` | EOL normalized to the effective EOL; names the target, source, number of pre-image terminators changed, and the normalized-undo consequence. |
+
+
+### Read Warnings (`[W_*]`)
+
+| Warning Code | Audience | Description |
+| :--- | :--- | :--- |
+| `[W_MIXED_EOL]` | `[MODEL]` | A `read` page served a file with mixed line endings; names the counts, the effective EOL and source, and that all edits normalize to it. Appended after the rows. Distinct from an applied warning: it reports a file state the next edit will change, before the write. |
 
 ---
 

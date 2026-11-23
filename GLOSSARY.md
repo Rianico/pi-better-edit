@@ -234,7 +234,7 @@ The unexpected-error envelope: a throw that is not a `DomainError` (an invariant
 _Avoid_: E_UNSPECIFIED (unclaimed code)
 
 **applied warning** (`W_*`):
-The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The seven codes are `W_NEVER_SERVED_SHAPE`, `W_SERVED_PREFIX_MISMATCH`, and `W_NOOP_INSERT` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
+The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The eight codes are `W_NEVER_SERVED_SHAPE`, `W_SERVED_PREFIX_MISMATCH`, `W_NOOP_INSERT`, and `W_EOL_REWRITTEN` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
 _Avoid_: E-tier code on a success; No action is required (retired sentinel, redundant with the tier)
 
 **reversed anchors**:
@@ -328,3 +328,24 @@ _Avoid_: store worker, background daemon
 **stdout byte gate**:
 The fail-closed verification barrier in Bash view interception ensuring raw captured command stdout byte-matches the re-read disk slice before replacing tool output with anchored rows ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: parser trust, unverified preview
+
+**effective EOL**:
+The single terminator sequence an `edit` write uses: the built-in `eol` config value when it forces `LF`, `CRLF`, or `CR`; otherwise the file's most frequent terminator kind (`CRLF`, `LF`, or `CR`; ties -> `LF`, then `CRLF`, then `CR`); otherwise the system terminator (`\r\n` on Windows, `\n` elsewhere). Resolved at write time, so a later config change applies to the next edit, not to an undo. _Avoid_: line-ending mode, EOL preference, file EOL.
+
+**EOL source**:
+The rung an `effective EOL` came from: `env`, `project`, or `global` for a forced `eol` value; `file` for the file's dominant terminator; `system` when the file has no terminator. Named in `[W_MIXED_EOL]` and `[W_EOL_REWRITTEN]`. _Avoid_: EOL origin, config source.
+
+**EOL normalization** (also: EOL rewrite):
+Rewriting every terminator in the written file to the `effective EOL` — touched and untouched lines alike, so a mixed file becomes uniform and a config-forced normalization changes a uniform file's EOL. `[W_EOL_REWRITTEN]` counts only pre-image terminators whose bytes change; a terminator introduced by a new line was not in the pre-image and is not counted. The LF fold (`toLF`, CRLF/CR -> LF) is a separate operation that feeds anchor identity. _Avoid_: EOL conversion, line-ending conversion.
+
+**eol config**:
+The built-in `eol` key in `settings.json` (`AUTO` | `LF` | `CRLF` | `CR`, default `AUTO`) and its `PI_BETTER_EDIT_EOL` override, resolved through the existing env > project > global > default ladder. `.editorconfig` is not read in v1. _Avoid_: editorconfig, line-ending setting.
+
+**read warning** (`W_MIXED_EOL`):
+A `[W_*]` line appended to a `read` page after its rows, separated by a blank line: it reports a file state the next edit will change, before the write — the mixed-terminator counts, the `effective EOL` the edit will adopt, its `EOL source`, and that all edits normalize to that EOL. Distinct from an `applied warning`, which reports a mutation that already happened. _Avoid_: read note, EOL notice.
+
+**normalized undo**:
+Ordinary `undo_last_edit` restores the pre-edit content re-encoded with the `effective EOL` recorded by the edit; it does not restore a pre-edit mixture. The read warning discloses the mixture before the rewrite and `[W_EOL_REWRITTEN]` reports it after. A correlated cut transaction's revert and next-run repair are `byte-exact revert`. _Avoid_: exact undo, byte-exact undo (reserved for cut durability).
+
+**byte-exact revert**:
+The correlated foreign-cut transaction's revert and next-run repair write the raw pre-image bytes, never a re-serialization. Distinct from `normalized undo`: the durability oracle classifies members by exact bytes, so a mixed-ending member cannot read as "other" and leak the intent. _Avoid_: exact undo, raw undo.
