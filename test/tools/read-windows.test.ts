@@ -176,7 +176,7 @@ describe("fmtReadPreview — windows", () => {
       200,
       100,
     );
-    expect(windowed.text).toContain("exceeds 200B");
+    expect(windowed.text).toContain("exceeds the 200B limit");
     expect(windowed.text).toContain("│short two");
     expect(windowed.text).not.toContain("to continue");
     expect(windowed.nextOffset).toBeUndefined();

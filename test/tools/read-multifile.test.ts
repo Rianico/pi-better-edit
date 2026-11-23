@@ -677,19 +677,15 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
     });
   });
 
-  it("keeps the oversized-line diagnostic byte-identical", async () => {
+  it("keeps the oversized-line diagnostic neutral", async () => {
     const wide = ["a", "W".repeat(210_000), "b"].join("\n") + "\n";
     await withTempFile("wide.ts", wide, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
         await readTool.execute("r1", { file: "wide.ts" }, undefined, undefined, ctx),
       );
-      expect(text).toContain(
-        "[Line 2 is 205.1KB, exceeds 50.0KB; content not shown. Use bash: sed -n '2p' <path> | head -c 51200]",
-      );
-      expect(text).toContain(
-        "[Line 2 exceeds 50.0KB; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '2p' <path> | head -c 51200]",
-      );
+      expect(text).toContain("[Line 2: 205.1KB; not shown.]");
+      expect(text).toContain("[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]");
     });
   });
 });

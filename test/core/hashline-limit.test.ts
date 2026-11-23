@@ -297,7 +297,7 @@ describe("read tool row budget", () => {
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│small");
       expect(text).not.toContain("│X");
-      expect(text).toContain("exceeds 50.0KB");
+      expect(text).toContain("exceeds the 50.0KB limit");
     });
   });
 });

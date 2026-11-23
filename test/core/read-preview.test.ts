@@ -76,7 +76,7 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("CCC│c");
   });
 
-  it("skips an oversized first line and shows the rest with a bash fallback (auto-read budget)", async () => {
+  it("skips an oversized first line and shows the rest with the neutral limit notice", async () => {
     const big = "X".repeat(60_000);
     const result = await fmtReadPreview(
       `${big}\na\nb\n`,
@@ -88,10 +88,10 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("│a");
     expect(result.text).toContain("│b");
     expect(result.text).not.toContain("│X");
-    expect(result.text).toMatch(
-      /\[Line 1 is .*exceeds 50\.0KB; content not shown\. Use bash: sed -n '1p' <path> \| head -c \d+\]/,
+    expect(result.text).toContain("[Line 1: 58.6KB; not shown.]");
+    expect(result.text).toContain(
+      "[Line 1 exceeds the 50.0KB limit; the read tool cannot show it.]",
     );
-    expect(result.text).toContain("Inspect with bash: sed -n '1p' <path>");
   });
 
   it("marks an oversized middle line while keeping its neighbors hashable (auto-read budget)", async () => {
@@ -106,7 +106,7 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("│a");
     expect(result.text).toContain("│c");
     expect(result.text).not.toContain("│Y");
-    expect(result.text).toContain("[Line 2 is");
+    expect(result.text).toContain("[Line 2:");
   });
 
   it("returns only the warning when every line is oversized (auto-read budget)", async () => {
@@ -119,8 +119,8 @@ describe("fmtReadPreview", () => {
       DEFAULT_MAX_BYTES,
     );
     expect(result.text).not.toMatch(/[A-Za-z0-9]{4}│/);
-    expect(result.text).toContain("exceeds 50.0KB");
-    expect(result.text).toContain("sed -n '1p'");
+    expect(result.text).toContain("exceeds the 50.0KB limit");
+    expect(result.text).toContain("the read tool cannot show it");
     expect(result.nextOffset).toBeUndefined();
   });
 
@@ -131,7 +131,7 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("│a");
     expect(result.text).toContain("│b");
     expect(result.text).not.toContain("│W");
-    expect(result.text).toContain("[Line 2 is");
+    expect(result.text).toContain("[Line 2:");
     expect(result.nextOffset).toBe(4);
     expect(result.text).not.toContain("Use windows");
   });
@@ -141,8 +141,8 @@ describe("fmtReadPreview", () => {
     const result = await fmtReadPreview(`${big}\nb\n`, {}, undefined, home.testPath);
     expect(result.text).toContain("│b");
     expect(result.text).not.toContain("│V");
-    expect(result.text).toContain("[Line 1 is");
-    expect(result.text).toContain("exceeds 50.0KB");
+    expect(result.text).toContain("[Line 1:");
+    expect(result.text).toContain("exceeds the 50.0KB limit");
   });
 
   it("shows a line just under the default budget in full", async () => {
@@ -152,13 +152,32 @@ describe("fmtReadPreview", () => {
     expect(result.text).not.toContain("content not shown");
   });
 
-  it("marks a line over the default budget with the bash fallback", async () => {
+  it("marks a line over the default budget with the neutral limit notice", async () => {
     const big = "T".repeat(210_000);
     const result = await fmtReadPreview(`${big}\n`, {}, undefined, home.testPath);
     expect(result.text).not.toMatch(/[A-Za-z0-9]{4}│/);
-    expect(result.text).toContain("exceeds 50.0KB");
-    expect(result.text).toContain("head -c 51200");
+    expect(result.text).toContain("exceeds the 50.0KB limit");
+    expect(result.text).toContain(
+      "[Line 1 exceeds the 50.0KB limit; the read tool cannot show it.]",
+    );
     expect(result.nextOffset).toBeUndefined();
+  });
+
+  it("states an oversized line without naming a shell or a path placeholder", async () => {
+    const content = `a\n${"X".repeat(60_000)}\nb\n`;
+    const served = await fmtReadPreview(content, {}, undefined, home.testPath, DEFAULT_MAX_BYTES);
+    const verbatim = await fmtReadPreview(
+      content,
+      { render: "verbatim" },
+      undefined,
+      home.testPath,
+      DEFAULT_MAX_BYTES,
+    );
+    for (const text of [served.text, verbatim.text]) {
+      expect(text).not.toMatch(/\b(?:bash|sed|powershell)\b|head -c|<path>/i);
+      expect(text).toContain("[Line 2: 58.6KB; not shown.]");
+      expect(text).toContain("[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]");
+    }
   });
 });
 
@@ -167,18 +186,18 @@ describe("fmtReadPreview — oversized marker truncation", () => {
     const big1 = "X".repeat(1000);
     const big2 = "Y".repeat(1000);
     const content = `a\n${big1}\n${big2}\nb\n`;
-    const budget = 130;
+    const budget = 40;
 
     const first = await fmtReadPreview(content, {}, undefined, home.testPath, budget);
     expect(first.text).toContain("│a");
-    expect(first.text).toContain("[Line 2 is");
+    expect(first.text).toContain("[Line 2:");
     expect(first.text).not.toContain("│b");
     expect(first.text).not.toContain("Line 3");
     expect(first.text).not.toContain("Use windows");
     expect(first.nextOffset).toBe(3);
 
     const second = await fmtReadPreview(content, { offset: 3 }, undefined, home.testPath, budget);
-    expect(second.text).toContain("[Line 3 is");
+    expect(second.text).toContain("[Line 3:");
     expect(second.text).toContain("│b");
     expect(second.nextOffset).toBeUndefined();
   });
@@ -207,9 +226,9 @@ describe("fmtReadPreview — maxTruncLines budget", () => {
       DEFAULT_MAX_BYTES,
       2,
     );
-    expect(result.text).toContain("[Line 1 is");
-    expect(result.text).toContain("[Line 2 is");
-    expect(result.text).not.toContain("[Line 3 is");
+    expect(result.text).toContain("[Line 1:");
+    expect(result.text).toContain("[Line 2:");
+    expect(result.text).not.toContain("[Line 3:");
     expect(result.text).not.toContain("│b");
     expect(result.text).not.toContain("Use windows");
     expect(result.nextOffset).toBe(3);
