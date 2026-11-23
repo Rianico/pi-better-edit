@@ -8,6 +8,10 @@ export interface UndoRecord {
   content: string;
   bom: string;
   ending: string;
+  /** The terminator the edit actually wrote; NULL/absent on a pre-#313 row (fall back to `ending`). */
+  effectiveEnding?: string | null;
+  /** 1 when the pre-image bytes spelled two or more terminator kinds, so undo cannot rebuild it. */
+  preImageMixed?: number | null;
   hashes: string[];
   resultContent: string;
   /**
@@ -45,6 +49,8 @@ export interface UndoStmts {
     content: string,
     bom: string,
     ending: string,
+    effectiveEnding: string,
+    preImageMixed: number,
     hashes: string,
     resultContent: string,
     snapshotHash: string | null,
@@ -75,15 +81,15 @@ export function undoStmts(db: DatabaseSync): UndoStmts {
 
 function buildStmts(db: DatabaseSync): UndoStmts {
   const undoUpsertStmt = db.prepare(
-    "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, snapshot_hash = excluded.snapshot_hash, transaction_id = excluded.transaction_id, raw_pre = excluded.raw_pre, anchor_generation = excluded.anchor_generation, updated_at = excluded.updated_at",
+    "INSERT INTO file_undo (path, content, bom, ending, effective_ending, pre_image_mixed, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, effective_ending = excluded.effective_ending, pre_image_mixed = excluded.pre_image_mixed, hashes = excluded.hashes, result_content = excluded.result_content, snapshot_hash = excluded.snapshot_hash, transaction_id = excluded.transaction_id, raw_pre = excluded.raw_pre, anchor_generation = excluded.anchor_generation, updated_at = excluded.updated_at",
   );
   const undoGetStmt = db.prepare(
-    "SELECT content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation FROM file_undo WHERE path = ?",
+    "SELECT content, bom, ending, effective_ending, pre_image_mixed, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation FROM file_undo WHERE path = ?",
   );
   const undoDelStmt = db.prepare("DELETE FROM file_undo WHERE path = ?");
   const undoGetTransactionStmt = db.prepare(
-    "SELECT path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation FROM file_undo WHERE transaction_id = ? ORDER BY path",
+    "SELECT path, content, bom, ending, effective_ending, pre_image_mixed, hashes, result_content, snapshot_hash, transaction_id, raw_pre, anchor_generation FROM file_undo WHERE transaction_id = ? ORDER BY path",
   );
   const undoDelTransactionStmt = db.prepare("DELETE FROM file_undo WHERE transaction_id = ?");
   const intentUpsertStmt = db.prepare(
@@ -100,6 +106,8 @@ function buildStmts(db: DatabaseSync): UndoStmts {
       content,
       bom,
       ending,
+      effectiveEnding,
+      preImageMixed,
       hashes,
       resultContent,
       snapshotHash,
@@ -114,6 +122,8 @@ function buildStmts(db: DatabaseSync): UndoStmts {
           content,
           bom,
           ending,
+          effectiveEnding,
+          preImageMixed,
           hashes,
           resultContent,
           snapshotHash,
@@ -131,6 +141,7 @@ function buildStmts(db: DatabaseSync): UndoStmts {
       });
     },
     undoGetTransaction: (transactionId) =>
+      // SAFETY: node:sqlite returns untyped rows; every consumer re-reads them via parseUndoRow
       withBusyRetry(() => undoGetTransactionStmt.all(transactionId)) as unknown as Record<
         string,
         unknown
@@ -146,6 +157,7 @@ function buildStmts(db: DatabaseSync): UndoStmts {
       });
     },
     intentList: () =>
+      // SAFETY: node:sqlite returns untyped rows; the intent row shape is fixed by CUT_INTENT_DDL
       withBusyRetry(() => intentListStmt.all()) as unknown as {
         txn_id: string;
         target_path: string;
@@ -172,6 +184,8 @@ function parseUndoRow(row: Record<string, unknown> | undefined): UndoRecord | un
       content: row.content as string,
       bom: row.bom as string,
       ending: row.ending as string,
+      effectiveEnding: (row.effective_ending as string | null) ?? null,
+      preImageMixed: (row.pre_image_mixed as number | null) ?? null,
       hashes: parsed as string[],
       resultContent: row.result_content as string,
       snapshotHash: (row.snapshot_hash as string | null) ?? null,
@@ -190,6 +204,8 @@ export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): v
     entry.content,
     entry.bom,
     entry.ending,
+    entry.effectiveEnding ?? entry.ending,
+    entry.preImageMixed === 1 ? 1 : 0,
     JSON.stringify(entry.hashes),
     entry.resultContent,
     entry.snapshotHash ?? null,

@@ -8,6 +8,7 @@ import {
   changedTerminatorCount,
   endingName,
   resolveEffectiveEolFromCounts,
+  terminatorKindsUsed,
 } from "../eol-config.js";
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
@@ -1040,6 +1041,7 @@ async function runMutations(
     bom,
     originalEnding,
     effectiveEnding: effectiveEnding.value,
+    preImageMixed: terminatorKindsUsed(endingCounts) >= 2,
     eolRewriteWarning,
     warnings,
     originalHashes,
@@ -1199,6 +1201,7 @@ async function runCutTransaction(
       content: plan.originalNormalized,
       bom: plan.bom,
       originalEnding: plan.originalEnding,
+      effectiveEnding: plan.originalEnding,
       hashes: plan.originalHashes,
       resultContent: plan.result,
       transactionId: txnId,
@@ -1374,6 +1377,8 @@ export async function apply(
       content: file.originalNormalized,
       bom: file.bom,
       originalEnding: file.originalEnding,
+      effectiveEnding: file.effectiveEnding,
+      preImageMixed: file.preImageMixed,
       hashes: file.originalHashes,
       resultContent: file.result,
     });
