@@ -19,6 +19,7 @@ const RETIRED_FLAT_LITERAL = ".pi/agents/pi-better-edit.json";
 const SETTINGS_OWNERS = [
   join("src", "bash-view-config.ts"),
   join("src", "selection-range-config.ts"),
+  join("src", "span-mode-config.ts"),
   join("src", "bash-multifile-config.ts"),
   join("src", "integrations", "pi-lens", "config.ts"),
   join("src", "store-config.ts"),

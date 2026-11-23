@@ -50,6 +50,11 @@ import {
   displayPath,
   type ConfigScope,
 } from "../../json-config.js";
+import {
+  readSpanModeConfig,
+  resolveSpanModeWithSource,
+  SPAN_MODE_ENV_VAR,
+} from "../../span-mode-config.js";
 import { DomainError } from "../../domain-errors.js";
 import { SettingsOverlay } from "./settings-overlay.js";
 import {
@@ -191,6 +196,8 @@ function statusText(cwd: string): string {
     "",
     multiFileStatusText(cwd),
     "",
+    spanModeStatusText(cwd),
+    "",
     diagnosticsStatusText(),
   ].join("\n");
 }
@@ -284,6 +291,31 @@ function multiFileStatusText(cwd: string): string {
     scopeLine("global", config.global, configFileDisplayPath("global", cwd)),
     `  allowed: maxFiles ${BASH_MULTI_FILE_LIMITS.maxFiles.min}-${BASH_MULTI_FILE_LIMITS.maxFiles.max}, maxRows ${BASH_MULTI_FILE_LIMITS.maxRows.min}-${BASH_MULTI_FILE_LIMITS.maxRows.max}`,
     "  precedence: project > global > default",
+    ...warnings.map((reason) => `  warning: ${reason}`),
+  ].join("\n");
+}
+
+/**
+ * The span mode half of the status output: the effective mode with its rung, both file values,
+ * the override and a precedence line.
+ *
+ * Both file values are printed beside the effective mode, because the losing value names the
+ * file an operator edits next.
+ */
+function spanModeStatusText(cwd: string): string {
+  const warnings: string[] = [];
+  const effective = resolveSpanModeWithSource(cwd, (reason) => warnings.push(reason));
+  const config = readSpanModeConfig(cwd);
+  const envRaw = process.env[SPAN_MODE_ENV_VAR];
+  const envValue = envRaw === undefined || envRaw.trim().length === 0 ? "unset" : envRaw.trim();
+  return [
+    `${COMMAND_NAME} span mode`,
+    `  effective: ${effective.value}`,
+    `  effective source: ${effective.source}`,
+    `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
+    `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
+    `  env ${SPAN_MODE_ENV_VAR}: ${envValue}`,
+    "  precedence: env > project > global > hint",
     ...warnings.map((reason) => `  warning: ${reason}`),
   ].join("\n");
 }
