@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Features
+
+* **eol:** add the built-in `eol` config (`AUTO`, `LF`, `CRLF`, `CR`; default `AUTO`) and its `PI_BETTER_EDIT_EOL` override, resolved env > project > global > default through the shared settings ladder. One effective EOL with its source now drives every write decision; `.editorconfig` is not read in v1.
+* **eol:** disclose normalization on both surfaces. A mixed file's `read` page appends `[W_MIXED_EOL]` after its rows with the whole-file counts and the effective EOL; an `edit` whose write changes pre-image terminator bytes emits `[W_EOL_REWRITTEN]` naming the target, its source, and the count changed.
+
+### Bug Fixes
+
+* **undo:** restore ordinary undo at the effective EOL the edit wrote (`file_undo.effective_ending`; pre-existing rows fall back to `ending`), so undoing a mixed file returns normalized content and a healthy file no longer refuses with `[E_UNDO_STALE]`. The response says the pre-edit mixture is not restored; correlated cut reverts and next-run repair stay byte-exact.
+
 ## [2.19.3] - 2026-11-22
 
 ### Bug Fixes
