@@ -90,6 +90,12 @@ export interface ProcessedEditFile {
    * correlated two-file transaction; the in-memory buffer itself never touches these files.
    */
   foreignCuts: ForeignCutRecord[];
+  /**
+   * The pre-batch positional served mirror (entry `i` is original line `i + 1`, `null` for a line never
+   * served), carried ONLY when the resolved span mode is `hint` so the applied diff may blank the gutter
+   * of an unserved removal. Absent means anchor rendering is unchanged.
+   */
+  served?: (string | null)[];
 }
 
 export interface MutationSuccess {

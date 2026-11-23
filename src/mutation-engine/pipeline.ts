@@ -1042,6 +1042,7 @@ async function runMutations(
     editedIntervals,
     literalDeclarations,
     foreignCuts,
+    ...(spanMode === "hint" ? { served } : {}),
   };
 }
 
@@ -1093,6 +1094,8 @@ async function finishCommittedFile(
     1,
     file.resultHashes,
     file.originalHashes,
+    undefined,
+    file.served,
   );
   const denseRows = denseServeRows(file.resultHashes);
   try {
