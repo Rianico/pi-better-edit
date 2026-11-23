@@ -4,7 +4,7 @@
 
 ### Features
 
-* **edit:** introduce dual-mode span verification and disclosure. In strict mode (`PI_BETTER_EDIT_SPAN_MODE=strict`), unserved interior spans are refused before mutation with `E_UNSERVED_RANGE`. In default hint mode, unserved removals in applied diffs are disclosed with blank line-number gutters and adaptive fold markers, and replaced unserved interior lines emit warning `W_UNSERVED_INTERIOR`.
+* **edit:** introduce dual-mode span verification and disclosure. In strict mode (`PI_BETTER_EDIT_SPAN_MODE=strict`), unserved interior spans are refused before mutation with `E_UNSERVED_RANGE`. In default hint mode, unserved removals in applied diffs are disclosed with blank line-number gutters and adaptive fold markers, and replaced unserved interior lines emit warning `W_UNSERVED_INTERIOR`. (#309)
 
 ### Bug Fixes
 
