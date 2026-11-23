@@ -29,6 +29,7 @@ import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { ANCHOR_GENERATION, lineHashes } from "./hashline/hash-identity.js";
+import { endingName } from "./eol-config.js";
 
 /**
  * Derives a row's anchors and persists the snapshot through the named store (arch-03).
@@ -66,6 +67,13 @@ export interface UndoEntry {
    * construction. Absent/NULL on ordinary single-file rows: the canonical fold is restored.
    */
   rawPre?: string | null;
+  /**
+   * The terminator the edit actually wrote; absent on a pre-#313 row, where `originalEnding` is the
+   * only EOL the row knows. The ordinary restore re-encodes `content` at this one.
+   */
+  effectiveEnding?: LineEnding;
+  /** True when the pre-image bytes spelled two or more terminator kinds, so undo cannot rebuild it. */
+  preImageMixed?: boolean;
   /** The anchor generation the stored hashes were derived under (0 = pre-generation). */
   anchorGeneration?: number | null;
 }
@@ -81,6 +89,8 @@ export async function saveUndo(
       content: entry.content,
       bom: entry.bom,
       ending: entry.originalEnding,
+      effectiveEnding: entry.effectiveEnding ?? entry.originalEnding,
+      preImageMixed: entry.preImageMixed === true ? 1 : 0,
       hashes: entry.hashes,
       resultContent: entry.resultContent,
       snapshotHash: entry.snapshotHash ?? snapshotHashFor(entry.content),
@@ -106,12 +116,17 @@ export async function saveUndo(
   };
 }
 
+/** A row's terminator narrowed to the three known endings; anything else reads as absent. */
+function knownEnding(value: string | null | undefined): LineEnding | undefined {
+  return value === "\r\n" || value === "\n" || value === "\r" ? value : undefined;
+}
+
 export async function getUndo(path: string): Promise<UndoEntry | undefined> {
   try {
     const record = await readUndo(path);
     if (!record) return undefined;
-    const originalEnding = record.ending;
-    if (originalEnding !== "\r\n" && originalEnding !== "\n" && originalEnding !== "\r") {
+    const originalEnding = knownEnding(record.ending);
+    if (originalEnding === undefined) {
       await removeUndo(path);
       return undefined;
     }
@@ -119,6 +134,8 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
       content: record.content,
       bom: record.bom,
       originalEnding,
+      effectiveEnding: knownEnding(record.effectiveEnding) ?? originalEnding,
+      preImageMixed: record.preImageMixed === 1,
       hashes: record.hashes,
       resultContent: record.resultContent,
       snapshotHash: record.snapshotHash ?? null,
@@ -149,6 +166,10 @@ interface UndoMember {
   content: string;
   bom: string;
   ending: LineEnding;
+  /** The terminator this member's edit wrote; a pre-#313 row resolves to `ending`. */
+  effectiveEnding: LineEnding;
+  /** True when the member's pre-image bytes spelled two or more terminator kinds. */
+  preImageMixed: boolean;
   hashes: string[];
   resultContent: string;
   snapshotHash: string | null;
@@ -158,14 +179,16 @@ interface UndoMember {
 }
 
 function toMember(row: UndoRecord & { path: string }, displayPath: string): UndoMember | undefined {
-  const ending = row.ending;
-  if (ending !== "\r\n" && ending !== "\n" && ending !== "\r") return undefined;
+  const ending = knownEnding(row.ending);
+  if (ending === undefined) return undefined;
   return {
     absolutePath: row.path,
     displayPath,
     content: row.content,
     bom: row.bom,
     ending,
+    effectiveEnding: knownEnding(row.effectiveEnding) ?? ending,
+    preImageMixed: row.preImageMixed === 1,
     hashes: row.hashes,
     resultContent: row.resultContent,
     snapshotHash: row.snapshotHash ?? null,
@@ -547,6 +570,8 @@ export function regEditUndo(pi: ExtensionAPI): void {
           };
         }
 
+        // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md
+        const effectiveEnding = undo.effectiveEnding ?? undo.originalEnding;
         if (undo.transactionId !== null && undo.transactionId !== undefined) {
           try {
             return await undoCorrelatedTransaction(
@@ -603,10 +628,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
           }
           if (
             !currentBytes.equals(
-              Buffer.from(
-                undo.bom + restoreEndings(undo.resultContent, undo.originalEnding),
-                "utf-8",
-              ),
+              Buffer.from(undo.bom + restoreEndings(undo.resultContent, effectiveEnding), "utf-8"),
             )
           ) {
             await clearUndo(mutationTargetPath);
@@ -680,7 +702,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
           await writeAtomic(
             mutationTargetPath,
-            undo.bom + restoreEndings(undo.content, undo.originalEnding),
+            undo.bom + restoreEndings(undo.content, effectiveEnding),
           );
 
           try {
@@ -714,6 +736,11 @@ export function regEditUndo(pi: ExtensionAPI): void {
           if (linesAddedByEdit > 0 || linesRemovedByEdit > 0) {
             parts.push(
               `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
+            );
+          }
+          if (undo.preImageMixed) {
+            parts.push(
+              `Restored at ${endingName(effectiveEnding)}; the pre-edit mixture is not restored.`,
             );
           }
           parts.push(

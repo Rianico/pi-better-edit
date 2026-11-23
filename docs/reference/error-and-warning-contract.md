@@ -44,9 +44,23 @@
 
 ---
 
+## Read Warnings (`[W_*]`)
+
+A read warning reports the state a `read` page observed **before any write**. It never implies that a mutation happened, and it is not an applied warning.
+
+- **Placement**: appended after the page's rows, separated by one blank line. Every page — served, verbatim, windowed — carries it once.
+- **Chrome, not content**: the line has no anchor, is never a served row, and `N lines total` never counts it.
+- **Bare header**: emitted as `[<CODE>] <observation>`, with no `[MODEL]`/`[USER]` audience prefix. The audience column below names the owner; it is not part of the line.
+- **Whole-file facts**: the counts cover the whole file even when the page is windowed.
+
+| Warning Code | Audience | Trigger Condition | Engine Action |
+| :--- | :--- | :--- | :--- |
+| `[W_MIXED_EOL]` | `[MODEL]` | The file's raw bytes mix terminator kinds. | Page still serves; names the whole-file counts and the effective EOL with its source. |
+
+---
 ## Applied Warnings (`[W_*]`)
 
-Warnings accompany successful tool executions (`status: "applied"`). They inform the model or user of non-fatal adjustments made during execution.
+Warnings accompany successful tool executions (`status: "applied"`). They inform the model or user of non-fatal adjustments made during execution. The read tier above is separate: it discloses file state, never a mutation.
 
 | Warning Code | Audience | Trigger Condition | Engine Action |
 | :--- | :--- | :--- | :--- |
@@ -57,4 +71,5 @@ Warnings accompany successful tool executions (`status: "applied"`). They inform
 | `[W_LITERAL_BYPASS]` | `[USER]` | Edit specified `mode: "literal"`, bypassing served-echo anchor checks. | Applied verbatim. |
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a second consecutive time without changing range text; file was left unmodified. | Warning emitted; a third consecutive submission triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion (`text: ""`) placed with `at: "before"` or `at: "after"`. | No bytes written; call succeeds with diagnostic warning. |
+| `[W_EOL_REWRITTEN]` | `[MODEL]` | The write changed at least one pre-image terminator's bytes while normalizing the file to its effective EOL. | Applied; reports the target EOL, its source, and the number of pre-image terminators changed. A new line's terminator is not counted. |
 | `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced ≥1 interior line the session never served. | Applied; names count and line range. |

@@ -52,7 +52,8 @@
         }
       },
       "additionalProperties": true
-    }
+    },
+    "eol": { "type": "string", "enum": ["AUTO", "LF", "CRLF", "CR"], "default": "AUTO" }
   },
   "additionalProperties": true
 }

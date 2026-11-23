@@ -4,7 +4,7 @@ import { defaultHashIdentity } from "../hashline/hash-identity.js";
 import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
-import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
+import { countLineEndings, detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
@@ -122,6 +122,7 @@ export async function decodeNormText(
   valKind(file, path);
   abortIf(signal);
   const { bom, text: rawContent } = stripBOM(file.text);
+  const endingCounts = countLineEndings(rawContent);
   const originalEnding = detectEnding(rawContent);
   const normalized = toLF(rawContent);
 
@@ -143,6 +144,7 @@ export async function decodeNormText(
     bom,
     originalEnding,
     hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
+    endingCounts,
   };
 }
 

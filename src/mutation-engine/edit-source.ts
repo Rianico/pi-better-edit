@@ -8,7 +8,7 @@
 import { readNormFile } from "../file-reader.js";
 import { splitLines } from "../utils.js";
 import { SERVED_MAX_LINES } from "../constants.js";
-import type { LineEnding } from "../edit-diff.js";
+import type { LineEnding, LineEndingCounts } from "../edit-diff.js";
 import { isExpiredActiveLease, type HashStore } from "../hash-store.js";
 import type { LeaseSpanSource } from "../hashline/resolve.js";
 import {
@@ -38,6 +38,8 @@ export interface LoadedEditFile {
   bom: string;
   originalEnding: LineEnding;
   fileHashes: string[];
+  /** Pre-image terminator counts, so the write's EOL choice needs no second decode. */
+  endingCounts: LineEndingCounts;
   hadUtf8DecodeErrors: boolean;
   absolutePath: string;
   served: (string | null)[];
@@ -46,14 +48,21 @@ export interface LoadedEditFile {
 }
 
 export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
-  const { normalized, bom, originalEnding, fileHashes, hadUtf8DecodeErrors, absolutePath } =
-    await readNormFile(source.path, source.cwd, {
-      ...(source.signal !== undefined ? { signal: source.signal } : {}),
-      ...(source.accessMode !== undefined ? { accessMode: source.accessMode } : {}),
-      maxLines: SERVED_MAX_LINES,
-      ...(source.store !== undefined ? { store: source.store } : {}),
-      ...(source.noPersist !== undefined ? { noPersist: source.noPersist } : {}),
-    });
+  const {
+    normalized,
+    bom,
+    originalEnding,
+    fileHashes,
+    hadUtf8DecodeErrors,
+    absolutePath,
+    endingCounts,
+  } = await readNormFile(source.path, source.cwd, {
+    ...(source.signal !== undefined ? { signal: source.signal } : {}),
+    ...(source.accessMode !== undefined ? { accessMode: source.accessMode } : {}),
+    maxLines: SERVED_MAX_LINES,
+    ...(source.store !== undefined ? { store: source.store } : {}),
+    ...(source.noPersist !== undefined ? { noPersist: source.noPersist } : {}),
+  });
   const served = await createSessionHandle(source.sessionKey, absolutePath).load();
   let blockedHashes: ReadonlySet<string> = new Set();
   let canonDigests: (string | null)[] = [];
@@ -80,6 +89,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     originalEnding,
     fileHashes,
     hadUtf8DecodeErrors,
+    endingCounts,
     absolutePath,
     served,
     blockedHashes,

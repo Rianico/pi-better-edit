@@ -69,6 +69,7 @@ export type DomainWarningCode =
   | "W_LITERAL_BYPASS"
   | "W_NOOP"
   | "W_NOOP_INSERT"
+  | "W_EOL_REWRITTEN"
   | "W_UNSERVED_INTERIOR";
 
 /**
@@ -557,6 +558,16 @@ export interface WarningPayloadMap {
     removeFrom: string;
     removeTo: string;
   };
+  /**
+   * `target` and `source` mirror `LineEnding` and the `eol` ladder rungs respectively, spelled
+   * inline because this module sits below edit-diff and eol-config in the import graph and
+   * importing them would cycle.
+   */
+  W_EOL_REWRITTEN: {
+    target: "LF" | "CRLF" | "CR";
+    source: "env" | "project" | "global" | "file" | "system";
+    changed: number;
+  };
   W_UNSERVED_INTERIOR: {
     count: number;
     from: number;
@@ -600,6 +611,39 @@ function noopWarnFormat(payload: WarningPayloadMap["W_NOOP"]): string {
   );
 }
 
+/**
+ * Read-tier warning codes. A read warning reports file state a page observed BEFORE any write, so it
+ * is not an applied warning: it carries a bare `[<CODE>]` header with no audience prefix.
+ */
+export type ReadWarningCode = "W_MIXED_EOL";
+
+/**
+ * Read-tier payloads. `target` and `source` mirror the applied tier's and are spelled inline for the
+ * same import-cycle reason.
+ */
+export interface ReadWarningPayloadMap {
+  W_MIXED_EOL: {
+    crlf: number;
+    lf: number;
+    cr: number;
+    target: "LF" | "CRLF" | "CR";
+    source: "env" | "project" | "global" | "file" | "system";
+  };
+}
+
+/** The kinds present, in the fixed CRLF, LF, CR order — a kind the file never spells is left out. */
+function mixedEolFormat(payload: ReadWarningPayloadMap["W_MIXED_EOL"]): string {
+  const kinds = [
+    ...(payload.crlf > 0 ? [`${payload.crlf} CRLF`] : []),
+    ...(payload.lf > 0 ? [`${payload.lf} LF`] : []),
+    ...(payload.cr > 0 ? [`${payload.cr} CR`] : []),
+  ];
+  return (
+    `Mixed EOL: ${kinds.join(", ")}. ` +
+    `All edits normalize to ${payload.target} (${payload.source}).`
+  );
+}
+
 export const WARNING_REGISTRY: {
   [K in DomainWarningCode]: CodeSpec<WarningPayloadMap[K]>;
 } = {
@@ -635,6 +679,12 @@ export const WARNING_REGISTRY: {
       `Empty insertion ${ref} (${removeFrom} → ${removeTo}) with "before"/"after" and text "" writes ` +
       "nothing. Provide text or drop the item.",
   },
+  W_EOL_REWRITTEN: {
+    audience: "MODEL",
+    format: ({ target, source, changed }) =>
+      `EOL normalized to ${target} (${source}): ${changed} terminators changed. ` +
+      "Undo restores normalized content.",
+  },
   W_UNSERVED_INTERIOR: {
     audience: "MODEL",
     format: ({ count, from, to }) =>
@@ -643,16 +693,14 @@ export const WARNING_REGISTRY: {
 };
 
 /**
- * SAFETY: the sole producer of `[W_*]` headers. Renders
- * `[<AUDIENCE>] [<W_CODE>] <neutral-observation>` from the registry, so every
- * applied-tier warning carries its machine-readable code and audience by
- * construction. The registry owns the neutral observation only: the
- * applied-hint builders append exactly one retained conditional clause
- * after it (never a raw header) — the shared `ANCHOR_PREFIX_REMEDY` on
- * `buildServedEditPrefixNote` and `buildNeverServedEditHint`, a
- * write-specific conditional clause on `buildServedWritePrefixNote`. Each
- * clause is guidance phrased as a conditional reference (`If ... unintended`),
- * not an order.
+ * SAFETY: the applied tier's sole producer of `[W_*]` headers (`formatReadWarning` owns the read
+ * tier). Renders `[<AUDIENCE>] [<W_CODE>] <neutral-observation>`, so every applied-tier warning
+ * carries its machine-readable code and audience by construction. The registry owns the neutral
+ * observation only: the applied-hint builders append exactly one retained conditional clause after
+ * it (never a raw header) — the shared `ANCHOR_PREFIX_REMEDY` on `buildServedEditPrefixNote` and
+ * `buildNeverServedEditHint`, a write-specific conditional clause on
+ * `buildServedWritePrefixNote`. Each clause is guidance phrased as a conditional reference
+ * (`If ... unintended`), not an order.
  */
 export function formatWarning<K extends DomainWarningCode>(
   code: K,
@@ -660,6 +708,26 @@ export function formatWarning<K extends DomainWarningCode>(
 ): string {
   const spec = WARNING_REGISTRY[code] as CodeSpec<WarningPayloadMap[K]>;
   return `[${spec.audience}] [${code}] ${spec.format(payload)}`;
+}
+
+/** The read tier's registry: the body only — `formatReadWarning` adds the bare `[<CODE>]` header. */
+const READ_WARNING_REGISTRY: {
+  [K in ReadWarningCode]: { format: (payload: ReadWarningPayloadMap[K]) => string };
+} = {
+  W_MIXED_EOL: { format: mixedEolFormat },
+};
+
+/**
+ * SAFETY: the read tier's sole producer of `[W_*]` headers. It renders a bare `[<CODE>]` header and
+ * no audience prefix: the page it trails is already the model's, and the warning reports state the
+ * page observed before any write rather than a mutation that happened.
+ */
+export function formatReadWarning<K extends ReadWarningCode>(
+  code: K,
+  payload: ReadWarningPayloadMap[K],
+): string {
+  const spec = READ_WARNING_REGISTRY[code] as { format: (p: ReadWarningPayloadMap[K]) => string };
+  return `[${code}] ${spec.format(payload)}`;
 }
 
 export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Error {

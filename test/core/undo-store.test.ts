@@ -176,6 +176,8 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "\uFEFF",
       ending: "\r\n",
+      effectiveEnding: "\r\n",
+      preImageMixed: 0,
       hashes: ["abcc", "deff"],
       resultContent: "new",
       snapshotHash: null,

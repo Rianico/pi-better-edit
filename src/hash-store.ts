@@ -145,7 +145,13 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
 const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
   file_snapshots: { stat_key: "TEXT" },
-  file_undo: { snapshot_hash: "TEXT", transaction_id: "TEXT", raw_pre: "TEXT" },
+  file_undo: {
+    snapshot_hash: "TEXT",
+    transaction_id: "TEXT",
+    raw_pre: "TEXT",
+    effective_ending: "TEXT",
+    pre_image_mixed: "INTEGER",
+  },
   served_session_meta: {
     outline_folds: "TEXT",
     hashes: "TEXT",
@@ -474,6 +480,8 @@ const FILE_UNDO_DDL =
   "content TEXT NOT NULL, " +
   "bom TEXT NOT NULL, " +
   "ending TEXT NOT NULL, " +
+  "effective_ending TEXT, " +
+  "pre_image_mixed INTEGER, " +
   "hashes TEXT NOT NULL, " +
   "result_content TEXT NOT NULL, " +
   "snapshot_hash TEXT, " +
@@ -493,6 +501,8 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
   addColumnIfMissing(db, "file_undo", "snapshot_hash");
   addColumnIfMissing(db, "file_undo", "transaction_id");
   addColumnIfMissing(db, "file_undo", "raw_pre");
+  addColumnIfMissing(db, "file_undo", "effective_ending");
+  addColumnIfMissing(db, "file_undo", "pre_image_mixed");
   renameGenerationColumn(db, "file_undo");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);

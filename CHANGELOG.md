@@ -4,10 +4,13 @@
 
 ### Features
 
+* **eol:** add the built-in `eol` config (`AUTO`, `LF`, `CRLF`, `CR`; default `AUTO`) and its `PI_BETTER_EDIT_EOL` override, resolved env > project > global > default through the shared settings ladder. One effective EOL with its source now drives every write decision; `.editorconfig` is not read in v1. (#318)
+* **eol:** disclose normalization on both surfaces. A mixed file's `read` page appends `[W_MIXED_EOL]` after its rows with the whole-file counts and the effective EOL; an `edit` whose write changes pre-image terminator bytes emits `[W_EOL_REWRITTEN]` naming the target, its source, and the count changed. (#318)
 * **edit:** introduce dual-mode span verification and disclosure. In strict mode (`PI_BETTER_EDIT_SPAN_MODE=strict`), unserved interior spans are refused before mutation with `E_UNSERVED_RANGE`. In default hint mode, unserved removals in applied diffs are disclosed with blank line-number gutters and adaptive fold markers, and replaced unserved interior lines emit warning `W_UNSERVED_INTERIOR`. (#309)
 
 ### Bug Fixes
 
+* **undo:** restore ordinary undo at the effective EOL the edit wrote (`file_undo.effective_ending`; pre-existing rows fall back to `ending`), so undoing a mixed file returns normalized content and a healthy file no longer refuses with `[E_UNDO_STALE]`. The response says the pre-edit mixture is not restored; correlated cut reverts and next-run repair stay byte-exact. (#318)
 * **read:** state oversized-line limits as facts instead of recommending Bash. An oversized row now reads `[Line 2: 205.1KB; not shown.]` and the trailing notice says `[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]`, so hosts without Bash and remote filesystem backends receive no unrunnable `sed` command or path placeholder. Row anchors, pagination, and truncation behavior are unchanged. (#300)
 
 ### Code Refactoring

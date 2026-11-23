@@ -32,6 +32,7 @@ import {
 import { findStatSnapshotFor } from "../snapshot-store";
 import type { ServedRow } from "../served-session/serve-render.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
+import type { LineEndingCounts } from "../edit-diff.js";
 
 export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 export { loadFileKindAndText } from "./detection.js";
@@ -85,6 +86,11 @@ export interface PrepareResult {
    */
   // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   statAdoption?: StatAdoption;
+  /**
+   * The terminator counts over the WHOLE file's raw bytes, whatever window this page shows. Present
+   * for text and absent for the directory, binary and image early returns, which decode no text.
+   */
+  endingCounts?: LineEndingCounts;
 }
 
 /** The already-committed snapshot a stat-identity read served from. */
@@ -268,6 +274,7 @@ export async function prepareFile(
     ...(preview.shownRange !== undefined ? { shownRange: preview.shownRange } : {}),
     ...(statKey !== undefined ? { statKey } : {}),
     ...(statAdoption !== undefined ? { statAdoption } : {}),
+    endingCounts: norm.endingCounts,
   };
 }
 
