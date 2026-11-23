@@ -17,6 +17,7 @@ const PATH_OWNER = join("src", "config-dir.ts");
 const CURRENT_PROJECT_LITERAL = ".pi/agents/pi-better-edit/settings.json";
 const RETIRED_FLAT_LITERAL = ".pi/agents/pi-better-edit.json";
 const SETTINGS_OWNERS = [
+  join("src", "eol-config.ts"),
   join("src", "bash-view-config.ts"),
   join("src", "selection-range-config.ts"),
   join("src", "bash-multifile-config.ts"),

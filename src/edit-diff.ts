@@ -31,6 +31,34 @@ export function restoreEndings(text: string, ending: LineEnding): string {
   return text;
 }
 
+/** Terminator counts by kind: a CRLF pair counts once, never as CR plus LF. */
+export interface LineEndingCounts {
+  readonly crlf: number;
+  readonly lf: number;
+  readonly cr: number;
+}
+
+/** One pass over the raw text, counting each terminator kind at its own byte. */
+export function countLineEndings(text: string): LineEndingCounts {
+  let crlf = 0;
+  let lf = 0;
+  let cr = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === 0x0a) {
+      lf += 1;
+    } else if (code === 0x0d) {
+      if (text.charCodeAt(index + 1) === 0x0a) {
+        crlf += 1;
+        index += 1;
+      } else {
+        cr += 1;
+      }
+    }
+  }
+  return { crlf, lf, cr };
+}
+
 export function stripBOM(content: string): { bom: string; text: string } {
   return content.startsWith("\uFEFF")
     ? { bom: "\uFEFF", text: content.slice(1) }
