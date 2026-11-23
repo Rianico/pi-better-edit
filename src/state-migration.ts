@@ -27,8 +27,8 @@ export const STATE_MIGRATION_MARKER = ".migration-v1";
 
 /**
  * Artifacts that follow the state root, moved only when the new path is absent. The pre-SQLite
- * JSON store is still read by `snapshot-store/migrate.ts`; the log pair is what makes a bug report
- * written before the upgrade readable after it.
+ * JSON store is retired (no reader left); the log pair is what makes a bug report written before
+ * the upgrade readable after it.
  */
 const MOVED_ARTIFACTS = ["hash-store.json", "diagnostics.log", "diagnostics.log.1"] as const;
 

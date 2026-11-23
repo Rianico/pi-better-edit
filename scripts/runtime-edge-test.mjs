@@ -121,7 +121,7 @@ function readServedHashes() {
   const db = new DatabaseSync(storePath, { timeout: 2000 });
   try {
     const served = db
-      .prepare("SELECT path, hashes FROM served WHERE session_id = ?")
+      .prepare("SELECT file_path AS path, hashes FROM served_session_meta WHERE session_id = ?")
       .all(continuationSessionId);
     const row = served.find((entry) => entry.path.endsWith("s6.txt"));
     if (!row) return null;

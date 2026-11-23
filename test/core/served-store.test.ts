@@ -3,11 +3,17 @@ import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
+import {
+  loadHashStore,
+  shutdownHashStore,
+  ensureSnapshotTables,
+  ensureFileUndoSchema,
+} from "../../src/hash-store";
 import { readNormFile } from "../../src/file-reader.js";
 import {
   getServed,
   upsertServed,
+  recordServes,
   recordServesTruncated,
   getReported,
   addReported,
@@ -267,6 +273,55 @@ describe("hash-store — served wipe", () => {
   });
 });
 
+describe("served mirror — served_session_meta exposure facts (ticket #307)", () => {
+  it("creates no bare served table", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+          name: string;
+        }[]
+      ).map((row) => row.name);
+      db.close();
+
+      expect(tables).not.toContain("served");
+      expect(tables).toContain("served_session_meta");
+    });
+  });
+
+  it("stores the mirror JSON in served_session_meta.hashes", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      upsertServed(store, "sessionA", "/p.ts", [
+        { position: 0, hash: "abcc" },
+        { position: 2, hash: "deff" },
+      ]);
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const row = db
+        .prepare("SELECT hashes FROM served_session_meta WHERE session_id = ? AND file_path = ?")
+        .get("sessionA", "/p.ts") as { hashes: string | null } | undefined;
+      db.close();
+
+      expect(row?.hashes).toBe(JSON.stringify(["abcc", null, "deff"]));
+    });
+  });
+
+  it("round-trips mirror-only rows exactly and grants no lease", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      recordServes(store, "sessionA", "/p.ts", [
+        { position: 0, hash: "abcc" },
+        { position: 3, hash: "deff" },
+      ]);
+
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abcc", null, null, "deff"]);
+      expect(loadLeases(store, "sessionA", "/p.ts")).toEqual([]);
+    });
+  });
+});
 describe("hash-store — served corrupt row handling", () => {
   async function corruptServed(
     home: string,
@@ -275,11 +330,9 @@ describe("hash-store — served corrupt row handling", () => {
     value: string,
   ): Promise<void> {
     const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-    db.prepare("UPDATE served SET hashes = ? WHERE session_id = ? AND path = ?").run(
-      value,
-      sessionKey,
-      path,
-    );
+    db.prepare(
+      "UPDATE served_session_meta SET hashes = ? WHERE session_id = ? AND file_path = ?",
+    ).run(value, sessionKey, path);
     db.close();
   }
 
@@ -295,7 +348,9 @@ describe("hash-store — served corrupt row handling", () => {
         defensive: false,
       } as any);
       const remaining = check
-        .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+        .prepare(
+          "SELECT COUNT(*) AS n FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+        )
         .get("sessionA", "/p.ts") as { n: number };
       check.close();
       expect(remaining.n).toBe(0);
@@ -338,7 +393,9 @@ describe("hash-store — served corrupt row handling", () => {
         defensive: false,
       } as any);
       const remaining = check
-        .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+        .prepare(
+          "SELECT COUNT(*) AS n FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+        )
         .get("sessionA", "/p.ts") as { n: number };
       check.close();
       expect(remaining.n).toBe(0);
@@ -357,7 +414,9 @@ describe("hash-store — served corrupt row handling", () => {
         defensive: false,
       } as any);
       const remaining = check
-        .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+        .prepare(
+          "SELECT COUNT(*) AS n FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+        )
         .get("sessionA", "/p.ts") as { n: number };
       check.close();
       expect(remaining.n).toBe(0);
@@ -408,44 +467,41 @@ describe("hash-store — served schema versioning", () => {
     });
   });
 
-  it("migrates a legacy served table without wiping snapshots or undo", async () => {
+  it("creates the served_session_meta exposure columns without wiping snapshots or undo", async () => {
     await withTempHome(async (home) => {
       await mkdir(stateHome(home), { recursive: true });
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
+      ensureSnapshotTables(db);
+      ensureFileUndoSchema(db);
       db.exec(
-        "CREATE TABLE snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+        "INSERT INTO file_snapshots (snapshot_id, path, snapshot_hash, line_count, created_at) VALUES (1, '/p.ts', 'v1:x', 1, 1)",
       );
       db.exec(
-        "CREATE TABLE undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-      );
-      db.exec(
-        "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
-      );
-      db.exec(
-        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES ('/p.ts', 'v1:x', 1, '[\"XYZ\"]', 1)",
-      );
-      db.exec(
-        "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES ('/u.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
+        "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES ('/u.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
       );
 
       ensureServedSchema(db);
 
-      const columns = (db.prepare("PRAGMA table_info(served)").all() as { name: string }[]).map(
-        (row) => row.name,
-      );
-      const snapshots = db.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number };
-      const undo = db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+      const columns = (
+        db.prepare("PRAGMA table_info(served_session_meta)").all() as { name: string }[]
+      ).map((row) => row.name);
+      const snapshots = db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as {
+        n: number;
+      };
+      const undo = db.prepare("SELECT COUNT(*) AS n FROM file_undo").get() as { n: number };
       db.close();
 
-      expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
+      expect(columns).toEqual(
+        expect.arrayContaining(["reported", "hashes", "blocked_hashes", "epoch_id"]),
+      );
       expect(snapshots.n).toBe(1);
       expect(undo.n).toBe(1);
     });
   });
 
-  it("rebuilds a pre-session-keyed served table into the session-partitioned schema", async () => {
+  it("tolerates a store stamped with an older version", async () => {
     await withTempHome(async (home) => {
       await mkdir(stateHome(home), { recursive: true });
       const db = new DatabaseSync(sqlitePath(home), {
@@ -453,9 +509,6 @@ describe("hash-store — served schema versioning", () => {
       } as any);
       db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
       db.exec("INSERT INTO meta (key, value) VALUES ('version', '5')");
-      db.exec(
-        "CREATE TABLE served (path TEXT PRIMARY KEY, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-      );
       db.close();
       const store = await loadHashStore();
       addReported(store, "sessionA", "/p.ts", ["abcc"]);
@@ -621,11 +674,9 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
     updatedAt: number,
   ): Promise<void> {
     const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-    db.prepare("UPDATE served SET updated_at = ? WHERE session_id = ? AND path = ?").run(
-      updatedAt,
-      sessionKey,
-      path,
-    );
+    db.prepare(
+      "UPDATE served_session_meta SET updated_at = ? WHERE session_id = ? AND file_path = ?",
+    ).run(updatedAt, sessionKey, path);
     db.close();
   }
 
@@ -644,7 +695,10 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
         defensive: false,
       } as any);
       const remaining = check
-        .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+        .prepare(
+          "SELECT COUNT(*) AS n FROM served_session_meta " +
+            "WHERE session_id = ? AND file_path = ? AND hashes IS NOT NULL",
+        )
         .get("sessionA", "/p.ts") as { n: number };
       check.close();
       expect(remaining.n).toBe(0);
@@ -858,31 +912,34 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
     });
   });
 
-  it("preserves served rows but invalidates snapshots/undo when adding retired column", async () => {
-    await withTempHome(async (home) => {
-      const { contentChecksum: _contentChecksum } = await import("../../src/hashline/hasher.js");
-      const _homePath = home;
+  it("adds the exposure columns to served_session_meta on reopen, keeping other rows", async () => {
+    await withTempHome(async () => {
       const { DatabaseSync } = await import("node:sqlite");
       const { hashStorePath } = await import("../../src/hash-store.js");
       const store1 = await loadHashStore();
       const { createSessionHandle: createH } = await import("../../src/served-session/session.js");
       const h1 = createH("sessionA", "/rebound.txt", store1);
       await h1.record([{ position: 0, hash: "AAAA" }]);
-      const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store");
+      addReported(store1, "sessionA", "/rebound.txt", ["AAAA"]);
       const dbPath = hashStorePath();
       const { shutdownHashStore } = await import("../../src/hash-store.js");
       shutdownHashStore();
+
       const db = new DatabaseSync(dbPath);
-      try {
-        db.exec("ALTER TABLE served DROP COLUMN retired");
-      } catch {}
+      db.exec("ALTER TABLE served_session_meta DROP COLUMN hashes");
       db.close();
+
       const { loadHashStore: load2 } = await import("../../src/hash-store.js");
       const store2 = await load2();
       const h2 = createH("sessionA", "/rebound.txt", store2);
-      expect(await h2.load()).toEqual(["AAAA"]);
-      const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store");
+      const columns = (
+        store2.db.prepare("PRAGMA table_info(served_session_meta)").all() as { name: string }[]
+      ).map((row) => row.name);
+
+      expect(columns).toEqual(expect.arrayContaining(["hashes", "blocked_hashes", "epoch_id"]));
+      expect(await h2.load()).toEqual([]);
       expect(await h2.loadBlockedHashes()).toEqual(new Set());
+      expect(getReported(store2, "sessionA", "/rebound.txt")).toEqual(new Set(["AAAA"]));
     });
   });
 });
@@ -1094,22 +1151,18 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
             "WHERE file_path = ? ORDER BY session_id ASC",
         )
         .all("/p.ts") as { session_id: string; reported: string }[];
-      const legacy = db
-        .prepare("SELECT COUNT(*) AS n FROM served WHERE reported IS NOT NULL AND path = ?")
-        .get("/p.ts") as { n: number };
       db.close();
 
       expect(rows).toEqual([
         { session_id: "sessionA", reported: JSON.stringify(["abcc", "deff"]) },
         { session_id: "sessionB", reported: JSON.stringify(["ghii"]) },
       ]);
-      expect(legacy.n).toBe(0);
       expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abcc", "deff"]));
       expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["ghii"]));
     });
   });
 
-  it("drops the served_session_meta row on clear", async () => {
+  it("clears reported without erasing the row's mirror", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       addReported(store, "sessionA", "/p.ts", ["abcc"]);
@@ -1124,12 +1177,12 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
       clearReported(store, "sessionA", "/p.ts");
 
       const reopened = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      const remaining = reopened
-        .prepare("SELECT COUNT(*) AS n FROM served_session_meta WHERE file_path = ?")
-        .get("/p.ts") as { n: number };
+      const row = reopened
+        .prepare("SELECT reported FROM served_session_meta WHERE session_id = ? AND file_path = ?")
+        .get("sessionA", "/p.ts") as { reported: string | null } | undefined;
       reopened.close();
 
-      expect(remaining.n).toBe(0);
+      expect(row?.reported).toBeNull();
       expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
     });
   });

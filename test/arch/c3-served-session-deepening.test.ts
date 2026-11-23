@@ -13,9 +13,6 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
   });
 
   it("no src file imports from served-state", () => {
-    const _srcFiles = readdirSync("src", { recursive: true } as unknown as {
-      recursive: boolean;
-    }) as unknown as string[];
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const entry of readdirSync(dir, {
         withFileTypes: true,
@@ -71,12 +68,8 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     expect(key).toBe("sess-123");
   });
 
-  it("Memory adapter still justifies the seam (store can be injected)", async () => {
-    const { MemorySnapshotStore } = await import("../../src/store.js");
+  it("an injected :memory: store drives the session handle", async () => {
     const { DatabaseSync } = await import("node:sqlite");
-    const mem = new MemorySnapshotStore();
-    expect(typeof mem.get).toBe("function");
-    expect(typeof mem.put).toBe("function");
     const db = new DatabaseSync(":memory:");
     const { ensureServedSchema } = await import("../../src/served-session/session.js");
     ensureServedSchema(db);

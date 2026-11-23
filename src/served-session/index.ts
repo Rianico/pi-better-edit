@@ -4,7 +4,6 @@
  * External seam: SessionHandle bound to (sessionKey, path). All storage
  * (HashStore, SQLite, patchServed healing, truncation, reported-set, TTL)
  * lives inside session.ts — callers never thread sessionKey or touch SQL.
- * Two adapters justify the seam: SQLiteSnapshotStore (prod) vs MemoryStore (tests).
  */
 
 export {

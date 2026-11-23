@@ -117,7 +117,8 @@ function plantV2File(store: HashStore, absPath: string, content: string): string
   }
   store.db
     .prepare(
-      "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?,?,?,?) ON CONFLICT(session_id,path) DO UPDATE SET hashes=excluded.hashes",
+      "INSERT INTO served_session_meta (session_id, file_path, hashes, updated_at) VALUES (?,?,?,?) " +
+        "ON CONFLICT(session_id,file_path) DO UPDATE SET hashes=excluded.hashes",
     )
     .run(session, absPath, JSON.stringify(v2), Date.now());
   return v2;
@@ -354,16 +355,16 @@ describe("generation bump refuses pre-v3 anchors", () => {
       );
       const store = await loadHashStore();
       const mirrorBefore = store.db
-        .prepare("SELECT snapshotId FROM served WHERE path = ?")
-        .get(absR) as { snapshotId: string | null } | undefined;
-      expect(mirrorBefore?.snapshotId).toMatch(/^v2\|/);
+        .prepare("SELECT epoch_id FROM served_session_meta WHERE file_path = ?")
+        .get(absR) as { epoch_id: string | null } | undefined;
+      expect(mirrorBefore?.epoch_id).toMatch(/^v2\|/);
       shutdownHashStore();
       await loadHashStore();
       const reopened = await loadHashStore();
       const mirrorAfter = reopened.db
-        .prepare("SELECT snapshotId FROM served WHERE path = ?")
-        .get(absR) as { snapshotId: string | null } | undefined;
-      expect(mirrorAfter?.snapshotId).toBe(mirrorBefore?.snapshotId);
+        .prepare("SELECT epoch_id FROM served_session_meta WHERE file_path = ?")
+        .get(absR) as { epoch_id: string | null } | undefined;
+      expect(mirrorAfter?.epoch_id).toBe(mirrorBefore?.epoch_id);
       const ok = (await editTool.execute(
         "e1",
         {
@@ -672,10 +673,8 @@ describe("generation bump refuses pre-v3 anchors", () => {
       plantV2File(store, absT, PRE);
       const staleBefore = (
         store.db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
-          )
-          .get() as { n: number }
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE ?")
+          .get(`%:${ANCHOR_GENERATION}:%`) as { n: number }
       ).n;
       expect(staleBefore).toBeGreaterThan(0);
       store.db.exec("BEGIN IMMEDIATE");
@@ -683,29 +682,23 @@ describe("generation bump refuses pre-v3 anchors", () => {
       sweepNow(store.db);
       const staleInTxn = (
         store.db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
-          )
-          .get() as { n: number }
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE ?")
+          .get(`%:${ANCHOR_GENERATION}:%`) as { n: number }
       ).n;
       expect(staleInTxn).toBe(0);
       store.db.exec("ROLLBACK");
       const staleAfter = (
         store.db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
-          )
-          .get() as { n: number }
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE ?")
+          .get(`%:${ANCHOR_GENERATION}:%`) as { n: number }
       ).n;
       expect(staleAfter).toBe(staleBefore);
       expect((store.db as unknown as { isTransaction?: boolean }).isTransaction).toBe(false);
       sweepNow(store.db);
       const staleHealed = (
         store.db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
-          )
-          .get() as { n: number }
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE ?")
+          .get(`%:${ANCHOR_GENERATION}:%`) as { n: number }
       ).n;
       expect(staleHealed).toBe(0);
     });
