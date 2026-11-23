@@ -2,6 +2,7 @@ import { abortIf, splitLines } from "../utils.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
 import { type ResolvedRange } from "../served-session/serve-render.js";
+import type { SpanMode } from "../span-mode-config.js";
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
@@ -81,6 +82,7 @@ export interface ApplyVerificationContext {
   canonDigests?: (string | null)[];
   identity?: LeaseSpanSource;
   mode?: "general" | "literal";
+  spanMode?: SpanMode;
   /**
    * SAFETY: the session that owns the served mirror this edit is verified against.
    * Omitted only by the library-level `applyEdit` seam, which has no session: its
@@ -264,6 +266,7 @@ function resolveEdit(
   filePath: string | undefined,
   served: (string | null)[] | undefined,
   identity: LeaseSpanSource | undefined,
+  spanMode: SpanMode | undefined,
   signal: AbortSignal | undefined,
 ): {
   resolved: RHEdit | undefined;
@@ -281,6 +284,7 @@ function resolveEdit(
       },
       served,
       source: identity,
+      ...(spanMode !== undefined ? { spanMode } : {}),
     });
     return {
       resolved: leased.resolved,
@@ -333,6 +337,7 @@ export function applyEdit(
     served,
     canonDigests,
     identity,
+    spanMode,
     mode = "general",
     sessionKey,
   } = verification ?? {};
@@ -359,6 +364,7 @@ export function applyEdit(
     filePath,
     served,
     identity,
+    spanMode,
     signal,
   );
   if (reversed) {
@@ -397,6 +403,7 @@ export function applyEdit(
       filePath,
       served,
       identity,
+      spanMode,
       signal,
     );
     if (source.reversed) {

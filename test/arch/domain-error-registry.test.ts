@@ -174,6 +174,7 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_STALE_RANGE",
   "E_TARGET_LOST",
   "E_UNVERIFIED_RANGE",
+  "E_UNSERVED_RANGE",
   "E_MALFORMED_ANCHOR",
   "E_SUSPICIOUS_TEXT",
   "E_BATCH_ABORT",
@@ -213,6 +214,13 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     servedRows: [{ position: 0, hash: "abc" }],
     servedBlock: "abcc│alpha",
     cause: "retirement",
+  },
+  E_UNSERVED_RANGE: {
+    headline: "line 4-6 in probe.ts were never served in this session.",
+    servedRows: [],
+    servedBlock: "",
+    cause: "never-served",
+    firstOffendingLine: 4,
   },
   E_MALFORMED_ANCHOR: { rawAnchor: "wUp│x", reason: "anchor carries a row suffix" },
   E_SUSPICIOUS_TEXT: {
@@ -439,6 +447,7 @@ describe("domain warning registry: applied tier, never a rejection", () => {
     "W_LITERAL_BYPASS",
     "W_NOOP",
     "W_NOOP_INSERT",
+    "W_UNSERVED_INTERIOR",
   ];
 
   const WARNING_EXAMPLES: { [K in DomainWarningCode]: WarningPayloadMap[K] } = {
@@ -459,9 +468,10 @@ describe("domain warning registry: applied tier, never a rejection", () => {
       removeFrom: "abc",
       removeTo: "def",
     },
+    W_UNSERVED_INTERIOR: { count: 3, from: 4, to: 6 },
   };
 
-  it("the warning union is exactly the seven W_* codes", () => {
+  it("the warning union is exactly the eight W_* codes", () => {
     expect(warningUnionMembers().sort()).toEqual([...WARNING_CODES].sort());
   });
 

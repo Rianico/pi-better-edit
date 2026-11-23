@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Features
+
+* **edit:** introduce dual-mode span verification and disclosure. In strict mode (`PI_BETTER_EDIT_SPAN_MODE=strict`), unserved interior spans are refused before mutation with `E_UNSERVED_RANGE`. In default hint mode, unserved removals in applied diffs are disclosed with blank line-number gutters and adaptive fold markers, and replaced unserved interior lines emit warning `W_UNSERVED_INTERIOR`. (#309)
+
 ### Bug Fixes
 
 * **read:** state oversized-line limits as facts instead of recommending Bash. An oversized row now reads `[Line 2: 205.1KB; not shown.]` and the trailing notice says `[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]`, so hosts without Bash and remote filesystem backends receive no unrunnable `sed` command or path placeholder. Row anchors, pagination, and truncation behavior are unchanged. (#300)

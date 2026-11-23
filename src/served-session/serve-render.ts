@@ -22,6 +22,7 @@ import {
   type ServedRow,
 } from "../domain-errors.js";
 import type { LeaseIdentityView, OutlineFoldRange } from "../hashline/resolve.js";
+import type { SpanMode } from "../span-mode-config.js";
 
 export { UNVERIFIED_HEADLINE, type RangeCause, type ServedRow };
 
@@ -201,13 +202,23 @@ export function makeStaleAnchorRejection(opts: {
   });
 }
 
+function unservedHeadline(first: number, last: number, count: number, where: string): string {
+  const listing =
+    count === 1
+      ? `${first}`
+      : last - first + 1 === count
+        ? `${first}-${last}`
+        : `${first} and ${count - 1} more`;
+  return `line ${listing}${where} ${count === 1 ? "was" : "were"} never served in this session.`;
+}
+
 /**
  * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J): the caller resolved each end anchor's leased
  * `line_id`, and this verifies the whole served window remapped onto `rebasedStart..rebasedEnd`, so the dynamic rebase path's
  * rigid remap and the fast path's identity remap reach the same verdicts (#151).
  *  - window length differs (external insert/delete strictly inside, Probe J), a truncated mirror row, an anchor holding no lease -> `E_STALE_RANGE`;
- *  - an interior row the mirror never served (`null`) -> **accepted** (docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md): it carries no identity, and the two boundary
- *    leases plus the length check pin the extent; rows `0` and `servedLen - 1` stay fail-closed on a `null`;
+ *  - an interior row the mirror never served (`null`) is accepted in `hint` (docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md) and `E_UNSERVED_RANGE` in `strict`:
+ *    it carries no identity, the two boundary leases plus the length check pin the extent, and rows `0`/`servedLen - 1` stay fail-closed on a `null`;
  *  - a strict interior covering a still-unserved recorded outline fold line -> `E_STALE_RANGE` (tranche 3 fold-gate);
  *  - a retired lease -> `E_STALE_RANGE` with `details.cause: "retirement"`, a displaced live `line_id` ->
  *    `cause: "served-range staleness"` (Probes A/E/K). Identity — not anchor spelling — is authoritative (#151): no canon data
@@ -223,6 +234,7 @@ export function verifyRebasedSpan(args: {
   leaseFor(anchor: string): LeaseIdentityView | undefined;
   rebasedLineOf(lineId: number): number | undefined;
   outlineFolds?: readonly OutlineFoldRange[];
+  spanMode?: SpanMode;
 }): void {
   const {
     served,
@@ -234,6 +246,7 @@ export function verifyRebasedSpan(args: {
     leaseFor,
     rebasedLineOf,
     outlineFolds,
+    spanMode,
   } = args;
   const where = snapshot.filePath ? ` in ${snapshot.filePath}` : "";
   const servedLen = servedEnd - servedStart + 1;
@@ -249,6 +262,9 @@ export function verifyRebasedSpan(args: {
       cause: "served-range staleness",
     });
   }
+  let firstUnserved: number | undefined;
+  let lastUnserved: number | undefined;
+  let unservedCount = 0;
   for (let k = 0; k < servedLen; k++) {
     const servedAnchor = served[servedStart - 1 + k];
     const currentLine = rebasedStart + k;
@@ -275,6 +291,11 @@ export function verifyRebasedSpan(args: {
           firstOffendingLine: currentLine,
           cause: "never-served",
         });
+      }
+      if (spanMode === "strict") {
+        if (firstUnserved === undefined) firstUnserved = currentLine;
+        lastUnserved = currentLine;
+        unservedCount += 1;
       }
       continue;
     }
@@ -344,6 +365,16 @@ export function verifyRebasedSpan(args: {
         cause: "served-range staleness",
       });
     }
+  }
+  if (firstUnserved !== undefined) {
+    const last = lastUnserved ?? firstUnserved;
+    throw new DomainError("E_UNSERVED_RANGE", {
+      headline: unservedHeadline(firstUnserved, last, unservedCount, where),
+      servedRows: [],
+      servedBlock: "",
+      cause: "never-served",
+      firstOffendingLine: firstUnserved,
+    });
   }
 }
 

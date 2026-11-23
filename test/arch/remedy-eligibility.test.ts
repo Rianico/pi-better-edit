@@ -118,6 +118,15 @@ const FACT_ONLY_FIXTURES: { [K in FreeCode]: ErrorPayloadMap[K][] } = {
     },
     { servedRows: [], servedBlock: "", cause: "retirement" },
   ],
+  E_UNSERVED_RANGE: [
+    {
+      headline: "line 4-6 in a.py were never served in this session.",
+      servedRows: [],
+      servedBlock: "",
+      cause: "never-served",
+      firstOffendingLine: 4,
+    },
+  ],
   E_MALFORMED_ANCHOR: [
     { rawAnchor: "aB3x│alpha", reason: "Expected a 4-char anchor" },
     { rawAnchor: "aB3x", reason: "Expected a 4-char anchor." },
@@ -522,7 +531,7 @@ describe("fact-only producers carry no imperative", () => {
   const codes = new Set<string>(FACT_ONLY_CODES);
 
   it("scans every code the registry declares fact-only", () => {
-    expect(FACT_ONLY_CODES).toHaveLength(19);
+    expect(FACT_ONLY_CODES).toHaveLength(20);
     expect(FACT_ONLY_CODES).not.toContain("E_SUSPICIOUS_TEXT");
     expect(FACT_ONLY_CODES).not.toContain("E_BATCH_ABORT");
     expect(FACT_ONLY_CODES).not.toContain("E_UNDO_UNAVAILABLE");

@@ -1,4 +1,5 @@
 import { CONFIG_FILE_NAME } from "../../../src/json-config.js";
+import { SPAN_MODE_ENV_VAR } from "../../../src/span-mode-config.js";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -429,6 +430,33 @@ describe("registerLensCommand", () => {
 
       expect(text).toContain("store.janitor: on (default)");
       expect(text).toContain(`warning: cannot parse config ${projectConfigPath()}`);
+    });
+
+    it("shows the span mode block with its rung and follows the environment override", async () => {
+      const previous = process.env[SPAN_MODE_ENV_VAR];
+      delete process.env[SPAN_MODE_ENV_VAR];
+      const spanBlock = (text: string): string[] => {
+        const lines = text.split("\n");
+        return lines.slice(
+          lines.indexOf("pi-better-edit span mode"),
+          lines.indexOf("pi-better-edit diagnostics"),
+        );
+      };
+      try {
+        const block = spanBlock(await statusOf(projectDir));
+        expect(block).toContain("  effective: hint");
+        expect(block).toContain("  effective source: default");
+        expect(block).toContain("  precedence: env > project > global > hint");
+
+        process.env[SPAN_MODE_ENV_VAR] = "strict";
+
+        const overridden = spanBlock(await statusOf(projectDir));
+        expect(overridden).toContain("  effective: strict");
+        expect(overridden).toContain("  effective source: env");
+      } finally {
+        if (previous === undefined) delete process.env[SPAN_MODE_ENV_VAR];
+        else process.env[SPAN_MODE_ENV_VAR] = previous;
+      }
     });
   });
 });

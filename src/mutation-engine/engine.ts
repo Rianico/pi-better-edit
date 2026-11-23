@@ -128,6 +128,8 @@ export async function preview(
       DIFF_PREVIEW_CONTEXT,
       file.resultHashes,
       file.originalHashes,
+      undefined,
+      file.served,
     ).diff;
     const metrics: import("../edit-response.js").RMetrics = {
       classification: (file.appliedCount > 0 ? "applied" : "noop") as "applied" | "noop",

@@ -26,6 +26,7 @@ import {
   verifyRebasedSpan,
   type FileSnapshotContext,
 } from "../served-session/serve-render.js";
+import type { SpanMode } from "../span-mode-config.js";
 
 type ReversedAnchorsHeal = {
   /** The submitted `anchor_from` slot value whose resolved line ran after `toHash`. */
@@ -111,8 +112,9 @@ export function resolveLeasedEdit(args: {
   snapshot: FileSnapshotContext;
   served: (string | null)[];
   source: LeaseSpanSource;
+  spanMode?: SpanMode;
 }): LeasedEditResolution {
-  const { edit, snapshot, served, source } = args;
+  const { edit, snapshot, served, source, spanMode } = args;
   const { fileHashes } = snapshot;
   const fromAnchor = edit.hash_bounds[0].hash;
   const toAnchor = edit.hash_bounds[1].hash;
@@ -193,6 +195,7 @@ export function resolveLeasedEdit(args: {
     leaseFor: (anchor) => source.leaseFor(anchor),
     rebasedLineOf: (lineId) => source.rebasedLineOf(lineId),
     ...(source.outlineFolds !== undefined ? { outlineFolds: source.outlineFolds } : {}),
+    ...(spanMode !== undefined ? { spanMode } : {}),
   });
   if (isUniformLeaseFastPath(fromLease, toLease, source.currentSnapshotHash)) {
     return {

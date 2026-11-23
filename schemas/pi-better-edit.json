@@ -30,6 +30,13 @@
       },
       "additionalProperties": true
     },
+    "edit": {
+      "type": "object",
+      "properties": {
+        "span_mode": { "type": "string", "enum": ["hint", "strict"], "default": "hint" }
+      },
+      "additionalProperties": true
+    },
     "bash": {
       "type": "object",
       "properties": {
