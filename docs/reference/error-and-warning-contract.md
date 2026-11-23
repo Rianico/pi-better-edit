@@ -57,3 +57,4 @@ Warnings accompany successful tool executions (`status: "applied"`). They inform
 | `[W_LITERAL_BYPASS]` | `[USER]` | Edit specified `mode: "literal"`, bypassing served-echo anchor checks. | Applied verbatim. |
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a second consecutive time without changing range text; file was left unmodified. | Warning emitted; a third consecutive submission triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion (`text: ""`) placed with `at: "before"` or `at: "after"`. | No bytes written; call succeeds with diagnostic warning. |
+| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced ≥1 interior line the session never served. | Applied; names count and line range. |

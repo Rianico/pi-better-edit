@@ -68,7 +68,8 @@ export type DomainWarningCode =
   | "W_UNICODE_LITERAL"
   | "W_LITERAL_BYPASS"
   | "W_NOOP"
-  | "W_NOOP_INSERT";
+  | "W_NOOP_INSERT"
+  | "W_UNSERVED_INTERIOR";
 
 /**
  * SAFETY: one served row — position is 0-based, hash is the anchor string. Canon evidence is not a
@@ -556,6 +557,11 @@ export interface WarningPayloadMap {
     removeFrom: string;
     removeTo: string;
   };
+  W_UNSERVED_INTERIOR: {
+    count: number;
+    from: number;
+    to: number;
+  };
 }
 
 function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
@@ -628,6 +634,11 @@ export const WARNING_REGISTRY: {
     format: ({ ref, removeFrom, removeTo }) =>
       `Empty insertion ${ref} (${removeFrom} → ${removeTo}) with "before"/"after" and text "" writes ` +
       "nothing. Provide text or drop the item.",
+  },
+  W_UNSERVED_INTERIOR: {
+    audience: "MODEL",
+    format: ({ count, from, to }) =>
+      `Span replaced ${count} unserved interior line(s) (lines ${from}-${to}). Edits should only modify lines previously read and served (enforced under strict mode); verify this uninspected replacement was intended.`,
   },
 };
 

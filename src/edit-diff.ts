@@ -149,6 +149,19 @@ function contextLinesToShow(
   }
   return { linesToShow, skipStart, skipMiddle };
 }
+
+function collectUnservedRemoved(
+  displayLines: string[],
+  firstOldLine: number,
+  served: readonly (string | null)[] | undefined,
+  out: number[],
+): void {
+  if (served === undefined) return;
+  for (let k = 0; k < displayLines.length; k++) {
+    const line = firstOldLine + k;
+    if (served[line - 1] === null) out.push(line);
+  }
+}
 /**
  * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that
  * position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
@@ -174,6 +187,12 @@ export function genDiff(
   firstChangedLine: number | undefined;
   lastChangedLine: number | undefined;
   servedRows: ServedRow[];
+  /**
+   * Every removed OLD line the pre-batch served mirror marks `null`, ascending, independent of the
+   * fold cap the rendered diff applies. Empty when no mirror is supplied or every removed line was
+   * served.
+   */
+  unservedRemovedLines: number[];
 } {
   const effectiveNewHashes =
     newContentHashes ??
@@ -193,6 +212,7 @@ export function genDiff(
   let lastWasChange = false;
   let firstChangedLine: number | undefined;
   let lastChangedLine: number | undefined;
+  const unservedRemovedLines: number[] = [];
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -209,6 +229,7 @@ export function genDiff(
         lastChangedLine = newLineNum - 1;
       } else {
         const o = { value: oldLineNum };
+        collectUnservedRemoved(displayLines, oldLineNum, served, unservedRemovedLines);
         pushRemovedLines(displayLines, oldContentHashes, o, output, served);
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
@@ -256,5 +277,11 @@ export function genDiff(
     lastWasChange = false;
   }
 
-  return { diff: output.join("\n"), firstChangedLine, lastChangedLine, servedRows };
+  return {
+    diff: output.join("\n"),
+    firstChangedLine,
+    lastChangedLine,
+    servedRows,
+    unservedRemovedLines,
+  };
 }

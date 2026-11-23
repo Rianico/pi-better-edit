@@ -139,6 +139,13 @@ The response returns a unified diff with newly allocated anchors for modified li
   d2xX│   }
 ```
 
+A removed row the session never served renders with an empty anchor gutter (`-    │content`) instead of a hash, so the diff never offers an anchor it cannot honour:
+
+```text
+-    │   let total = 0;
+-m2zX│     total += item.price;
+```
+
 ---
 
 ## Configuration & Settings
@@ -417,6 +424,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[W_LITERAL_BYPASS]` | `[USER]` | Served-echo check bypassed by literal declaration. |
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a 2nd consecutive time without changing range text. Resend triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion with `before`/`after` writes zero bytes. |
+| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced interior lines this session never served; names the count and range. Strict mode refuses such spans instead. |
 
 ---
 

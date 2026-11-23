@@ -150,4 +150,20 @@ describe("genDiff served mirror", () => {
     expect(rows).toContain(` - ... [${omitted} lines deleted] ...`);
     expect(rows.some((line) => line.includes("unserved"))).toBe(false);
   });
+
+  it("reports every unserved removed line, cap-independent and ascending", () => {
+    const { oldContent, newContent, oldHashes, newHashes } = foldedCase();
+    const allNull: (string | null)[] = oldHashes.map(() => null);
+
+    const withoutMirror = genDiff(oldContent, newContent, 2, newHashes, oldHashes);
+    const folded = genDiff(oldContent, newContent, 2, newHashes, oldHashes, undefined, allNull);
+
+    expect(withoutMirror.unservedRemovedLines).toEqual([]);
+    expect(folded.unservedRemovedLines).toEqual(
+      Array.from({ length: DIFF_REMOVED_CAP + 2 }, (_, i) => i + 2),
+    );
+    expect(
+      folded.unservedRemovedLines.every((line, i, all) => i === 0 || line > (all[i - 1] as number)),
+    ).toBe(true);
+  });
 });

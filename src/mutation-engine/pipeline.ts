@@ -1097,6 +1097,18 @@ async function finishCommittedFile(
     undefined,
     file.served,
   );
+  const [firstUnserved] = diffInfo.unservedRemovedLines;
+  if (firstUnserved !== undefined) {
+    const lastUnserved =
+      diffInfo.unservedRemovedLines[diffInfo.unservedRemovedLines.length - 1] ?? firstUnserved;
+    file.warnings.push(
+      formatWarning("W_UNSERVED_INTERIOR", {
+        count: diffInfo.unservedRemovedLines.length,
+        from: firstUnserved,
+        to: lastUnserved,
+      }),
+    );
+  }
   const denseRows = denseServeRows(file.resultHashes);
   try {
     // Ref: docs/.archive_adrs/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md
