@@ -46,6 +46,9 @@ import {
 } from "./snapshot-store";
 import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic, reportWarning } from "./diagnostics.js";
+import { endingName, resolveEffectiveEolFromCounts, terminatorKindsUsed } from "./eol-config.js";
+import { formatReadWarning } from "./domain-errors.js";
+import type { LineEndingCounts } from "./edit-diff.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import type { SpanProvider } from "./read-expansion/provider-contract.js";
 import type { OutlineFoldRange } from "./hashline/resolve.js";
@@ -191,6 +194,11 @@ interface PreparedTarget {
   snapshotId?: string | undefined;
   /** The finished selection-range clause this page's header carries, absent when it has none. */
   noteClause?: string;
+  /**
+   * The trailing read warning this page discloses: the file's mixed-EOL counts and the EOL the next
+   * write will apply. Chrome, never a served row, not counted in `N lines total`.
+   */
+  readWarning?: string;
 }
 
 /** The `E_UNSUPPORTED_FILE` a non-text file owes, shaped exactly like the single-file read's. */
@@ -291,12 +299,30 @@ function fileHeader(entry: PreparedTarget): string {
   });
 }
 
-/** One prepared file's section: its header, inline warnings, then its rows. */
+/**
+ * The trailing warning a mixed-EOL page owes, or `undefined` when the raw bytes spell one kind or
+ * none. It resolves the same effective EOL the next write will use, so the disclosure and the write
+ * cannot disagree.
+ */
+function readWarningFor(counts: LineEndingCounts | undefined, cwd: string): string | undefined {
+  if (counts === undefined || terminatorKindsUsed(counts) < 2) return undefined;
+  const effective = resolveEffectiveEolFromCounts(counts, cwd, (reason) =>
+    reportWarning("read", reason),
+  );
+  return formatReadWarning("W_MIXED_EOL", {
+    ...counts,
+    target: endingName(effective.value),
+    source: effective.source,
+  });
+}
+
+/** One prepared file's section: its header, inline warnings, then its rows, then any read warning. */
 function preparedSection(entry: PreparedTarget): string {
   const lead = fileHeader(entry);
-  if (entry.plan.omittedAll) return `${lead}\n${entry.plan.warnings.join("\n")}`;
-  if (entry.plan.warnings.length === 0) return `${lead}\n${entry.prepared.preview}`;
-  return `${lead}\n${entry.plan.warnings.join("\n")}\n\n${entry.prepared.preview}`;
+  const tail = entry.readWarning === undefined ? "" : `\n\n${entry.readWarning}`;
+  if (entry.plan.omittedAll) return `${lead}\n${entry.plan.warnings.join("\n")}${tail}`;
+  if (entry.plan.warnings.length === 0) return `${lead}\n${entry.prepared.preview}${tail}`;
+  return `${lead}\n${entry.plan.warnings.join("\n")}\n\n${entry.prepared.preview}${tail}`;
 }
 
 /** One file's section: its rows when it prepared, its refusal when it did not. */
@@ -597,6 +623,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               : withReadOutput(imageResult);
           }
           if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
+          const readWarning = readWarningFor(prepared.endingCounts, cwd);
           ordered.push({
             kind: "file",
             entry: {
@@ -607,6 +634,7 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
                 ? { noteClause: note.clauses[0] }
                 : {}),
               prepared,
+              ...(readWarning !== undefined ? { readWarning } : {}),
               ...(plan.omittedAll
                 ? {}
                 : {

@@ -7,6 +7,7 @@ import {
   ERROR_REGISTRY,
   UNVERIFIED_HEADLINE,
   WARNING_REGISTRY,
+  formatReadWarning,
   formatWarning,
   type DomainErrorCode,
   type DomainWarningCode,
@@ -491,5 +492,35 @@ describe("domain warning registry: applied tier, never a rejection", () => {
     for (const code of WARNING_CODES) {
       expect(formatWarning(code, WARNING_EXAMPLES[code])).not.toContain("[E_");
     }
+  });
+});
+
+describe("read warning registry: the tier a page discloses before any write", () => {
+  it("renders a bare [<CODE>] header and the whole-file counts, in the fixed order", () => {
+    expect(
+      formatReadWarning("W_MIXED_EOL", { crlf: 2, lf: 1, cr: 0, target: "CRLF", source: "file" }),
+    ).toBe("[W_MIXED_EOL] Mixed EOL: 2 CRLF, 1 LF. All edits normalize to CRLF (file).");
+  });
+
+  it("carries no audience prefix, unlike the applied tier", () => {
+    const rendered = formatReadWarning("W_MIXED_EOL", {
+      crlf: 0,
+      lf: 3,
+      cr: 1,
+      target: "LF",
+      source: "project",
+    });
+    expect(rendered.startsWith("[W_MIXED_EOL] ")).toBe(true);
+    expect(rendered).not.toContain("[MODEL]");
+    expect(rendered).not.toContain("[USER]");
+    expect(rendered).toBe(
+      "[W_MIXED_EOL] Mixed EOL: 3 LF, 1 CR. All edits normalize to LF (project).",
+    );
+  });
+
+  it("has a producer in src/", () => {
+    expect(readFileSync(join("src", "read.ts"), "utf-8")).toContain(
+      'formatReadWarning("W_MIXED_EOL"',
+    );
   });
 });

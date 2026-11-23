@@ -161,6 +161,15 @@ export function changedTerminatorCount(counts: LineEndingCounts, target: LineEnd
   return counts.crlf + counts.lf + counts.cr - kept;
 }
 
+/**
+ * How many distinct terminator kinds the pre-image bytes spell: 0 when none, 1 when the file is
+ * uniform, 2 or 3 when it mixes them. The read warning fires at 2 or more, so a uniform file stays
+ * silent however its one kind differs from the effective setting.
+ */
+export function terminatorKindsUsed(counts: LineEndingCounts): number {
+  return (counts.crlf > 0 ? 1 : 0) + (counts.lf > 0 ? 1 : 0) + (counts.cr > 0 ? 1 : 0);
+}
+
 /** The terminator a file with no terminator of its own gets on this platform. */
 function systemEnding(): LineEnding {
   return process.platform === "win32" ? "\r\n" : "\n";

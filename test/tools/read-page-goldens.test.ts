@@ -82,7 +82,12 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
     `${verbatimRangeHeader(39, 40, 40)}l38\nl39`,
   ],
   ["CRLF text (normalized to LF)", CRLF, {}, `${verbatimHeader(3)}a\nb\nc`],
-  ["a lone \\r is not a break", LONE_CR, {}, `${verbatimHeader(3)}one\ntwo\nthree`],
+  [
+    "a lone \\r is not a break",
+    LONE_CR,
+    {},
+    `${verbatimHeader(3)}one\ntwo\nthree\n\n[W_MIXED_EOL] Mixed EOL: 1 LF, 1 CR. All edits normalize to LF (file).`,
+  ],
   ["no trailing newline", NO_TRAILING, {}, `${verbatimHeader(5)}n0\nn1\nn2\nn3\nn4`],
   ["an empty file", "", {}, `${verbatimHeader(0)}[File is empty.]`],
   ["a file that is one newline", "\n", {}, `${verbatimHeader(1)}[1 empty line]`],
@@ -160,7 +165,8 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
     "a lone \\r is not a break",
     LONE_CR,
     {},
-    (a) => `${servedHeader(3)}${a[0]}│one\n${a[1]}│two\n${a[2]}│three`,
+    (a) =>
+      `${servedHeader(3)}${a[0]}│one\n${a[1]}│two\n${a[2]}│three\n\n[W_MIXED_EOL] Mixed EOL: 1 LF, 1 CR. All edits normalize to LF (file).`,
   ],
 ];
 

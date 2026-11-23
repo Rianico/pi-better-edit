@@ -44,9 +44,23 @@
 
 ---
 
+## Read Warnings (`[W_*]`)
+
+A read warning reports the state a `read` page observed **before any write**. It never implies that a mutation happened, and it is not an applied warning.
+
+- **Placement**: appended after the page's rows, separated by one blank line. Every page — served, verbatim, windowed — carries it once.
+- **Chrome, not content**: the line has no anchor, is never a served row, and `N lines total` never counts it.
+- **Bare header**: emitted as `[<CODE>] <observation>`, with no `[MODEL]`/`[USER]` audience prefix. The audience column below names the owner; it is not part of the line.
+- **Whole-file facts**: the counts cover the whole file even when the page is windowed.
+
+| Warning Code | Audience | Trigger Condition | Engine Action |
+| :--- | :--- | :--- | :--- |
+| `[W_MIXED_EOL]` | `[MODEL]` | The file's raw bytes mix terminator kinds. | Page still serves; names the whole-file counts and the effective EOL with its source. |
+
+---
 ## Applied Warnings (`[W_*]`)
 
-Warnings accompany successful tool executions (`status: "applied"`). They inform the model or user of non-fatal adjustments made during execution.
+Warnings accompany successful tool executions (`status: "applied"`). They inform the model or user of non-fatal adjustments made during execution. The read tier above is separate: it discloses file state, never a mutation.
 
 | Warning Code | Audience | Trigger Condition | Engine Action |
 | :--- | :--- | :--- | :--- |
