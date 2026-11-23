@@ -45,10 +45,6 @@ function sqlitePath(home: string): string {
   return join(stateHome(home), "hash-store.sqlite");
 }
 
-function legacyPath(home: string): string {
-  return join(stateHome(home), "hash-store.json");
-}
-
 async function put(
   store: HashStore,
   path: string,
@@ -62,11 +58,6 @@ async function put(
     hashes,
     content,
   });
-}
-
-async function writeLegacyStore(home: string, snapshots: unknown): Promise<void> {
-  await mkdir(stateHome(home), { recursive: true });
-  await writeFile(legacyPath(home), JSON.stringify({ version: 1, snapshots }), "utf-8");
 }
 
 describe("hash-store — loadHashStore", () => {
@@ -83,120 +74,6 @@ describe("hash-store — loadHashStore", () => {
       await loadHashStore();
       const s = await stat(stateHome(tmpHome));
       expect(s.isDirectory()).toBe(true);
-    });
-  });
-});
-
-describe("hash-store — migration from legacy hash-store.json", () => {
-  it("imports valid legacy snapshot rows and renames the file to .bak (rows are old-canon, so they rebuild on next read)", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, {
-        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
-        "/also.ts": { content: "good\nmore\n", hashes: ["XYZZ", "QWEE"] },
-      });
-
-      const store = await loadHashStore();
-
-      expect(getSnapshot(store, "/valid.ts", "ok\n")).toBeUndefined();
-      expect(getSnapshot(store, "/also.ts", "good\nmore\n")).toBeUndefined();
-      expect(existsSync(legacyPath(home))).toBe(false);
-      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(true);
-    });
-  });
-
-  it("drops structurally invalid legacy entries, imports valid rows (old-canon, rebuilt on next read)", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, {
-        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
-        "/missing-hashes.ts": { content: "x\n" },
-        "/null-content.ts": { content: null, hashes: ["DEFF"] },
-        "/hashes-not-array.ts": { content: "y\n", hashes: "not-an-array" },
-        "/hash-not-string.ts": { content: "z\n", hashes: [42] },
-        "/also-valid.ts": { content: "good\n", hashes: ["XYZZ"] },
-      });
-
-      const store = await loadHashStore();
-
-      expect(getSnapshot(store, "/valid.ts", "ok\n")).toBeUndefined();
-      expect(getSnapshot(store, "/also-valid.ts", "good\n")).toBeUndefined();
-      expect(getSnapshot(store, "/missing-hashes.ts", "x\n")).toBeUndefined();
-      expect(getSnapshot(store, "/null-content.ts", "")).toBeUndefined();
-      expect(getSnapshot(store, "/hashes-not-array.ts", "y\n")).toBeUndefined();
-      expect(getSnapshot(store, "/hash-not-string.ts", "z\n")).toBeUndefined();
-      const paths = (
-        store.db.prepare("SELECT path FROM snapshots").all() as { path: string }[]
-      ).map((row) => row.path);
-      expect(paths).toEqual(expect.arrayContaining(["/valid.ts", "/also-valid.ts"]));
-    });
-  });
-
-  it("skips legacy snapshots with duplicate hashes so they re-hash on next read", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, {
-        "/dup.ts": { content: "a\nb\n", hashes: ["AAAA", "AAAA"] },
-        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
-      });
-
-      const store = await loadHashStore();
-
-      expect(getSnapshot(store, "/dup.ts", "a\nb\n")).toBeUndefined();
-      expect(getSnapshot(store, "/valid.ts", "ok\n")).toBeUndefined();
-    });
-  });
-
-  it("skips legacy snapshots with malformed hashes so they re-hash on next read", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, {
-        "/bad.ts": { content: "x\n", hashes: ["ZZ", "ZZZZ"] },
-        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
-      });
-
-      const store = await loadHashStore();
-
-      expect(getSnapshot(store, "/bad.ts", "x\n")).toBeUndefined();
-      expect(getSnapshot(store, "/valid.ts", "ok\n")).toBeUndefined();
-    });
-  });
-
-  it("ignores a legacy snapshots field that is an array", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, ["not-an-object"]);
-
-      const store = await loadHashStore();
-      const paths = store.db.prepare("SELECT path FROM snapshots").all();
-      expect(paths).toEqual([]);
-    });
-  });
-
-  it("does not run migration when no legacy file exists", async () => {
-    await withTempHome(async (home) => {
-      const store = await loadHashStore();
-      expect(store.db.prepare("SELECT path FROM snapshots").all()).toEqual([]);
-      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
-    });
-  });
-
-  it("migrates only once even if legacy file reappears", async () => {
-    await withTempHome(async (home) => {
-      await writeLegacyStore(home, {
-        "/one.ts": { content: "1\n", hashes: ["AAAA"] },
-      });
-      const first = await loadHashStore();
-      expect(getSnapshot(first, "/one.ts", "1\n")).toBeUndefined();
-      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(true);
-
-      await writeFile(
-        legacyPath(home),
-        JSON.stringify({
-          version: 1,
-          snapshots: { "/two.ts": { content: "2\n", hashes: ["BBBB"] } },
-        }),
-        "utf-8",
-      );
-
-      const second = await loadHashStore();
-      expect(getSnapshot(second, "/two.ts", "2\n")).toBeUndefined();
-      expect(getSnapshot(second, "/one.ts", "1\n")).toBeUndefined();
     });
   });
 });
@@ -372,7 +249,7 @@ describe("hash-store — schema versioning", () => {
     });
   });
 
-  it("never drops v7 tables or compat shells when the stored version differs", async () => {
+  it("never drops v7 tables when the stored version differs", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       await put(store, "/p.ts", "x\n", ["XYZZ"]);
@@ -415,9 +292,7 @@ describe("hash-store — schema versioning", () => {
         "served_leases",
         "served_session_meta",
         "file_undo",
-        "snapshots",
         "served",
-        "undo",
       ]) {
         expect(tables).toContain(t);
       }
@@ -690,45 +565,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     });
   });
 
-  it("maintains complete v6 compatibility shells", async () => {
-    await withTempHome(async (home) => {
-      await loadHashStore();
-      shutdownHashStore();
-      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      try {
-        const tables = tableNames(db);
-        for (const t of ["snapshots", "served", "undo"]) {
-          expect(tables).toContain(t);
-        }
-        expect(columnNames(db, "undo")).toEqual(
-          expect.arrayContaining([
-            "path",
-            "content",
-            "bom",
-            "ending",
-            "hashes",
-            "result_content",
-            "updated_at",
-          ]),
-        );
-        expect(columnNames(db, "served")).toEqual(
-          expect.arrayContaining([
-            "session_id",
-            "path",
-            "hashes",
-            "reported",
-            "retired",
-            "canons",
-            "snapshotId",
-            "updated_at",
-          ]),
-        );
-      } finally {
-        db.close();
-      }
-    });
-  });
-
   function seedV7Rows(db: DatabaseSync): void {
     db.exec("PRAGMA foreign_keys = ON");
     db.prepare(
@@ -772,15 +608,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
   }
 
   function simulateV6VersionFlap(db: DatabaseSync): void {
-    db.exec("DROP TABLE IF EXISTS snapshots");
-    db.exec("DROP TABLE IF EXISTS undo");
     db.exec("DROP TABLE IF EXISTS served");
-    db.exec(
-      "CREATE TABLE snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-    );
-    db.exec(
-      "CREATE TABLE undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-    );
     db.exec(
       "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
     );
@@ -903,7 +731,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     });
   });
 
-  it("adds missing legacy served columns without wiping snapshots or undo", async () => {
+  it("adds missing legacy served columns without wiping file_snapshots", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       await put(store, "/p.ts", "x\n", ["XYZZ"]);
@@ -917,10 +745,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       shutdownHashStore();
 
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      db.prepare(
-        "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) " +
-          "VALUES ('/legacy.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
-      ).run();
       db.exec("DROP TABLE served");
       db.exec(
         "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
@@ -937,12 +761,10 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       const snapshots = check.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as {
         n: number;
       };
-      const undo = check.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
       check.close();
 
       expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
       expect(snapshots.n).toBe(1);
-      expect(undo.n).toBe(1);
     });
   });
 
@@ -972,24 +794,12 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     });
   });
 
-  it("keeps file_undo history immune to a legacy v6 undo drop", async () => {
-    await withTempHome(async (home) => {
+  it("never creates the retired snapshots or undo tables", async () => {
+    await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertUndo(store, "/u.ts", {
-        content: "old",
-        bom: "",
-        ending: "\n",
-        hashes: ["UVWW"],
-        resultContent: "new",
-      });
-      shutdownHashStore();
 
-      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      db.exec("DROP TABLE IF EXISTS undo");
-      db.close();
-
-      const reloaded = await loadHashStore();
-      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
+      expect(tableNames(store.db)).not.toContain("snapshots");
+      expect(tableNames(store.db)).not.toContain("undo");
     });
   });
 });

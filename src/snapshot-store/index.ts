@@ -18,7 +18,6 @@ import {
 import { pairSnapshots, type LineDescriptor } from "../hashline/patience-pairing.js";
 import { vacuumSnapshots } from "./vacuum.js";
 import type { VacuumResult } from "./vacuum.js";
-import { migrateLegacyStore } from "./migrate.js";
 
 export { vacuumSnapshots };
 export { snapshotIOFor } from "./snapshot-io.js";
@@ -925,8 +924,3 @@ export async function pruneMissing(store: HashStore): Promise<void> {
     }
   });
 }
-
-onStoreOpen(async (db, { existed }) => {
-  if (existed) return;
-  await migrateLegacyStore(db);
-});

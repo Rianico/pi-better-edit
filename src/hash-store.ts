@@ -148,7 +148,6 @@ const MIGRATION_COLUMNS = {
   file_undo: { snapshot_hash: "TEXT", transaction_id: "TEXT", raw_pre: "TEXT" },
   served_session_meta: { outline_folds: "TEXT" },
   served: { retired: "TEXT", canons: "TEXT", snapshotId: "TEXT" },
-  undo: { result_content: "TEXT NOT NULL DEFAULT ''" },
 } as const;
 
 /** Tables carrying a migrated column from the map above. */
@@ -552,26 +551,6 @@ function buildStore(db: DatabaseSync): boolean {
     db.exec("DROP TABLE served");
   }
   db.exec(
-    "CREATE TABLE IF NOT EXISTS snapshots (" +
-      "path TEXT PRIMARY KEY, " +
-      "checksum TEXT NOT NULL, " +
-      "line_count INTEGER NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-      ")",
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS undo (" +
-      "path TEXT PRIMARY KEY, " +
-      "content TEXT NOT NULL, " +
-      "bom TEXT NOT NULL, " +
-      "ending TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "result_content TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-      ")",
-  );
-  db.exec(
     "CREATE TABLE IF NOT EXISTS served (" +
       "session_id TEXT NOT NULL, " +
       "path TEXT NOT NULL, " +
@@ -589,7 +568,6 @@ function buildStore(db: DatabaseSync): boolean {
   addColumnIfMissing(db, "served", "snapshotId");
   addColumnIfMissing(db, "served_session_meta", "outline_folds");
 
-  addColumnIfMissing(db, "undo", "result_content");
   if (!stampDue) return false;
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +

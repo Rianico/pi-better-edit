@@ -148,7 +148,7 @@ describe("use-time corruption quarantine (#100)", () => {
         fresh.db.prepare("SELECT name FROM sqlite_schema WHERE name = 'probe'").get(),
       ).toBeUndefined();
       expect(
-        (fresh.db.prepare("SELECT count(*) AS n FROM snapshots").get() as { n: number }).n,
+        (fresh.db.prepare("SELECT count(*) AS n FROM file_snapshots").get() as { n: number }).n,
       ).toBe(0);
     });
   });

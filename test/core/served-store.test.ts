@@ -3,7 +3,12 @@ import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
+import {
+  loadHashStore,
+  shutdownHashStore,
+  ensureSnapshotTables,
+  ensureFileUndoSchema,
+} from "../../src/hash-store";
 import { readNormFile } from "../../src/file-reader.js";
 import {
   getServed,
@@ -408,26 +413,22 @@ describe("hash-store — served schema versioning", () => {
     });
   });
 
-  it("migrates a legacy served table without wiping snapshots or undo", async () => {
+  it("migrates a legacy served table without wiping file_snapshots or file_undo", async () => {
     await withTempHome(async (home) => {
       await mkdir(stateHome(home), { recursive: true });
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
-      db.exec(
-        "CREATE TABLE snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-      );
-      db.exec(
-        "CREATE TABLE undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-      );
+      ensureSnapshotTables(db);
+      ensureFileUndoSchema(db);
       db.exec(
         "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
       );
       db.exec(
-        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES ('/p.ts', 'v1:x', 1, '[\"XYZ\"]', 1)",
+        "INSERT INTO file_snapshots (snapshot_id, path, snapshot_hash, line_count, created_at) VALUES (1, '/p.ts', 'v1:x', 1, 1)",
       );
       db.exec(
-        "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES ('/u.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
+        "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES ('/u.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
       );
 
       ensureServedSchema(db);
@@ -435,8 +436,10 @@ describe("hash-store — served schema versioning", () => {
       const columns = (db.prepare("PRAGMA table_info(served)").all() as { name: string }[]).map(
         (row) => row.name,
       );
-      const snapshots = db.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number };
-      const undo = db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+      const snapshots = db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as {
+        n: number;
+      };
+      const undo = db.prepare("SELECT COUNT(*) AS n FROM file_undo").get() as { n: number };
       db.close();
 
       expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
@@ -859,9 +862,8 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
   });
 
   it("preserves served rows but invalidates snapshots/undo when adding retired column", async () => {
-    await withTempHome(async (home) => {
+    await withTempHome(async () => {
       const { contentChecksum: _contentChecksum } = await import("../../src/hashline/hasher.js");
-      const _homePath = home;
       const { DatabaseSync } = await import("node:sqlite");
       const { hashStorePath } = await import("../../src/hash-store.js");
       const store1 = await loadHashStore();

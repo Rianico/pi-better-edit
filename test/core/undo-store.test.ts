@@ -304,7 +304,7 @@ describe("undo-store — snapshot_hash pin (issue #79)", () => {
     expect(row?.path).toBe("/isolated.ts");
   });
 
-  it("never writes v7 undo state into the legacy v6 undo shell", async () => {
+  it("never writes v7 undo state into a retired undo table", async () => {
     const store = await loadHashStore();
     upsertUndo(store, "/shell-free.ts", {
       content: "old",
@@ -313,9 +313,13 @@ describe("undo-store — snapshot_hash pin (issue #79)", () => {
       hashes: ["abcc"],
       resultContent: "new",
     });
-    const legacy = store.db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+    const tables = (
+      store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+        name: string;
+      }[]
+    ).map((row) => row.name);
     const v7 = store.db.prepare("SELECT COUNT(*) AS n FROM file_undo").get() as { n: number };
-    expect(legacy.n).toBe(0);
+    expect(tables).not.toContain("undo");
     expect(v7.n).toBeGreaterThan(0);
   });
 });

@@ -345,7 +345,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                                STORAGE TIER                                      │
-│  src/hash-store.ts & src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}          │
+│  src/hash-store.ts & src/snapshot-store/{index.ts,vacuum.ts}                     │
 │  - file_snapshots: (snapshot_id PK, path, snapshot_hash, line_count, committed)  │
 │  - line_lineage: (snapshot_id, line_number PK) -> (line_id, canon, anchor)       │
 │  - line_id_counters: (path PK, next_id) [Atomic integer block allocation]       │
@@ -469,17 +469,6 @@ CREATE TABLE IF NOT EXISTS file_undo (
     updated_at INTEGER NOT NULL
 );
 
--- 7. Operational Upgrade Policy & Backward-Compatible Table Staging:
--- To prevent breaking active, un-restarted v6 sessions or concurrent worktrees sharing ${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/hash-store.sqlite,
--- buildStore does NOT drop legacy tables. Instead, it creates/maintains complete v6 compatibility shells:
---   CREATE TABLE IF NOT EXISTS snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL);
---   CREATE TABLE IF NOT EXISTS served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL DEFAULT '[]', reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (session_id, path));
---   CREATE TABLE IF NOT EXISTS undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL);
---
--- Complete schema alignment prevents lingering v6 processes from failing with "no such column: retired" on their startup query,
--- and prevents v6's internal migration from triggering "DELETE FROM snapshots; DELETE FROM undo".
--- Furthermore, isolating v7's undo state in `file_undo` ensures that when an un-restarted v6 process executes its version-change drop
--- ("DROP TABLE IF EXISTS undo"), v7's undo history is 100% immune from deletion.
 --
 -- Operational Cutover:
 -- Upgrading to v7 requires all active editor and agent sessions on the host to be restarted.
@@ -492,7 +481,7 @@ CREATE TABLE IF NOT EXISTS file_undo (
 -- MANDATE: v7's buildStore MUST NEVER drop its own normalized tables (file_snapshots, line_id_counters, line_lineage,
 -- served_leases, served_session_meta, file_undo) on version mismatch.
 -- v7 initialization is strictly additive and idempotent:
---   1. Executes CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS for all normalized v7 tables and compatibility shells.
+--   1. Executes CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS for all normalized v7 tables.
 --   2. Executes non-destructive column migrations (e.g. ALTER TABLE ... ADD COLUMN ...).
 --   3. Rewrites meta.version = '7'.
 -- This guarantees that when meta.version flaps in mixed-version / multi-worktree environments, active v7 sessions NEVER suffer
@@ -687,10 +676,10 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 
 ### Stage 1 — CAS Storage, Migrations & Universal Leases
 
-- Seams: `src/hash-store.ts`, `src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}`, `src/undo-store.ts`, `src/served-session/session.ts`, `src/edit-undo.ts`, `src/read.ts`, `src/constants.ts`
-- Bump `HASH_STORE_VERSION = 7` in `src/constants.ts`. To avoid breaking concurrent/pre-existing v6 sessions across worktrees, `buildStore` maintains full v6 compatibility shells (`snapshots`, `served`, `undo`) rather than dropping them.
+- Seams: `src/hash-store.ts`, `src/snapshot-store/{index.ts,vacuum.ts}`, `src/undo-store.ts`, `src/served-session/session.ts`, `src/edit-undo.ts`, `src/read.ts`, `src/constants.ts`
+- Bump `HASH_STORE_VERSION = 7` in `src/constants.ts`.
 - Implement `PRAGMA foreign_keys = ON;`, create normalized tables (`file_snapshots`, `line_lineage`, `line_id_counters`, `served_leases`, `served_session_meta`, `file_undo`), and add indexes (`idx_leases_file_retired`, `idx_leases_line_num`, `idx_snapshots_created`).
-- Re-architect `src/snapshot-store/{index.ts,vacuum.ts,migrate.ts}` to implement `HashSnapshotIO` (`getSnapshot` / `upsertSnapshot`) backed directly by normalized `file_snapshots` and `line_lineage` (ordered by `line_number ASC`), replacing legacy serialized JSON blobs while preserving verbatim presentation anchors across reads (`index.ts` re-exports, so every existing import path still resolves).
+- Re-architect `src/snapshot-store/{index.ts,vacuum.ts}` to implement `HashSnapshotIO` (`getSnapshot` / `upsertSnapshot`) backed directly by normalized `file_snapshots` and `line_lineage` (ordered by `line_number ASC`), replacing legacy serialized JSON blobs while preserving verbatim presentation anchors across reads (`index.ts` re-exports, so every existing import path still resolves).
 - Re-architect `src/undo-store.ts` and `src/edit-undo.ts` to persist undo history in `file_undo` (including `snapshot_hash` pinning), structurally isolated from v6 version drops.
 - Standardize checksum on `CANON_VERSION:xxh64`.
 - Retain drift notice deduplication by writing/reading the `reported` set in `served_session_meta`.
