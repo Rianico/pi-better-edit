@@ -52,7 +52,6 @@ function dumpStoreState(db: DatabaseSync): Record<string, string[]> {
     "file_snapshots",
     "line_lineage",
     "served_leases",
-    "served",
     "file_undo",
     "cut_intent",
     "line_id_counters",

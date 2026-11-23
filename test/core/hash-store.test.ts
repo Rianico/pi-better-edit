@@ -292,7 +292,6 @@ describe("hash-store — schema versioning", () => {
         "served_leases",
         "served_session_meta",
         "file_undo",
-        "served",
       ]) {
         expect(tables).toContain(t);
       }
@@ -512,7 +511,16 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
           ]),
         );
         expect(columnNames(db, "served_session_meta")).toEqual(
-          expect.arrayContaining(["session_id", "file_path", "reported", "updated_at"]),
+          expect.arrayContaining([
+            "session_id",
+            "file_path",
+            "reported",
+            "outline_folds",
+            "hashes",
+            "blocked_hashes",
+            "epoch_id",
+            "updated_at",
+          ]),
         );
         expect(columnNames(db, "file_undo")).toEqual(
           expect.arrayContaining([
@@ -608,10 +616,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
   }
 
   function simulateV6VersionFlap(db: DatabaseSync): void {
-    db.exec("DROP TABLE IF EXISTS served");
-    db.exec(
-      "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
-    );
     db.prepare(
       "INSERT INTO meta (key, value) VALUES ('version', '6') ON CONFLICT(key) DO UPDATE SET value = '6'",
     ).run();
@@ -646,10 +650,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         .prepare("SELECT next_id FROM line_id_counters WHERE path = '/a.ts'")
         .get() as { next_id: number };
       const survivors = v7Rows(db);
-      db.prepare(
-        "INSERT INTO served (session_id, path, hashes, reported, retired, canons, snapshotId, updated_at) " +
-          "VALUES ('s2', '/b.ts', '[]', NULL, NULL, '[]', NULL, 5)",
-      ).run();
       db.close();
 
       expect(survivors).toEqual({
@@ -728,43 +728,6 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         .prepare("SELECT COUNT(*) AS n FROM line_lineage WHERE snapshot_id = 7")
         .get() as { n: number };
       expect(remaining.n).toBe(0);
-    });
-  });
-
-  it("adds missing legacy served columns without wiping file_snapshots", async () => {
-    await withTempHome(async (home) => {
-      const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZZ"]);
-      upsertUndo(store, "/u.ts", {
-        content: "old",
-        bom: "",
-        ending: "\n",
-        hashes: ["UVWW"],
-        resultContent: "new",
-      });
-      shutdownHashStore();
-
-      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      db.exec("DROP TABLE served");
-      db.exec(
-        "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
-      );
-      db.close();
-
-      const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
-      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
-      shutdownHashStore();
-
-      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-      const columns = columnNames(check, "served");
-      const snapshots = check.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as {
-        n: number;
-      };
-      check.close();
-
-      expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
-      expect(snapshots.n).toBe(1);
     });
   });
 

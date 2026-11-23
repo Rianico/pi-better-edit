@@ -33,7 +33,7 @@ describe("store — schema ownership", () => {
         .all() as Array<{ name: string }>;
       const names = tables.map((r) => r.name);
       expect(names).toEqual(
-        expect.arrayContaining(["file_snapshots", "file_undo", "served", "meta"]),
+        expect.arrayContaining(["file_snapshots", "file_undo", "served_session_meta", "meta"]),
       );
     } finally {
       shutdownHashStore();

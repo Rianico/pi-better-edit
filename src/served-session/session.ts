@@ -29,31 +29,22 @@ export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string 
 }
 
 interface ServedStmts {
-  servedGet: (sessionKey: string, path: string) => Record<string, unknown> | undefined;
-  servedUpsert: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
-  servedRetiredUpsert: (
+  metaGetHashes: (sessionKey: string, path: string) => { hashes: string | null } | undefined;
+  metaUpsertHashes: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
+  metaGetBlocked: (
     sessionKey: string,
     path: string,
-    retired: string,
-    updatedAt: number,
-  ) => void;
-  servedRetiredClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedSnapshotUpsert: (
-    sessionKey: string,
-    path: string,
-    snapshotId: string,
-    updatedAt: number,
-  ) => void;
-  servedSnapshotClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedDelete: (sessionKey: string, path: string) => void;
-  servedDeletePath: (path: string) => void;
-  servedWipe: (sessionKey: string) => void;
-  servedPruneOlderThan: (updatedBefore: number) => void;
+  ) => { blocked_hashes: string | null } | undefined;
+  metaUpsertBlocked: (sessionKey: string, path: string, blocked: string, updatedAt: number) => void;
+  metaClearBlocked: (sessionKey: string, path: string) => void;
+  metaGetEpoch: (sessionKey: string, path: string) => { epoch_id: string | null } | undefined;
+  metaUpsertEpoch: (sessionKey: string, path: string, epochId: string, updatedAt: number) => void;
+  metaPruneHashesOlderThan: (updatedBefore: number) => void;
   /**
-   * Whether the TTL prune has anything to delete — the SAME predicate and the SAME cutoff as
-   * `servedPruneOlderThan`, asked as a read so a due-but-empty run takes no write lock (#87c).
+   * Whether the TTL prune has anything to clear — the SAME predicate and the SAME cutoff as
+   * `metaPruneHashesOlderThan`, asked as a read so a due-but-empty run takes no write lock (#87c).
    */
-  servedExpiredExists: (updatedBefore: number) => boolean;
+  metaExpiredHashesExist: (updatedBefore: number) => boolean;
   snapshotByHash: (path: string, snapshotHash: string) => LeaseSnapshot | undefined;
   lineageAnchorsOf: (snapshotId: number) => LeaseLineageRow[];
   /**
@@ -181,33 +172,35 @@ function servedStmts(db: DatabaseSync): ServedStmts {
 }
 
 function buildStmts(db: DatabaseSync): ServedStmts {
-  const servedGetStmt = db.prepare(
-    "SELECT hashes, reported, retired, snapshotId FROM served WHERE session_id = ? AND path = ?",
+  const metaGetHashesStmt = db.prepare(
+    "SELECT hashes FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
-  const servedUpsertStmt = db.prepare(
-    "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
-      "ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
+  const metaUpsertHashesStmt = db.prepare(
+    "INSERT INTO served_session_meta (session_id, file_path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(session_id, file_path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
   );
-  const servedRetiredUpsertStmt = db.prepare(
-    "INSERT INTO served (session_id, path, hashes, retired, updated_at) VALUES (?, ?, '[]', ?, ?) " +
-      "ON CONFLICT(session_id, path) DO UPDATE SET retired = excluded.retired, updated_at = excluded.updated_at",
+  const metaGetBlockedStmt = db.prepare(
+    "SELECT blocked_hashes FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
-  const servedRetiredClearStmt = db.prepare(
-    "UPDATE served SET retired = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  const metaUpsertBlockedStmt = db.prepare(
+    "INSERT INTO served_session_meta (session_id, file_path, blocked_hashes, updated_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(session_id, file_path) DO UPDATE SET blocked_hashes = excluded.blocked_hashes, updated_at = excluded.updated_at",
   );
-  const servedSnapshotUpsertStmt = db.prepare(
-    "INSERT INTO served (session_id, path, hashes, snapshotId, updated_at) VALUES (?, ?, '[]', ?, ?) " +
-      "ON CONFLICT(session_id, path) DO UPDATE SET snapshotId = excluded.snapshotId, updated_at = excluded.updated_at",
+  const metaClearBlockedStmt = db.prepare(
+    "UPDATE served_session_meta SET blocked_hashes = NULL WHERE session_id = ? AND file_path = ?",
   );
-  const servedSnapshotClearStmt = db.prepare(
-    "UPDATE served SET snapshotId = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  const metaGetEpochStmt = db.prepare(
+    "SELECT epoch_id FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
-  const servedDeleteStmt = db.prepare("DELETE FROM served WHERE session_id = ? AND path = ?");
-  const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
-  const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
-  const servedPruneOlderThanStmt = db.prepare("DELETE FROM served WHERE updated_at < ?");
-  const servedExpiredExistsStmt = db.prepare(
-    "SELECT 1 AS one FROM served WHERE updated_at < ? LIMIT 1",
+  const metaUpsertEpochStmt = db.prepare(
+    "INSERT INTO served_session_meta (session_id, file_path, epoch_id, updated_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(session_id, file_path) DO UPDATE SET epoch_id = excluded.epoch_id, updated_at = excluded.updated_at",
+  );
+  const metaPruneHashesOlderThanStmt = db.prepare(
+    "UPDATE served_session_meta SET hashes = NULL WHERE hashes IS NOT NULL AND updated_at < ?",
+  );
+  const metaExpiredHashesExistStmt = db.prepare(
+    "SELECT 1 AS one FROM served_session_meta WHERE hashes IS NOT NULL AND updated_at < ? LIMIT 1",
   );
   const lineageAnchorsStmt = db.prepare(
     "SELECT anchor, line_id, canon_hash FROM line_lineage WHERE snapshot_id = ?",
@@ -287,6 +280,9 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       "reported = excluded.reported, updated_at = excluded.updated_at",
   );
   const metaClearReportedStmt = db.prepare(
+    "UPDATE served_session_meta SET reported = NULL WHERE session_id = ? AND file_path = ?",
+  );
+  const metaDeleteStmt = db.prepare(
     "DELETE FROM served_session_meta WHERE session_id = ? AND file_path = ?",
   );
   const metaDeletePathStmt = db.prepare("DELETE FROM served_session_meta WHERE file_path = ?");
@@ -301,54 +297,42 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   );
   const metaWipeStmt = db.prepare("DELETE FROM served_session_meta WHERE session_id = ?");
   return {
-    servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
-    servedUpsert: (sessionKey, path, hashes, updatedAt) => {
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `hashes`.
+    metaGetHashes: (...params) =>
+      metaGetHashesStmt.get(...params) as { hashes: string | null } | undefined,
+    metaUpsertHashes: (sessionKey, path, hashes, updatedAt) => {
       withBusyRetry(() => {
-        servedUpsertStmt.run(sessionKey, path, hashes, updatedAt);
+        metaUpsertHashesStmt.run(sessionKey, path, hashes, updatedAt);
       });
     },
-    servedRetiredUpsert: (sessionKey, path, retired, updatedAt) => {
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `blocked_hashes`.
+    metaGetBlocked: (...params) =>
+      metaGetBlockedStmt.get(...params) as { blocked_hashes: string | null } | undefined,
+    metaUpsertBlocked: (sessionKey, path, blocked, updatedAt) => {
       withBusyRetry(() => {
-        servedRetiredUpsertStmt.run(sessionKey, path, retired, updatedAt);
+        metaUpsertBlockedStmt.run(sessionKey, path, blocked, updatedAt);
       });
     },
-    servedRetiredClear: (sessionKey, updatedAt, path) => {
+    metaClearBlocked: (sessionKey, path) => {
       withBusyRetry(() => {
-        servedRetiredClearStmt.run(updatedAt, sessionKey, path);
+        metaClearBlockedStmt.run(sessionKey, path);
       });
     },
-    servedSnapshotUpsert: (sessionKey, path, snapshotId, updatedAt) => {
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `epoch_id`.
+    metaGetEpoch: (...params) =>
+      metaGetEpochStmt.get(...params) as { epoch_id: string | null } | undefined,
+    metaUpsertEpoch: (sessionKey, path, epochId, updatedAt) => {
       withBusyRetry(() => {
-        servedSnapshotUpsertStmt.run(sessionKey, path, snapshotId, updatedAt);
+        metaUpsertEpochStmt.run(sessionKey, path, epochId, updatedAt);
       });
     },
-    servedSnapshotClear: (sessionKey, updatedAt, path) => {
+    metaPruneHashesOlderThan: (updatedBefore) => {
       withBusyRetry(() => {
-        servedSnapshotClearStmt.run(updatedAt, sessionKey, path);
+        metaPruneHashesOlderThanStmt.run(updatedBefore);
       });
     },
-    servedDelete: (sessionKey, path) => {
-      withBusyRetry(() => {
-        servedDeleteStmt.run(sessionKey, path);
-      });
-    },
-    servedDeletePath: (path) => {
-      withBusyRetry(() => {
-        servedDeletePathStmt.run(path);
-      });
-    },
-    servedWipe: (sessionKey) => {
-      withBusyRetry(() => {
-        servedWipeStmt.run(sessionKey);
-      });
-    },
-    servedPruneOlderThan: (updatedBefore) => {
-      withBusyRetry(() => {
-        servedPruneOlderThanStmt.run(updatedBefore);
-      });
-    },
-    servedExpiredExists: (updatedBefore) =>
-      servedExpiredExistsStmt.get(updatedBefore) !== undefined,
+    metaExpiredHashesExist: (updatedBefore) =>
+      metaExpiredHashesExistStmt.get(updatedBefore) !== undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     snapshotByHash: (path: string, snapshotHash: string) =>
       snapshotByHashStmt.get(path, snapshotHash, ANCHOR_GENERATION) as LeaseSnapshot | undefined,
@@ -428,7 +412,7 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     metaDelete: (sessionKey, path) => {
       withBusyRetry(() => {
-        metaClearReportedStmt.run(sessionKey, path);
+        metaDeleteStmt.run(sessionKey, path);
       });
     },
     metaDeletePath: (path) => {
@@ -454,40 +438,18 @@ function buildStmts(db: DatabaseSync): ServedStmts {
 
 export function ensureServedSchema(db: DatabaseSync): void {
   db.exec(
-    "CREATE TABLE IF NOT EXISTS served (" +
+    "CREATE TABLE IF NOT EXISTS served_session_meta (" +
       "session_id TEXT NOT NULL, " +
-      "path TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
+      "file_path TEXT NOT NULL, " +
       "reported TEXT, " +
-      "retired TEXT, " +
-      "canons TEXT, " +
-      "snapshotId TEXT, " +
+      "outline_folds TEXT, " +
+      "hashes TEXT, " +
+      "blocked_hashes TEXT, " +
+      "epoch_id TEXT, " +
       "updated_at INTEGER NOT NULL, " +
-      "PRIMARY KEY (session_id, path)" +
+      "PRIMARY KEY (session_id, file_path)" +
       ")",
   );
-  try {
-    const cols = db.prepare("PRAGMA table_info(served)").all() as {
-      name: string;
-    }[];
-    if (!cols.some((c) => c.name === "retired")) {
-      db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
-    }
-    const cols2 = db.prepare("PRAGMA table_info(served)").all() as {
-      name: string;
-    }[];
-    if (!cols2.some((c) => c.name === "canons")) {
-      db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
-    }
-    const cols3 = db.prepare("PRAGMA table_info(served)").all() as {
-      name: string;
-    }[];
-    if (!cols3.some((c) => c.name === "snapshotId")) {
-      db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
-    }
-  } catch (error) {
-    reportDiagnostic("served-session", "Failed to migrate served schema:", error);
-  }
 }
 
 /**
@@ -497,25 +459,29 @@ export function ensureServedSchema(db: DatabaseSync): void {
 const SERVED_PRUNE_META_KEY = "served_prune_at";
 
 /**
- * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one: a `DELETE` takes the store's write
+ * The served-mirror TTL prune — a PERIODIC item of the store open (#87c), not a per-open one: an `UPDATE` takes the store's write
  * lock even when its predicate matches no row, so a healthy stamp-matching open would contend for one here. The item is asked only
- * when due, and it deletes only when there is something to delete.
+ * when due, it clears only when there is something to clear, and a damaged store skips it (the janitor owns recovery).
  *
- * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so an expired row can live
+ * WHAT IT RELAXES: retention moves from "every open" to the cadence in `SERVED_PRUNE_INTERVAL_MS`, so an expired mirror can live
  * `SERVED_TTL_MS` plus that interval. The timer earns its place because the guard it skips scans the mirror whenever nothing is
  * expired (no index covers `updated_at`); the measured medians and the sizing argument are in that constant's WHY block.
  *
  * SEMANTICS ARE UNCHANGED: the same predicate with the same cutoff (`updated_at < now - SERVED_TTL_MS`) is asked as an existence
- * question before it is asked as a delete, the same rows are removed, and the run stamp is written only by a run that removed some.
+ * question before it is asked as an update, the same mirror state is cleared, and the run stamp is written only by a run that cleared some.
  */
 function pruneExpiredMirrorRows(db: DatabaseSync): void {
   const now = Date.now();
   if (!due(db, SERVED_PRUNE_META_KEY, SERVED_PRUNE_INTERVAL_MS, now)) return;
   const cutoff = now - SERVED_TTL_MS;
-  const stmts = servedStmts(db);
-  if (!stmts.servedExpiredExists(cutoff)) return;
-  stmts.servedPruneOlderThan(cutoff);
-  markRun(db, SERVED_PRUNE_META_KEY, now);
+  try {
+    const stmts = servedStmts(db);
+    if (!stmts.metaExpiredHashesExist(cutoff)) return;
+    stmts.metaPruneHashesOlderThan(cutoff);
+    markRun(db, SERVED_PRUNE_META_KEY, now);
+  } catch (error) {
+    reportDiagnostic("served-session", "Skipped the served-mirror prune:", error);
+  }
 }
 
 onStoreOpen((db) => {
@@ -595,15 +561,14 @@ function patchServed(
 }
 
 /**
- * Drop every served fact for one (session, path): the legacy mirror, its identity leases and its
- * drift-notice dedup set. They are one fact split across three tables, so they are dropped
+ * Drop every served fact for one (session, path): the exposure row, its identity leases and its
+ * drift-notice dedup set. They are one fact split across two tables, so they are dropped
  * together — a surviving lease would let an anchor the session no longer validly holds resolve
  * instead of failing E_STALE_ANCHOR (spec §3.1 fail-closed).
  */
 function dropServedState(store: HashStore, sessionKey: string, path: string): void {
   const drop = () => {
     const stmts = servedStmts(store.db);
-    stmts.servedDelete(sessionKey, path);
     stmts.leaseDelete(sessionKey, path);
     stmts.metaDelete(sessionKey, path);
   };
@@ -615,10 +580,10 @@ function dropServedState(store: HashStore, sessionKey: string, path: string): vo
 }
 
 function getServedInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
-  const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row) return [];
+  const row = servedStmts(store.db).metaGetHashes(sessionKey, path);
+  if (!row || row.hashes === null) return [];
   try {
-    const parsed = JSON.parse(row.hashes as string);
+    const parsed = JSON.parse(row.hashes);
     if (isValidServedList(parsed)) return parsed;
     dropServedState(store, sessionKey, path);
     return [];
@@ -638,7 +603,7 @@ function upsertServedInner(
   withStore(() => {
     const updated = [...getServedInner(store, sessionKey, path)];
     patchServed(updated, entries);
-    servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+    servedStmts(store.db).metaUpsertHashes(sessionKey, path, JSON.stringify(updated), Date.now());
   });
   grantLeasesForRows(store, sessionKey, path, entries);
 }
@@ -679,7 +644,7 @@ function writeServeMirrorInner(
   patchServed(updated, rows);
   const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
   if (!isNoOp) {
-    servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+    servedStmts(store.db).metaUpsertHashes(sessionKey, path, JSON.stringify(updated), Date.now());
   } else if (!shape) {
     return;
   }
@@ -986,10 +951,10 @@ function getCanonDigestsInner(
 }
 
 function getBlockedHashesInner(store: HashStore, sessionKey: string, path: string): Set<string> {
-  const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row || row.retired === null || row.retired === undefined) return new Set();
+  const row = servedStmts(store.db).metaGetBlocked(sessionKey, path);
+  if (!row || row.blocked_hashes === null) return new Set();
   try {
-    const parsed = JSON.parse(row.retired as string) as unknown;
+    const parsed = JSON.parse(row.blocked_hashes) as unknown;
     if (!isValidHashList(parsed)) throw new TypeError("invalid retired");
     return new Set(parsed);
   } catch {
@@ -999,9 +964,9 @@ function getBlockedHashesInner(store: HashStore, sessionKey: string, path: strin
 }
 
 function getEpochIdInner(store: HashStore, sessionKey: string, path: string): string | undefined {
-  const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row || row.snapshotId === null || row.snapshotId === undefined) return undefined;
-  return row.snapshotId as string;
+  const row = servedStmts(store.db).metaGetEpoch(sessionKey, path);
+  if (!row || row.epoch_id === null) return undefined;
+  return row.epoch_id;
 }
 
 function addRetiredAnchors(
@@ -1017,7 +982,7 @@ function addRetiredAnchors(
     if (!HASH_RE.test(hash)) throw new TypeError(`Invalid retired hash: ${hash}`);
     retired.add(hash);
   }
-  servedStmts(store.db).servedRetiredUpsert(
+  servedStmts(store.db).metaUpsertBlocked(
     sessionKey,
     path,
     JSON.stringify([...retired]),
@@ -1178,7 +1143,7 @@ export function createSessionHandle(
         if (changed || input.rows.length > 0) {
           if (updated.length === 0 && input.rows.length === 0) {
           } else {
-            servedStmts(store.db).servedUpsert(
+            servedStmts(store.db).metaUpsertHashes(
               sessionKey,
               path,
               JSON.stringify(updated),
@@ -1187,22 +1152,12 @@ export function createSessionHandle(
           }
         }
         if (isFullRead) {
-          servedStmts(store.db).servedRetiredClear(sessionKey, Date.now(), path);
+          servedStmts(store.db).metaClearBlocked(sessionKey, path);
           if (isFullRead && input.snapshotId)
-            servedStmts(store.db).servedSnapshotUpsert(
-              sessionKey,
-              path,
-              input.snapshotId,
-              Date.now(),
-            );
+            servedStmts(store.db).metaUpsertEpoch(sessionKey, path, input.snapshotId, Date.now());
         } else {
           if (isFullRead && input.snapshotId)
-            servedStmts(store.db).servedSnapshotUpsert(
-              sessionKey,
-              path,
-              input.snapshotId,
-              Date.now(),
-            );
+            servedStmts(store.db).metaUpsertEpoch(sessionKey, path, input.snapshotId, Date.now());
           const disp = displacedHashes(current, updated);
           if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
         }
@@ -1270,9 +1225,8 @@ export async function loadEpochId(sessionKey: string, path: string): Promise<str
 
 export function deleteServedByPath(store: HashStore, path: string): void {
   const stmts = servedStmts(store.db);
-  stmts.servedDeletePath(path);
-  stmts.leaseDeletePath(path);
   stmts.metaDeletePath(path);
+  stmts.leaseDeletePath(path);
 }
 
 /** Leases for one (session, path), ordered by served line. */
@@ -1331,9 +1285,8 @@ export function deleteServed(store: HashStore, sessionKey: string, path: string)
 
 export function wipeServed(store: HashStore, sessionKey: string): void {
   const stmts = servedStmts(store.db);
-  stmts.servedWipe(sessionKey);
-  stmts.leaseWipe(sessionKey);
   stmts.metaWipe(sessionKey);
+  stmts.leaseWipe(sessionKey);
 }
 
 export function recordServes(

@@ -99,7 +99,11 @@ function leaseRowsOf(
 }
 
 function mirrorRowCount(store: HashStore, path: string): number {
-  return countRows(store, "SELECT COUNT(*) AS n FROM served WHERE path = ?", path);
+  return countRows(
+    store,
+    "SELECT COUNT(*) AS n FROM served_session_meta WHERE file_path = ? AND hashes IS NOT NULL",
+    path,
+  );
 }
 
 describe("M2 claim pins — snapshot store", () => {

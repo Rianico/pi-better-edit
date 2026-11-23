@@ -375,7 +375,9 @@ describe("read tool — mode: verbatim", () => {
       const mirrorCount = () =>
         (
           store.db
-            .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+            .prepare(
+              "SELECT COUNT(*) AS n FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+            )
             .get(TEST_SESSION_ID, absolute) as { n: number }
         ).n;
 

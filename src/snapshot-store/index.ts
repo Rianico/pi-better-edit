@@ -118,7 +118,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
   const allPathsStmt = db.prepare(
-    "SELECT path FROM file_snapshots UNION SELECT path FROM file_undo UNION SELECT path FROM served " +
+    "SELECT path FROM file_snapshots UNION SELECT path FROM file_undo " +
       "UNION SELECT file_path FROM served_leases UNION SELECT file_path FROM served_session_meta " +
       "UNION SELECT path FROM line_id_counters",
   );
@@ -656,7 +656,9 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
         `over the 50 MB budget; pinned snapshots are never evicted and this state ` +
         `is expected to lapse as leases expire.`,
     );
-  } catch {}
+  } catch {
+    // HACK: a warning whose emission failed must not fail the store it reports on.
+  }
 }
 
 /**

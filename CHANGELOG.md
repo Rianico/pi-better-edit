@@ -10,6 +10,10 @@
 
 * **read:** state oversized-line limits as facts instead of recommending Bash. An oversized row now reads `[Line 2: 205.1KB; not shown.]` and the trailing notice says `[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]`, so hosts without Bash and remote filesystem backends receive no unrunnable `sed` command or path placeholder. Row anchors, pagination, and truncation behavior are unchanged. (#300)
 
+### Code Refactoring
+
+* **store:** fold the served mirror into `served_session_meta` and drop the `served` table. The mirror, blocked-hash set, epoch id and outline folds now share one row per `(session, file_path)`, and each upsert names only its own column. An expired mirror clears `hashes` to NULL instead of deleting the row, so drift dedup and outline folds survive the TTL sweep. Serialized mirror bytes, holes, trailing-null trimming, corrupt-state drops and lease authority are unchanged; a legacy `served` table is left in place and ignored, so a warm cache costs one re-read. (#307)
+
 ## [2.19.3] - 2026-11-22
 
 ### Bug Fixes

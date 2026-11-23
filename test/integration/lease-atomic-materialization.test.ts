@@ -205,7 +205,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER lease_read_notx3_fail BEFORE INSERT ON served " +
+        "CREATE TRIGGER lease_read_notx3_fail BEFORE INSERT ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
       let readPromise: Promise<unknown> | undefined;
@@ -244,7 +244,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
 
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER lease_edit_notx3_fail BEFORE UPDATE OF hashes ON served " +
+        "CREATE TRIGGER lease_edit_notx3_fail BEFORE UPDATE OF hashes ON served_session_meta " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
       let text = "";

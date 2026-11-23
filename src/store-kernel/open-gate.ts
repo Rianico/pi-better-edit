@@ -30,7 +30,7 @@ export function withStore(fn: () => void): void {
   const store = cachedStoreRef;
   if (!store || !store.db.isOpen) {
     throw new Error(
-      "withStore requires an open SQLite store — call loadHashStore() first or use a MemoryStore in tests",
+      "withStore requires an open SQLite store — call loadHashStore() first or inject a `:memory:` store in tests",
     );
   }
   withBusyRetry(() => {

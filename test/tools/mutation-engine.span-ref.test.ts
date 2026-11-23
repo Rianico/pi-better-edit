@@ -127,7 +127,9 @@ function countingStore(real: HashStore): { store: HashStore; queries: RecordedQu
 
 function foreignServedReads(queries: RecordedQuery[], foreignAbs: string): number {
   return queries.filter(
-    (q) => /^\s*SELECT .*FROM served WHERE/.test(q.sql) && q.params.some((p) => p === foreignAbs),
+    (q) =>
+      /^\s*SELECT hashes FROM served_session_meta WHERE/.test(q.sql) &&
+      q.params.some((p) => p === foreignAbs),
   ).length;
 }
 
