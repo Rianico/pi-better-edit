@@ -12,7 +12,7 @@
 
 ### Code Refactoring
 
-* **store:** fold the served mirror into `served_session_meta` and drop the `served` table. The mirror, blocked-hash set, epoch id and outline folds now share one row per `(session, file_path)`, and each upsert names only its own column. An expired mirror clears `hashes` to NULL instead of deleting the row, so drift dedup and outline folds survive the TTL sweep. Serialized mirror bytes, holes, trailing-null trimming, corrupt-state drops and lease authority are unchanged; a legacy `served` table is left in place and ignored, so a warm cache costs one re-read.
+* **store:** fold the served mirror into `served_session_meta` and drop the `served` table. The mirror, blocked-hash set, epoch id and outline folds now share one row per `(session, file_path)`, and each upsert names only its own column. An expired mirror clears `hashes` to NULL instead of deleting the row, so drift dedup and outline folds survive the TTL sweep. Serialized mirror bytes, holes, trailing-null trimming, corrupt-state drops and lease authority are unchanged; a legacy `served` table is left in place and ignored, so a warm cache costs one re-read. (#316)
 
 ## [2.19.3] - 2026-11-22
 
