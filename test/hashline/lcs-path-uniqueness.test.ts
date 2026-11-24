@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { describe, expect, it } from "vitest";
 import {
   computeLCSPaths,
@@ -101,26 +102,36 @@ function* allSequences(alphabet: string[], maxLength: number): Generator<string[
 /**
  * One oracle case: every emitted pair must sit on *every* maximal traceback path, a single
  * maximal path must be reproduced exactly, and an ambiguous interval must emit nothing.
+ *
+ * The exhaustive loops call this ~130k times. `expect`'s matcher overhead dominates the
+ * 3-symbol case, so the hot path uses `node:assert/strict` and adds the sequence pair only on
+ * failure; the small unit tests below still use `expect` for readable diffs.
  */
 function expectOracleAgreement(prev: string[], curr: string[]): void {
-  const result = computeLCSPaths(descs(prev), descs(curr), 1, prev.length, 1, curr.length);
-  const pairings = maximalPairings(prev, curr);
-  const shared = sharedPairs(pairings);
+  try {
+    const result = computeLCSPaths(descs(prev), descs(curr), 1, prev.length, 1, curr.length);
+    const pairings = maximalPairings(prev, curr);
+    const shared = sharedPairs(pairings);
 
-  for (const [prevLine, currLine] of result.pairs) {
-    expect(prev[prevLine - 1]).toBe(curr[currLine - 1]);
-    expect(shared.has(`${prevLine}->${currLine}`)).toBe(true);
-  }
+    for (const [prevLine, currLine] of result.pairs) {
+      assert.equal(prev[prevLine - 1], curr[currLine - 1]);
+      assert.ok(shared.has(`${prevLine}->${currLine}`));
+    }
 
-  if (pairings.length === 1) {
-    expect(result.isUnique).toBe(true);
-    expect(pairKeys(result.pairs)).toBe(pairKeys(pairings[0]!));
-    return;
+    if (pairings.length === 1) {
+      assert.equal(result.isUnique, true);
+      assert.equal(pairKeys(result.pairs), pairKeys(pairings[0]!));
+      return;
+    }
+    assert.equal(result.isUnique, false);
+    assert.equal(result.pairs.length, 0);
+  } catch (error) {
+    throw new Error(
+      `oracle mismatch for prev=${JSON.stringify(prev)} curr=${JSON.stringify(curr)}`,
+      { cause: error },
+    );
   }
-  expect(result.isUnique).toBe(false);
-  expect(result.pairs).toEqual([]);
 }
-
 const SYMBOLS_2 = ["A", "B"];
 const SYMBOLS_3 = ["A", "B", "C"];
 
