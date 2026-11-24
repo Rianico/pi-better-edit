@@ -247,20 +247,29 @@ export async function assertBatchSpansDisjoint(
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         const originalLines = splitLines(ctx.originalNormalized);
         const rows = serveRowsForEdit(entries[b.arrayPos]!.edit, ctx.originalHashes);
+        const error = new DomainError("E_BATCH_ABORT", {
+          earlierIndex: a.itemIndex,
+          laterIndex: b.itemIndex,
+          earlierStart: a.startLine,
+          earlierEnd: a.endLine,
+          laterStart: b.startLine,
+          laterEnd: b.endLine,
+          path: ctx.path,
+          servedRows: rows ?? [],
+          servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
+        });
+        await ctx.recordRejectionServe({
+          error,
+          sessionKey: ctx.sessionKey,
+          absolutePath: ctx.absolutePath,
+          isPreview: ctx.isPreview,
+          lineCount: ctx.originalHashes.length,
+          contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
+        });
         throw batchAbort({
           failures: [
             {
-              error: new DomainError("E_BATCH_ABORT", {
-                earlierIndex: a.itemIndex,
-                laterIndex: b.itemIndex,
-                earlierStart: a.startLine,
-                earlierEnd: a.endLine,
-                laterStart: b.startLine,
-                laterEnd: b.endLine,
-                path: ctx.path,
-                servedRows: rows ?? [],
-                servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
-              }),
+              error,
               index: b.itemIndex,
             },
           ],

@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 * **edit:** render every batch rejection through one grammar: a `[MODEL] Batch rejected: K of N edits failed; nothing was written.` verdict line, then one bullet per failing item carrying that item's own code with rows and `Options:` indented beneath it. The atomicity trailer is deleted and overlaps fold in as the later item's `[E_BATCH_ABORT]` failure. (#323)
+* **edit:** record the rows a batch-overlap refusal serves as leases, so a retry can reuse a shown anchor with no re-read; the guideline no longer tells the model to re-read after an overlap refusal. (#332)
 
 ### Performance Improvements
 

@@ -1,13 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { writeFile } from "node:fs/promises";
+import { writeFile, readFile } from "node:fs/promises";
 import { join } from "path";
 import { DomainError, formatWarning } from "../../src/domain-errors.js";
 import { batchAbort, finalizeResult } from "../../src/edit-response.js";
 import { readEnvelope } from "../../src/error-envelope.js";
 import { EDIT_DESCRIPTION, EDIT_GUIDELINES } from "../../src/payload-contract.js";
+import { createEditTool } from "../../src/edit-tool.js";
 
+import { getServed, loadLeases } from "../../src/served-session/index.js";
 import { loadHashStore } from "../../src/hash-store";
-import { loadLeases } from "../../src/served-session/index.js";
 import { getSnapshot } from "../../src/snapshot-store";
 import { initHasher } from "../../src/hashline/hash-identity.js";
 import {
@@ -168,9 +169,6 @@ describe("served edit prompts name the emitted shapes (T3 #328)", () => {
     expect(EDIT_DESCRIPTION).not.toContain("recorded as served");
     expect(guidelines).toContain("recorded as served when shown");
     expect(guidelines).toContain("shows no rows grants none");
-    expect(guidelines).toContain(
-      "a batch overlap shows the anchors it compared rather than granting them",
-    );
   });
 
   it("leases the anchors a fresh-read rejection serves, through the tool seam", async () => {
@@ -212,7 +210,7 @@ describe("served edit prompts name the emitted shapes (T3 #328)", () => {
     });
   });
 
-  it("grants no lease for a batch overlap fold, through the tool seam", async () => {
+  it("leases the anchors a batch overlap fold serves, through the tool seam", async () => {
     await withTempDir("served-overlap-", async (cwd) => {
       const { ctx, editTool, absPath, store, name, hashes, before } =
         await setupPartialFiveLine(cwd);
@@ -248,11 +246,76 @@ describe("served edit prompts name the emitted shapes (T3 #328)", () => {
       expect(before).not.toContain(h3);
       expect(blockHashes.some((hash) => !before.includes(hash!))).toBe(true);
       const after = loadLeases(store, TEST_SESSION_ID, absPath).map((lease) => lease.anchor);
-      expect(after).toEqual(before);
-      expect(guidelines).toContain(
-        "a batch overlap shows the anchors it compared rather than granting them",
-      );
+      for (const hash of blockHashes) expect(after).toContain(hash);
+      expect(after).toContain(h2);
+      expect(after).toContain(h3);
+      expect(guidelines).not.toContain("a batch overlap shows the anchors it compared");
       expect(EDIT_DESCRIPTION).not.toContain("recorded as served");
+    });
+  });
+
+  it("accepts a retry that reuses an overlap-shown anchor with no intervening read", async () => {
+    await withTempDir("served-overlap-retry-", async (cwd) => {
+      const { ctx, editTool, absPath, name, hashes, before } = await setupPartialFiveLine(cwd);
+      const { h1, h2, h4 } = hashes;
+      const refusal = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: name,
+            edits: [
+              { anchor_from: h1, anchor_to: h1, text: "X" },
+              { anchor_from: h1, anchor_to: h4, text: "Y" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(refusal.message).toContain("[E_BATCH_ABORT]");
+      const servedRows = readEnvelope(refusal)?.servedRows ?? [];
+      expect(servedRows.length).toBeGreaterThan(0);
+      expect(servedRows.map((row) => row.hash)).toContain(h2);
+      expect(before).not.toContain(h2);
+      const ok = await editTool.execute(
+        "e2",
+        { file: name, edits: [{ anchor_from: h2, anchor_to: h2, text: "CHARLIE!" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(ok)).toContain("Successfully edited");
+      expect(await readFile(absPath, "utf-8")).toContain("CHARLIE!");
+    });
+  });
+
+  it("grants nothing durable when the same overlap rejection runs as a preview", async () => {
+    await withTempDir("served-overlap-preview-", async (cwd) => {
+      const { ctx, absPath, store, name, hashes, before } = await setupPartialFiveLine(cwd);
+      const { h1, h4 } = hashes;
+      const servedBefore = getServed(store, TEST_SESSION_ID, absPath);
+      const result = await createEditTool().preview(
+        {
+          file: name,
+          edits: [
+            { anchor_from: h1, anchor_to: h1, text: "X" },
+            { anchor_from: h1, anchor_to: h4, text: "Y" },
+          ],
+        },
+        cwd,
+        ctx,
+      );
+      expect("error" in result).toBe(true);
+      if ("error" in result) {
+        expect(result.error).toContain("[E_BATCH_ABORT]");
+        expect(result.error).toContain("overlaps");
+      }
+      const servedAfter = getServed(store, TEST_SESSION_ID, absPath);
+      expect(servedAfter).toEqual(servedBefore);
+      const after = loadLeases(store, TEST_SESSION_ID, absPath).map((lease) => lease.anchor);
+      expect(after).toEqual(before);
+      expect(await readFile(absPath, "utf-8")).toBe(FIVE_LINE_CONTENT);
     });
   });
 
