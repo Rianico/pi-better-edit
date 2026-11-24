@@ -65,8 +65,8 @@ export interface ProcessedEditFile {
   /**
    * The `[W_EOL_REWRITTEN]` line this plan's write would disclose, or `undefined` when no pre-image
    * terminator changes. Disclosure belongs to the write that acts on it, not to the plan: the
-   * ordinary write path pushes it only after a successful normalizing write, while the cut
-   * transaction leaves it unwritten because ADR-0019 §5 keeps that window byte-exact.
+   * ordinary path and the cut transaction push it only after a successful normalizing write.
+   * Revert and next-run repair write raw pre-image bytes and stay byte-exact.
    */
   eolRewriteWarning: string | undefined;
   warnings: string[];

@@ -320,9 +320,10 @@ describe("cut durability stays byte-exact on mixed members (ADR-0019 §5)", () =
     });
   });
 
-  it("next-run repair completes a mixed member byte-exactly, at the EOL the cut wrote", async () => {
+  it("next-run repair completes a mixed member byte-exactly, at its effective (dominant) EOL", async () => {
+    // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md — 2 CRLF vs 1 LF makes CRLF the effective ending.
     const MIXED_SOURCE_RAW = "x\ny\r\nz\r\n";
-    const SOURCE_POST = "x\nz\n";
+    const SOURCE_POST = "x\r\nz\r\n";
     await withTempDir("cut-repair-mixed-eol-", async (cwd) => {
       await writeFile(join(cwd, "target.txt"), TARGET_RAW, "utf-8");
       await writeFile(join(cwd, "source.txt"), MIXED_SOURCE_RAW, "utf-8");
@@ -362,6 +363,47 @@ describe("cut durability stays byte-exact on mixed members (ADR-0019 §5)", () =
       expect(
         (await listCutIntentsAsync()).find((intent) => intent.txnId === txnId),
       ).toBeUndefined();
+    });
+  });
+
+  it("a cut row records the effective EOL, so revert accepts the bytes the cut wrote", async () => {
+    // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md — first separator CRLF, dominant LF.
+    const TARGET_MIXED_RAW = "a\r\nb\nc\nd\n";
+    const SOURCE_UNIFORM_RAW = "x\ny\nz\n";
+    await withTempDir("cut-undo-effective-eol-", async (cwd) => {
+      await writeFile(join(cwd, "target.txt"), TARGET_MIXED_RAW, "utf-8");
+      await writeFile(join(cwd, "source.txt"), SOURCE_UNIFORM_RAW, "utf-8");
+      const { ctx, readTool, undoTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
+      const ht = await lineHashes(toLF(TARGET_MIXED_RAW), join(cwd, "target.txt"));
+      const hs = await lineHashes(toLF(SOURCE_UNIFORM_RAW), join(cwd, "source.txt"));
+      const cut = await execute(
+        admit({
+          file: "target.txt",
+          edits: [
+            {
+              anchor_from: ht[1]!,
+              anchor_to: ht[1]!,
+              text_ref: { anchor_from: hs[1]!, anchor_to: hs[1]!, file: "source.txt", mode: "cut" },
+            },
+          ],
+        }),
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(isMutationSuccess(cut), "the cut must apply").toBe(true);
+      await expectBytes(join(cwd, "target.txt"), "a\ny\nc\nd\n");
+      await expectBytes(join(cwd, "source.txt"), "x\nz\n");
+
+      const row = await getUndo(await resolveTarget(join(cwd, "target.txt")));
+      expect(row?.originalEnding).toBe("\r\n");
+      expect(row?.effectiveEnding).toBe("\n");
+
+      const undo = await undoTool.execute("u1", { path: "source.txt" }, undefined, undefined, ctx);
+      expect(undo.isError, getText(undo)).toBeFalsy();
+      await expectBytes(join(cwd, "target.txt"), TARGET_MIXED_RAW);
+      await expectBytes(join(cwd, "source.txt"), SOURCE_UNIFORM_RAW);
     });
   });
 });

@@ -40,6 +40,16 @@ function admit(raw: unknown): NormalizedEditRequest {
 const SOURCE_BEFORE = "a\nb\nc\nd\n";
 const TARGET_BEFORE = "1\n2\n3\n";
 
+const STORE_TABLE_SELECTS = {
+  file_snapshots: "SELECT * FROM file_snapshots",
+  line_lineage: "SELECT * FROM line_lineage",
+  served_leases: "SELECT * FROM served_leases",
+  file_undo: "SELECT * FROM file_undo",
+  cut_intent: "SELECT * FROM cut_intent",
+  line_id_counters: "SELECT * FROM line_id_counters",
+  served_session_meta: "SELECT * FROM served_session_meta",
+} as const;
+
 /**
  * The preview witness's oracle: a full serialization of every store table a live cut touches, plus
  * the id counter and session meta. Row sets are sorted so the comparison is order-insensitive; the
@@ -48,16 +58,8 @@ const TARGET_BEFORE = "1\n2\n3\n";
  */
 function dumpStoreState(db: DatabaseSync): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const table of [
-    "file_snapshots",
-    "line_lineage",
-    "served_leases",
-    "file_undo",
-    "cut_intent",
-    "line_id_counters",
-    "served_session_meta",
-  ]) {
-    const rows = db.prepare(`SELECT * FROM ${table}`).all() as unknown as Record<string, unknown>[];
+  for (const [table, select] of Object.entries(STORE_TABLE_SELECTS)) {
+    const rows = db.prepare(select).all() as unknown as Record<string, unknown>[];
     out[table] = rows.map((r) => JSON.stringify(r)).sort();
   }
   return out;
@@ -198,6 +200,10 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       expect(isMutationSuccess(result)).toBe(true);
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\r\nc\r\n");
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\n2\n3\n");
+
+      if (!isMutationSuccess(result)) return;
+      const text = result.toolResult.content.map((c) => c.text).join("\n");
+      expect(text).not.toContain("W_EOL_REWRITTEN");
     });
   });
 
