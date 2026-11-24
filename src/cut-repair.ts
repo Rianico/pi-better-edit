@@ -33,9 +33,10 @@ const VALID_ENDINGS = new Set<string>(["\n", "\r\n", "\r"]);
 
 // Ref: docs/.archive_adrs/0028-correlated-multifile-cut-transaction-durability.md
 function serialized(row: MemberRow, which: "pre" | "post"): string | undefined {
-  if (!VALID_ENDINGS.has(row.ending)) return undefined;
+  const ending = which === "post" ? (row.effectiveEnding ?? row.ending) : row.ending;
+  if (!VALID_ENDINGS.has(ending)) return undefined;
   const text = which === "pre" ? row.content : row.resultContent;
-  return row.bom + restoreEndings(text, row.ending as LineEnding);
+  return row.bom + restoreEndings(text, ending as LineEnding);
 }
 
 function candidateFor(row: MemberRow, which: "pre" | "post"): Buffer | undefined {

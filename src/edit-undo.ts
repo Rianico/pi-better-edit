@@ -279,7 +279,8 @@ async function undoCorrelatedTransaction(
             details: {},
           };
         }
-        const expectedPost = member.bom + restoreEndings(member.resultContent, member.ending);
+        const expectedPost =
+          member.bom + restoreEndings(member.resultContent, member.effectiveEnding);
         if (!bytes.equals(Buffer.from(expectedPost, "utf-8"))) {
           return {
             content: [

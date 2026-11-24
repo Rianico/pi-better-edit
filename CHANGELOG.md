@@ -10,6 +10,7 @@
 
 ### Bug Fixes
 
+* **eol:** normalize the foreign cut's forward writes at each member's effective EOL and disclose `[W_EOL_REWRITTEN]` per cut plan, matching ordinary edits. A cut's `file_undo` rows now record the ending the member wrote, so next-run repair rebuilds the post image from it; rollback, correlated revert, and repair still write the raw pre-image bytes. (#317)
 * **undo:** restore ordinary undo at the effective EOL the edit wrote (`file_undo.effective_ending`; pre-existing rows fall back to `ending`), so undoing a mixed file returns normalized content and a healthy file no longer refuses with `[E_UNDO_STALE]`. The response says the pre-edit mixture is not restored; correlated cut reverts and next-run repair stay byte-exact. (#318)
 * **read:** state oversized-line limits as facts instead of recommending Bash. An oversized row now reads `[Line 2: 205.1KB; not shown.]` and the trailing notice says `[Line 2 exceeds the 50.0KB limit; the read tool cannot show it.]`, so hosts without Bash and remote filesystem backends receive no unrunnable `sed` command or path placeholder. Row anchors, pagination, and truncation behavior are unchanged. (#300)
 

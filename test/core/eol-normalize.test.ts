@@ -1,8 +1,8 @@
 /**
  * EOL normalization on the write seam (#311): every `edit` write serializes the whole file at its
  * effective EOL — the forced ladder rung, else the file's dominant terminator — and reports the
- * pre-image terminators whose bytes changed. Disclosure is the writing path's, not the plan's: a
- * foreign cut writes at its pre-image ending (ADR-0019 §5, #313) and therefore reports nothing.
+ * pre-image terminators whose bytes changed. Disclosure is each writing path's: a foreign cut writes
+ * every member at its effective EOL, while revert and repair stay byte-exact (ADR-0019 §5, #313).
  *
  * ## Repro — `pnpm exec vitest run test/core/eol-normalize.test.ts`
  * Case 1 `"a\r\nb\r\nc\n"` + b→B: BEFORE the bytes were `"a\r\nB\r\nc\r\n"` with no
@@ -205,9 +205,9 @@ describe("edit write — the report describes the pre-image, once per call", () 
   });
 });
 
-describe("edit write — a cut transaction discloses no EOL rewrite (ADR-0019 §5)", () => {
-  it("a foreign cut into a mixed-EOL target reports no EOL rewrite", async () => {
-    const target = "a\r\nb\nc\r\n";
+describe("edit write — a cut transaction discloses each member's EOL rewrite", () => {
+  it("a cut into a mixed-EOL target normalizes the target and reports it once", async () => {
+    const target = "1\r\n2\n3\n";
     const source = "x\ny\nz\n";
     await withTempDir("eol-cut-", async (cwd) => {
       await writeFile(join(cwd, "target.txt"), target, "utf-8");
@@ -222,8 +222,8 @@ describe("edit write — a cut transaction discloses no EOL rewrite (ADR-0019 §
           file: "target.txt",
           edits: [
             {
-              anchor_from: ht[1]!,
-              anchor_to: ht[1]!,
+              anchor_from: ht[0]!,
+              anchor_to: ht[0]!,
               text_ref: {
                 anchor_from: hs[0]!,
                 anchor_to: hs[1]!,
@@ -239,11 +239,11 @@ describe("edit write — a cut transaction discloses no EOL rewrite (ADR-0019 §
       expect(isMutationSuccess(result), "the foreign cut must apply").toBe(true);
       if (!isMutationSuccess(result)) return;
       // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md
-      expectBytes(await readBytes(join(cwd, "target.txt")), "a\r\nx\r\ny\r\nc\r\n");
+      expectBytes(await readBytes(join(cwd, "target.txt")), "x\ny\n2\n3\n");
       expectBytes(await readBytes(join(cwd, "source.txt")), "z\n");
       const text = result.toolResult.content.map((c) => c.text).join("\n");
-      expect(text).not.toContain("W_EOL_REWRITTEN");
-      expect(JSON.stringify(result.toolResult.details)).not.toContain("W_EOL_REWRITTEN");
+      expect(text.split("W_EOL_REWRITTEN")).toHaveLength(2);
+      expect(text).toContain(eolLine("LF", "file", 1));
     });
   });
 });
