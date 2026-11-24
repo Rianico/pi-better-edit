@@ -7,7 +7,7 @@ import type {
   HashSnapshotUpsertOptions,
   SnapshotLineageLine,
 } from "../snapshot-store";
-import { pairSnapshots, type AnchorPin, type LineDescriptor } from "./patience-pairing.js";
+import { pairLineage, type LineageLine } from "./patience-pairing.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
@@ -66,6 +66,12 @@ export interface AnchorWalk {
    * checksum-miss alignment. Never persisted through this call.
    */
   cached?: string[];
+  /**
+   * The anchors the checksum-miss alignment retired — lines the latest lineage held and this content does
+   * not. Present only when the alignment ran and retired something; the caller persists them as session
+   * tombstones so a later fresh allocation cannot resurrect one.
+   */
+  retired?: string[];
 }
 
 export const ANCHOR_LEN = HASH_LEN;
@@ -343,9 +349,9 @@ export class HashIdentity {
   }
 
   /**
-   * The checksum-miss path: align `content` against the latest committed lineage with the same pin-bounded pairing
-   * the edit path uses, so a duplicate keeps its anchor. `pairSnapshots` runs first; `carryHomogeneousRuns` fills
-   * its UNPAIRED gaps inside one homogeneous raw run (T2 ordinal carry, gated by the lineage's own raw digests).
+   * The checksum-miss path: align `content` against the latest committed lineage with the same pairing
+   * the edit path uses, so a duplicate keeps its anchor. `pairLineage` owns the whole rule — the pin-bounded
+   * engine plus its homogeneous-run ordinal carry — so anchors and `line_id`s resolve alike.
    *
    * Blocking rule: a carried anchor is always marked used; a retired anchor only when its canon occurred more than
    * once in the lineage. That key is canon multiplicity, not the raw digest, because pairing and lease identity are
@@ -361,16 +367,17 @@ export class HashIdentity {
     retiredHashes?: Set<string>,
   ): string[] {
     const lines = splitLines(content);
-    const prevLines: LineDescriptor[] = latest.map((row) => ({
+    const prev: LineageLine[] = latest.map((row) => ({
       lineNumber: row.lineNumber,
       canonHash: row.canonHash,
+      rawHash: row.rawHash,
     }));
-    const currLines: LineDescriptor[] = lines.map((line, index) => ({
+    const curr: LineageLine[] = lines.map((line, index) => ({
       lineNumber: index + 1,
       canonHash: canonDigest(line),
+      rawHash: rawDigest(line),
     }));
-    const pairing = pairSnapshots(prevLines, currLines);
-    this.carryHomogeneousRuns(lines, latest, pairing);
+    const pairing = pairLineage(prev, curr);
 
     const newHashes = Array.from<string>({ length: lines.length });
     const byLineNumber = new Map(latest.map((row) => [row.lineNumber, row]));
@@ -417,70 +424,6 @@ export class HashIdentity {
     }
     return newHashes;
   }
-
-  /**
-   * T2 ordinal carry: pair the gaps `pairSnapshots` leaves UNPAIRED when each side is one contiguous run of the SAME
-   * raw bytes. Inside such a run every copy carries the same canon, so the ordinal is the only reading left: the k-th
-   * copy answers the k-th copy, the current tail allocates fresh, the prior overflow retires via `retiredHashes`.
-   *
-   * Fail-closed gates: (1) the CURRENT gap is raw-uniform (`===`); (2) every PRIOR row of the gap carries the run's
-   * canon AND its `raw_hash`. Gate 2 is exact raw-byte evidence: the canon folds edge whitespace
-   * (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md), so `"    }"` and `"  }"` share it and only the raw
-   * digest separates them — two spellings pass only through a 32-bit xxh32 collision. A NULL digest (a legacy
-   * pre-#344 row) is no evidence, so the gap is skipped. Pairs are added inside a gap in order, keeping the
-   * pairing monotone.
-   */
-  private carryHomogeneousRuns(
-    lines: string[],
-    latest: readonly SnapshotLineageLine[],
-    pairing: Map<number, number>,
-  ): void {
-    const prevLen = latest.length;
-    const currLen = lines.length;
-    const byLineNumber = new Map(latest.map((row) => [row.lineNumber, row]));
-    const bounds: AnchorPin[] = [{ prevLine: 0, currLine: 0 }];
-    const paired = [...pairing.entries()].sort((a, b) => a[0] - b[0]);
-    for (const [prevLine, currLine] of paired) bounds.push({ prevLine, currLine });
-    bounds.push({ prevLine: prevLen + 1, currLine: currLen + 1 });
-
-    for (let i = 1; i < bounds.length; i++) {
-      const lower = bounds[i - 1]!;
-      const upper = bounds[i]!;
-      const pStart = lower.prevLine + 1;
-      const pEnd = upper.prevLine - 1;
-      const cStart = lower.currLine + 1;
-      const cEnd = upper.currLine - 1;
-      if (pStart > pEnd || cStart > cEnd) continue;
-
-      const first = lines[cStart - 1]!;
-      let currentUniform = true;
-      for (let c = cStart + 1; c <= cEnd; c++) {
-        if (lines[c - 1] !== first) {
-          currentUniform = false;
-          break;
-        }
-      }
-      if (!currentUniform) continue;
-
-      const canon = canonDigest(first);
-      const rawHash = rawDigest(first);
-      const priorAnchors: string[] = [];
-      let priorUniform = true;
-      for (let p = pStart; p <= pEnd; p++) {
-        const row = byLineNumber.get(p);
-        if (row === undefined || row.canonHash !== canon || row.rawHash !== rawHash) {
-          priorUniform = false;
-          break;
-        }
-        priorAnchors.push(row.anchor);
-      }
-      if (!priorUniform) continue;
-
-      const carry = Math.min(priorAnchors.length, cEnd - cStart + 1);
-      for (let j = 0; j < carry; j++) pairing.set(pStart + j, cStart + j);
-    }
-  }
-
   /** Best-effort lineage read: a failed or absent store loses alignment, never correctness. */
   private async readLatestLineage(
     snapshotIO: HashSnapshotIO | undefined,
@@ -657,8 +600,14 @@ export class HashIdentity {
     const path = options?.path;
     const persist = options?.persist ?? true;
     const snapshotIO = options?.snapshotIO;
+    const collected = new Set<string>();
     if (!path || options?.prior) {
-      return { cached: await this.hashesFor(content, options) };
+      const cached = await this.hashesFor(content, {
+        ...options,
+        path: path ?? "",
+        retiredHashes: collected,
+      });
+      return this.walkPlan(cached, collected, options?.retiredHashes);
     }
 
     let cached: string[] | undefined;
@@ -673,18 +622,34 @@ export class HashIdentity {
     const pathSeed = xxh32(canonicalAnchorPath(path));
     const latest = await this.readLatestLineage(snapshotIO, path);
     if (latest && latest.length > 0) {
-      return {
-        cached: this.alignToLatestLineage(
-          content,
-          latest,
-          pathSeed,
-          options?.blockedHashes,
-          options?.retiredHashes,
-        ),
-      };
+      const aligned = this.alignToLatestLineage(
+        content,
+        latest,
+        pathSeed,
+        options?.blockedHashes,
+        collected,
+      );
+      return this.walkPlan(aligned, collected, options?.retiredHashes);
     }
     return {
       assign: this.newLineAssigner(options?.blockedHashes, pathSeed),
+    };
+  }
+
+  /**
+   * The walk plan for one alignment: the anchors, plus the tombstones BOTH as the plan's own `retired`
+   * (what a read persists) and in the caller's `retiredHashes` out-parameter (what an in-process caller
+   * reads). One writer, so a caller can never observe a set the plan did not report.
+   */
+  private walkPlan(
+    cached: string[],
+    collected: Set<string>,
+    sink: Set<string> | undefined,
+  ): AnchorWalk {
+    if (sink !== undefined) for (const hash of collected) sink.add(hash);
+    return {
+      cached,
+      ...(collected.size > 0 ? { retired: [...collected] } : {}),
     };
   }
 

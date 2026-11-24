@@ -20,7 +20,7 @@ import {
   recordServedMirrorInTransaction,
   retireAbsentLeases,
 } from "../served-session/session.js";
-import { pairSnapshots, type LineDescriptor } from "../hashline/patience-pairing.js";
+import { pairLineage, type LineageLine } from "../hashline/patience-pairing.js";
 import { vacuumSnapshots } from "./vacuum.js";
 import type { VacuumResult } from "./vacuum.js";
 
@@ -614,9 +614,10 @@ function workingBufferIdentities(
 }
 
 /**
- * Pairs S_final's lines against S_latest (spec §3.1.3.2 / §3.2.4 step 1): every line the patience
- * engine pairs keeps its exact previous `line_id`; unpaired lines are the batch's inserted lines and
- * take a fresh counter block. With no prior snapshot for the path, every line is unpaired.
+ * Pairs S_final's lines against S_latest (spec §3.1.3.2 / §3.2.4 step 1): every line `pairLineage` pairs
+ * keeps its exact previous `line_id`, including a homogeneous run's ordinal carry; unpaired lines are the
+ * batch's inserted lines and take a fresh counter block. With no prior snapshot for the path, every line
+ * is unpaired.
  */
 function pairAgainstLatest(store: HashStore, path: string, lines: string[]): InheritedIdentities {
   const inherited = new Map<number, number>();
@@ -625,16 +626,18 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   if (!latest) return { inherited };
   const previous = stmts.lineageIdentities(latest.snapshot_id);
   if (previous.length === 0) return { inherited };
-  const prevLines: LineDescriptor[] = previous.map((row) => ({
+  const prev: LineageLine[] = previous.map((row) => ({
     lineNumber: row.line_number,
     canonHash: row.canon_hash,
+    rawHash: row.raw_hash ?? undefined,
   }));
-  const currLines: LineDescriptor[] = lines.map((line, index) => ({
+  const curr: LineageLine[] = lines.map((line, index) => ({
     lineNumber: index + 1,
     canonHash: canonDigest(line),
+    rawHash: rawDigest(line),
   }));
   const byLineNumber = new Map(previous.map((row) => [row.line_number, row.line_id]));
-  for (const [prevLine, currLine] of pairSnapshots(prevLines, currLines)) {
+  for (const [prevLine, currLine] of pairLineage(prev, curr)) {
     const lineId = byLineNumber.get(prevLine);
     if (lineId !== undefined) inherited.set(currLine, lineId);
   }

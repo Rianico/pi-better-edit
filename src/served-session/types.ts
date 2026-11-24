@@ -88,6 +88,12 @@ export interface SessionHandle {
     /** Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted. */
     contentHash?: string;
     isFullRead?: boolean;
+    /**
+     * Anchors the read alignment retired while serving this page (deleted lines). They are added to the
+     * session's tombstone set — after the full-read clear, or after the partial read's displaced hashes —
+     * so a later fresh allocation cannot hand one out again.
+     */
+    blockedHashes?: Iterable<string>;
   }): Promise<void>;
   /** SAFETY: Drift: clear reported set (e.g. after a fresh read). */
   clearDrift(): Promise<void>;

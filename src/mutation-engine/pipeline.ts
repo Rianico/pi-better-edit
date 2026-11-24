@@ -13,7 +13,7 @@ import {
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
-import { snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
+import { getSnapshot, snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
 import { applyEdit } from "../hashline/apply.js";
 import { buildNeverServedEditHint } from "../served-session/serve-render.js";
 import { resEdit, type HEdit, type NEdit } from "../hashline/resolve.js";
@@ -768,6 +768,7 @@ async function runMutations(
     absolutePath,
     served,
     endingCounts,
+    retiredHashes: loadedRetiredHashes,
   } = await loadEditFile({
     path,
     cwd,
@@ -839,7 +840,7 @@ async function runMutations(
     reportDiagnostic("mutation-engine", "Failed to load served canon digests for batch:", error);
     baseCanonDigests = [];
   }
-  const batchBlockedHashes = new Set<string>();
+  const batchBlockedHashes = new Set<string>(loadedRetiredHashes);
   try {
     for (const hash of await createSessionHandle(
       sessionKey,
@@ -851,7 +852,7 @@ async function runMutations(
   } catch (error) {
     reportDiagnostic("mutation-engine", "Failed to load legacy blocked hashes for batch:", error);
   }
-  const accumulatedRemoved = new Set<string>();
+  const accumulatedRemoved = new Set<string>(loadedRetiredHashes);
 
   for (let index = 0; index < items.length; index++) {
     abortIf(options?.signal);
@@ -1009,7 +1010,16 @@ async function runMutations(
       },
       snapshotIOFor(hashStore),
       false,
+      batchBlockedHashes,
     );
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the snapshot committed for this exact content is the identity every read serves, so it outranks an anchor a tombstone just forced away from.
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — a preview reads the same identity but never cleans up: the corrupt-row policy is "keep", so an unpersisted turn cannot delete a row it never owned.
+    const committed = getSnapshot(hashStore, absolutePath, result, isPreview ? "keep" : "delete");
+    if (committed !== undefined && committed.length === resultHashes.length) {
+      resultHashes = committed;
+      // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the identity names the ADOPTED snapshot, not the working buffer's spliced ids, because downstream leases and undo claims read `line_id` against the committed rows. `workingBufferIds` IS the `positionsByIdentity` inversion.
+      currentIds = workingBufferIds(hashStore, absolutePath, result);
+    }
   }
   const resultLineIds = isPreview ? [] : currentIds;
 

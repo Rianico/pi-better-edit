@@ -7,6 +7,7 @@
 * **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)
 * **store:** align a checksum miss against the latest committed lineage with pin-bounded pairing, so an externally deleted duplicate twin retires its own anchor and the surviving twin keeps its exact prior anchor instead of inheriting the deleted twin's. Unpaired anchors return through `HashOptions.retiredHashes` for the session tombstone; ambiguous intervals fail closed. (#343)
 * **store:** carry anchors ordinally across one contiguous homogeneous raw-byte run on a checksum miss, so an external shrink keeps the surviving prefix's anchors and retires the overflow, while a run crossing an indentation or whitespace change fails closed. Lineage now persists a per-line raw digest (`raw_hash`) to prove the run holds one spelling. (#344)
+* **store:** give anchors and line ids one pairing owner, so a homogeneous run's shrink or growth edit resolves on the surviving ordinal without an intervening read and only the overflow copy retires. A drifted full read now tombstones the anchors its alignment retired, a drifted edit tombstones its own, and a clean success omits `details.driftNotice` instead of emitting an empty string. (#345)
 
 ## [2.20.0] - 2026-11-24
 
