@@ -4,7 +4,7 @@
 
 ### Features
 
-* **edit:** admit optional `dry_run` in the edit payload contract and execute as a validated, non-persisting preview. A dry-run execution runs standard validation, generates the hypothetical diff with blank line gutters and suppressed anchors, returns `[DRY RUN]` in the response header and `details.dryRun: true`, and skips all file writes, undo recording, and session lease mutations.
+* **edit:** admit optional `dry_run` in the edit payload contract and execute as a validated, non-persisting preview. A dry-run execution runs standard validation, generates the hypothetical diff with blank line gutters and suppressed anchors, returns `[DRY RUN]` in the response header and `details.dryRun: true`, and skips all file writes, undo recording, and session lease mutations. (#346)
 
 ### Bug Fixes
 
