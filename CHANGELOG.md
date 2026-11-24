@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Features
+
+* **edit:** admit optional `dry_run` in the edit payload contract and execute as a validated, non-persisting preview. A dry-run execution runs standard validation, generates the hypothetical diff with blank line gutters and suppressed anchors, returns `[DRY RUN]` in the response header and `details.dryRun: true`, and skips all file writes, undo recording, and session lease mutations. (#346)
+
 ### Bug Fixes
 
 * **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)

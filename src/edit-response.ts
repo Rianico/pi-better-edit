@@ -29,6 +29,8 @@ export type EditDetails = {
   warnings?: string[];
   driftNotice?: string;
   summary?: string;
+  /** A dry run validates and renders the change but commits nothing. */
+  dryRun?: boolean;
 };
 type TResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -204,7 +206,14 @@ export type BatchSection = {
   };
 };
 
-export function buildBatchResult(sections: BatchSection[]): TResult {
+/**
+ * `isDryRun` publishes no served rows: nothing a dry run shows is addressable, because its anchors
+ * describe bytes that were never written, so no lease may be minted from them.
+ *
+ * `metrics.classification` keeps the live vocabulary ("applied"/"noop"): it names the outcome the
+ * bytes WOULD have. `details.dryRun` and the `[DRY RUN]` header mark that nothing was written.
+ */
+export function buildBatchResult(sections: BatchSection[], isDryRun = false): TResult {
   const totalEdits = sections.reduce((n, s) => n + s.appliedCount + s.noopCount, 0);
   const appliedFiles = sections.filter((s) => s.appliedCount > 0);
   const appliedTotal = appliedFiles.reduce((n, s) => n + s.appliedCount, 0);
@@ -220,11 +229,14 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
     .join("\n\n");
 
   if (allNoop) {
-    const text = `No changes made. All ${totalEdits} edit(s) in the call produced identical content.\nClassification: noop${warnBlock(warnings)}`;
+    const text = isDryRun
+      ? `[DRY RUN] No changes would be made. All ${totalEdits} edit(s) in the call produce identical content.\nClassification: noop${warnBlock(warnings)}`
+      : `No changes made. All ${totalEdits} edit(s) in the call produced identical content.\nClassification: noop${warnBlock(warnings)}`;
     return {
       content: [{ type: "text", text }],
       details: {
         diff: "",
+        ...(isDryRun ? { dryRun: true as const } : {}),
         classification: "noop" as const,
         metrics: buildMetrics({
           classification: "noop",
@@ -251,7 +263,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   for (const s of appliedFiles) {
     const diffResult = s.renderedDiff;
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
-    const denseRows = denseServeRows(s.resultHashes);
+    const denseRows: ServedRow[] = isDryRun ? [] : denseServeRows(s.resultHashes);
     if (denseRows.length > 0) {
       servedByPath.push({
         path: s.path,
@@ -273,7 +285,9 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
     addedLines > 0 || removedLines > 0
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
-  const summary = `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
+  const summary = isDryRun
+    ? `[DRY RUN] Validated ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) would be applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`
+    : `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
   const text = modelText(summary, diff, warnings);
 
   return {
@@ -281,6 +295,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
     details: {
       diff,
       summary,
+      ...(isDryRun ? { dryRun: true as const } : {}),
       metrics: buildMetrics({
         classification: "applied",
         editsAttempted: totalEdits,
@@ -291,9 +306,9 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
         ...(literalDeclarations > 0 ? { literalDeclarations } : {}),
       }),
       ...(warnings.length > 0 ? { warnings } : {}),
-      servedRows: servedByPath.flatMap((e) => e.servedRows),
-      servedByPath,
-      ...(appliedFiles.length === 1 && appliedFiles[0] !== undefined
+      servedRows: isDryRun ? [] : servedByPath.flatMap((e) => e.servedRows),
+      servedByPath: isDryRun ? [] : servedByPath,
+      ...(appliedFiles.length === 1 && appliedFiles[0] !== undefined && !isDryRun
         ? { contentHash: appliedFiles[0].resultHash }
         : {}),
       ...(driftNotice !== undefined ? { driftNotice } : {}),

@@ -81,6 +81,9 @@ function toFailure(error: unknown): MutationResult {
  * No `any` threading: input is `NormalizedEditRequest` (validated at
  * admission), output is typed. Failures are `ok:false` with `code`, not
  * loose `isError` flags.
+ *
+ * A dry run is a request-level promise: `dry_run` on the request derives `noPersist` here, so a
+ * programmatic caller never has to remember the option the promise implies.
  */
 export async function execute(
   request: NormalizedEditRequest,
@@ -88,10 +91,11 @@ export async function execute(
   options?: PipelineOptions,
 ): Promise<MutationResult> {
   try {
+    const isDryRun = request.dry_run === true || options?.dryRun === true;
     const { result, diff, drift, metrics, raw, toolResult } = await pipelineApply(
       request,
       cwd,
-      options,
+      isDryRun ? { ...options, noPersist: true, dryRun: true } : options,
     );
     if (!metrics) throw new Error("missing metrics from pipeline — invariant violation");
     return {
@@ -118,7 +122,7 @@ export async function execute(
 export async function preview(
   request: NormalizedEditRequest,
   cwd: string,
-  options?: Omit<PipelineOptions, "noPersist">,
+  options?: Omit<PipelineOptions, "noPersist" | "dryRun">,
 ): Promise<MutationResult> {
   try {
     const file = await pipelinePreview(request, cwd, options);
