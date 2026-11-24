@@ -204,7 +204,11 @@ export type BatchSection = {
   };
 };
 
-export function buildBatchResult(sections: BatchSection[]): TResult {
+/**
+ * `isDryRun` publishes no served rows: nothing a dry run shows is addressable, because its anchors
+ * describe bytes that were never written, so no lease may be minted from them.
+ */
+export function buildBatchResult(sections: BatchSection[], isDryRun = false): TResult {
   const totalEdits = sections.reduce((n, s) => n + s.appliedCount + s.noopCount, 0);
   const appliedFiles = sections.filter((s) => s.appliedCount > 0);
   const appliedTotal = appliedFiles.reduce((n, s) => n + s.appliedCount, 0);
@@ -251,7 +255,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   for (const s of appliedFiles) {
     const diffResult = s.renderedDiff;
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
-    const denseRows = denseServeRows(s.resultHashes);
+    const denseRows: ServedRow[] = isDryRun ? [] : denseServeRows(s.resultHashes);
     if (denseRows.length > 0) {
       servedByPath.push({
         path: s.path,
@@ -291,9 +295,9 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
         ...(literalDeclarations > 0 ? { literalDeclarations } : {}),
       }),
       ...(warnings.length > 0 ? { warnings } : {}),
-      servedRows: servedByPath.flatMap((e) => e.servedRows),
-      servedByPath,
-      ...(appliedFiles.length === 1 && appliedFiles[0] !== undefined
+      servedRows: isDryRun ? [] : servedByPath.flatMap((e) => e.servedRows),
+      servedByPath: isDryRun ? [] : servedByPath,
+      ...(appliedFiles.length === 1 && appliedFiles[0] !== undefined && !isDryRun
         ? { contentHash: appliedFiles[0].resultHash }
         : {}),
       ...(driftNotice !== undefined ? { driftNotice } : {}),
