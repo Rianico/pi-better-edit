@@ -10,7 +10,7 @@ import { createEditTool } from "../../src/edit-tool.js";
 import { getServed, loadLeases } from "../../src/served-session/index.js";
 import { loadHashStore } from "../../src/hash-store";
 import { getSnapshot } from "../../src/snapshot-store";
-import { initHasher } from "../../src/hashline/hash-identity.js";
+import { contentOnlyHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import {
   anchorRows,
   extractHash,
@@ -343,6 +343,182 @@ describe("served edit prompts name the emitted shapes (T3 #328)", () => {
       expect(leases).not.toContain(h2);
       expect(guidelines).toContain("a rejection that shows no rows grants none");
       expect(EDIT_DESCRIPTION).not.toContain("recorded as served");
+    });
+  });
+  it.each([0, 1])(
+    "routes a single failing foreign reference at index %i through the batch verdict",
+    async (failing) => {
+      await withTempDir("served-foreign-batch-", async (cwd) => {
+        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+        await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+        await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+        const rows = anchorRows(
+          getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+        );
+        const t = rows.map(extractHash);
+        const s = await contentOnlyHashes("x\ny\nz\n");
+        const validEdit = { anchor_from: t[0]!, anchor_to: t[0]!, text: "ONE" };
+        const foreignEdit = {
+          anchor_from: t[1]!,
+          anchor_to: t[1]!,
+          text_ref: { anchor_from: s[0]!, anchor_to: s[1]!, file: "b.txt", mode: "copy" as const },
+        };
+        const error = await fails(
+          editTool.execute(
+            "e1",
+            {
+              file: "a.txt",
+              edits: failing === 0 ? [foreignEdit, validEdit] : [validEdit, foreignEdit],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        );
+        expect(error.message.split("\n")[0] ?? "").toBe(
+          "[MODEL] Batch rejected: 1 of 2 edits failed; nothing was written.",
+        );
+        expect(error.message).toContain(`- edit[${failing}] (a.txt) [E_UNKNOWN_ANCHOR]:`);
+        expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+        expect(error.message.match(/nothing was written/gi) ?? []).toHaveLength(1);
+        expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+        expect(await readFile(join(cwd, "b.txt"), "utf-8")).toBe("x\ny\nz\n");
+      });
+    },
+  );
+  it("names both failing foreign items in call order", async () => {
+    await withTempDir("served-foreign-batch-two-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const rows = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      );
+      const t = rows.map(extractHash);
+      const s = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              {
+                anchor_from: t[0]!,
+                anchor_to: t[0]!,
+                text_ref: { anchor_from: s[0]!, anchor_to: s[0]!, file: "b.txt", mode: "copy" },
+              },
+              {
+                anchor_from: t[1]!,
+                anchor_to: t[1]!,
+                text_ref: { anchor_from: s[1]!, anchor_to: s[2]!, file: "b.txt", mode: "copy" },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message.split("\n")[0] ?? "").toBe(
+        "[MODEL] Batch rejected: 2 of 2 edits failed; nothing was written.",
+      );
+      expect(error.message).toContain("- edit[0] (a.txt) [E_UNKNOWN_ANCHOR]:");
+      expect(error.message).toContain("- edit[1] (a.txt) [E_UNKNOWN_ANCHOR]:");
+      expect(error.message.indexOf("- edit[0]")).toBeLessThan(error.message.indexOf("- edit[1]"));
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+    });
+  });
+
+  it("keeps a 1-item foreign failure on the bare error with no batch envelope", async () => {
+    await withTempDir("served-foreign-batch-bare-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const rows = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      );
+      const t = rows.map(extractHash);
+      const s = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              {
+                anchor_from: t[1]!,
+                anchor_to: t[1]!,
+                text_ref: { anchor_from: s[0]!, anchor_to: s[1]!, file: "b.txt", mode: "copy" },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message).toMatch(/^\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+      expect(error.message).not.toContain("Batch rejected:");
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+    });
+  });
+  it("renders a retired foreign span through the batch verdict with the atomicity fact exactly once", async () => {
+    await withTempDir("served-foreign-retired-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "source.txt"), "a\nb\nc\nd\n", "utf-8");
+      await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
+      const hs = anchorRows(
+        getText(await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const ht = anchorRows(
+        getText(await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const retired = await editTool.execute(
+        "e-retire",
+        { file: "source.txt", edits: [{ anchor_from: hs[0]!, anchor_to: hs[0]!, text: "B" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(retired)).toContain("Successfully edited");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "target.txt",
+            edits: [
+              { anchor_from: ht[0]!, anchor_to: ht[0]!, text: "ONE" },
+              {
+                anchor_from: ht[1]!,
+                anchor_to: ht[1]!,
+                text_ref: {
+                  anchor_from: hs[0]!,
+                  anchor_to: hs[2]!,
+                  file: "source.txt",
+                  mode: "copy",
+                },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message.split("\n")[0] ?? "").toBe(
+        "[MODEL] Batch rejected: 1 of 2 edits failed; nothing was written.",
+      );
+      expect(error.message).toContain("- edit[1] (target.txt) [E_UNVERIFIED_RANGE]:");
+      expect(error.message).toContain(
+        "no longer resolves against that file's served state (rejection: E_UNVERIFIED_RANGE). " +
+          "No rows of source.txt were served by this call.",
+      );
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNVERIFIED_RANGE");
+      expect(error.message.match(/nothing was written/gi) ?? []).toHaveLength(1);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("1\n2\n3\n");
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("B\nb\nc\nd\n");
     });
   });
 });

@@ -553,12 +553,12 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     return new DomainError("E_STALE_ANCHOR", {
       headline:
         `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
-        `(rejection: ${error.code}). Nothing was written; no rows of ${refFile} were served by this call.`,
+        `(rejection: ${error.code}); no rows of ${refFile} were served by this call.`,
       cause,
     });
   }
   return new DomainError("E_STALE_ANCHOR", {
-    headline: `the foreign-source reference to ${refFile} did not resolve. Nothing was written.`,
+    headline: `the foreign-source reference to ${refFile} did not resolve.`,
     cause: "never-served",
   });
 }
@@ -571,8 +571,7 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
-    `state (rejection: ${error.code}). No rows of ${refFile} were served by this call. Nothing ` +
-    `was written.`;
+    `state (rejection: ${error.code}). No rows of ${refFile} were served by this call.`;
   const cause = error.cause ?? error.details.cause ?? "never-served";
   const firstOffending =
     error.firstOffendingLine !== undefined ? { firstOffendingLine: error.firstOffendingLine } : {};
@@ -676,7 +675,8 @@ function collapseSpanToText(span: string[]): string {
 /**
  * One read+load+lease per RESOLVED path per batch: without the memo, a foreign file that changes on disk
  * between two items would materialize two revisions into one call with no diagnostic — correctness, not
- * performance. The map is batch-scoped, because a global cache would go stale.
+ * performance. The map is batch-scoped, because a global cache would go stale. A failed item contributes
+ * only to the failure list: both exits below throw, so a partial `out` is never returned.
  */
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
@@ -687,6 +687,7 @@ async function materializeForeignReferences(
   if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
   const views = new Map<string, Promise<ForeignServedView>>();
   const out: NormalizedEditItem[] = [];
+  const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     const refFile = refFiles[index];
@@ -705,8 +706,16 @@ async function materializeForeignReferences(
       });
       views.set(key, view);
     }
-    out.push(await materializeForeignItem(item, refFile, await view, cuts));
+    try {
+      out.push(await materializeForeignItem(item, refFile, await view, cuts));
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error;
+      failures.push({ error, index });
+      continue;
+    }
   }
+  if (failures.length === 1 && items.length === 1) throw failures[0]!.error;
+  if (failures.length > 0) throw batchAbort({ failures, total: items.length, path: input.file });
   return { items: out, cuts };
 }
 
