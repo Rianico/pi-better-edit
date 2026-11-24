@@ -177,8 +177,8 @@ An anchor pair names the two ends of a span. The lines **between** them are the 
 | :--- | :--- | :--- | :--- |
 | `edit.span_mode` | `hint` \| `strict` | `hint` | `PI_BETTER_EDIT_SPAN_MODE` |
 
-- `hint` (default): the edit applies, and the response discloses the blind spot. Each unserved removal carries an empty gutter, a fold marker counts the unserved rows it hides (`- ... [12 lines deleted (3 unserved)] ...`), and the applied warning `[MODEL] [W_UNSERVED_INTERIOR]` names the count and range once per file.
-- `strict`: the edit is refused before any write, rowless, as `[MODEL] [E_UNSERVED_RANGE] line <n> in <path> was never served in this session.` The file stays byte-identical and no rows are served for a retry; read the gap, then retry.
+- `hint` (default): the edit applies, and the response discloses the blind spot. Each unserved removal carries an empty gutter, a fold marker counts the unserved rows it hides (`- ... [12 lines deleted (3 unserved)] ...`), and the applied warning `[MODEL] [W_UNSERVED_INTERIOR]` names the replaced file-line count, how many of those lines were never served, and the exact unserved file lines once per file.
+- `strict`: the edit is refused before any write, rowless, as `[MODEL] [E_UNSERVED_RANGE] Strict span mode refused the edit to <path>: 3 of the 9 file lines it replaces were never served.` plus `Unserved file lines: 4-6`. The file stays byte-identical and no rows are served for a retry; read the listed file lines, then retry.
 - Boundary anchors do not consult this setting. A boundary with no served position already fails closed with `[E_STALE_RANGE]`, and one with no lease with `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`.
 - Both spellings are lower case and case-sensitive; a value outside the enum is ignored at its rung, so the next rung answers.
 
@@ -426,7 +426,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not the targeted one. | — |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
-| `[E_UNSERVED_RANGE]` | Strict mode only ([`edit.span_mode`](#span-mode)): an interior line of the target span was never served in this session. Refused before any write, rowless. | — |
+| `[E_UNSERVED_RANGE]` | Strict mode only ([`edit.span_mode`](#span-mode)): an interior line of the target span was never served. The refusal names the path, the unserved count, the replaced file-line count, and the exact unserved file lines. Refused before any write, rowless. | — |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without stable anchor bounds. | — |
 | `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor prefix. | Omit anchor prefixes or set `mode: "literal"`. |
 | `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge overlapping spans or split calls. |
@@ -455,7 +455,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[W_NOOP]` | `[USER]` | Identical edit submitted a 2nd consecutive time without changing range text. Resend triggers `[E_NOOP_LOOP]`. |
 | `[W_NOOP_INSERT]` | `[MODEL]` | Empty insertion with `before`/`after` writes zero bytes. |
 | `[W_EOL_REWRITTEN]` | `[MODEL]` | EOL normalized to the effective EOL; names the target, source, number of pre-image terminators changed, and the normalized-undo consequence. |
-| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced interior lines this session never served; names the count and range. Strict mode refuses such spans instead. |
+| `[W_UNSERVED_INTERIOR]` | `[MODEL]` | Hint mode replaced interior lines this session never served; names the replaced file-line count, the unserved count, and the exact unserved file lines. Strict mode refuses such spans instead. |
 
 
 ### Read Warnings (`[W_*]`)

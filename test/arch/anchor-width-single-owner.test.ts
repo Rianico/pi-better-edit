@@ -243,7 +243,7 @@ describe("anchor width single owner", () => {
 
   it("positive control: the leaf walker sees real dependencies", () => {
     const code = readFileSync(join("src", "domain-errors.ts"), "utf-8");
-    expect(moduleSources(code)).toEqual(["./hashline/alphabet.js"]);
+    expect(moduleSources(code)).toEqual(["./hashline/alphabet.js", "./unserved-span-message.js"]);
     expect(
       moduleSources(
         'export { HASH_RE } from "./hasher.js";\nconst lazy = await import("./dyn.js");\n',

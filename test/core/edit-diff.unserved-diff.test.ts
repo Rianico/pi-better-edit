@@ -157,7 +157,6 @@ describe("genDiff served mirror", () => {
 
     const withoutMirror = genDiff(oldContent, newContent, 2, newHashes, oldHashes);
     const folded = genDiff(oldContent, newContent, 2, newHashes, oldHashes, undefined, allNull);
-
     expect(withoutMirror.unservedRemovedLines).toEqual([]);
     expect(folded.unservedRemovedLines).toEqual(
       Array.from({ length: DIFF_REMOVED_CAP + 2 }, (_, i) => i + 2),
@@ -165,5 +164,18 @@ describe("genDiff served mirror", () => {
     expect(
       folded.unservedRemovedLines.every((line, i, all) => i === 0 || line > (all[i - 1] as number)),
     ).toBe(true);
+  });
+
+  it("reports the removed old-line count independently of the fold cap and the mirror", () => {
+    const { oldContent, newContent, oldHashes, newHashes } = foldedCase();
+    const allNull: (string | null)[] = oldHashes.map(() => null);
+
+    const withoutMirror = genDiff(oldContent, newContent, 2, newHashes, oldHashes);
+    const folded = genDiff(oldContent, newContent, 2, newHashes, oldHashes, undefined, allNull);
+    const unchanged = genDiff(oldContent, oldContent, 2, oldHashes, oldHashes);
+
+    expect(withoutMirror.removedLineCount).toBe(DIFF_REMOVED_CAP + 2);
+    expect(folded.removedLineCount).toBe(DIFF_REMOVED_CAP + 2);
+    expect(unchanged.removedLineCount).toBe(0);
   });
 });

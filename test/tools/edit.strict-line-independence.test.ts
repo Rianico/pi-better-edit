@@ -141,7 +141,9 @@ describe("line independence under strict span mode", () => {
         if (!isMutationFailure(result)) return;
         expect(result.code).toBe("E_UNSERVED_RANGE");
         expect(result.message).toContain("[MODEL] [E_UNSERVED_RANGE]");
-        expect(result.message).toContain("line 4-49");
+        expect(result.message).toContain(
+          "sample.txt: 46 of the 48 file lines it replaces were never served.\nUnserved file lines: 4-49",
+        );
         expect(result.message).not.toContain("Current range");
         expect(result.servedRows ?? []).toEqual([]);
         expect(result.servedBlock ?? "").toBe("");

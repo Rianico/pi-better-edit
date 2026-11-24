@@ -1118,15 +1118,11 @@ async function finishCommittedFile(
     undefined,
     file.served,
   );
-  const [firstUnserved] = diffInfo.unservedRemovedLines;
-  if (firstUnserved !== undefined) {
-    const lastUnserved =
-      diffInfo.unservedRemovedLines[diffInfo.unservedRemovedLines.length - 1] ?? firstUnserved;
+  if (diffInfo.unservedRemovedLines.length > 0) {
     file.warnings.push(
       formatWarning("W_UNSERVED_INTERIOR", {
-        count: diffInfo.unservedRemovedLines.length,
-        from: firstUnserved,
-        to: lastUnserved,
+        unservedLines: diffInfo.unservedRemovedLines,
+        replacedLineCount: diffInfo.removedLineCount,
       }),
     );
   }

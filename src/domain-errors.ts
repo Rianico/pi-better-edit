@@ -1,7 +1,7 @@
 /**
  * Domain error registry — the closed, type-safe contract for every negative-path rejection (spec
- * docs/spec/unified-error-and-warning-contract.md section 4, D1). Its only import is the leaf
- * `./hashline/alphabet.js` (imports nothing), so a seam throws with no store, session or hasher.
+ * docs/spec/unified-error-and-warning-contract.md section 4, D1). Its imports are pure leaves —
+ * `./hashline/alphabet.js` and `./unserved-span-message.js` (→ `./constants.js`): no store, no session.
  * INVARIANT: a code is never declared without a producer — every `DomainErrorCode` member has a
  * `new DomainError(code, payload)` site in src/, and every throw-site code is a union member;
  * asserted BOTH directions in test/arch/domain-error-registry.test.ts.
@@ -12,6 +12,7 @@
  */
 
 import { HASH_LEN } from "./hashline/alphabet.js";
+import { formatUnservedSpanMessage } from "./unserved-span-message.js";
 
 export type Audience = "MODEL" | "USER";
 
@@ -568,10 +569,14 @@ export interface WarningPayloadMap {
     source: "env" | "project" | "global" | "file" | "system";
     changed: number;
   };
+  /**
+   * Absolute old-file lines the edit replaced unseen, plus the replaced-set denominator the
+   * shared formatter quotes. Both are facts; the sentence grammar lives in
+   * `./unserved-span-message.js` so this voice and the strict refusal cannot drift.
+   */
   W_UNSERVED_INTERIOR: {
-    count: number;
-    from: number;
-    to: number;
+    unservedLines: readonly number[];
+    replacedLineCount: number;
   };
 }
 
@@ -687,8 +692,8 @@ export const WARNING_REGISTRY: {
   },
   W_UNSERVED_INTERIOR: {
     audience: "MODEL",
-    format: ({ count, from, to }) =>
-      `Span replaced ${count} unserved interior line(s) (lines ${from}-${to}). Edits should only modify lines previously read and served (enforced under strict mode); verify this uninspected replacement was intended.`,
+    format: ({ unservedLines, replacedLineCount }) =>
+      formatUnservedSpanMessage({ voice: "hint", unservedLines, replacedLineCount }),
   },
 };
 

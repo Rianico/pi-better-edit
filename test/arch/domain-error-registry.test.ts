@@ -471,7 +471,7 @@ describe("domain warning registry: applied tier, never a rejection", () => {
       removeTo: "def",
     },
     W_EOL_REWRITTEN: { target: "CRLF", source: "file", changed: 1 },
-    W_UNSERVED_INTERIOR: { count: 3, from: 4, to: 6 },
+    W_UNSERVED_INTERIOR: { unservedLines: [4, 5, 6], replacedLineCount: 5 },
   };
 
   it("the warning union is exactly the nine W_* codes", () => {

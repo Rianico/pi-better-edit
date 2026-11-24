@@ -169,7 +169,10 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
     expect(err.servedBlock).toBe("");
     expect(err.details.cause).toBe("never-served");
     expect(err.message.startsWith("[MODEL] [E_UNSERVED_RANGE] ")).toBe(true);
-    expect(err.message).toContain("line 2");
+    expect(err.message).toContain(
+      "Strict span mode refused the edit: 1 of the 3 file lines it replaces was never served.\n" +
+        "Unserved file line: 2",
+    );
   });
 
   it("reports a retired interior lease as retirement", () => {
