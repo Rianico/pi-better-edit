@@ -29,6 +29,8 @@ export type EditDetails = {
   warnings?: string[];
   driftNotice?: string;
   summary?: string;
+  /** A dry run validates and renders the change but commits nothing. */
+  dryRun?: boolean;
 };
 type TResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -207,6 +209,9 @@ export type BatchSection = {
 /**
  * `isDryRun` publishes no served rows: nothing a dry run shows is addressable, because its anchors
  * describe bytes that were never written, so no lease may be minted from them.
+ *
+ * `metrics.classification` keeps the live vocabulary ("applied"/"noop"): it names the outcome the
+ * bytes WOULD have. `details.dryRun` and the `[DRY RUN]` header mark that nothing was written.
  */
 export function buildBatchResult(sections: BatchSection[], isDryRun = false): TResult {
   const totalEdits = sections.reduce((n, s) => n + s.appliedCount + s.noopCount, 0);
@@ -224,11 +229,14 @@ export function buildBatchResult(sections: BatchSection[], isDryRun = false): TR
     .join("\n\n");
 
   if (allNoop) {
-    const text = `No changes made. All ${totalEdits} edit(s) in the call produced identical content.\nClassification: noop${warnBlock(warnings)}`;
+    const text = isDryRun
+      ? `[DRY RUN] No changes would be made. All ${totalEdits} edit(s) in the call produce identical content.\nClassification: noop${warnBlock(warnings)}`
+      : `No changes made. All ${totalEdits} edit(s) in the call produced identical content.\nClassification: noop${warnBlock(warnings)}`;
     return {
       content: [{ type: "text", text }],
       details: {
         diff: "",
+        ...(isDryRun ? { dryRun: true as const } : {}),
         classification: "noop" as const,
         metrics: buildMetrics({
           classification: "noop",
@@ -277,7 +285,9 @@ export function buildBatchResult(sections: BatchSection[], isDryRun = false): TR
     addedLines > 0 || removedLines > 0
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
-  const summary = `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
+  const summary = isDryRun
+    ? `[DRY RUN] Validated ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) would be applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`
+    : `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
   const text = modelText(summary, diff, warnings);
 
   return {
@@ -285,6 +295,7 @@ export function buildBatchResult(sections: BatchSection[], isDryRun = false): TR
     details: {
       diff,
       summary,
+      ...(isDryRun ? { dryRun: true as const } : {}),
       metrics: buildMetrics({
         classification: "applied",
         editsAttempted: totalEdits,

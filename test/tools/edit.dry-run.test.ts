@@ -376,3 +376,111 @@ describe("edit dry_run — engine and tool seams", () => {
     });
   });
 });
+
+describe("edit dry_run — response header (T3)", () => {
+  it("answers a dry run with the [DRY RUN] header while the metrics keep the applied vocabulary", async () => {
+    const content = "one\ntwo\nthree\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      const absolutePath = await resolveTarget(path);
+      const hashes = await lineHashes(content, absolutePath);
+
+      const result = await createEditTool().execute(
+        {
+          file: "sample.txt",
+          dry_run: true,
+          edits: [
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ONE" },
+            { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "TWO" },
+          ],
+        },
+        undefined,
+        ctx,
+      );
+
+      const details = result.details as {
+        dryRun?: boolean;
+        metrics?: { classification?: string };
+      };
+      expect(getText(result)).toContain(
+        "[DRY RUN] Validated 1 file(s) — 2 of 2 edit(s) would be applied. Added 2 line(s), removed 2 line(s).",
+      );
+      expect(details.dryRun, "the payload marks the run as hypothetical").toBe(true);
+      expect(
+        details.metrics?.classification,
+        "classification still names the outcome the bytes would have",
+      ).toBe("applied");
+      expect(await readFile(path, "utf-8"), "a dry run writes nothing").toBe(content);
+    });
+  });
+
+  it("answers a dry-run noop with its own header while classifying it noop", async () => {
+    const content = "a\nb\nc\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      const absolutePath = await resolveTarget(path);
+      const hashes = await lineHashes(content, absolutePath);
+
+      const result = await createEditTool().execute(
+        {
+          file: "sample.txt",
+          dry_run: true,
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b" }],
+        },
+        undefined,
+        ctx,
+      );
+
+      const details = result.details as {
+        dryRun?: boolean;
+        metrics?: { classification?: string };
+      };
+      expect(getText(result)).toContain(
+        "[DRY RUN] No changes would be made. All 1 edit(s) in the call produce identical content.",
+      );
+      expect(details.dryRun).toBe(true);
+      expect(details.metrics?.classification).toBe("noop");
+      expect(await readFile(path, "utf-8")).toBe(content);
+    });
+  });
+
+  it("leaves the live success and noop text byte-identical", async () => {
+    const content = "one\ntwo\nthree\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      const absolutePath = await resolveTarget(path);
+      const hashes = await lineHashes(content, absolutePath);
+      const tool = createEditTool();
+
+      const live = await tool.execute(
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ONE" }],
+        },
+        undefined,
+        ctx,
+      );
+      const liveDetails = live.details as { dryRun?: boolean };
+      const liveText = getText(live);
+      expect(liveText.startsWith("Successfully edited"), liveText).toBe(true);
+      expect(liveText).not.toContain("[DRY RUN]");
+      expect("dryRun" in liveDetails, "a live success publishes no dryRun marker").toBe(false);
+
+      const noop = await tool.execute(
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "two" }],
+        },
+        undefined,
+        ctx,
+      );
+      const noopText = getText(noop);
+      expect(noopText.startsWith("No changes made."), noopText).toBe(true);
+      expect(noopText).not.toContain("[DRY RUN]");
+      expect(await readFile(path, "utf-8")).toBe("ONE\ntwo\nthree\n");
+    });
+  });
+});
