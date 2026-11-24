@@ -180,18 +180,8 @@ export const editToolSchema = Type.Object(
 const ITEM_SHAPE =
   "an item is exactly { anchor_from, anchor_to, text[, at] } or { anchor_from, anchor_to, text_ref[, at] }";
 
-const EDIT_PAYLOAD_HINT =
-  "Edit must be called with exactly one payload per item. Use the canonical payload " +
-  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "text": text }, ...], "mode"?: "general" | "literal"}: ' +
-  '"file" is the text file to edit (a non-empty string, never a directory); each item names two inclusive ' +
-  `bare-${HASH_LEN}-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ` +
-  'range) or "text_ref" ({ anchor_from, anchor_to, file?, mode (required): "copy" | "cut" } — the served span\'s bytes, ' +
-  '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
-  '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
-  'served rows are refused) or "literal" (declared literal content).';
 /**
- * Short shape verdict for refusal arms (T2). The long served hint above stays
- * untouched: T3 owns the served prompt wording.
+ * Short shape verdict for refusal arms (T2).
  */
 const EDIT_SHAPE_LINE =
   "Edit payload: { file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }], mode? }";
@@ -209,20 +199,6 @@ export const EDIT_GUIDELINES: string[] = [
   "edit: a `[W_*]` line or a `[USER]` line in `content` is informational, not a refusal. An `[E_*]` token and the line it opens is your retry instruction or a rejection: in a batch, the verdict line names the audience and `K of N`, and each `- edit[i] (path) [E_*]:` bullet opens that item's instruction. Rows under `Current range (fresh read):` or `Current range:` are recorded as served when shown; a rejection that shows no rows grants none; a batch overlap shows the anchors it compared rather than granting them, so re-read if a retry reports one unserved.",
   "edit: batch independent ranges in one `edits` array. Inside it, every edit validates BEFORE the first rename, and any failure there writes nothing. A foreign `cut` writes its files in a fixed order, and a defeated rollback restores captured bytes or is repaired on the next run.",
 ];
-
-function _getPayloadPromptFragments(): {
-  description: string;
-  snippet: string;
-  guidelines: string[];
-  hint: string;
-} {
-  return {
-    description: EDIT_DESCRIPTION,
-    snippet: EDIT_SNIPPET,
-    guidelines: [...EDIT_GUIDELINES],
-    hint: EDIT_PAYLOAD_HINT,
-  };
-}
 
 function quoted(keys: string[]): string {
   return keys.map((key) => `"${key}"`).join(", ");

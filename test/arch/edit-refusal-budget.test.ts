@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DomainError,
@@ -9,8 +10,15 @@ import {
   type DomainErrorCode,
   type ErrorPayloadMap,
 } from "../../src/domain-errors.js";
-import { assertReq, normReq, prepareEditArguments } from "../../src/payload-contract.js";
 import { resEdit } from "../../src/hashline/resolve.js";
+import {
+  EDIT_DESCRIPTION,
+  EDIT_GUIDELINES,
+  EDIT_SNIPPET,
+  assertReq,
+  normReq,
+  prepareEditArguments,
+} from "../../src/payload-contract.js";
 
 /**
  * T2 (#327) refusal budget: delete-only rendering cuts.
@@ -152,11 +160,24 @@ describe("edit refusal budget — deleted request bytes never render (T2 #327)",
     }
   });
 
-  // TODO(#328): decide whether the long hint survives — no serve path consumes EDIT_PAYLOAD_HINT today (scripts/served-prompts.mjs imports only EDIT_DESCRIPTION/SNIPPET/GUIDELINES).
-  it("the long hint survives only as the unserved `hint` fragment", () => {
-    const source = readFileSync("src/payload-contract.ts", "utf-8");
-    const hits = source.split("Edit must be called with exactly one payload per item").length - 1;
-    expect(hits).toBe(1);
+  it("the unserved payload hint is gone from the module surface", () => {
+    const needle = "Edit must be called with exactly one payload per item";
+    const hitFiles: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.isFile() && readFileSync(full, "utf-8").includes(needle)) {
+          hitFiles.push(full);
+        }
+      }
+    };
+    walk("src");
+    expect(hitFiles).toEqual([]);
+    for (const fragment of [EDIT_DESCRIPTION, EDIT_SNIPPET, ...EDIT_GUIDELINES]) {
+      expect(fragment).not.toContain(needle);
+    }
   });
 
   it("E_SUSPICIOUS_TEXT with count 3 renders the count once", () => {
