@@ -68,6 +68,7 @@ export type NormalizedEditRequest = {
   file: string;
   edits: NormalizedEditItem[];
   mode?: EditMode;
+  dry_run?: boolean | null;
 };
 
 /** The wire-folded request (the admission analyzer's view): canonical keys, pre-union. */
@@ -75,6 +76,7 @@ type PreAdmissionRequest = {
   file: string;
   edits: EditItem[];
   mode?: EditMode;
+  dry_run?: boolean | null;
 };
 type NormalizedPayload = NormalizedEditRequest & {
   readonly [normalizedEdit]: true;
@@ -173,6 +175,16 @@ export const editToolSchema = Type.Object(
       maxItems: EDITS_MAX_ITEMS,
     }),
     mode: Type.Optional(Type.Union([editModeSchema, Type.Null()])),
+    // Ref: docs/.archive_adrs/0036-optional-wire-fields-declared-nullable.md
+    dry_run: Type.Optional(
+      Type.Union([
+        Type.Boolean({
+          description:
+            "Optional; defaults to false. When true, validates anchors and leases and computes the diff without writing to disk, recording undo, or updating leases.",
+        }),
+        Type.Null(),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -182,13 +194,13 @@ const ITEM_SHAPE =
 
 const EDIT_PAYLOAD_HINT =
   "Edit must be called with exactly one payload per item. Use the canonical payload " +
-  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "text": text }, ...], "mode"?: "general" | "literal"}: ' +
+  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "text": text }, ...], "mode"?: "general" | "literal", "dry_run"?: boolean}: ' +
   '"file" is the text file to edit (a non-empty string, never a directory); each item names two inclusive ' +
   `bare-${HASH_LEN}-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ` +
   'range) or "text_ref" ({ anchor_from, anchor_to, file?, mode (required): "copy" | "cut" } — the served span\'s bytes, ' +
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
-  'served rows are refused) or "literal" (declared literal content).';
+  'served rows are refused) or "literal" (declared literal content); optional "dry_run" is boolean (omitted or null means false — a live edit).';
 export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one file per call). Use rows this session served for the file: \`read\`, a diff, or a bash view. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors. Copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)). One payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\`, the bytes of a served span (\`mode\` \`"copy"\` keeps it, \`"cut"\` removes it). \`file\` names another served file. \`at\`: "in-place" (default), "before", "after". A null optional field reads as absent. \`[MODEL] [E_*]\` is your retry instruction. \`[W_*]\` is informational.`;
 export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` from rows this file served this session. One payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps source, \`"cut"\` removes it from this file or \`file\`). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors.`;
 export const EDIT_GUIDELINES: string[] = [
@@ -405,14 +417,14 @@ function analyzeRequest(input: unknown): Admission {
     return { ok: false, message: `${EDIT_PAYLOAD_HINT} ${describeReceived(input)}` };
   }
   const rec = input as Record<string, unknown>;
-  const rootBase = new Set(["file", "edits", "mode"]);
+  const rootBase = new Set(["file", "edits", "mode", "dry_run"]);
   const rootOffending = Object.keys(rec).filter((key) => !rootBase.has(key));
   if (rootOffending.length > 0) {
     return {
       ok: false,
       message:
         `Edit request has unsupported field(s) ${quoted(rootOffending)}; it is exactly ` +
-        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal" }. ` +
+        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal", dry_run?: boolean }. ` +
         describeReceived(input),
     };
   }
@@ -425,6 +437,16 @@ function analyzeRequest(input: unknown): Admission {
       };
     }
     mode = rec.mode;
+  }
+  let dryRun: boolean | undefined;
+  if ("dry_run" in rec && !isAbsentValue(rec.dry_run)) {
+    if (typeof rec.dry_run !== "boolean") {
+      return {
+        ok: false,
+        message: `Edit request "dry_run" must be a boolean (absent means false). ${EDIT_PAYLOAD_HINT}`,
+      };
+    }
+    dryRun = rec.dry_run;
   }
   if (!("file" in rec)) {
     return {
@@ -464,8 +486,10 @@ function analyzeRequest(input: unknown): Admission {
   if (failures.length > 0) {
     return { ok: false, message: `${failures.join(" ")} ${describeReceived(input)}` };
   }
-  if (mode !== undefined) return { ok: true, request: { file, edits: edited, mode } };
-  return { ok: true, request: { file, edits: edited } };
+  const request: PreAdmissionRequest = { file, edits: edited };
+  if (mode !== undefined) request.mode = mode;
+  if (dryRun !== undefined) request.dry_run = dryRun;
+  return { ok: true, request };
 }
 
 export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined {
@@ -493,10 +517,12 @@ export function normReq(input: unknown): NormReqResult {
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by analyzeRequest refusing invalid shapes
   if (!admitted.ok) return input as NormReqResult;
   const items = admitted.request.edits.map(normalizedItemFrom);
-  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } =
-    admitted.request.mode !== undefined
-      ? { file: admitted.request.file, edits: items, mode: admitted.request.mode }
-      : { file: admitted.request.file, edits: items };
+  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } = {
+    file: admitted.request.file,
+    edits: items,
+  };
+  if (admitted.request.mode !== undefined) record.mode = admitted.request.mode;
+  record.dry_run = admitted.request.dry_run ?? false;
   Object.defineProperty(record, normalizedEdit, {
     value: true,
     enumerable: false,
@@ -520,7 +546,7 @@ export function getPreviewInput(args: unknown): { file: string; edits: EditItem[
   return req;
 }
 
-const ROOT_KS = new Set(["file", "edits", "mode"]);
+const ROOT_KS = new Set(["file", "edits", "mode", "dry_run"]);
 
 const PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
 
@@ -565,7 +591,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     request,
     ROOT_KS,
     "Edit request",
-    'Pass "file" (the text file to edit), "edits", and optional "mode" ("general" | "literal").',
+    'Pass "file" (the text file to edit), "edits", optional "mode" ("general" | "literal"), and optional "dry_run" (boolean).',
   );
 
   const modeValue = (request as Record<string, unknown>).mode;
@@ -574,6 +600,13 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
       message:
         'Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
         EDIT_PAYLOAD_HINT,
+    });
+  }
+  const dryRunValue = (request as Record<string, unknown>).dry_run;
+  if (dryRunValue !== undefined && typeof dryRunValue !== "boolean") {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request "dry_run" must be a boolean (absent means false). ' + EDIT_PAYLOAD_HINT,
     });
   }
 
