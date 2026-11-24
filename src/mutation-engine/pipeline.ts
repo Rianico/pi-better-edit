@@ -1076,6 +1076,24 @@ export async function previewEdits(
 }
 
 /**
+ * The one projection of a file's change (#326): the commit helper and both `apply` sites read their
+ * rendered rows here, so no response re-projects a file the pipeline already rendered. Context 1 is
+ * the applied-diff fold every apply result has used; the pre-batch served mirror goes in so a removal
+ * the caller never saw keeps its blank gutter, which the retired fallback omitted.
+ */
+function renderedDiffFor(file: ProcessedEditFile): ReturnType<typeof genDiff> {
+  return genDiff(
+    file.originalNormalized,
+    file.result,
+    1,
+    file.resultHashes,
+    file.originalHashes,
+    undefined,
+    file.served,
+  );
+}
+
+/**
  * The post-write commit for ONE file whose bytes are already on disk: the refusal/noop-loop
  * tally clears, the legacy retire mirror, and the authoritative snapshot/lineage/lease/served-
  * mirror transaction. Shared verbatim by the single-file path and `runCutTransaction` — one
@@ -1109,15 +1127,7 @@ async function finishCommittedFile(
     }
   }
   const resultLineCount = visLines(file.result).length;
-  const diffInfo = genDiff(
-    file.originalNormalized,
-    file.result,
-    1,
-    file.resultHashes,
-    file.originalHashes,
-    undefined,
-    file.served,
-  );
+  const diffInfo = renderedDiffFor(file);
   if (diffInfo.unservedRemovedLines.length > 0) {
     file.warnings.push(
       formatWarning("W_UNSERVED_INTERIOR", {
@@ -1338,7 +1348,7 @@ export async function apply(
   const isPreview = options?.noPersist === true;
   if (isPreview) {
     const file = await runMutations(request, cwd, options);
-    const toolResult = buildBatchResult([toSection(file)]);
+    const toolResult = buildBatchResult([toSection(file, renderedDiffFor(file))]);
     const diff = toolResult.details.diff ?? "";
     return {
       result: file.result,
@@ -1375,7 +1385,7 @@ export async function apply(
     });
 
     if (file.appliedCount === 0) {
-      const toolResult = buildBatchResult([toSection(file)]);
+      const toolResult = buildBatchResult([toSection(file, renderedDiffFor(file))]);
       return {
         result: file.result,
         diff: "",

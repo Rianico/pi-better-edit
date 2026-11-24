@@ -1,5 +1,4 @@
 import { denseServeRows, type ServedRow } from "./served-session/serve-render.js";
-import { genDiff } from "./edit-diff.js";
 import { visLines, clipLine } from "./utils.js";
 import { isDomainErrorCode, withPayloadSubject } from "./domain-errors.js";
 import { attachEnvelope, rawCodeOf, readEnvelope, type ErrorEnvelope } from "./error-envelope.js";
@@ -68,20 +67,6 @@ export interface NoopInput {
   snapshotId?: string;
   editMeta: RMeta;
   warnings: string[] | undefined;
-  driftNotice?: string;
-}
-
-export interface SuccessInput {
-  path: string;
-  originalNormalized: string;
-  originalHashes: string[];
-  result: string;
-  resultHashes: string[];
-  /** Committed `file_snapshots.snapshot_hash` of `result`. */
-  contentHash: string;
-  warnings: string[] | undefined;
-  snapshotId?: string;
-  editMeta: RMeta;
   driftNotice?: string;
 }
 
@@ -194,76 +179,9 @@ export function buildNoop(input: NoopInput): TResult {
   };
 }
 
-export function buildChanged(input: SuccessInput): TResult {
-  const {
-    path,
-    result,
-    warnings,
-    snapshotId,
-    contentHash,
-    originalNormalized,
-    originalHashes,
-    editMeta,
-    resultHashes,
-    driftNotice,
-  } = input;
-  const resultLines = visLines(result);
-  const diffResult = genDiff(originalNormalized, result, 1, resultHashes, originalHashes);
-  const addedLines = editMeta.addedLines;
-  const removedLines = editMeta.removedLines;
-  const successPrefix = `Successfully edited in ${path}.`;
-  const lineSummary =
-    addedLines > 0 || removedLines > 0
-      ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
-      : "";
-  const summary = `${successPrefix}${lineSummary}`;
-  const text =
-    resultLines.length === 0
-      ? "File is empty. Use edit to insert content."
-      : modelText(summary, diffResult.diff, warnings);
-
-  const metrics = buildMetrics({
-    classification: "applied",
-    editsAttempted: editMeta.editsAttempted,
-    noopEditsCount: editMeta.noopEditsCount,
-    warningsCount: warnings?.length ?? 0,
-    ...(editMeta.firstChangedLine !== undefined
-      ? { firstChangedLine: editMeta.firstChangedLine }
-      : {}),
-    ...(editMeta.lastChangedLine !== undefined
-      ? { lastChangedLine: editMeta.lastChangedLine }
-      : {}),
-    addedLines,
-    removedLines,
-  });
-  const denseServedRows = denseServeRows(resultHashes);
-  const firstChangedLine = editMeta.firstChangedLine ?? diffResult.firstChangedLine;
-  const lastChangedLine = editMeta.lastChangedLine ?? diffResult.lastChangedLine;
-
-  return {
-    content: [{ type: "text", text }],
-    details: {
-      path,
-      diff: diffResult.diff,
-      ...(resultLines.length > 0 ? { summary } : {}),
-      ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
-      ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
-      resultLineCount: resultLines.length,
-      ...(snapshotId !== undefined ? { snapshotId } : {}),
-      metrics,
-      ...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
-      servedRows: denseServedRows,
-      contentHash,
-      ...(driftNotice !== undefined ? { driftNotice } : {}),
-    },
-  };
-}
-
 export type BatchSection = {
   path: string;
-  originalNormalized: string;
   result: string;
-  originalHashes: string[];
   resultHashes: string[];
   /** Committed `file_snapshots.snapshot_hash` of `result` — the served content's identity. */
   resultHash: string;
@@ -274,7 +192,12 @@ export type BatchSection = {
   totalAddedLines: number;
   totalRemovedLines: number;
   literalDeclarations?: number;
-  renderedDiff?: {
+  /**
+   * The one projection of this file's change, supplied by the caller that committed it (#326).
+   * Required: this envelope never re-projects, so the rendered rows and their anchors have one
+   * source of truth — `toSection` cannot omit it.
+   */
+  renderedDiff: {
     diff: string;
     firstChangedLine: number | undefined;
     lastChangedLine: number | undefined;
@@ -326,9 +249,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   }> = [];
   const diffParts: string[] = [];
   for (const s of appliedFiles) {
-    const diffResult =
-      s.renderedDiff ??
-      genDiff(s.originalNormalized, s.result, 1, s.resultHashes, s.originalHashes);
+    const diffResult = s.renderedDiff;
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
     const denseRows = denseServeRows(s.resultHashes);
     if (denseRows.length > 0) {
@@ -499,16 +420,18 @@ export function wrapParseFailure(error: Error, index: number, path: string): Err
   return wrapped;
 }
 
-/** The batch-result section for one processed file — the pipeline's fact mapped to the model envelope. */
+/**
+ * The batch-result section for one processed file — the pipeline's fact mapped to the model envelope.
+ * `renderedDiff` is the projection of that file's change; the caller that committed the bytes owns it,
+ * so this mapping never re-renders and the response carries exactly one projection (#326).
+ */
 export function toSection(
   file: ProcessedEditFile,
-  renderedDiff?: BatchSection["renderedDiff"],
+  renderedDiff: BatchSection["renderedDiff"],
 ): BatchSection {
   return {
     path: file.path,
-    originalNormalized: file.originalNormalized,
     result: file.result,
-    originalHashes: file.originalHashes,
     resultHashes: file.resultHashes,
     resultHash: snapshotHashFor(file.result),
     warnings: file.warnings,
@@ -518,6 +441,6 @@ export function toSection(
     totalAddedLines: file.totalAddedLines,
     totalRemovedLines: file.totalRemovedLines,
     ...(file.literalDeclarations > 0 ? { literalDeclarations: file.literalDeclarations } : {}),
-    ...(renderedDiff !== undefined ? { renderedDiff } : {}),
+    renderedDiff,
   };
 }

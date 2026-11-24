@@ -106,9 +106,10 @@ describe("format-tolerance across edits (edge-whitespace reformat succeeds, inte
       expect(getText(first)).toContain("Successfully edited");
       const diff = first.details?.diff as string | undefined;
       expect(diff).toBeDefined();
-      const plusHashes = extractPlusHashes(diff!);
-      expect(plusHashes.length).toBeGreaterThan(0);
-      const anchor = plusHashes[0]!;
+      // Ref: docs/spec/content-addressed-line-identity-mvcc.md — anchor on the signature row the formatter rewrites: under the #326 anchor-identity projection the first `+` row is the replaced `}` that prettier leaves byte-identical, so that lease legitimately survives.
+      const multiplyRow = diff!.match(/^\+([A-Za-z0-9]{4})│.*multiply/m);
+      expect(multiplyRow).not.toBeNull();
+      const anchor = multiplyRow![1]!;
 
       await createSessionHandle(sessionKeyFor(ctx), path).recordDiff(
         first.details?.servedRows as any,
