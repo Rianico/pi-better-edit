@@ -22,6 +22,7 @@ import type { VacuumResult } from "./vacuum.js";
 export { vacuumSnapshots };
 export { snapshotIOFor } from "./snapshot-io.js";
 export type { HashSnapshotIO, HashSnapshotUpsertOptions } from "./snapshot-io.js";
+export type { SnapshotLineageLine } from "./snapshot-io.js";
 export type { VacuumResult };
 export {
   VACUUM_GLOBAL_BUDGET_BYTES,
@@ -59,7 +60,7 @@ interface SnapshotStmts {
   latestSnapshot: (path: string) => { snapshot_id: number } | undefined;
   lineageIdentities: (
     snapshotId: number,
-  ) => { line_number: number; line_id: number; canon_hash: string }[];
+  ) => { line_number: number; line_id: number; canon_hash: string; anchor: string }[];
   allPaths: () => { path: string }[];
   countSnapshots: (path: string) => number;
   countLeases: (path: string) => number;
@@ -114,7 +115,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
   );
   const lineageIdentitiesStmt = db.prepare(
-    "SELECT line_number, line_id, canon_hash FROM line_lineage " +
+    "SELECT line_number, line_id, canon_hash, anchor FROM line_lineage " +
       "WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
   const allPathsStmt = db.prepare(
@@ -163,12 +164,13 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
         canon_hash: string;
       }[],
     setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
-    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these three columns.
+    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these four columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
         line_id: number;
         canon_hash: string;
+        anchor: string;
       }[],
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `path`.
     allPaths: () => allPathsStmt.all() as unknown as { path: string }[],
@@ -251,6 +253,39 @@ export function positionsByIdentity(
     map.set(lineId, currLine);
   }
   return map;
+}
+
+/**
+ * One row of the latest committed lineage: the line's coordinate, its immutable identity, the canon digest
+ * pairing reads, and the anchor the session served for it.
+ */
+export interface SnapshotLineageEntry {
+  lineNumber: number;
+  lineId: number;
+  canonHash: string;
+  anchor: string;
+}
+
+/**
+ * The newest committed lineage for `path`, in line order — the evidence a checksum-miss alignment pairs
+ * drifted content against. `undefined` when the path has no committed snapshot or its lineage is empty, so
+ * the caller can tell "no prior" apart from "prior with zero lines" and falls back to fresh allocation.
+ */
+export function latestLineageFor(
+  store: HashStore,
+  path: string,
+): SnapshotLineageEntry[] | undefined {
+  const stmts = snapshotStmts(store.db);
+  const latest = stmts.latestSnapshot(path);
+  if (!latest) return undefined;
+  const rows = stmts.lineageIdentities(latest.snapshot_id);
+  if (rows.length === 0) return undefined;
+  return rows.map((row) => ({
+    lineNumber: row.line_number,
+    lineId: row.line_id,
+    canonHash: row.canon_hash,
+    anchor: row.anchor,
+  }));
 }
 
 export function cacheKey(checksum: string): string {

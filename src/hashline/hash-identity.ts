@@ -2,7 +2,12 @@ import { isAbsolute, resolve } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { SERVED_MAX_LINES } from "../constants.js";
-import type { HashSnapshotIO, HashSnapshotUpsertOptions } from "../snapshot-store";
+import type {
+  HashSnapshotIO,
+  HashSnapshotUpsertOptions,
+  SnapshotLineageLine,
+} from "../snapshot-store";
+import { pairSnapshots, type LineDescriptor } from "./patience-pairing.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
@@ -28,6 +33,17 @@ export interface HashOptions {
   blockedHashes?: ReadonlySet<string>;
   /** Passed to `HashSnapshotIO.upsert`; see `HashSnapshotUpsertOptions`. Defaults to `false`. */
   retireLeases?: boolean;
+  /**
+   * OUT-parameter for a checksum-miss alignment: the anchors of the latest lineage that no line of
+   * `content` paired with. They are deleted lines, so the caller persists them as tombstones (the session
+   * layer owns that write) and a later fresh allocation can never resurrect one.
+   *
+   * Caller obligation: forward the Set into a later call's `blockedHashes`, so fresh allocation cannot
+   * reclaim a tombstone, and persist it in the session layer (T3), so the tombstone outlives this
+   * process. The Set is left untouched on the `prior` (edit-path) branch, because that branch skips
+   * alignment entirely.
+   */
+  retiredHashes?: Set<string>;
 }
 
 /**
@@ -45,7 +61,10 @@ export interface AnchorWalk {
    * the store holds this content, so the caller still walks, it just skips the assignment.
    */
   assign?: (line: string) => string;
-  /** The anchors this content already has in the store, in line order. */
+  /**
+   * The anchors this content is served with, in line order — either the store's snapshot or the
+   * checksum-miss alignment. Never persisted through this call.
+   */
   cached?: string[];
 }
 
@@ -312,6 +331,96 @@ export class HashIdentity {
     return hashes;
   }
 
+  /**
+   * The checksum-miss path: align `content` against the latest committed lineage with the same pin-bounded
+   * pairing the edit path uses, so a surviving duplicate keeps its exact anchor instead of taking a twin's.
+   *
+   * Blocking rule: a carried anchor is always marked used; a retired anchor only when its canon occurred
+   * more than once in the lineage. That guard is keyed on canon multiplicity, not bytes, because the
+   * lineage stores only `canon_hash`: two byte-distinct lines can share one canon
+   * (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md), and a surviving canon-colliding line then
+   * takes a probe spelling after the miss — the accepted over-block cost. A canon that occurred once
+   * stays free, so an unresolved interval (a pure reorder) does not rotate a line whose bytes never
+   * changed. Unpaired lines allocate fresh, and carried reclaims keep `retiredHashes` disjoint.
+   */
+  private alignToLatestLineage(
+    content: string,
+    latest: readonly SnapshotLineageLine[],
+    pathSeed: number,
+    blockedHashes?: ReadonlySet<string>,
+    retiredHashes?: Set<string>,
+  ): string[] {
+    const lines = splitLines(content);
+    const prevLines: LineDescriptor[] = latest.map((row) => ({
+      lineNumber: row.lineNumber,
+      canonHash: row.canonHash,
+    }));
+    const currLines: LineDescriptor[] = lines.map((line, index) => ({
+      lineNumber: index + 1,
+      canonHash: canonDigest(line),
+    }));
+    const pairing = pairSnapshots(prevLines, currLines);
+
+    const newHashes = Array.from<string>({ length: lines.length });
+    const byLineNumber = new Map(latest.map((row) => [row.lineNumber, row]));
+    const pairedPrevLines = new Set<number>();
+    for (const [prevLine, currLine] of pairing) {
+      const row = byLineNumber.get(prevLine);
+      if (row === undefined) continue;
+      newHashes[currLine - 1] = row.anchor;
+      pairedPrevLines.add(prevLine);
+    }
+
+    const seenCanons = new Set<string>();
+    const twinCanons = new Set<string>();
+    for (const row of latest) {
+      if (seenCanons.has(row.canonHash)) twinCanons.add(row.canonHash);
+      else seenCanons.add(row.canonHash);
+    }
+
+    const used = new Uint32Array(BITSET_WORDS);
+    used.set(RESERVED_BITS);
+    const hint = { value: 0 };
+    const retiredCandidates: string[] = [];
+    for (const row of latest) {
+      if (!pairedPrevLines.has(row.lineNumber)) retiredCandidates.push(row.anchor);
+    }
+    for (const row of latest) {
+      if (pairedPrevLines.has(row.lineNumber) || twinCanons.has(row.canonHash)) {
+        this.markHashUsed(row.anchor, used, hint);
+      }
+    }
+    if (blockedHashes) {
+      for (const h of blockedHashes) this.markHashUsed(h, used, hint);
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      if (newHashes[i]) continue;
+      newHashes[i] = this.assignHash(used, fileBaseIndex(lines[i]!, pathSeed), hint);
+    }
+    if (retiredHashes) {
+      const liveAnchors = new Set(newHashes);
+      for (const anchor of retiredCandidates) {
+        if (!liveAnchors.has(anchor)) retiredHashes.add(anchor);
+      }
+    }
+    return newHashes;
+  }
+
+  /** Best-effort lineage read: a failed or absent store loses alignment, never correctness. */
+  private async readLatestLineage(
+    snapshotIO: HashSnapshotIO | undefined,
+    path: string,
+  ): Promise<SnapshotLineageLine[] | undefined> {
+    if (!snapshotIO) return undefined;
+    try {
+      return await snapshotIO.latestLineage(path);
+    } catch (error) {
+      reportDiagnostic("hashline", "Failed to read latest lineage for alignment:", error);
+      return undefined;
+    }
+  }
+
   private buildOldHashIndex(oldHashes: string[], used: Uint32Array): Map<string, number> {
     const oldHashIndex = new Map<string, number>();
     for (let i = 0; i < oldHashes.length; i++) {
@@ -487,8 +596,21 @@ export class HashIdentity {
       }
     }
     if (cached) return { cached };
+    const pathSeed = xxh32(canonicalAnchorPath(path));
+    const latest = await this.readLatestLineage(snapshotIO, path);
+    if (latest && latest.length > 0) {
+      return {
+        cached: this.alignToLatestLineage(
+          content,
+          latest,
+          pathSeed,
+          options?.blockedHashes,
+          options?.retiredHashes,
+        ),
+      };
+    }
     return {
-      assign: this.newLineAssigner(options?.blockedHashes, xxh32(canonicalAnchorPath(path))),
+      assign: this.newLineAssigner(options?.blockedHashes, pathSeed),
     };
   }
 
@@ -555,7 +677,17 @@ export class HashIdentity {
       return cached;
     }
 
-    const newHashes = this.fileScopedHashes(content, pathSeed, options?.blockedHashes);
+    const latest = await this.readLatestLineage(snapshotIO, path);
+    const newHashes =
+      latest && latest.length > 0
+        ? this.alignToLatestLineage(
+            content,
+            latest,
+            pathSeed,
+            options?.blockedHashes,
+            options?.retiredHashes,
+          )
+        : this.fileScopedHashes(content, pathSeed, options?.blockedHashes);
     if (persist && snapshotIO) {
       try {
         await snapshotIO.upsert(
@@ -573,6 +705,12 @@ export class HashIdentity {
     return newHashes;
   }
 
+  /**
+   * Fresh file-scoped allocation with no store read, so it CANNOT align against the prior lineage: after an
+   * external rewrite it re-allocates top to bottom and a duplicate can take its deleted twin's anchor. Async
+   * `hashesFor` is the only aligned path; callers that hold a store must use it (the walk carries the same
+   * alignment through `anchorsForWalk`).
+   */
   hashesForSync(content: string, path: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.fileScopedHashes(content, xxh32(canonicalAnchorPath(path)), blockedHashes);
   }

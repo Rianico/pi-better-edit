@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 * **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)
+* **store:** align a checksum miss against the latest committed lineage with pin-bounded pairing, so an externally deleted duplicate twin retires its own anchor and the surviving twin keeps its exact prior anchor instead of inheriting the deleted twin's. Unpaired anchors return through `HashOptions.retiredHashes` for the session tombstone; ambiguous intervals fail closed. (#343)
 
 ## [2.20.0] - 2026-11-24
 
