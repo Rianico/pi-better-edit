@@ -30,7 +30,7 @@ None of them preserves a per-line mixture, and none of their undo stacks reintro
 
 4. **Ordinary undo is normalized.** `undo_last_edit` restores the pre-edit content at the `effective EOL` recorded by the edit. It does not restore a pre-edit mixture. When the pre-image was mixed, the undo response says the mixture is not restored.
 
-5. **Cut durability stays byte-exact.** A correlated foreign-cut revert and next-run repair write the raw pre-image bytes. That is a `byte-exact revert`, not normalized undo; its oracle compares bytes.
+5. **Cut forward writes normalize; revert and repair stay byte-exact.** The cut target insert and source retirement write each member at its effective EOL and disclose the rewrite like an ordinary edit. A correlated foreign-cut revert and next-run repair write the raw pre-image bytes. That is a `byte-exact revert`, not normalized undo; its oracle compares bytes.
 
 6. **`write` is untouched.** The write hook remains a served-hash guard. New-file EOL is the writer's responsibility; `edit` on an empty or no-terminator file is the only "new file" surface this extension owns, and it uses the effective EOL.
 
