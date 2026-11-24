@@ -269,17 +269,11 @@ const FRESH_READ_HEADING = "Current range (fresh read):";
 export const UNVERIFIED_HEADLINE =
   "a bound of this range no longer resolves to the line identity it was served with.";
 
-function suspiciousTail(count: number): string {
-  if (count < 2) return "";
-  return ` Identical refusal submitted ${count} times — the bytes still reproduce a served row.`;
-}
-
 function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string {
   const times = payload.count === 1 ? "time" : "times";
   return (
     `Write/Edit to ${payload.path} rejected: line ${payload.line} starts with the served anchor ` +
-    `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} ${times})` +
-    suspiciousTail(payload.count)
+    `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} ${times})`
   );
 }
 
@@ -493,8 +487,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_UNDO_UNAVAILABLE: {
     audience: "MODEL",
-    format: ({ path }) =>
-      `Cannot persist undo history to the hash store. The edit was not applied. ${path} is unchanged.`,
+    format: ({ path }) => `Cannot persist undo history to the hash store. ${path} is unchanged.`,
     options: ["retry the edit", "use write if the store stays unavailable"],
   },
   E_LOSSY_TEXT: {

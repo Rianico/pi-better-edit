@@ -35,13 +35,13 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
       reason:
         `anchor_from must be a single bare ${ANCHOR_LEN}-char hash (e.g. "wUpX"), not a block with HASH│. ` +
         `Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, ` +
-        `and put the new content (without HASH│) in text. Nothing was written.`,
+        `and put the new content (without HASH│) in text. Nothing was written`,
     };
   }
   if (trimmed.includes("│")) {
     return {
       rawAnchor: trimmed,
-      reason: `anchor_from and anchor_to must contain the ${ANCHOR_LEN}-char hash only — remove everything from "│" onward. Nothing was written.`,
+      reason: `anchor_from and anchor_to must contain the ${ANCHOR_LEN}-char hash only — remove everything from "│" onward. Nothing was written`,
     };
   }
 

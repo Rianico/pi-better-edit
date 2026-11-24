@@ -34,7 +34,7 @@ describe("assertReq", () => {
       assertReq(
         normReq({ file: null, edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }] }),
       ),
-    ).toThrow("exactly");
+    ).toThrow('"file" must be a non-empty string');
   });
 
   it("rejects malformed shapes and member types", () => {
@@ -115,7 +115,7 @@ describe("prepareArguments normalization", () => {
     for (const args of bad) {
       expect(() => tool.prepareArguments!(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
       expect(() => tool.prepareArguments!(args)).toThrow(
-        /canonical payload|it is exactly \{ file|an item is exactly/,
+        /Edit payload:|it is exactly \{ file|an item is exactly/,
       );
     }
   });

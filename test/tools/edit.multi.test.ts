@@ -197,7 +197,8 @@ describe("edit multi-item tool", () => {
         ctx,
       );
       expect(getText(result)).toContain("1 of 2 edit(s) applied (1 noop)");
-      expect(getText(result)).toContain("was a noop");
+      expect(getText(result)).not.toContain("was a noop");
+      expect(result.details.warnings ?? []).toHaveLength(0);
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
       expect(result.details.metrics.classification).toBe("applied");
     });
@@ -671,7 +672,7 @@ describe("prepareEditArguments normalization", () => {
     ]) {
       expect(() => prepareEditArguments(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
       expect(() => prepareEditArguments(args)).toThrow(
-        /canonical payload|it is exactly \{ file|an item is exactly/,
+        /Edit payload:|it is exactly \{ file|an item is exactly/,
       );
     }
   });

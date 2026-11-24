@@ -35,6 +35,7 @@ describe("edit noop-loop tracker session scope", () => {
       const a2 = await editTool.execute("a2", payload, undefined, undefined, ctxA);
       expect(a2.details.classification).toBe("noop");
       expect(getText(a2)).toContain("[W_NOOP]");
+      expect(a2.details.warnings).toHaveLength(1);
       expect(getText(a2)).not.toContain("[E_NOOP_LOOP]");
 
       const b2 = await editTool.execute("b2", payload, undefined, undefined, ctxB);

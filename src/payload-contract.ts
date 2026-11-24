@@ -189,6 +189,12 @@ const EDIT_PAYLOAD_HINT =
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
+/**
+ * Short shape verdict for refusal arms (T2). The long served hint above stays
+ * untouched: T3 owns the served prompt wording.
+ */
+const EDIT_SHAPE_LINE =
+  "Edit payload: { file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }], mode? }";
 export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one file per call). Use rows this session served for the file: \`read\`, a diff, or a bash view. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors. Copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)). One payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\`, the bytes of a served span (\`mode\` \`"copy"\` keeps it, \`"cut"\` removes it). \`file\` names another served file. \`at\`: "in-place" (default), "before", "after". A null optional field reads as absent. \`[MODEL] [E_*]\` is your retry instruction. \`[W_*]\` is informational.`;
 export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` from rows this file served this session. One payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps source, \`"cut"\` removes it from this file or \`file\`). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors.`;
 export const EDIT_GUIDELINES: string[] = [
@@ -216,18 +222,6 @@ function _getPayloadPromptFragments(): {
     guidelines: [...EDIT_GUIDELINES],
     hint: EDIT_PAYLOAD_HINT,
   };
-}
-
-function describeReceived(input: unknown): string {
-  if (input === undefined) return "Received no arguments.";
-  if (input === null) return "Received null.";
-  if (typeof input === "string") return `Received a bare string (${JSON.stringify(input)}).`;
-  const json = JSON.stringify(input);
-  if (typeof json === "string" && json.length > 600) {
-    const truncated = json.slice(0, 600);
-    return `Received: ${truncated}… (+truncated, full file+edits in tool input)`;
-  }
-  return `Received: ${json}`;
 }
 
 function quoted(keys: string[]): string {
@@ -402,7 +396,7 @@ type Admission = { ok: true; request: PreAdmissionRequest } | { ok: false; messa
 
 function analyzeRequest(input: unknown): Admission {
   if (!isRec(input)) {
-    return { ok: false, message: `${EDIT_PAYLOAD_HINT} ${describeReceived(input)}` };
+    return { ok: false, message: `Edit request is not an object. ${EDIT_SHAPE_LINE}` };
   }
   const rec = input as Record<string, unknown>;
   const rootBase = new Set(["file", "edits", "mode"]);
@@ -412,8 +406,7 @@ function analyzeRequest(input: unknown): Admission {
       ok: false,
       message:
         `Edit request has unsupported field(s) ${quoted(rootOffending)}; it is exactly ` +
-        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal" }. ` +
-        describeReceived(input),
+        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal" }.`,
     };
   }
   let mode: EditMode | undefined;
@@ -421,7 +414,7 @@ function analyzeRequest(input: unknown): Admission {
     if (rec.mode !== "general" && rec.mode !== "literal") {
       return {
         ok: false,
-        message: `Edit request "mode" must be "general" or "literal" (absent means "general"). ${EDIT_PAYLOAD_HINT}`,
+        message: `Edit request "mode" must be "general" or "literal" (absent means "general"). ${EDIT_SHAPE_LINE}`,
       };
     }
     mode = rec.mode;
@@ -429,20 +422,20 @@ function analyzeRequest(input: unknown): Admission {
   if (!("file" in rec)) {
     return {
       ok: false,
-      message: `Edit request requires "file" (the text file to edit). ${EDIT_PAYLOAD_HINT}`,
+      message: `Edit request requires "file" (the text file to edit). ${EDIT_SHAPE_LINE}`,
     };
   }
   const sanitized = sanitizePath(rec.file);
   if (sanitized === null) {
     return {
       ok: false,
-      message: `Edit request "file" must be a non-empty string path to a text file. ${EDIT_PAYLOAD_HINT}`,
+      message: `Edit request "file" must be a non-empty string path to a text file. ${EDIT_SHAPE_LINE}`,
     };
   }
   if (!("edits" in rec) || !Array.isArray(rec.edits) || rec.edits.length === 0) {
     return {
       ok: false,
-      message: `Edit request requires a non-empty "edits" array. ${EDIT_PAYLOAD_HINT}`,
+      message: `Edit request requires a non-empty "edits" array. ${EDIT_SHAPE_LINE}`,
     };
   }
   const file = sanitized;
@@ -462,7 +455,7 @@ function analyzeRequest(input: unknown): Admission {
     edited.push(item as unknown as EditItem);
   }
   if (failures.length > 0) {
-    return { ok: false, message: `${failures.join(" ")} ${describeReceived(input)}` };
+    return { ok: false, message: failures.join(" ") };
   }
   if (mode !== undefined) return { ok: true, request: { file, edits: edited, mode } };
   return { ok: true, request: { file, edits: edited } };
@@ -557,7 +550,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
         "Edit request reached assertReq without normReq: the engine consumes the normalized shape. " +
-        EDIT_PAYLOAD_HINT,
+        EDIT_SHAPE_LINE,
     });
   }
 
@@ -573,7 +566,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
         'Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
-        EDIT_PAYLOAD_HINT,
+        EDIT_SHAPE_LINE,
     });
   }
 

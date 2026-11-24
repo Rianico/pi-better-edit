@@ -93,6 +93,8 @@ describe("edit noop-loop guard in multi-item calls", () => {
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
       expect(second.details.metrics.classification).toBe("noop");
       expect(getText(second)).toContain("[W_NOOP]");
+      expect(getText(second)).not.toContain("was a noop");
+      expect(second.details.warnings).toHaveLength(2);
 
       const rejection = (await editTool
         .execute("e3", payload, undefined, undefined, ctx)

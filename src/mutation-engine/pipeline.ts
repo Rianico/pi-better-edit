@@ -940,11 +940,6 @@ async function runMutations(
         });
       }
       if (decision.action === "warn") warnings.push(decision.notice);
-      if (items.length > 1) {
-        warnings.push(
-          `edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
-        );
-      }
       pushNoopWarnings(outcome.anchorWarnings);
       continue;
     }

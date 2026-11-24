@@ -117,7 +117,7 @@ describe("edit served-row gate with declaration", () => {
     });
   });
 
-  it("refusal carries the full message contract and sharpens on the 2nd identical refusal", async () => {
+  it("refusal carries the full message contract and renders the count once on the 2nd identical refusal", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
@@ -145,7 +145,7 @@ describe("edit served-row gate with declaration", () => {
         .catch((e: unknown) => e as Error);
       expect(second.message).toContain("submission 2");
       expect(second.message).not.toEqual(first.message);
-      expect(second.message).toContain("Identical refusal");
+      expect(second.message).not.toContain("Identical refusal");
       const third = await editTool
         .execute("e1", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e as Error);
