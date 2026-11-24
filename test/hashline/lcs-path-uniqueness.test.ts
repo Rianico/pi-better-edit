@@ -1,4 +1,6 @@
+// pi-lens-ignore: 2307
 import assert from "node:assert/strict";
+// pi-lens-ignore: 2307
 import { describe, expect, it } from "vitest";
 import {
   computeLCSPaths,
