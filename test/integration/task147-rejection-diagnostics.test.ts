@@ -95,7 +95,6 @@ describe("task-147 rejection diagnostics", () => {
       hashes,
       lines,
       sessionKey: "task147-noop",
-      contentHash: "C",
     };
     clearNoopLoop(base.sessionKey, base.absolutePath);
     await runNoopPolicy({ ...base, batch: false });

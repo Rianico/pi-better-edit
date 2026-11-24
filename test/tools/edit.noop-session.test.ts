@@ -92,7 +92,6 @@ describe("edit noop-loop tracker session scope", () => {
       range: { startLine: 2, endLine: 2, startHash: hashes[1]!, endHash: hashes[1]!, delta: 0 },
       hashes,
       lines,
-      contentHash: "C",
     };
     clearNoopLoop("guard-a");
     clearNoopLoop("guard-b");
@@ -130,7 +129,6 @@ describe("edit noop-loop tracker session scope", () => {
       range: { startLine: 2, endLine: 2, startHash: hashes[1]!, endHash: hashes[1]!, delta: 0 },
       hashes,
       lines,
-      contentHash: "C",
       sessionKey,
       batch: false as const,
     });
@@ -165,7 +163,6 @@ describe("edit noop-loop tracker session scope", () => {
       range: { startLine: 2, endLine: 2, startHash: hashes[1]!, endHash: hashes[1]!, delta: 0 },
       hashes,
       lines,
-      contentHash: "C",
       sessionKey,
       batch: false as const,
     });

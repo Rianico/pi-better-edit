@@ -2,9 +2,8 @@
  * SAFETY: Batch span-gate owner — baseline (`S_curr`) span resolution, batch
  * disjointness, and the working buffer's `line_id` bookkeeping for the
  * mutation pipeline. Pure pre-mutation gate: the only store touches it
- * performs are reads, plus the reject-and-serve recording the pipeline owns
- * (`recordRejectionServe`, passed in through the context — it stays with the
- * store seam). Vocabulary (GLOSSARY.md): span, served span, reject-and-serve,
+ * performs are reads, plus the recorder context the rejection assembler owns
+ * (it records through the store seam the pipeline used to inject). Vocabulary
  * line identity — preserved.
  */
 
@@ -20,7 +19,7 @@ import {
   type ServedRow,
 } from "../served-session/serve-render.js";
 import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
-import { batchAbort } from "../edit-response.js";
+import { throwBatchRejection, type BatchRejectionRecorder } from "./batch-rejection.js";
 
 function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
@@ -113,18 +112,6 @@ export interface BaselineSpanContext {
   path: string;
   originalHashes: string[];
   originalNormalized: string;
-  /**
-   * Injected rather than imported: the pipeline owns the store seam a rejection serve records
-   * through, so the pre-mutation gate and the sequential mutate loop share one recorder.
-   */
-  recordRejectionServe: (args: {
-    error: DomainError;
-    sessionKey: string;
-    absolutePath: string;
-    isPreview: boolean;
-    lineCount: number;
-    contentHash: string | undefined;
-  }) => Promise<void>;
 }
 
 /**
@@ -147,17 +134,7 @@ async function resolveBaselineSpans(
 ): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
-  const abort = async (error: unknown): Promise<never> => {
-    if (error instanceof DomainError) {
-      await ctx.recordRejectionServe({
-        error,
-        sessionKey: ctx.sessionKey,
-        absolutePath: ctx.absolutePath,
-        isPreview: ctx.isPreview,
-        lineCount: ctx.originalHashes.length,
-        contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
-      });
-    }
+  const abort = (error: unknown): Promise<never> => {
     throw error;
   };
   const spanOf = (leased: LeasedEditResolution): BaselineSpan => {
@@ -200,6 +177,32 @@ async function resolveBaselineSpans(
 }
 
 /**
+ * The gate's recorder context: the same identity the pipeline recorded with.
+ */
+function gateRecorder(ctx: BaselineSpanContext): BatchRejectionRecorder {
+  return {
+    sessionKey: ctx.sessionKey,
+    absolutePath: ctx.absolutePath,
+    isPreview: ctx.isPreview,
+    lineCount: ctx.originalHashes.length,
+    contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
+  };
+}
+
+function gateRejection(args: {
+  failures: { error: DomainError; index: number }[];
+  total: number;
+  ctx: BaselineSpanContext;
+}): Promise<never> {
+  return throwBatchRejection({
+    failures: args.failures,
+    total: args.total,
+    path: args.ctx.path,
+    record: gateRecorder(args.ctx),
+  });
+}
+
+/**
  * Overlapping or nested spans in one `edits[]` array reject the entire batch before the first
  * mutation (spec §3.2.3): the preceding-delta working buffer is only well-defined for spans that are
  * strictly ordered, so a batch that would edit one line twice is a model error, not a merge.
@@ -230,14 +233,10 @@ export async function assertBatchSpansDisjoint(
   }
   if (failures.length === 1) {
     const only = failures[0]!;
-    throw batchAbort({
-      failures: [{ error: only.error, index: only.index }],
-      total,
-      path: ctx.path,
-    });
+    return gateRejection({ failures: [{ error: only.error, index: only.index }], total, ctx });
   }
   if (failures.length > 1) {
-    throw batchAbort({ failures, total, path: ctx.path });
+    return gateRejection({ failures, total, ctx });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
@@ -258,15 +257,7 @@ export async function assertBatchSpansDisjoint(
           servedRows: rows ?? [],
           servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
         });
-        await ctx.recordRejectionServe({
-          error,
-          sessionKey: ctx.sessionKey,
-          absolutePath: ctx.absolutePath,
-          isPreview: ctx.isPreview,
-          lineCount: ctx.originalHashes.length,
-          contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
-        });
-        throw batchAbort({
+        return gateRejection({
           failures: [
             {
               error,
@@ -274,7 +265,7 @@ export async function assertBatchSpansDisjoint(
             },
           ],
           total,
-          path: ctx.path,
+          ctx,
         });
       }
     }

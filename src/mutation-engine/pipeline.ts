@@ -29,7 +29,6 @@ import {
   UNVERIFIED_HEADLINE,
   type DomainErrorCode,
 } from "../domain-errors.js";
-import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
@@ -45,7 +44,8 @@ import type {
   NormalizedEditItem,
   NormalizedEditRequest,
 } from "../payload-contract.js";
-import { batchAbort, buildBatchResult, toSection } from "../edit-response.js";
+import { buildBatchResult, toSection } from "../edit-response.js";
+import { throwBatchRejection } from "./batch-rejection.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
 import type { PipelineOptions, ProcessedEditFile, ForeignCutRecord } from "./types.js";
 import {
@@ -197,14 +197,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       if (input.baselineLineOf !== undefined && error.servedRows.length > 0) {
         return input.onRejected(shiftedBufferRejection(error, input.baselineLineOf));
       }
-      await recordRejectionServe({
-        error,
-        sessionKey: input.sessionKey,
-        absolutePath: input.absolutePath,
-        isPreview: input.isPreview,
-        lineCount: input.hashes.length,
-        contentHash: input.isPreview ? undefined : snapshotHashFor(input.content),
-      });
       return input.onRejected(error);
     }
     throw error;
@@ -343,38 +335,6 @@ function relabelHeadline(
 }
 
 /**
- * Records the reject-and-serve rows a rejected edit owes the model, so the anchors it serves are
- * usable without a re-read (README reject-and-serve contract). The pre-mutation span gate and the
- * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
- * A rowless rejection (a target-lost refusal, pinned by the seam oracle) returns before anything leases:
- * there is nothing to serve, and every window that identifies the model's range still leases through the
- * rows below. A preview is a containment boundary — mirroring its rows would let an edit that was never
- * applied satisfy the read guard.
- */
-async function recordRejectionServe(args: {
-  error: DomainError;
-  sessionKey: string;
-  absolutePath: string;
-  isPreview: boolean;
-  lineCount: number;
-  contentHash: string | undefined;
-}): Promise<void> {
-  if (args.error.servedRows.length === 0) return;
-  if (!args.isPreview) {
-    notifyServedSpans({
-      filePath: args.absolutePath,
-      spans: servedRowsToSpans(args.error.servedRows),
-      source: "reject-and-serve",
-    });
-  }
-  const handle = createSessionHandle(args.sessionKey, args.absolutePath);
-  if (args.isPreview) {
-    await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);
-    return;
-  }
-  await handle.recordServeFeedback(args.error.servedRows, "live", args.lineCount, args.contentHash);
-}
-
 /**
  * The one exhaustive view of the payload union for text consumers: the noop-loop tracker discriminates
  * its noop episodes with this, so a new union arm must add a case here or `assertNever` fails typecheck.
@@ -411,7 +371,10 @@ type ParsedItem = { edit: HEdit } | { noopInsert: true };
  * mode travels twice (`payload.mode` and `span.mode`) and only the top-level one is consumed; a
  * disagreement is refused rather than silently resolved, because admission folds the wire `text_ref`.
  */
-function parseEdits(items: NormalizedEditRequest["edits"], path: string): ParsedItem[] {
+async function parseEdits(
+  items: NormalizedEditRequest["edits"],
+  path: string,
+): Promise<ParsedItem[]> {
   const parsed: ParsedItem[] = [];
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
@@ -471,14 +434,14 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
   }
   if (failures.length === 1) {
     const only = failures[0]!;
-    throw batchAbort({
+    return throwBatchRejection({
       failures: [{ error: only.error, index: only.index }],
       total: items.length,
       path,
     });
   }
   if (failures.length > 1) {
-    throw batchAbort({ failures, total: items.length, path });
+    return throwBatchRejection({ failures, total: items.length, path });
   }
   return parsed;
 }
@@ -714,8 +677,10 @@ async function materializeForeignReferences(
       continue;
     }
   }
-  if (failures.length === 1 && items.length === 1) throw failures[0]!.error;
-  if (failures.length > 0) throw batchAbort({ failures, total: items.length, path: input.file });
+  if (failures.length === 1 && items.length === 1)
+    return throwBatchRejection({ failures, total: 1, path: input.file });
+  if (failures.length > 0)
+    return throwBatchRejection({ failures, total: items.length, path: input.file });
   return { items: out, cuts };
 }
 
@@ -760,7 +725,7 @@ async function runMutations(
 
   const isPreview = options?.noPersist === true;
 
-  const parsed = parseEdits(items, path);
+  const parsed = await parseEdits(items, path);
   const gateEntries: { edit: HEdit; itemIndex: number }[] = [];
   for (let itemIndex = 0; itemIndex < parsed.length; itemIndex++) {
     const one = parsed[itemIndex]!;
@@ -810,7 +775,6 @@ async function runMutations(
         path,
         originalHashes,
         originalNormalized,
-        recordRejectionServe,
       },
       items.length,
     );
@@ -898,10 +862,19 @@ async function runMutations(
       spanMode,
       ...(isPreview ? {} : { currentIds }),
       ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
-      onRejected: async (error) => {
-        if (items.length === 1) throw error;
-        throw batchAbort({ failures: [{ error, index }], total: items.length, path });
-      },
+      onRejected: (error) =>
+        throwBatchRejection({
+          failures: [{ error, index }],
+          total: items.length,
+          path,
+          record: {
+            sessionKey,
+            absolutePath,
+            isPreview,
+            lineCount: currentHashes.length,
+            contentHash: isPreview ? undefined : snapshotHashFor(currentContent),
+          },
+        }),
     });
 
     const range = outcome.range;
@@ -937,15 +910,20 @@ async function runMutations(
         hashes: currentHashes,
         lines: splitLines(currentContent),
         sessionKey,
-        contentHash: snapshotHashFor(currentContent),
         ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       });
       if (decision.action === "reject") {
-        if (items.length === 1) throw decision.error;
-        throw batchAbort({
+        return throwBatchRejection({
           failures: [{ error: decision.error, index }],
           total: items.length,
           path,
+          record: {
+            sessionKey,
+            absolutePath,
+            isPreview,
+            lineCount: currentHashes.length,
+            contentHash: isPreview ? undefined : snapshotHashFor(currentContent),
+          },
         });
       }
       if (decision.action === "warn") warnings.push(decision.notice);

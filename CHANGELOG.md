@@ -8,6 +8,10 @@
 * **edit:** record the rows a batch-overlap refusal serves as leases, so a retry can reuse a shown anchor with no re-read; the guideline no longer tells the model to re-read after an overlap refusal. (#332)
 * **edit:** route foreign-reference failures through the batch verdict: a multi-item call with an unresolvable `text_ref` now renders `[MODEL] Batch rejected: K of N edits failed; nothing was written.` with one bullet per failing item instead of the first bare error; a 1-item call keeps the bare error. (#330)
 
+### Code Refactoring
+
+* **edit:** assemble every batch rejection through one seam that builds the error, records the rows it shows, then throws; every row-carrying rejection now mirrors rows through the one recorder, including the noop-loop rejection (previously leased without observer notify). (#334)
+
 ### Performance Improvements
 
 * **edit:** trim refusal rendering to one shape line: drop the echoed request bytes, the inlined canonical-payload paragraph, the duplicate batch-noop warning, the repeated suspicious-text count, and a redundant sentence and doubled periods. (#327)

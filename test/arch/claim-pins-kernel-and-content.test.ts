@@ -522,7 +522,6 @@ describe("noop-loop slot shape (M3 #16)", () => {
       hashes: ["h1"],
       lines: ["alpha"],
       sessionKey,
-      contentHash: "snap",
     };
   }
 
