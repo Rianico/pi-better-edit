@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-11-24
+
 ### Features
 
 * **eol:** add the built-in `eol` config (`AUTO`, `LF`, `CRLF`, `CR`; default `AUTO`) and its `PI_BETTER_EDIT_EOL` override, resolved env > project > global > default through the shared settings ladder. One effective EOL with its source now drives every write decision; `.editorconfig` is not read in v1. (#318)
