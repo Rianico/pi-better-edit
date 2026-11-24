@@ -139,7 +139,7 @@ The response returns a unified diff with newly allocated anchors for modified li
   d2xX│   }
 ```
 
-A removed row the session never served renders with an empty anchor gutter (`-    │content`) instead of a hash, so the diff never offers an anchor it cannot honour:
+A removed row the session never served renders with an empty anchor gutter (`-    │content`) instead of a hash, so the diff never offers an anchor it cannot honour — under the default `hint` span mode the edit still applies and the gap is disclosed. Under `strict`, that same span is refused before any write ([Span Mode](#span-mode)).
 
 ```text
 -    │   let total = 0;
@@ -154,7 +154,7 @@ Settings are partitioned into two distinct roots ([ADR-0005](docs/adr/0005-store
 1. **Settings Root** (human configuration): `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/pi-better-edit/settings.json` (global) or `.pi/agents/pi-better-edit/settings.json` (project-local).
 2. **State Root** (internal MVCC CAS database): `${XDG_STATE_HOME:-~/.local/state}/pi-better-edit/` (relative `$XDG_STATE_HOME` counts as unset per [ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md); stores `hash-store.sqlite`, legacy `hash-store.json`, `diagnostics.log`, and `selection-range.log`).
 
-Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_EOL`, `PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
+Override the layout globally via `PI_BETTER_EDIT_CONFIG_DIR=/path/to/dir` (places settings at `<dir>/settings.json` and state at `<dir>/state/` without suffix). Environment variables (`PI_BETTER_EDIT_EOL`, `PI_BETTER_EDIT_SPAN_MODE`, `PI_BETTER_EDIT_BASH_VIEW`, `PI_BETTER_EDIT_READ_SELECTION_RANGE`, `PI_BETTER_EDIT_LENS_BRIDGE`, `PI_BETTER_EDIT_STORE_JANITOR*`) override file settings.
 
 ### Line Endings
 
@@ -169,13 +169,26 @@ Every `edit` writes one EOL: the **effective EOL**. A forced `eol` value (`LF`, 
 - `undo_last_edit` restores the previous content at the effective EOL; the pre-edit mixture is not restored. Correlated cut reverts and next-run repair remain byte-exact.
 - `write` is untouched: new-file EOL is the writer's responsibility. `.editorconfig` is not read in v1.
 
+### Span Mode
+
+An anchor pair names the two ends of a span. The lines **between** them are the span's interior, and they may never have reached your context: a paged read, disjoint windows, or a folded diff hunk leaves a gap. Every `edit` verifies the whole span against the served record before it writes, and one setting decides what an unserved interior row means.
+
+| Key | Values | Default | Env |
+| :--- | :--- | :--- | :--- |
+| `edit.span_mode` | `hint` \| `strict` | `hint` | `PI_BETTER_EDIT_SPAN_MODE` |
+
+- `hint` (default): the edit applies, and the response discloses the blind spot. Each unserved removal carries an empty gutter, a fold marker counts the unserved rows it hides (`- ... [12 lines deleted (3 unserved)] ...`), and the applied warning `[MODEL] [W_UNSERVED_INTERIOR]` names the count and range once per file.
+- `strict`: the edit is refused before any write, rowless, as `[MODEL] [E_UNSERVED_RANGE] line <n> in <path> was never served in this session.` The file stays byte-identical and no rows are served for a retry; read the gap, then retry.
+- Boundary anchors do not consult this setting. A boundary with no served position already fails closed with `[E_STALE_RANGE]`, and one with no lease with `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`.
+- Both spellings are lower case and case-sensitive; a value outside the enum is ignored at its rung, so the next rung answers.
+
 ### Interactive Settings & Slash Commands
 
 Run the interactive settings overlay inside `pi`:
 ```text
 /pi-better-edit settings
 ```
-- `/pi-better-edit` (alias `/pi-better-edit settings`): Interactive overlay inspecting active effective settings across env, project, and global rungs. Headless hosts receive structured status text.
+- `/pi-better-edit` (alias `/pi-better-edit settings`): Interactive overlay inspecting active effective settings across env, project, and global rungs. Headless hosts receive structured status text; its span mode block prints the effective mode, the winning rung, both file values, and the env override.
 - `/pi-better-edit bash-view [on|off|status] [project|global]` (alias `/pi-better-edit bash ...`): Configures Bash View interception. Subcommand `multi-file [status | max-files N | max-rows N]` tunes multi-file limits.
 - `/pi-better-edit lens [auto|on|off|status] [project|global]`: Configures pi-lens bridge. `/pi-better-edit lens status` reports resolved store and bridge states.
 
@@ -238,6 +251,10 @@ The EOF rule: `at: "after"` on the final anchor splices after the last line's co
 - A file with no trailing newline plus `after` plus `text: "P"` stays unterminated (`a\nb` → `a\nb\nP`): no newline is added beyond the contract.
 - One trailing newline terminates an unterminated file (`text: "P\n"` on `a\nb` → `a\nb\nP\n`) but appends a blank line on a terminated file (`a\nb\n` → `a\nb\nP\n\n`); each further trailing newline adds one more blank line.
 - Pinned byte-exact in [test/core/hashline.placement.test.ts](test/core/hashline.placement.test.ts) and [test/tools/edit.eof-contract.test.ts](test/tools/edit.eof-contract.test.ts).
+
+#### Span Verification
+
+Before it writes, every `edit` verifies the span's **interior** rows against the served record — the two boundary anchors do not prove the lines between them reached your context. The effective [`edit.span_mode`](#span-mode) decides what an unserved interior row means: `hint` (the default) applies the edit and discloses the gap, while `strict` refuses before the write with rowless `[E_UNSERVED_RANGE]`.
 
 ##### Example Items
 - **In-place replacement**: `{ anchor_from: "a1bX", anchor_to: "c3dX", text: "new code\n" }`
@@ -409,7 +426,7 @@ Every file modification commits a new CAS snapshot to `file_snapshots`. The `lin
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not the targeted one. | — |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a boundary line was never served ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted ([ADR-0004](docs/adr/0004-model-tool-boundary-and-error-protocol.md)). | — (the fresh read is the state) |
-| `[E_UNSERVED_RANGE]` | Strict mode only: an interior line of the target span was never served in this session; nothing was written. | — |
+| `[E_UNSERVED_RANGE]` | Strict mode only ([`edit.span_mode`](#span-mode)): an interior line of the target span was never served in this session. Refused before any write, rowless. | — |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without stable anchor bounds. | — |
 | `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor prefix. | Omit anchor prefixes or set `mode: "literal"`. |
 | `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge overlapping spans or split calls. |
