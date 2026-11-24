@@ -1218,7 +1218,7 @@ async function runCutTransaction(
       content: plan.originalNormalized,
       bom: plan.bom,
       originalEnding: plan.originalEnding,
-      effectiveEnding: plan.originalEnding,
+      effectiveEnding: plan.effectiveEnding,
       hashes: plan.originalHashes,
       resultContent: plan.result,
       transactionId: txnId,
@@ -1245,8 +1245,9 @@ async function runCutTransaction(
     abortIf(options?.signal);
     await writeAtomic(
       file.absolutePath,
-      file.bom + restoreEndings(file.result, file.originalEnding),
+      file.bom + restoreEndings(file.result, file.effectiveEnding),
     );
+    if (file.eolRewriteWarning !== undefined) file.warnings.push(file.eolRewriteWarning);
     written.push(file);
     for (const plan of sourcePlans) {
       if (options?.onCutBetweenWrites) {
@@ -1255,8 +1256,9 @@ async function runCutTransaction(
       abortIf(options?.signal);
       await writeAtomic(
         plan.absolutePath,
-        plan.bom + restoreEndings(plan.result, plan.originalEnding),
+        plan.bom + restoreEndings(plan.result, plan.effectiveEnding),
       );
+      if (plan.eolRewriteWarning !== undefined) plan.warnings.push(plan.eolRewriteWarning);
       written.push(plan);
     }
   } catch (error) {

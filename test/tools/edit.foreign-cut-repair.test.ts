@@ -245,7 +245,8 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
   });
 
   const SOURCE_MIXED_RAW = "a\r\nb\nc\nd\n";
-  const MIXED_CANON_POST = "a\r\nd\r\n";
+  // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md — 3 LF vs 1 CRLF, so the effective ending is LF and this retirement write normalizes.
+  const MIXED_CANON_POST = "a\nd\n";
 
   async function seedMixedSource(cwd: string) {
     await writeFile(join(cwd, "source.txt"), SOURCE_MIXED_RAW, "utf-8");
@@ -274,6 +275,48 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(MIXED_CANON_POST);
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_POST);
       expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
+    });
+  });
+
+  it("mixed source retirement normalizes to LF and warns once", async () => {
+    await withTempDir("cut-mixed-source-eol-", async (cwd) => {
+      const { hs, ht } = await seedMixedSource(cwd);
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+
+      expect(isMutationSuccess(result), "the cut must apply").toBe(true);
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(MIXED_CANON_POST);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_POST);
+      if (!isMutationSuccess(result)) return;
+      const text = result.toolResult.content.map((c) => c.text).join("\n");
+      expect(text.split("W_EOL_REWRITTEN"), "one warning, source-attributed").toHaveLength(2);
+      expect(text).toContain(
+        "[W_EOL_REWRITTEN] EOL normalized to LF (file): 1 terminators changed.",
+      );
+    });
+  });
+
+  it("mixed target normalizes to LF and warns once", async () => {
+    const TARGET_MIXED_RAW = "1\r\n2\n3\n";
+    await withTempDir("cut-mixed-target-eol-", async (cwd) => {
+      await writeFile(join(cwd, "source.txt"), SOURCE_BEFORE, "utf-8");
+      await writeFile(join(cwd, "target.txt"), TARGET_MIXED_RAW, "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
+
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+
+      expect(isMutationSuccess(result), "the cut must apply").toBe(true);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\nd\n");
+      if (!isMutationSuccess(result)) return;
+      const text = result.toolResult.content.map((c) => c.text).join("\n");
+      expect(text.split("W_EOL_REWRITTEN"), "one warning, target-attributed").toHaveLength(2);
+      expect(text).toContain(
+        "[W_EOL_REWRITTEN] EOL normalized to LF (file): 1 terminators changed.",
+      );
     });
   });
 
