@@ -5,6 +5,10 @@
  * summary clause and the trailing remedy. Every number is an absolute FILE line, and the list is
  * the `offset`/`limit` encoding itself, so no prose read instruction is needed. Imports only the
  * zero-import `./constants.js` leaf, which keeps `domain-errors` free of any store dependency.
+ *
+ * PRECONDITION: `unservedLines` is non-empty — an empty set has no sentence to render, so the
+ * formatter throws a `TypeError` rather than a fail-open label. Both call sites already guard
+ * (strict on a first offending line, hint on a removed unserved line), so it never fires.
  */
 import { UNSERVED_LIST_MAX_RUNS } from "./constants.js";
 
@@ -67,6 +71,9 @@ function unservedList(runs: ReadonlyArray<[number, number]>, lineCount: number):
 const fileLines = (count: number): string => `${count} file ${count === 1 ? "line" : "lines"}`;
 
 export function formatUnservedSpanMessage(input: UnservedSpanMessageInput): string {
+  if (input.unservedLines.length === 0) {
+    throw new TypeError("formatUnservedSpanMessage: requires at least one unserved line");
+  }
   const runs = runsOf(input.unservedLines);
   const unserved = runs.reduce((total, run) => total + runWidth(run), 0);
   const agreement = unserved === 1 ? "was" : "were";

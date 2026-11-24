@@ -55,6 +55,34 @@ describe("formatUnservedSpanMessage — strict voice", () => {
     );
   });
 
+  it("sorts and de-duplicates raw input before compressing runs", () => {
+    expect(
+      formatUnservedSpanMessage({
+        voice: "strict",
+        path: "unsorted.txt",
+        unservedLines: [9, 4, 5, 6, 4],
+        replacedLineCount: 10,
+      }),
+    ).toBe(
+      "Strict span mode refused the edit to unsorted.txt: 4 of the 10 file lines it replaces were never served.\n" +
+        "Unserved file lines: 4-6, 9",
+    );
+  });
+
+  it("omits the remainder suffix at exactly the run cap", () => {
+    expect(
+      formatUnservedSpanMessage({
+        voice: "strict",
+        path: "cap.txt",
+        unservedLines: [2, 4, 6, 8, 10],
+        replacedLineCount: 12,
+      }),
+    ).toBe(
+      "Strict span mode refused the edit to cap.txt: 5 of the 12 file lines it replaces were never served.\n" +
+        "Unserved file lines: 2, 4, 6, 8, 10",
+    );
+  });
+
   it("caps the list at five runs while the summary keeps the exact count", () => {
     expect(
       formatUnservedSpanMessage({
@@ -80,6 +108,20 @@ describe("formatUnservedSpanMessage — strict voice", () => {
     ).toBe(
       "Strict span mode refused the edit to big.txt: 6 of the 12 file lines it replaces were never served.\n" +
         "Unserved file lines: 1, 3, 5, 7, 9 (+1 more line)",
+    );
+  });
+
+  it("counts the cap's hidden remainder in lines when the hidden run spans several", () => {
+    expect(
+      formatUnservedSpanMessage({
+        voice: "strict",
+        path: "tail.txt",
+        unservedLines: [1, 3, 5, 7, 9, 20, 21, 22, 23, 24, 25],
+        replacedLineCount: 30,
+      }),
+    ).toBe(
+      "Strict span mode refused the edit to tail.txt: 11 of the 30 file lines it replaces were never served.\n" +
+        "Unserved file lines: 1, 3, 5, 7, 9 (+6 more lines)",
     );
   });
 
@@ -142,5 +184,24 @@ describe("formatUnservedSpanMessage — hint voice", () => {
         HINT_TAIL,
       ].join("\n"),
     );
+  });
+});
+
+describe("formatUnservedSpanMessage — non-empty precondition", () => {
+  it("throws instead of formatting a fail-open clause for an empty unserved set", () => {
+    const emptyStrict = () =>
+      formatUnservedSpanMessage({
+        voice: "strict",
+        path: "empty.txt",
+        unservedLines: [],
+        replacedLineCount: 3,
+      });
+    const emptyHint = () =>
+      formatUnservedSpanMessage({ voice: "hint", unservedLines: [], replacedLineCount: 0 });
+
+    expect(emptyStrict).toThrow(TypeError);
+    expect(emptyStrict).toThrow(/at least one unserved line/);
+    expect(emptyHint).toThrow(TypeError);
+    expect(emptyHint).toThrow(/at least one unserved line/);
   });
 });

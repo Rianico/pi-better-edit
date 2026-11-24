@@ -138,6 +138,36 @@ describe("unserved interior replaced under hint mode", () => {
     });
   });
 
+  it("merges two disjoint unserved gaps in one batch into a single per-file warning", async () => {
+    await withTempFile("sample.txt", GAP_CONTENT, async ({ cwd }) => {
+      await serve(cwd, "sample.txt", [
+        { offset: 1, limit: 2 },
+        { offset: 4, limit: 1 },
+        { offset: 6, limit: 1 },
+        { offset: 8, limit: 2 },
+      ]);
+      const h = await lineHashes(GAP_CONTENT, join(cwd, "sample.txt"));
+      const result = await applied(
+        admit({
+          file: "sample.txt",
+          edits: [
+            { anchor_from: h[1]!, anchor_to: h[3]!, text: "A1\nA2\nA3" },
+            { anchor_from: h[5]!, anchor_to: h[7]!, text: "B1\nB2\nB3" },
+          ],
+        }),
+        cwd,
+      );
+
+      expect(warningLines(result)).toEqual([
+        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 6 file lines, 2 of which were never served; " +
+          "the edit applied.\nUnserved file lines: 3, 7\n" +
+          "Edits should only modify lines previously read and served (enforced under strict mode); " +
+          "verify this uninspected replacement was intended.",
+      ]);
+      expect(modelText(result).split(TOKEN)).toHaveLength(2);
+    });
+  });
+
   it("stays silent when every replaced line was served", async () => {
     await withTempFile("sample.txt", SHORT_CONTENT, async ({ cwd }) => {
       await serve(cwd, "sample.txt", [{ offset: 1, limit: 3 }]);
