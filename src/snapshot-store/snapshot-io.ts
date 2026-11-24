@@ -18,6 +18,12 @@ export interface SnapshotLineageLine {
   lineNumber: number;
   anchor: string;
   canonHash: string;
+  /**
+   * `line_lineage.raw_hash` — xxh32 of the RAW line, the exact spelling this row was written for.
+   * Optional because legacy rows predate #344 and carry NULL: a missing digest is NO raw evidence, so a
+   * consumer that needs one (the ordinal-carry gate) must fail closed rather than assume a match.
+   */
+  rawHash?: string | undefined;
 }
 
 export interface HashSnapshotUpsertOptions {

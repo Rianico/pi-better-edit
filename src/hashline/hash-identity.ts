@@ -7,7 +7,7 @@ import type {
   HashSnapshotUpsertOptions,
   SnapshotLineageLine,
 } from "../snapshot-store";
-import { pairSnapshots, type LineDescriptor } from "./patience-pairing.js";
+import { pairSnapshots, type AnchorPin, type LineDescriptor } from "./patience-pairing.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
@@ -166,6 +166,17 @@ export function canon(line: string): string {
  */
 export function canonDigest(line: string): string {
   return String(xxh32(canon(line)));
+}
+
+/**
+ * SAFETY: the raw-line digest — the exact value `line_lineage.raw_hash` persists (#344). It exists because
+ * the trim-only canon folds leading/trailing whitespace, so `"    }"` and `"  }"` share one `canon_hash` while
+ * remaining byte-distinct lines with distinct anchors. Ordinal carry compares raw digests so it can prove a
+ * prior run of lines holds ONE spelling; the canon alone cannot. A missing row value (legacy lineage) fails
+ * closed at the carry gate, never open.
+ */
+export function rawDigest(line: string): string {
+  return String(xxh32(line));
 }
 
 function hashToIndex(hash: string): number {
@@ -332,16 +343,15 @@ export class HashIdentity {
   }
 
   /**
-   * The checksum-miss path: align `content` against the latest committed lineage with the same pin-bounded
-   * pairing the edit path uses, so a surviving duplicate keeps its exact anchor instead of taking a twin's.
+   * The checksum-miss path: align `content` against the latest committed lineage with the same pin-bounded pairing
+   * the edit path uses, so a duplicate keeps its anchor. `pairSnapshots` runs first; `carryHomogeneousRuns` fills
+   * its UNPAIRED gaps inside one homogeneous raw run (T2 ordinal carry, gated by the lineage's own raw digests).
    *
-   * Blocking rule: a carried anchor is always marked used; a retired anchor only when its canon occurred
-   * more than once in the lineage. That guard is keyed on canon multiplicity, not bytes, because the
-   * lineage stores only `canon_hash`: two byte-distinct lines can share one canon
-   * (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md), and a surviving canon-colliding line then
-   * takes a probe spelling after the miss — the accepted over-block cost. A canon that occurred once
-   * stays free, so an unresolved interval (a pure reorder) does not rotate a line whose bytes never
-   * changed. Unpaired lines allocate fresh, and carried reclaims keep `retiredHashes` disjoint.
+   * Blocking rule: a carried anchor is always marked used; a retired anchor only when its canon occurred more than
+   * once in the lineage. That key is canon multiplicity, not the raw digest, because pairing and lease identity are
+   * canon-scoped (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md), so a canon-colliding survivor takes a
+   * probe spelling after the miss — the accepted over-block cost. A canon seen once stays free, so a pure reorder
+   * never rotates unchanged bytes; unpaired lines allocate fresh and carried reclaims keep `retiredHashes` disjoint.
    */
   private alignToLatestLineage(
     content: string,
@@ -360,6 +370,7 @@ export class HashIdentity {
       canonHash: canonDigest(line),
     }));
     const pairing = pairSnapshots(prevLines, currLines);
+    this.carryHomogeneousRuns(lines, latest, pairing);
 
     const newHashes = Array.from<string>({ length: lines.length });
     const byLineNumber = new Map(latest.map((row) => [row.lineNumber, row]));
@@ -405,6 +416,69 @@ export class HashIdentity {
       }
     }
     return newHashes;
+  }
+
+  /**
+   * T2 ordinal carry: pair the gaps `pairSnapshots` leaves UNPAIRED when each side is one contiguous run of the SAME
+   * raw bytes. Inside such a run every copy carries the same canon, so the ordinal is the only reading left: the k-th
+   * copy answers the k-th copy, the current tail allocates fresh, the prior overflow retires via `retiredHashes`.
+   *
+   * Fail-closed gates: (1) the CURRENT gap is raw-uniform (`===`); (2) every PRIOR row of the gap carries the run's
+   * canon AND its `raw_hash`. Gate 2 is exact raw-byte evidence: the canon folds edge whitespace
+   * (docs/adr/0013-anchor-identity-derives-from-raw-bytes.md), so `"    }"` and `"  }"` share it and only the raw
+   * digest separates them — two spellings pass only through a 32-bit xxh32 collision. A NULL digest (a legacy
+   * pre-#344 row) is no evidence, so the gap is skipped. Pairs are added inside a gap in order, keeping the
+   * pairing monotone.
+   */
+  private carryHomogeneousRuns(
+    lines: string[],
+    latest: readonly SnapshotLineageLine[],
+    pairing: Map<number, number>,
+  ): void {
+    const prevLen = latest.length;
+    const currLen = lines.length;
+    const byLineNumber = new Map(latest.map((row) => [row.lineNumber, row]));
+    const bounds: AnchorPin[] = [{ prevLine: 0, currLine: 0 }];
+    const paired = [...pairing.entries()].sort((a, b) => a[0] - b[0]);
+    for (const [prevLine, currLine] of paired) bounds.push({ prevLine, currLine });
+    bounds.push({ prevLine: prevLen + 1, currLine: currLen + 1 });
+
+    for (let i = 1; i < bounds.length; i++) {
+      const lower = bounds[i - 1]!;
+      const upper = bounds[i]!;
+      const pStart = lower.prevLine + 1;
+      const pEnd = upper.prevLine - 1;
+      const cStart = lower.currLine + 1;
+      const cEnd = upper.currLine - 1;
+      if (pStart > pEnd || cStart > cEnd) continue;
+
+      const first = lines[cStart - 1]!;
+      let currentUniform = true;
+      for (let c = cStart + 1; c <= cEnd; c++) {
+        if (lines[c - 1] !== first) {
+          currentUniform = false;
+          break;
+        }
+      }
+      if (!currentUniform) continue;
+
+      const canon = canonDigest(first);
+      const rawHash = rawDigest(first);
+      const priorAnchors: string[] = [];
+      let priorUniform = true;
+      for (let p = pStart; p <= pEnd; p++) {
+        const row = byLineNumber.get(p);
+        if (row === undefined || row.canonHash !== canon || row.rawHash !== rawHash) {
+          priorUniform = false;
+          break;
+        }
+        priorAnchors.push(row.anchor);
+      }
+      if (!priorUniform) continue;
+
+      const carry = Math.min(priorAnchors.length, cEnd - cStart + 1);
+      for (let j = 0; j < carry; j++) pairing.set(pStart + j, cStart + j);
+    }
   }
 
   /** Best-effort lineage read: a failed or absent store loses alignment, never correctness. */
@@ -706,10 +780,14 @@ export class HashIdentity {
   }
 
   /**
-   * Fresh file-scoped allocation with no store read, so it CANNOT align against the prior lineage: after an
-   * external rewrite it re-allocates top to bottom and a duplicate can take its deleted twin's anchor. Async
-   * `hashesFor` is the only aligned path; callers that hold a store must use it (the walk carries the same
-   * alignment through `anchorsForWalk`).
+   * Fresh file-scoped allocation with no store read, so it CANNOT align against the prior lineage: after an external
+   * rewrite it re-allocates top to bottom and a duplicate can take its deleted twin's anchor. Async `hashesFor` is
+   * the only aligned path; callers that hold a store must use it (the walk carries the same alignment through
+   * `anchorsForWalk`).
+   *
+   * Documented divergence from T2: no lineage means no prior run and no `raw_hash`, so `carryHomogeneousRuns` has no
+   * raw evidence to carry from — a homogeneous duplicate run gets no ordinal carry here, the same anchors as before
+   * T2, never a different one.
    */
   hashesForSync(content: string, path: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.fileScopedHashes(content, xxh32(canonicalAnchorPath(path)), blockedHashes);

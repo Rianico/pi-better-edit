@@ -2,7 +2,12 @@ import { stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { contentChecksum } from "../hashline/hasher.js";
 import { isValidHashList } from "../hashline/alphabet.js";
-import { CANON_VERSION, ANCHOR_GENERATION, canonDigest } from "../hashline/hash-identity.js";
+import {
+  CANON_VERSION,
+  ANCHOR_GENERATION,
+  canonDigest,
+  rawDigest,
+} from "../hashline/hash-identity.js";
 import type { HashSnapshotUpsertOptions } from "./snapshot-io.js";
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
@@ -58,9 +63,13 @@ interface SnapshotStmts {
   ) => { line_number: number; anchor: string; canon_hash: string }[];
   setSnapshotStatKey: (snapshotId: number, statKey: string) => void;
   latestSnapshot: (path: string) => { snapshot_id: number } | undefined;
-  lineageIdentities: (
-    snapshotId: number,
-  ) => { line_number: number; line_id: number; canon_hash: string; anchor: string }[];
+  lineageIdentities: (snapshotId: number) => {
+    line_number: number;
+    line_id: number;
+    canon_hash: string;
+    anchor: string;
+    raw_hash: string | null;
+  }[];
   allPaths: () => { path: string }[];
   countSnapshots: (path: string) => number;
   countLeases: (path: string) => number;
@@ -81,6 +90,7 @@ interface SnapshotStmts {
     lineNumber: number,
     lineId: number,
     canonHash: string,
+    rawHash: string,
     anchor: string,
   ) => void;
 }
@@ -115,7 +125,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
   );
   const lineageIdentitiesStmt = db.prepare(
-    "SELECT line_number, line_id, canon_hash, anchor FROM line_lineage " +
+    "SELECT line_number, line_id, canon_hash, anchor, raw_hash FROM line_lineage " +
       "WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
   const allPathsStmt = db.prepare(
@@ -145,8 +155,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "RETURNING snapshot_id",
   );
   const insertLineageStmt = db.prepare(
-    "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
-      "VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, raw_hash, anchor) " +
+      "VALUES (?, ?, ?, ?, ?, ?)",
   );
   return {
     findSnapshot: (...params) => findStmt.get(...params) as SnapshotRef | undefined,
@@ -164,13 +174,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
         canon_hash: string;
       }[],
     setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
-    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these four columns.
+    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these five columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
         line_id: number;
         canon_hash: string;
         anchor: string;
+        raw_hash: string | null;
       }[],
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `path`.
     allPaths: () => allPathsStmt.all() as unknown as { path: string }[],
@@ -198,8 +209,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       ) as { snapshot_id: number } | undefined;
       return row?.snapshot_id;
     },
-    insertLineage: (snapshotId, lineNumber, lineId, canonHash, anchor) => {
-      insertLineageStmt.run(snapshotId, lineNumber, lineId, canonHash, anchor);
+    insertLineage: (snapshotId, lineNumber, lineId, canonHash, rawHash, anchor) => {
+      insertLineageStmt.run(snapshotId, lineNumber, lineId, canonHash, rawHash, anchor);
     },
   };
 }
@@ -257,13 +268,16 @@ export function positionsByIdentity(
 
 /**
  * One row of the latest committed lineage: the line's coordinate, its immutable identity, the canon digest
- * pairing reads, and the anchor the session served for it.
+ * pairing reads, the raw-line digest ordinal carry proves one spelling from, and the anchor the session
+ * served for it.
  */
 export interface SnapshotLineageEntry {
   lineNumber: number;
   lineId: number;
   canonHash: string;
   anchor: string;
+  /** `raw_hash`; `undefined` on a legacy row, which is no raw evidence and fails the carry gate closed. */
+  rawHash?: string | undefined;
 }
 
 /**
@@ -285,6 +299,7 @@ export function latestLineageFor(
     lineId: row.line_id,
     canonHash: row.canon_hash,
     anchor: row.anchor,
+    rawHash: row.raw_hash ?? undefined,
   }));
 }
 
@@ -753,7 +768,14 @@ function materializeSnapshotInTxn(
   for (const [index, hash] of hashes.entries()) {
     const lineNumber = index + 1;
     const lineId = inherited.get(lineNumber) ?? nextFreshId++;
-    stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[index] ?? ""), hash);
+    stmts.insertLineage(
+      insertedId,
+      lineNumber,
+      lineId,
+      canonDigest(lines[index] ?? ""),
+      rawDigest(lines[index] ?? ""),
+      hash,
+    );
   }
   if (retireLeases) {
     retireAbsentLeases(store.db, path, insertedId, Date.now());
