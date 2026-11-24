@@ -125,6 +125,20 @@ describe("formatUnservedSpanMessage — strict voice", () => {
     );
   });
 
+  it("caps a shown multi-line run beside a hidden multi-line run past the cap", () => {
+    expect(
+      formatUnservedSpanMessage({
+        voice: "strict",
+        path: "mixed.txt",
+        unservedLines: [1, 2, 3, 5, 7, 9, 11, 20, 21, 22, 23, 24, 25],
+        replacedLineCount: 30,
+      }),
+    ).toBe(
+      "Strict span mode refused the edit to mixed.txt: 13 of the 30 file lines it replaces were never served.\n" +
+        "Unserved file lines: 1-3, 5, 7, 9, 11 (+6 more lines)",
+    );
+  });
+
   it("degrades to a pathless clause when the call site has no path", () => {
     expect(
       formatUnservedSpanMessage({

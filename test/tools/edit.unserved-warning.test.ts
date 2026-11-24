@@ -1,5 +1,4 @@
 /**
-/**
  * The unserved-interior warning, tool level (ticket #306). Hint mode applied an edit whose span
  * removed at least one interior line this session never served: the applied-tier
  * `[W_UNSERVED_INTERIOR]` names the replaced file-line count, the unserved count, and the
