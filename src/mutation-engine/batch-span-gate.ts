@@ -20,7 +20,7 @@ import {
   type ServedRow,
 } from "../served-session/serve-render.js";
 import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
-import { batchAbortFor, batchAbortForMany } from "../edit-response.js";
+import { batchAbort } from "../edit-response.js";
 
 function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
@@ -90,9 +90,16 @@ export function spliceWorkingBufferIds(
 }
 
 interface BaselineSpan {
-  index: number;
+  itemIndex: number;
+  arrayPos: number;
   startLine: number;
   endLine: number;
+}
+
+/** One gate input: the compacted edit plus its position in the call's `edits[]` array. */
+export interface BatchSpanEntry {
+  edit: HEdit;
+  itemIndex: number;
 }
 
 /** The baseline (`S_curr`) state one batch's spans are resolved against, before anything mutates. */
@@ -130,11 +137,12 @@ export interface BaselineSpanContext {
  *
  * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines are mutated state the overlap gate
  * must see (invariant 5). A copy's source is read, not mutated, so it adds no span.
- * Rejections aggregate in `assertBatchSpansDisjoint`, so this seam records the rows each failing edit owes and rethrows the raw diagnostic — the `edit[i] (path) failed:` envelope lands once, at aggregation.
+ * Rejections aggregate in `assertBatchSpansDisjoint`, so this seam records the rows each failing edit owes and rethrows the raw diagnostic — the batch bullet lands once, at aggregation.
  */
 async function resolveBaselineSpans(
   edit: HEdit,
-  index: number,
+  itemIndex: number,
+  arrayPos: number,
   ctx: BaselineSpanContext,
 ): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
@@ -155,7 +163,7 @@ async function resolveBaselineSpans(
   const spanOf = (leased: LeasedEditResolution): BaselineSpan => {
     const from = leased.resolved.hash_bounds[0].line;
     const to = leased.resolved.hash_bounds[1].line;
-    return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
+    return { itemIndex, arrayPos, startLine: Math.min(from, to), endLine: Math.max(from, to) };
   };
   // HACK: dead pre-heal — `resolveLeasedEdit` heals a reversed pair itself and the span below is order-proof via `Math.min`/`Math.max`, so this survives only until the heal-path cleanup pass.
   const fixed = swapReversedRanges(edit, fileHashes, []);
@@ -204,44 +212,60 @@ async function resolveBaselineSpans(
  * abort still serves the rejected rows, like the sequential abort, so a retry needs no re-read.
  */
 export async function assertBatchSpansDisjoint(
-  edits: HEdit[],
+  entries: BatchSpanEntry[],
   ctx: BaselineSpanContext,
+  total: number,
 ): Promise<void> {
-  if (edits.length < 2) return;
+  if (entries.length < 2) return;
   const spans: BaselineSpan[] = [];
   const failures: { error: DomainError; index: number }[] = [];
-  for (let index = 0; index < edits.length; index++) {
+  for (let arrayPos = 0; arrayPos < entries.length; arrayPos++) {
+    const entry = entries[arrayPos]!;
     try {
-      spans.push(...(await resolveBaselineSpans(edits[index]!, index, ctx)));
+      spans.push(...(await resolveBaselineSpans(entry.edit, entry.itemIndex, arrayPos, ctx)));
     } catch (error) {
       if (!(error instanceof DomainError)) throw error;
-      failures.push({ error, index });
+      failures.push({ error, index: entry.itemIndex });
     }
   }
   if (failures.length === 1) {
     const only = failures[0]!;
-    throw batchAbortFor({ error: only.error, index: only.index, path: ctx.path });
+    throw batchAbort({
+      failures: [{ error: only.error, index: only.index }],
+      total,
+      path: ctx.path,
+    });
   }
   if (failures.length > 1) {
-    throw batchAbortForMany({ failures, path: ctx.path });
+    throw batchAbort({ failures, total, path: ctx.path });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
-      if (a.index === b.index) continue;
+      if (a.itemIndex === b.itemIndex) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         const originalLines = splitLines(ctx.originalNormalized);
-        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
-        throw new DomainError("E_BATCH_ABORT", {
-          earlierIndex: a.index,
-          laterIndex: b.index,
-          earlierStart: a.startLine,
-          earlierEnd: a.endLine,
-          laterStart: b.startLine,
-          laterEnd: b.endLine,
+        const rows = serveRowsForEdit(entries[b.arrayPos]!.edit, ctx.originalHashes);
+        throw batchAbort({
+          failures: [
+            {
+              error: new DomainError("E_BATCH_ABORT", {
+                earlierIndex: a.itemIndex,
+                laterIndex: b.itemIndex,
+                earlierStart: a.startLine,
+                earlierEnd: a.endLine,
+                laterStart: b.startLine,
+                laterEnd: b.endLine,
+                path: ctx.path,
+                servedRows: rows ?? [],
+                servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
+              }),
+              index: b.itemIndex,
+            },
+          ],
+          total,
           path: ctx.path,
-          servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
         });
       }
     }

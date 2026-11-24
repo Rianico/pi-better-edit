@@ -188,6 +188,8 @@ export interface ErrorPayloadMap {
     laterStart: number;
     laterEnd: number;
     path: string;
+    /** Reject-and-serve rows behind `servedBlock`, so the envelope union counts every rendered row. */
+    servedRows?: ServedRow[];
     servedBlock: string;
   };
   E_NOOP_LOOP: {
@@ -447,25 +449,15 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_BATCH_ABORT: {
     audience: "MODEL",
-    format: ({
-      earlierIndex,
-      laterIndex,
-      earlierStart,
-      earlierEnd,
-      laterStart,
-      laterEnd,
-      path,
-      servedBlock,
-    }) => {
+    format: ({ earlierIndex, earlierStart, earlierEnd, laterStart, laterEnd, servedBlock }) => {
       const overlapStart = Math.max(earlierStart, laterStart);
       const overlapEnd = Math.min(earlierEnd, laterEnd);
-      return (
-        `Overlapping spans in ${path}. Rejected. The file is unchanged.\n` +
-        `- edit[${earlierIndex}]: lines ${earlierStart}-${earlierEnd}\n` +
-        `- edit[${laterIndex}]: lines ${laterStart}-${laterEnd} ` +
-        `(overlaps edit[${earlierIndex}]: lines ${overlapStart}-${overlapEnd})\n` +
-        (servedBlock ? `Current range:\n${servedBlock}` : `No current range is served.`)
-      );
+      const head =
+        `its span (lines ${laterStart}-${laterEnd}) overlaps edit[${earlierIndex}] ` +
+        `(lines ${earlierStart}-${earlierEnd}) at lines ${overlapStart}-${overlapEnd}.`;
+      return servedBlock
+        ? `${head}\nCurrent range:\n${servedBlock}`
+        : `${head} No current range is served.`;
     },
     options: ["merge the overlapping items into one span", "split them across separate calls"],
   },

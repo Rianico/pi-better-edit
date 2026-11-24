@@ -885,8 +885,8 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
 
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain(
-        "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.",
+      expect(rejection.message).toMatch(
+        /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m,
       );
 
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);

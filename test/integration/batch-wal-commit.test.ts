@@ -17,9 +17,9 @@ interface LineageRow {
   anchor: string;
 }
 
-/** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 function lineageRows(store: HashStore, path: string, snapshotHash: string): LineageRow[] {
   return store.db
@@ -73,7 +73,7 @@ function nextId(store: HashStore, path: string): number | undefined {
  * - a cache hit (cyclical reversion) adopts the canonical snapshot with zero allocations.
  */
 describe("multi-edit batch WAL commit", () => {
-  it("rejects a nested batch span with [MODEL] [E_BATCH_ABORT] and writes nothing to disk or store", async () => {
+  it("rejects a nested batch span with the unified verdict and writes nothing to disk or store", async () => {
     const content = "a\nb\nc\nd\ne\n";
     await withTempFile("nest.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -101,14 +101,20 @@ describe("multi-edit batch WAL commit", () => {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/\[MODEL\] \[E_BATCH_ABORT\]/);
+      await expect(editPromise).rejects.toThrow(
+        /\[MODEL\] Batch rejected: 1 of 2 edits failed; nothing was written\./,
+      );
+      const nestedRejection = await editPromise.catch((error: unknown) => error as Error);
+      expect(nestedRejection.message).toContain(
+        "- edit[1] (nest.txt) [E_BATCH_ABORT]: its span (lines 1-3) overlaps edit[0] (lines 2-2) at lines 2-2.",
+      );
       expect(await readFile(path, "utf-8")).toBe(content);
       expect(nextId(store, path)).toBe(counterBefore);
       expect(snapshotCount(store, path)).toBe(snapshotsBefore);
     });
   });
 
-  it("rejects a partially overlapping batch span before any edit is applied", async () => {
+  it("rejects a partially overlapping batch span with the unified verdict before any edit is applied", async () => {
     const content = "a\nb\nc\nd\ne\n";
     await withTempFile("overlap.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -138,7 +144,13 @@ describe("multi-edit batch WAL commit", () => {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/\[MODEL\] \[E_BATCH_ABORT\]/);
+      await expect(editPromise).rejects.toThrow(
+        /\[MODEL\] Batch rejected: 1 of 2 edits failed; nothing was written\./,
+      );
+      const overlapRejection = await editPromise.catch((error: unknown) => error as Error);
+      expect(overlapRejection.message).toContain(
+        "- edit[1] (overlap.txt) [E_BATCH_ABORT]: its span (lines 4-5) overlaps edit[0] (lines 2-4) at lines 4-4.",
+      );
       expect(await readFile(path, "utf-8")).toBe(content);
     });
   });
@@ -179,10 +191,14 @@ describe("multi-edit batch WAL commit", () => {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/\[MODEL\] \[E_BATCH_ABORT\]/);
+      await expect(editPromise).rejects.toThrow(
+        /\[MODEL\] Batch rejected: 1 of 2 edits failed; nothing was written\./,
+      );
       const rejection = await editPromise.catch((error: unknown) => error as Error);
-      expect(rejection.message).toContain("- edit[0]: lines 3-3");
-      expect(rejection.message).toContain("- edit[1]: lines 2-4 (overlaps edit[0]: lines 3-3)");
+      expect(rejection.message).toMatch(BATCH_VERDICT);
+      expect(rejection.message).toContain(
+        "- edit[1] (shift-overlap.txt) [E_BATCH_ABORT]: its span (lines 2-4) overlaps edit[0] (lines 3-3) at lines 3-3.",
+      );
       expect(await readFile(path, "utf-8")).toBe(shifted);
       expect(undoCount(store, path)).toBe(undoBefore);
       expect(snapshotId(store, path, "  dup\nalpha\nX\nbeta\ngamma\n")).toBeUndefined();
@@ -223,8 +239,11 @@ describe("multi-edit batch WAL commit", () => {
       );
 
       const rejection = await editPromise.catch((error: unknown) => error as Error);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(rejection.message).toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain("- edit[0]: lines 3-3");
+      expect(rejection.message).toContain(
+        "- edit[1] (duplicate-canon.txt) [E_BATCH_ABORT]: its span (lines 2-4) overlaps edit[0] (lines 3-3) at lines 3-3.",
+      );
       expect(rejection.message).not.toContain("lines 1-1");
       expect(await readFile(path, "utf-8")).toBe(shifted);
 
@@ -383,9 +402,9 @@ describe("multi-edit batch WAL commit", () => {
 
       expect(rejection.message.startsWith("[MODEL] ")).toBe(true);
       expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
-      expect(rejection.message).toContain("edit[1] (parse-abort.txt) failed");
+      expect(rejection.message).toContain("- edit[1] (parse-abort.txt) [E_MALFORMED_ANCHOR]:");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(rejection.message.match(/\bMODEL\b/g) ?? []).toHaveLength(1);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -426,9 +445,9 @@ describe("multi-edit batch WAL commit", () => {
 
       expect(rejection.message.startsWith("[MODEL] ")).toBe(true);
       expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
-      expect(rejection.message).toContain("edit[1] (reject-abort.txt) failed");
+      expect(rejection.message).toContain("- edit[1] (reject-abort.txt) [E_UNVERIFIED_RANGE]:");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(rejection.message).toContain("Current range (fresh read):");
       expect(rejection.message).not.toContain("Retry with these anchors");
       expect(rejection.message.match(/\bCurrent range\b/g) ?? []).toHaveLength(1);

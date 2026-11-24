@@ -1,7 +1,12 @@
 import { denseServeRows, type ServedRow } from "./served-session/serve-render.js";
 import { genDiff } from "./edit-diff.js";
 import { visLines, clipLine } from "./utils.js";
-import { isDomainErrorCode, withPayloadSubject } from "./domain-errors.js";
+import {
+  DomainError,
+  isDomainErrorCode,
+  withPayloadSubject,
+  type Audience,
+} from "./domain-errors.js";
 import { attachEnvelope, rawCodeOf, readEnvelope, type ErrorEnvelope } from "./error-envelope.js";
 import { snapshotHashFor } from "./snapshot-store";
 import type { ProcessedEditFile } from "./mutation-engine/types.js";
@@ -381,78 +386,75 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
 }
 
 /**
- * The atomicity trailer every rejected item of a multi-item call carries (spec §3.2.3). The call is
- * all-or-nothing, so the model must know that the items before the failing one were rolled back too.
- */
-const BATCH_ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
-
 /**
- * Strips a leading audience tag so a wrapped rejection carries exactly one `[MODEL]` marker.
- * The inner diagnostic already names its own code; the outer wrapper owns the single prefix.
+ * The one batch-rejection renderer (spec #329 §4–§5 T1, issue #323). Every rejected
+ * multi-item call renders through it: a verdict line naming the failing count and the
+ * call's item count, then one bullet per failing item carrying that item's own code.
+ * Atomicity lives once, in the verdict (`nothing was written`); a bullet owns the item
+ * index, the call's `file` value, the code, the diagnosis, and the indented options.
+ * The inner error owns its served rows under its own heading — the envelope never
+ * re-renders them, it only unions them for the retry path. A 1-item call never reaches
+ * here: it throws the bare `[MODEL]`-prefixed diagnosis with the item's own code (D5).
  */
-function stripModelPrefix(message: string): string {
-  return message.startsWith("[MODEL] ") ? message.slice("[MODEL] ".length) : message;
+export interface BatchFailure {
+  error: Error;
+  index: number;
+}
+
+/** The failing item's registry audience, read once for the verdict line (T1 adds no rule). */
+function batchAudience(failures: BatchFailure[]): Audience {
+  for (const { error } of failures) {
+    if (error instanceof DomainError) return error.audience;
+  }
+  return "MODEL";
+}
+
+/** The bullet's code token: the item's own registry code, never a promoted header code (D1). */
+function bulletCode(error: Error): string {
+  const raw = rawCodeOf(error);
+  if (raw !== undefined) return raw;
+  const match = (error instanceof Error ? error.message : String(error)).match(/\[(E_[A-Z_]+)\]/);
+  return match?.[1] ?? "E_UNKNOWN";
 }
 
 /**
- * The inner diagnostic a wrapper embeds. WHY the ATTRIBUTED inner: the engine renders a refusal
- * before the wrapper sees it, so the raw message would freeze the neutral clause. WHY here, not at
- * the tool boundary: a rebuild there discards this wrapper's own prefix. It would also drop the
- * atomicity trailer, which is worse than a neutral clause. Only `E_BAD_PAYLOAD` is re-wrapped.
+ * The item's diagnosis for its bullet: the engine renders the refusal before the
+ * wrapper sees it, so the message is re-attributed to the `edit` tool, then the
+ * audience and code prefixes are stripped — the bullet header owns them — and every
+ * continuation line (range headings and rows, the `Options:` line) is indented two
+ * spaces so one failure stays one parseable list entry.
  */
-function innerDiagnostic(error: Error): string {
-  return indentOptions(stripModelPrefix(withPayloadSubject(error, "edit").message));
+function bulletDiagnosis(error: Error): string {
+  const attributed = withPayloadSubject(error, "edit");
+  const message = attributed instanceof Error ? attributed.message : String(attributed);
+  const stripped = message.replace(/^\[(?:MODEL|USER)\] /, "").replace(/^\[(?:E_[A-Z_]+)\] /, "");
+  const [first, ...rest] = stripped.split("\n");
+  const continuation = rest
+    .map((line) => (line === "" || line.startsWith("  ") ? line : `  ${line}`))
+    .join("\n");
+  return `${first ?? ""}${continuation === "" ? "" : `\n${continuation}`}`;
 }
 
 /**
- * Indent a rendered options block under the item it belongs to inside a batch bullet. A
- * wrapper renders one line per failing item, so an unindented `Options:` line would read as a
- * third alternative between bullets.
+ * Wraps every rejected item of a multi-item call for the model. Single-failure sites
+ * pass a one-element `failures` array with the call's item count as `total`.
+ * Field aggregation (spec D2 note — the envelope stays actionable): `code` carries the
+ * first failing item's domain code so `toFailure` still routes the typed path instead
+ * of rewriting it as `E_UNKNOWN`; `cause` is carried only when every failing item
+ * agrees on one diagnosis; `servedRows` is the union of every failing item's rows;
+ * `servedBlock` joins every failing item's block, in item order.
  */
-function indentOptions(message: string): string {
-  return message.replace(/^Options: /m, "  Options: ");
-}
-
-/**
- * Wraps a rejected item of a multi-item call for the model. Shared by the pre-mutation span gate and
- * the sequential mutate loop, so an item that fails either way reads identically: the failing item,
- * its own diagnostic, and the reject-and-serve rows of the range the model retries from.
- *
- * The item's OWN error code is propagated untouched — `[E_BATCH_ABORT]` is reserved for overlapping
- * or nested spans, so a malformed anchor or a failed apply reads as the code the model can act on
- * (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
- */
-export function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
-  const { error, index, path } = args;
-  const wrapped = new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
-      BATCH_ATOMICITY_TRAILER,
+export function batchAbort(args: { failures: BatchFailure[]; total: number; path: string }): Error {
+  const { failures, total, path } = args;
+  const audience = batchAudience(failures);
+  const noun = total === 1 ? "edit" : "edits";
+  const bullets = failures.map(
+    ({ error, index }) =>
+      `- edit[${index}] (${path}) [${bulletCode(error)}]: ${bulletDiagnosis(error)}`,
   );
-  attachEnvelope(wrapped, readEnvelope(error) ?? {});
-  return wrapped;
-}
-/**
- * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`: one aggregated rejection with one
- * bullet per failing item (`- edit[1]: …`) so a single resubmission can fix them all instead of burning a turn per failure. The batch
- * is still all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic and code inline, so the model
- * can act on every failure without a re-read.
- * Field aggregation (spec D2 — the envelope must stay actionable): `code` — every item keeps its own `[E_*]` inline in the message,
- * and the envelope carries the first item's domain code so `toFailure` still routes the typed path (keeping this full message)
- * instead of rewriting it as `E_UNKNOWN`; `details`/`cause` — carried only when every failing item agrees on one diagnosis, a mixed
- * batch stating each cause inline instead of promoting one; `servedRows` — the union of every failing item's rows (each item's retry
- * leases were already recorded on its own rejection path); `servedBlock` — every failing item's block, in item order.
- */
-export function batchAbortForMany(args: {
-  failures: { error: Error; index: number }[];
-  path: string;
-}): Error {
-  const { failures, path } = args;
-  const bullets = failures.map(({ error, index }) => `- edit[${index}]: ${innerDiagnostic(error)}`);
   const wrapped = new Error(
-    `[MODEL] ${failures.length} edits in ${path} failed. The whole edit call was rejected and the file is unchanged.\n` +
-      `${bullets.join("\n")}\n` +
-      BATCH_ATOMICITY_TRAILER,
+    `[${audience}] Batch rejected: ${failures.length} of ${total} ${noun} failed; nothing was written.\n` +
+      bullets.join("\n"),
   );
   const envelopes = failures.map((f) => readEnvelope(f.error) ?? {});
   const firstCode = failures.map((f) => rawCodeOf(f.error)).find((code) => code !== undefined);
@@ -478,24 +480,11 @@ export function batchAbortForMany(args: {
   if (blocks.length > 0) {
     envelope.servedBlock = blocks.join("\n");
   }
+  if (failures.length === 1 && envelope.code === "E_BAD_PAYLOAD") {
+    const only = envelopes[0];
+    if (only?.payloadMessage !== undefined) envelope.payloadMessage = only.payloadMessage;
+  }
   attachEnvelope(wrapped, envelope);
-  return wrapped;
-}
-
-/**
- * Wraps one malformed payload item of a multi-item call for the model. Single-failure arm of
- * `parseEdits` — the envelope reads exactly as before; multi-failure batches route to
- * `batchAbortForMany` instead so every malformed item is reported together.
- */
-export function wrapParseFailure(error: Error, index: number, path: string): Error {
-  const wrapped = new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n${BATCH_ATOMICITY_TRAILER}`,
-  );
-  const { code, cause } = readEnvelope(error) ?? {};
-  attachEnvelope(wrapped, {
-    ...(code !== undefined ? { code } : {}),
-    ...(cause !== undefined ? { cause } : {}),
-  });
   return wrapped;
 }
 

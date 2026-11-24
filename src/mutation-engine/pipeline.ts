@@ -45,13 +45,7 @@ import type {
   NormalizedEditItem,
   NormalizedEditRequest,
 } from "../payload-contract.js";
-import {
-  batchAbortFor,
-  batchAbortForMany,
-  buildBatchResult,
-  toSection,
-  wrapParseFailure,
-} from "../edit-response.js";
+import { batchAbort, buildBatchResult, toSection } from "../edit-response.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
 import type { PipelineOptions, ProcessedEditFile, ForeignCutRecord } from "./types.js";
 import {
@@ -477,10 +471,14 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
   }
   if (failures.length === 1) {
     const only = failures[0]!;
-    throw wrapParseFailure(only.error, only.index, path);
+    throw batchAbort({
+      failures: [{ error: only.error, index: only.index }],
+      total: items.length,
+      path,
+    });
   }
   if (failures.length > 1) {
-    throw batchAbortForMany({ failures, path });
+    throw batchAbort({ failures, total: items.length, path });
   }
   return parsed;
 }
@@ -754,9 +752,10 @@ async function runMutations(
   const isPreview = options?.noPersist === true;
 
   const parsed = parseEdits(items, path);
-  const realEdits: HEdit[] = [];
-  for (const one of parsed) {
-    if ("edit" in one) realEdits.push(one.edit);
+  const gateEntries: { edit: HEdit; itemIndex: number }[] = [];
+  for (let itemIndex = 0; itemIndex < parsed.length; itemIndex++) {
+    const one = parsed[itemIndex]!;
+    if ("edit" in one) gateEntries.push({ edit: one.edit, itemIndex });
   }
 
   const {
@@ -784,24 +783,28 @@ async function runMutations(
     throw new DomainError("E_LOSSY_TEXT", { path });
   }
 
-  if (realEdits.length > 1) {
-    await assertBatchSpansDisjoint(realEdits, {
-      served,
-      identity: leaseSpanSource({
-        store: hashStore,
+  if (gateEntries.length > 1) {
+    await assertBatchSpansDisjoint(
+      gateEntries,
+      {
+        served,
+        identity: leaseSpanSource({
+          store: hashStore,
+          sessionKey,
+          absolutePath,
+          content: originalNormalized,
+        }),
         sessionKey,
         absolutePath,
-        content: originalNormalized,
-      }),
-      sessionKey,
-      absolutePath,
-      spanMode,
-      isPreview,
-      path,
-      originalHashes,
-      originalNormalized,
-      recordRejectionServe,
-    });
+        spanMode,
+        isPreview,
+        path,
+        originalHashes,
+        originalNormalized,
+        recordRejectionServe,
+      },
+      items.length,
+    );
   }
 
   let currentContent = originalNormalized;
@@ -888,7 +891,7 @@ async function runMutations(
       ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       onRejected: async (error) => {
         if (items.length === 1) throw error;
-        throw batchAbortFor({ error, index, path });
+        throw batchAbort({ failures: [{ error, index }], total: items.length, path });
       },
     });
 
@@ -930,7 +933,11 @@ async function runMutations(
       });
       if (decision.action === "reject") {
         if (items.length === 1) throw decision.error;
-        throw batchAbortFor({ error: decision.error, index, path });
+        throw batchAbort({
+          failures: [{ error: decision.error, index }],
+          total: items.length,
+          path,
+        });
       }
       if (decision.action === "warn") warnings.push(decision.notice);
       if (items.length > 1) {
