@@ -111,7 +111,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   );
   const latestSnapshotStmt = db.prepare(
     "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND committed = 1 AND anchor_generation = ? " +
-      "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
+      "AND snapshot_hash LIKE ? ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
   );
   const lineageIdentitiesStmt = db.prepare(
     "SELECT line_number, line_id, canon_hash FROM line_lineage " +
@@ -152,7 +152,9 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `anchor`.
     lineageAnchors: (...params) => lineageStmt.all(...params) as unknown as { anchor: string }[],
     latestSnapshot: (path: string) =>
-      latestSnapshotStmt.get(path, ANCHOR_GENERATION) as { snapshot_id: number } | undefined,
+      latestSnapshotStmt.get(path, ANCHOR_GENERATION, `${cacheKey("")}%`) as
+        | { snapshot_id: number }
+        | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     findSnapshotByStat: (...params) => findStatStmt.get(...params) as StatSnapshotRef | undefined,
     // SAFETY: `node:sqlite` rows are untyped; `lineageRangeStmt` selects exactly these three columns.
@@ -289,6 +291,15 @@ export function getSnapshot(
   return anchors;
 }
 
+/**
+ * Whether a snapshot cache key belongs to the current epoch: both `CANON_VERSION` and `ANCHOR_GENERATION`.
+ * Raw-byte anchors survive a canon-only change, but the canon evidence stored beside them — lineage and
+ * lease `canon_hash`, and the `line_id`s paired through it — is only comparable to today's `canonDigest`
+ * under the canon that wrote it (issue #339). Every seam that reuses that evidence gates on this.
+ */
+export function isCurrentSnapshotEpoch(snapshotHash: string): boolean {
+  return snapshotHash.startsWith(cacheKey(""));
+}
 /**
  * The committed `line_lineage` anchors of `(path, snapshotHash)`. `undo_last_edit` serves these
  * verbatim when it adopts the pinned snapshot (spec §3.1.4 step 4: anchors are never re-derived),
@@ -451,7 +462,7 @@ export async function findStatSnapshotFor(
     if (
       row === undefined ||
       row.anchor_generation !== ANCHOR_GENERATION ||
-      !isCurrentAnchorGeneration(row.snapshot_hash)
+      !isCurrentSnapshotEpoch(row.snapshot_hash)
     ) {
       return undefined;
     }
@@ -504,7 +515,7 @@ export async function adoptStatSnapshotFor(
   adoption: StatSnapshotAdoption,
   options?: SnapshotAdoptOptions,
 ): Promise<boolean> {
-  if (!isCurrentAnchorGeneration(adoption.snapshotHash)) {
+  if (!isCurrentSnapshotEpoch(adoption.snapshotHash)) {
     return false;
   }
   const store = await loadHashStore();
