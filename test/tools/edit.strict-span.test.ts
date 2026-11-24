@@ -71,8 +71,9 @@ describe("edit under an unserved interior span", () => {
       if (!isMutationFailure(result)) return;
       expect(result.code).toBe("E_UNSERVED_RANGE");
       expect(result.message).toContain("[MODEL] [E_UNSERVED_RANGE]");
-      expect(result.message).toContain("line 4-6");
-      expect(result.message).toContain("were never served in this session.");
+      expect(result.message).toContain(
+        "sample.txt: 3 of the 5 file lines it replaces were never served.\nUnserved file lines: 4-6",
+      );
       expect(result.message).not.toContain("Current range");
       await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe(before);
     });

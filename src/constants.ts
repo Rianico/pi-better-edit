@@ -93,6 +93,13 @@ export const DIFF_REMOVED_CAP = 6;
 export const DIFF_REMOVED_EDGE = 2;
 
 /**
+ * The unserved-line list's run cap (`src/unserved-span-message.ts`): past five contiguous runs the
+ * list names the remainder as one `(+R more lines)` count while the summary keeps the exact
+ * total, so a hundred scattered holes never outgrow the message it belongs to.
+ */
+export const UNSERVED_LIST_MAX_RUNS = 5;
+
+/**
  * The single-projection contract (#174): the preview pane renders the same `genDiff` text as the
  * applied diff with wider context, owned by the engine's `preview` seam so no one re-projects it.
  */

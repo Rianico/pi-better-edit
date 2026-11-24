@@ -221,6 +221,12 @@ export function genDiff(
    * served.
    */
   unservedRemovedLines: number[];
+  /**
+   * Every removed OLD line in the whole diff, whatever the mirror says and whatever the fold cap
+   * renders. It is the replaced-span denominator a message quotes, so it never shrinks when the
+   * renderer folds rows away.
+   */
+  removedLineCount: number;
 } {
   const effectiveNewHashes =
     newContentHashes ??
@@ -241,6 +247,7 @@ export function genDiff(
   let firstChangedLine: number | undefined;
   let lastChangedLine: number | undefined;
   const unservedRemovedLines: number[] = [];
+  let removedLineCount = 0;
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -259,6 +266,7 @@ export function genDiff(
         const o = { value: oldLineNum };
         collectUnservedRemoved(displayLines, oldLineNum, served, unservedRemovedLines);
         pushRemovedLines(displayLines, oldContentHashes, o, output, served);
+        removedLineCount += displayLines.length;
         oldLineNum = o.value;
         lastChangedLine = newLineNum;
       }
@@ -311,5 +319,6 @@ export function genDiff(
     lastChangedLine,
     servedRows,
     unservedRemovedLines,
+    removedLineCount,
   };
 }

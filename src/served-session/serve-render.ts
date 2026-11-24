@@ -4,13 +4,14 @@
  * and the rows a rejection shows, and it verifies the served rows themselves (served hash echo and
  * prefix-mismatch gates, never-served shape scan, rejection bookkeeping, `verifyRebasedSpan`). It
  * owns no session state: every input arrives as an argument, and the session module is the only writer.
- *
  * Heuristic canon healing is retired (docs/.archive_adrs/0008-orphaned-serve-healing.md; spec §3.3): un-rebased coordinates reject
  * fail-closed with E_STALE_RANGE; realignment belongs exclusively to MVCC `pairSnapshots` +
  * `line_lineage` upstream. The lease seam verifies every edit by lease identity (#151); the former
  * mirror-vs-mirror table (`ServedVerification`, `verifyServedRange`) had no live caller, retired (#10).
+ * The unserved-interior headline lives in `../unserved-span-message.js` for both voices.
  */
 import { HASH_LEN, HASH_RE } from "../hashline/alphabet.js";
+import { formatUnservedSpanMessage } from "../unserved-span-message.js";
 import { HASH_SEP } from "../hashline/hash-identity.js";
 import { canonDigest } from "../hashline/hash-identity.js";
 import { SERVED_ROWS_CAP } from "../constants.js";
@@ -202,16 +203,6 @@ export function makeStaleAnchorRejection(opts: {
   });
 }
 
-function unservedHeadline(first: number, last: number, count: number, where: string): string {
-  const listing =
-    count === 1
-      ? `${first}`
-      : last - first + 1 === count
-        ? `${first}-${last}`
-        : `${first} and ${count - 1} more`;
-  return `line ${listing}${where} ${count === 1 ? "was" : "were"} never served in this session.`;
-}
-
 /**
  * Contiguity + identity gate for every leased span (spec §3.1.1 / §3.5 / Probe J): the caller resolved each end anchor's leased
  * `line_id`, and this verifies the whole served window remapped onto `rebasedStart..rebasedEnd`, so the dynamic rebase path's
@@ -262,9 +253,7 @@ export function verifyRebasedSpan(args: {
       cause: "served-range staleness",
     });
   }
-  let firstUnserved: number | undefined;
-  let lastUnserved: number | undefined;
-  let unservedCount = 0;
+  const unservedLines: number[] = [];
   for (let k = 0; k < servedLen; k++) {
     const servedAnchor = served[servedStart - 1 + k];
     const currentLine = rebasedStart + k;
@@ -292,11 +281,7 @@ export function verifyRebasedSpan(args: {
           cause: "never-served",
         });
       }
-      if (spanMode === "strict") {
-        if (firstUnserved === undefined) firstUnserved = currentLine;
-        lastUnserved = currentLine;
-        unservedCount += 1;
-      }
+      if (spanMode === "strict") unservedLines.push(currentLine);
       continue;
     }
     const lease = leaseFor(servedAnchor);
@@ -366,14 +351,20 @@ export function verifyRebasedSpan(args: {
       });
     }
   }
-  if (firstUnserved !== undefined) {
-    const last = lastUnserved ?? firstUnserved;
+  // Ref: docs/.archive_adrs/0024-narrow-p2-interior-exposure-cap-removed-diffs.md
+  const firstOffendingLine = unservedLines[0];
+  if (firstOffendingLine !== undefined) {
     throw new DomainError("E_UNSERVED_RANGE", {
-      headline: unservedHeadline(firstUnserved, last, unservedCount, where),
+      headline: formatUnservedSpanMessage({
+        voice: "strict",
+        ...(snapshot.filePath !== undefined ? { path: snapshot.filePath } : {}),
+        unservedLines,
+        replacedLineCount: rebasedLen,
+      }),
       servedRows: [],
       servedBlock: "",
       cause: "never-served",
-      firstOffendingLine: firstUnserved,
+      firstOffendingLine,
     });
   }
 }

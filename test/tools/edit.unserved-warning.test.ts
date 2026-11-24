@@ -1,8 +1,10 @@
 /**
+/**
  * The unserved-interior warning, tool level (ticket #306). Hint mode applied an edit whose span
  * removed at least one interior line this session never served: the applied-tier
- * `[W_UNSERVED_INTERIOR]` names the count and the old-line range once per committed file. A fully
- * served edit never emits it, and strict mode refuses the same span instead of warning.
+ * `[W_UNSERVED_INTERIOR]` names the replaced file-line count, the unserved count, and the
+ * compressed absolute-line list once per committed file (ticket #319). A fully served edit never
+ * emits it, and strict mode refuses the same span instead of warning.
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { join } from "node:path";
@@ -79,7 +81,8 @@ describe("unserved interior replaced under hint mode", () => {
       );
 
       const expected =
-        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 3 unserved interior line(s) (lines 4-6). " +
+        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 5 file lines, 3 of which were never served; " +
+        "the edit applied.\nUnserved file lines: 4-6\n" +
         "Edits should only modify lines previously read and served (enforced under strict mode); " +
         "verify this uninspected replacement was intended.";
 
@@ -89,7 +92,7 @@ describe("unserved interior replaced under hint mode", () => {
     });
   });
 
-  it("names a single unserved interior line with a collapsed range", async () => {
+  it("names a single unserved interior line as one line, never a collapsed range", async () => {
     await withTempFile("sample.txt", SHORT_CONTENT, async ({ cwd }) => {
       await serve(cwd, "sample.txt", [{ offset: 1, limit: 2 }, { offset: 4 }]);
       const h = await lineHashes(SHORT_CONTENT, join(cwd, "sample.txt"));
@@ -102,7 +105,33 @@ describe("unserved interior replaced under hint mode", () => {
       );
 
       expect(warningLines(result)).toEqual([
-        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 1 unserved interior line(s) (lines 3-3). " +
+        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 3 file lines, 1 of which was never served; " +
+          "the edit applied.\nUnserved file line: 3\n" +
+          "Edits should only modify lines previously read and served (enforced under strict mode); " +
+          "verify this uninspected replacement was intended.",
+      ]);
+    });
+  });
+
+  it("lists non-contiguous unserved runs instead of a min..max envelope", async () => {
+    await withTempFile("sample.txt", GAP_CONTENT, async ({ cwd }) => {
+      await serve(cwd, "sample.txt", [
+        { offset: 1, limit: 2 },
+        { offset: 5, limit: 1 },
+        { offset: 9 },
+      ]);
+      const h = await lineHashes(GAP_CONTENT, join(cwd, "sample.txt"));
+      const result = await applied(
+        admit({
+          file: "sample.txt",
+          edits: [{ anchor_from: h[1]!, anchor_to: h[8]!, text: "R" }],
+        }),
+        cwd,
+      );
+
+      expect(warningLines(result)).toEqual([
+        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 8 file lines, 5 of which were never served; " +
+          "the edit applied.\nUnserved file lines: 3-4, 6-8\n" +
           "Edits should only modify lines previously read and served (enforced under strict mode); " +
           "verify this uninspected replacement was intended.",
       ]);
@@ -143,7 +172,8 @@ describe("unserved interior replaced under hint mode", () => {
       );
 
       expect(warningLines(result)).toEqual([
-        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 40 unserved interior line(s) (lines 4-49). " +
+        "[MODEL] [W_UNSERVED_INTERIOR] Span replaced 48 file lines, 40 of which were never served; " +
+          "the edit applied.\nUnserved file lines: 4-19, 26-49\n" +
           "Edits should only modify lines previously read and served (enforced under strict mode); " +
           "verify this uninspected replacement was intended.",
       ]);
@@ -164,7 +194,7 @@ describe("unserved interior replaced under hint mode", () => {
         cwd,
       );
       expect(warningLines(hinted)).toHaveLength(1);
-      expect(modelText(hinted)).toContain("(lines 3-3)");
+      expect(modelText(hinted)).toContain("Unserved file line: 3");
     });
 
     await withTempFile("sample.txt", SHORT_CONTENT, async ({ cwd }) => {
