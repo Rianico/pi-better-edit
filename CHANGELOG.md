@@ -10,6 +10,10 @@
 
 * **edit:** trim refusal rendering to one shape line: drop the echoed request bytes, the inlined canonical-payload paragraph, the duplicate batch-noop warning, the repeated suspicious-text count, and a redundant sentence and doubled periods. (#327)
 
+### Documentation
+
+* **edit:** align the served description and guidelines with the emitted shapes: both `Current range` headings are named with their lease rule, `[USER]` lines are stated as informational `content`, and the retry instruction is an `[E_*]` token with the line it opens. (#328)
+
 ## [2.20.0] - 2026-11-24
 
 ### Features
