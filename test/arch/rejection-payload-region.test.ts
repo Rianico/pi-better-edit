@@ -370,12 +370,18 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
           ctx,
         )
         .catch((error: unknown) => error)) as Error;
+      expect(overlap.message).toMatch(
+        /^\[MODEL\] Batch rejected: 1 of 2 edits failed; nothing was written\.$/m,
+      );
       expect(overlap.message).toMatch(/\[E_BATCH_ABORT\]/);
       expect(overlap.message).toContain("Current range:");
+      expect(overlap.message).toContain(
+        "- edit[1] (sample.ts) [E_BATCH_ABORT]: its span (lines 2-3) overlaps edit[0] (lines 1-2) at lines 2-2.",
+      );
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
       const diskHashes = await currentHashes("alpha\nbeta\ngamma\n", path);
-      const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
-      expect(servedLines).toEqual([`${diskHashes[1]}│beta`, `${diskHashes[2]}│gamma`]);
+      const servedLines = overlap.message.split("\n").filter((l) => /^\s*[A-Za-z0-9]{4}│/.test(l));
+      expect(servedLines).toEqual([`  ${diskHashes[1]}│beta`, `  ${diskHashes[2]}│gamma`]);
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
       const staleItem = (await editTool
         .execute(
@@ -393,8 +399,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         )
         .catch((error: unknown) => error)) as Error;
       expect(staleItem.message).toMatch(/\[E_TARGET_LOST\]/);
-      expect(staleItem.message).toContain(
-        "The whole edit call was rejected and NOTHING was written",
+      expect(staleItem.message).toMatch(
+        /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m,
       );
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
     });

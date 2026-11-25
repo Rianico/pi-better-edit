@@ -142,7 +142,7 @@ describe("edit payload contract", () => {
       edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
     };
     expect(normReq(legacyKeys)).toBe(legacyKeys);
-    expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("exactly");
+    expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("Edit payload:");
     expect(() =>
       assertReq({
         file: "sample.ts",

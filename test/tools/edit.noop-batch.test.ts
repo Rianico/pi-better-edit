@@ -3,9 +3,9 @@ import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 
-/** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
@@ -16,7 +16,7 @@ async function doRead(ctx: any, readTool: any, file: string): Promise<void> {
 }
 
 describe("edit noop-loop guard in multi-item calls", () => {
-  it("routes a looping second item through the batch envelope once with the atomicity trailer", async () => {
+  it("routes a looping second item through the batch envelope once, under the batch verdict", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\neee\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\neee\n", path);
@@ -65,9 +65,9 @@ describe("edit noop-loop guard in multi-item calls", () => {
       expect(rejection.message).toContain("[E_NOOP_LOOP]");
       expect(rejection.code).toBe("E_NOOP_LOOP");
       expect(countOccurrences(rejection.message, "edit[1]")).toBe(1);
-      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).toContain("- edit[1] (sample.ts) [E_NOOP_LOOP]:");
       expect(rejection.message).not.toContain("edit[0]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\nddd\neee\n");
     });
   });
@@ -93,13 +93,15 @@ describe("edit noop-loop guard in multi-item calls", () => {
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
       expect(second.details.metrics.classification).toBe("noop");
       expect(getText(second)).toContain("[W_NOOP]");
+      expect(getText(second)).not.toContain("was a noop");
+      expect(second.details.warnings).toHaveLength(2);
 
       const rejection = (await editTool
         .execute("e3", payload, undefined, undefined, ctx)
         .catch((error: unknown) => error)) as Error & { code?: string };
       expect(rejection.message).toContain("[E_NOOP_LOOP]");
       expect(rejection.code).toBe("E_NOOP_LOOP");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\nddd\n");
     });
   });
@@ -129,7 +131,7 @@ describe("edit noop-loop guard in multi-item calls", () => {
       expect(rejection.message).toContain("Rejected.");
       expect(rejection.message).not.toContain("rejecting the batch");
       expect(rejection.message).not.toContain("failed:");
-      expect(rejection.message).not.toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).not.toMatch(BATCH_VERDICT);
       expect(rejection.code).toBe("E_NOOP_LOOP");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });

@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 
-/** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 async function doRead(ctx: any, readTool: any): Promise<void> {
   await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
@@ -43,7 +43,7 @@ describe("edit noop-loop counter commit boundary", () => {
         )
         .catch((error: unknown) => error)) as Error;
       expect(rejection.message).toContain("[E_SUSPICIOUS_TEXT]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(file, "utf-8")).toBe("aaa\nbbb\nccc\nddd\n");
 
       const third = (await editTool

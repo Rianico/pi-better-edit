@@ -127,7 +127,7 @@ export function readEnvelope(source: unknown): ErrorEnvelope | undefined {
 
 /**
  * Unvalidated view of the `code` slot, for the batch promotion rule only:
- * `batchAbortForMany` keys the first-agreeing-code decision off the FIRST item's
+ * `batchAbort` keys the first-agreeing-code decision off the FIRST item's
  * raw string code — a non-registry head code must suppress the typed route rather
  * than let a later item's code promote, which is `toFailure`'s routing today.
  * Kept here so even the raw view stays one place; every other consumer uses

@@ -178,6 +178,9 @@ _Avoid_: patch language, command language, operation tag (the payload's presence
 The payload's array of edit items; its length is the call's arity. The tool name `edit` covers single and batched edits — intent is expressed by arity, not by a separate tool.
 _Avoid_: batch_edit (removed tool)
 
+**batch rejection**:
+One grammar renders every rejected multi-item call: a `[MODEL] Batch rejected: K of N edit(s) failed; nothing was written.` verdict line, then one bullet per failing item — `- edit[i] (file) [E_CODE]: diagnosis` — with continuation lines (served rows under their own heading, `Options:`) indented two spaces. The verdict carries no code; each bullet carries its item's own code. An overlap is the later item's `[E_BATCH_ABORT]` failure naming the earlier item; a 1-item call keeps the bare `[MODEL] [E_CODE]` diagnosis with no verdict.
+_Avoid_: batch abort (the refusal is E_BATCH_ABORT; the line the model reads is Batch rejected)
 **inclusive anchor range**:
 A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first and last lines of a model-facing range; both boundaries are included.
 _Avoid_: hunk, region

@@ -113,6 +113,10 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
       "B\nb\nc\nd\n",
     );
     expect(code).toBe("E_UNVERIFIED_RANGE");
+    expect(message).toBe(
+      "[MODEL] [E_UNVERIFIED_RANGE] the foreign-source reference to source.txt no longer resolves against that file's served " +
+        "state (rejection: E_UNVERIFIED_RANGE). No rows of source.txt were served by this call.",
+    );
     expect(message).toContain("source.txt");
     expect(message).not.toContain("Current range (fresh read)");
     expect(message).not.toContain("│");
@@ -129,6 +133,10 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
       "a\nB\nc\nd\n",
     );
     expect(code).toBe("E_STALE_RANGE");
+    expect(message).toBe(
+      "[MODEL] [E_STALE_RANGE] the foreign-source reference to source.txt no longer resolves against that file's served " +
+        "state (rejection: E_STALE_RANGE). No rows of source.txt were served by this call.",
+    );
     expect(message).toContain("source.txt");
     expect(message).not.toContain("Current range (fresh read)");
     expect(message).not.toContain("│");
@@ -145,10 +153,102 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
       "a\nZ\nd\n",
     );
     expect(code).toBe("E_TARGET_LOST");
+    expect(message).toBe(
+      "[MODEL] [E_TARGET_LOST] line 2 in source.txt no longer resolves to the line identity it was served with.",
+    );
     expect(message).toContain("source.txt");
     expect(message).not.toContain("Current range");
     expect(message).not.toContain("│");
     expect(sourceBytes).toBe("a\nZ\nd\n");
+    expect(targetBytes).toBe("1\n2\n3\n");
+  });
+});
+
+/**
+ * Reachable-set pin (#342): the foreign path's never-served rejections pass through
+ * `foreignRejection` unchanged, so each code keeps the producer's own message. The leased
+ * arms above pin the other three codes; these two pin E_UNKNOWN_ANCHOR (anchors no file
+ * holds a lease for) and E_FOREIGN_ANCHOR (anchors leased for the target file, not the
+ * foreign file). If a future code reaches the rethrow tail, add its pin here.
+ */
+async function foreignUnleasedFailure(
+  pickSpan: (hs: string[], ht: string[]) => Promise<[string, string]>,
+): Promise<ForeignFailure & { cwd: string }> {
+  const sourceBefore = "a\nb\nc\nd\n";
+  let failure!: ForeignFailure & { cwd: string };
+  await withTempDir("foreign-attribution-", async (cwd) => {
+    await writeFile(join(cwd, "source.txt"), sourceBefore, "utf-8");
+    await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
+    const { ctx, readTool } = setupIntegrationTest(cwd);
+    await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
+    const hs = await lineHashes(sourceBefore, join(cwd, "source.txt"));
+    const ht = await lineHashes("1\n2\n3\n", join(cwd, "target.txt"));
+    const span = await pickSpan(hs, ht);
+    const result = await execute(
+      admit({
+        file: "target.txt",
+        edits: [
+          {
+            anchor_from: ht[0]!,
+            anchor_to: ht[0]!,
+            text_ref: {
+              anchor_from: span[0],
+              anchor_to: span[1],
+              file: "source.txt",
+              mode: "copy",
+            },
+          },
+        ],
+      }),
+      cwd,
+      { sessionKey: TEST_SESSION_ID },
+    );
+    expect(isMutationFailure(result), "the foreign reference must be refused").toBe(true);
+    if (!isMutationFailure(result)) return;
+    failure = {
+      code: result.code,
+      message: result.message,
+      sourceBytes: await readFile(join(cwd, "source.txt"), "utf-8"),
+      targetBytes: await readFile(join(cwd, "target.txt"), "utf-8"),
+      cwd,
+    };
+  });
+  return failure;
+}
+
+describe("foreign never-served rejections pass through unchanged (#342)", () => {
+  it("E_UNKNOWN_ANCHOR keeps the producer message naming the unserved anchors", async () => {
+    let span!: [string, string];
+    const { code, message, sourceBytes, targetBytes } = await foreignUnleasedFailure(async () => {
+      const unknown = await lineHashes("qq\nzz\n");
+      span = [unknown[0]!, unknown[1]!] as [string, string];
+      return span;
+    });
+    expect(code).toBe("E_UNKNOWN_ANCHOR");
+    expect(message).toBe(
+      `[MODEL] [E_UNKNOWN_ANCHOR] source.txt has not served the anchors "${span[0]}", "${span[1]}".`,
+    );
+    expect(message).not.toContain("│");
+    expect(sourceBytes).toBe("a\nb\nc\nd\n");
+    expect(targetBytes).toBe("1\n2\n3\n");
+  });
+
+  it("E_FOREIGN_ANCHOR keeps the producer message naming the anchor's home file", async () => {
+    let span!: [string, string];
+    const { code, message, sourceBytes, targetBytes, cwd } = await foreignUnleasedFailure(
+      async (_hs, ht) => {
+        span = [ht[1]!, ht[2]!] as [string, string];
+        return span;
+      },
+    );
+    expect(code).toBe("E_FOREIGN_ANCHOR");
+    expect(message).toBe(
+      `[MODEL] [E_FOREIGN_ANCHOR] the anchors "${span[0]}", "${span[1]}" were served for ` +
+        `${join(cwd, "target.txt")}, not for source.txt.`,
+    );
+    expect(message).not.toContain("│");
+    expect(sourceBytes).toBe("a\nb\nc\nd\n");
     expect(targetBytes).toBe("1\n2\n3\n");
   });
 });

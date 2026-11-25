@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
-/** The atomicity trailer every item failure in a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 /** The `HASH│content` rows the read served, in file order — the anchors the model would copy. */
 async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<string[]> {
@@ -50,12 +50,12 @@ describe("multi-item edit error propagation", () => {
       expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (bad-anchor.txt)");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe(content);
     });
   });
 
-  it("an item that fails inside the sequential apply surfaces its own code plus the trailer", async () => {
+  it("an item that fails inside the sequential apply surfaces its own code under the batch verdict", async () => {
     const content = "alpha\nbeta\ngamma\n";
     await withTempFile("apply-loop.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -79,13 +79,13 @@ describe("multi-item edit error propagation", () => {
 
       expect(rejection.message).toContain("[E_SUSPICIOUS_TEXT]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain("edit[1] (apply-loop.txt) failed");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toContain("- edit[1] (apply-loop.txt) [E_SUSPICIOUS_TEXT]:");
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe(content);
     });
   });
 
-  it("an item rejected while the batch applies surfaces its own code plus the trailer", async () => {
+  it("an item rejected while the batch applies surfaces its own code under the batch verdict", async () => {
     const original = "alpha\nbeta\ngamma\n";
     const drifted = "alpha\nBETA\ngamma\n";
     await withTempFile("apply-failure.txt", original, async ({ cwd, path }) => {
@@ -113,11 +113,11 @@ describe("multi-item edit error propagation", () => {
       expect(rejection.message).toContain("[E_TARGET_LOST]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (apply-failure.txt)");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe(drifted);
     });
   });
-  it("an item rejected in the apply loop keeps the attributed edit clause, prefix and trailer", async () => {
+  it("an item rejected in the apply loop keeps the attributed edit clause and prefix under the batch verdict", async () => {
     const content = "alpha\nbeta\ngamma\ndelta\nepsilon\n";
     await withTempFile("apply-payload.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -141,10 +141,10 @@ describe("multi-item edit error propagation", () => {
 
       const message = rejection.message;
       expect(message.match(/\[E_BAD_PAYLOAD\]/g)?.length).toBe(1);
-      expect(message).toContain("[E_BAD_PAYLOAD] The edit payload is not valid:");
+      expect(message).toContain("[E_BAD_PAYLOAD]: The edit payload is not valid:");
       expect(message).not.toContain("The payload is not valid:");
-      expect(message).toContain("edit[1] (apply-payload.txt) failed");
-      expect(message).toContain(ATOMICITY_TRAILER);
+      expect(message).toContain("- edit[1] (apply-payload.txt) [E_BAD_PAYLOAD]:");
+      expect(message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe(content);
     });
   });
@@ -199,7 +199,7 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
       expect(rejection.message).toContain("[E_STALE_RANGE]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (batch-serve.txt)");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(typeof rejection.servedBlock).toBe("string");
       expect(rejection.servedBlock!.length).toBeGreaterThan(0);
       const rows = rejection.servedRows ?? [];

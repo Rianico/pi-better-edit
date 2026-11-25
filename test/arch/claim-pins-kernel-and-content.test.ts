@@ -16,7 +16,7 @@ import { MAX_BYTES } from "../../src/constants.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { computeDrift } from "../../src/drift.js";
 import { genDiff } from "../../src/edit-diff.js";
-import { batchAbortForMany, buildBatchResult } from "../../src/edit-response.js";
+import { batchAbort, buildBatchResult } from "../../src/edit-response.js";
 import { attachEnvelope, readEnvelope } from "../../src/error-envelope.js";
 import { loadFileKindAndText } from "../../src/file-content/detection.js";
 import {
@@ -485,18 +485,20 @@ describe("edit response composition (M3 #15)", () => {
     const unknownHead = Object.assign(new Error("head"), { code: "E_NOT_A_REGISTRY_CODE" });
     const later = new DomainError("E_BAD_PAYLOAD", { message: "bad anchor" });
 
-    const headUnknown = batchAbortForMany({
+    const headUnknown = batchAbort({
       failures: [
         { error: unknownHead, index: 0 },
         { error: later, index: 1 },
       ],
+      total: 2,
       path: "a.ts",
     });
-    const headKnown = batchAbortForMany({
+    const headKnown = batchAbort({
       failures: [
         { error: later, index: 0 },
         { error: unknownHead, index: 1 },
       ],
+      total: 2,
       path: "a.ts",
     });
 
@@ -518,7 +520,6 @@ describe("noop-loop slot shape (M3 #16)", () => {
       hashes: ["h1"],
       lines: ["alpha"],
       sessionKey,
-      contentHash: "snap",
     };
   }
 

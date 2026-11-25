@@ -344,7 +344,8 @@ describe("domain error registry: closed contract, not a list", () => {
       count: 2,
     });
     expect(writeEcho.message).toContain("Write/Edit to p rejected");
-    expect(writeEcho.message).toContain("Identical refusal submitted 2 times");
+    expect(writeEcho.message).toContain("(submission 2 times)");
+    expect(writeEcho.message).not.toContain("Identical refusal");
     const loop = new DomainError("E_ACCESS", { path: "p", kind: "symlink-loop" });
     expect(loop.message).toContain("symbolic links");
     const far = new DomainError("E_ACCESS", { path: "p", kind: "unreachable" });

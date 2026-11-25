@@ -5,7 +5,6 @@ import {
   fmtServedRows,
   type ResolvedRange,
 } from "./served-session/serve-render.js";
-import { createSessionHandle } from "./served-session/session.js";
 
 type NoopLoopEntry = {
   payload: string;
@@ -76,8 +75,6 @@ export interface NoopPolicyInput {
   hashes: string[];
   lines: string[];
   sessionKey: string;
-  /** Committed `file_snapshots.snapshot_hash` of the served content; binds the served leases. */
-  contentHash: string;
   /**
    * Present once an earlier item of a live batch has changed the working buffer: maps a buffer line
    * to its pre-batch line. When present the noop-loop rejection's rows come from an uncommitted
@@ -131,12 +128,6 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
       input.hashes,
     );
     const rendered = fmtServedRows(servedRows, input.lines);
-    await createSessionHandle(input.sessionKey, input.absolutePath).recordServeFeedback(
-      servedRows,
-      "live",
-      input.hashes.length,
-      input.contentHash,
-    );
     const error = new DomainError("E_NOOP_LOOP", {
       ref: input.ref,
       removeFrom: input.removeFrom,

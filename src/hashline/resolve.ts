@@ -430,11 +430,11 @@ export function resEdit(edit: HTEdit): HEdit {
     if (match) {
       let reason: string;
       if (match[1] === "+") {
-        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry.`;
+        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry`;
       } else if (match[1] === "-") {
-        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry.`;
+        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry`;
       } else {
-        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the ${HASH_LEN} chars before │ and retry.`;
+        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the ${HASH_LEN} chars before │ and retry`;
       }
       throw new DomainError("E_MALFORMED_ANCHOR", { rawAnchor: trimmed, reason });
     }

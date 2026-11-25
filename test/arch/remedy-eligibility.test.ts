@@ -9,7 +9,7 @@ import {
   type DomainWarningCode,
   type ErrorPayloadMap,
 } from "../../src/domain-errors.js";
-import { batchAbortFor, batchAbortForMany } from "../../src/edit-response.js";
+import { batchAbort } from "../../src/edit-response.js";
 
 /**
  * Options-disclosure oracle (ADR-0047). Facts are the default: every rejection renders what
@@ -261,8 +261,15 @@ describe("options disclosure oracle: facts by default, neutral lists by exceptio
       servedLine: 1,
       count: 1,
     });
-    const single = batchAbortFor({ error, index: 1, path: "a.py" });
-    const many = batchAbortForMany({ failures: [{ error, index: 1 }], path: "a.py" });
+    const single = batchAbort({ failures: [{ error, index: 1 }], total: 2, path: "a.py" });
+    const many = batchAbort({
+      failures: [
+        { error, index: 0 },
+        { error, index: 1 },
+      ],
+      total: 2,
+      path: "a.py",
+    });
     for (const wrapped of [single, many]) {
       expect(wrapped.message).toContain("\n  Options: ");
       expect(wrapped.message).not.toMatch(/^Options: /m);

@@ -6,9 +6,9 @@ import { editToolSchema } from "../../src/edit";
 import { prepareEditArguments } from "../../src/edit-normalize";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
-/** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 async function doRead(ctx: any, readTool: any, path: string) {
   await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
@@ -88,10 +88,9 @@ describe("edit multi-item tool", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("[E_TARGET_LOST]");
-      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).toContain("- edit[1] (sample.ts) [E_TARGET_LOST]:");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
 
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
     });
@@ -121,12 +120,12 @@ describe("edit multi-item tool", () => {
         )
         .catch((e: unknown) => e)) as Error;
       expect(err.message).toContain("[E_UNVERIFIED_RANGE]");
-      expect(err.message).toContain("edit[1] (sample.ts) failed");
+      expect(err.message).toContain("- edit[1] (sample.ts) [E_UNVERIFIED_RANGE]:");
       expect(err.message).not.toContain("[E_BATCH_ABORT]");
-      expect(err.message).toContain(ATOMICITY_TRAILER);
+      expect(err.message).toMatch(BATCH_VERDICT);
       expect(err.message).toContain("Current range (fresh read):");
 
-      const servedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{4}│BETA$/.test(l));
+      const servedBeta = err.message.split("\n").find((l) => /^\s*[A-Za-z0-9]{4}│BETA$/.test(l));
       expect(servedBeta).toBeDefined();
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 
@@ -152,8 +151,8 @@ describe("edit multi-item tool", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
       await doRead(ctx, readTool, "sample.ts");
 
-      await expect(
-        editTool.execute(
+      const rejection = (await editTool
+        .execute(
           "e1",
           {
             file: "sample.ts",
@@ -165,8 +164,14 @@ describe("edit multi-item tool", () => {
           undefined,
           undefined,
           ctx,
-        ),
-      ).rejects.toThrow(/\[E_BATCH_ABORT\] Overlapping spans in sample\.ts/);
+        )
+        .catch((error: unknown) => error)) as Error;
+      expect(rejection.message).toMatch(
+        /\[MODEL\] Batch rejected: 1 of 2 edits failed; nothing was written\./,
+      );
+      expect(rejection.message).toContain(
+        "- edit[1] (sample.ts) [E_BATCH_ABORT]: its span (lines 2-2) overlaps edit[0] (lines 2-2) at lines 2-2.",
+      );
 
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -192,7 +197,8 @@ describe("edit multi-item tool", () => {
         ctx,
       );
       expect(getText(result)).toContain("1 of 2 edit(s) applied (1 noop)");
-      expect(getText(result)).toContain("was a noop");
+      expect(getText(result)).not.toContain("was a noop");
+      expect(result.details.warnings ?? []).toHaveLength(0);
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
       expect(result.details.metrics.classification).toBe("applied");
     });
@@ -472,12 +478,12 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("- edit[1]: ");
-      expect(rejection.message).toContain("- edit[3]: ");
+      expect(rejection.message).toContain("- edit[1] (sample.ts) [E_UNKNOWN_ANCHOR]:");
+      expect(rejection.message).toContain("- edit[3] (sample.ts) [E_UNKNOWN_ANCHOR]:");
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
-      expect(rejection.message).not.toContain("- edit[0]: ");
-      expect(rejection.message).not.toContain("- edit[2]: ");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).not.toContain("- edit[0] (sample.ts)");
+      expect(rejection.message).not.toContain("- edit[2] (sample.ts)");
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect((rejection as { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\nddd\neee\n");
     });
@@ -505,9 +511,11 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      expect((rejection.message.match(/\(sample\.ts\) failed/g) ?? []).length).toBe(1);
+      expect(rejection.message).toContain("- edit[1] (sample.ts) [E_UNKNOWN_ANCHOR]:");
+      expect(rejection.message).toMatch(BATCH_VERDICT);
+      expect((rejection.message.match(/\(sample\.ts\) \[E_UNKNOWN_ANCHOR\]/g) ?? []).length).toBe(
+        1,
+      );
       expect(rejection.message).not.toContain("; edit[");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -536,10 +544,10 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("- edit[1]: ");
-      expect(rejection.message).toContain("- edit[2]: ");
+      expect(rejection.message).toContain("- edit[1] (sample.ts) [E_MALFORMED_ANCHOR]:");
+      expect(rejection.message).toContain("- edit[2] (sample.ts) [E_MALFORMED_ANCHOR]:");
       expect((rejection.message.match(/\[E_MALFORMED_ANCHOR\]/g) ?? []).length).toBe(2);
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect((rejection as { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -578,9 +586,9 @@ describe("edit multi-item batch error aggregation", () => {
           servedBlock?: unknown;
         };
 
-        expect(rejection.message).toContain("- edit[1]: ");
-        expect(rejection.message).toContain("- edit[2]: ");
-        expect(rejection.message).toContain(ATOMICITY_TRAILER);
+        expect(rejection.message).toContain("- edit[1] (sample.ts) [E_UNVERIFIED_RANGE]:");
+        expect(rejection.message).toContain("- edit[2] (sample.ts) [E_UNKNOWN_ANCHOR]:");
+        expect(rejection.message).toMatch(BATCH_VERDICT);
         expect(rejection.code).toBe("E_UNVERIFIED_RANGE");
         expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
         expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
@@ -616,7 +624,11 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(rejection.message).toContain("[E_BATCH_ABORT]");
+      expect(rejection.message).toContain(
+        "- edit[1] (sample.ts) [E_BATCH_ABORT]: its span (lines 2-3) overlaps edit[0] (lines 1-2) at lines 2-2.",
+      );
       expect(rejection.message).toContain("edit[0]");
       expect(rejection.message).toContain("edit[1]");
       expect(rejection.message).toContain("lines 1-2");
@@ -660,7 +672,7 @@ describe("prepareEditArguments normalization", () => {
     ]) {
       expect(() => prepareEditArguments(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
       expect(() => prepareEditArguments(args)).toThrow(
-        /canonical payload|it is exactly \{ file|an item is exactly/,
+        /Edit payload:|it is exactly \{ file|an item is exactly/,
       );
     }
   });

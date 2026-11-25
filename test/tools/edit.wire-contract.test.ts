@@ -48,15 +48,6 @@ function admit(raw: unknown): NormalizedEditRequest {
   return canonical as NormalizedEditRequest;
 }
 
-/**
- * Drops the `Received:` echo `describeReceived` appends to every item-level refusal, so an
- * assertion matches refusal CLAUSES and cannot be echo-satisfied by the submitted JSON.
- */
-function refusalText(message: string): string {
-  const echo = message.indexOf("Received:");
-  return echo === -1 ? message : message.slice(0, echo);
-}
-
 function expectBadPayload(raw: unknown, ...clauses: string[]): void {
   let caught: unknown;
   try {
@@ -67,7 +58,7 @@ function expectBadPayload(raw: unknown, ...clauses: string[]): void {
   expect(caught, "admission must reject").toBeInstanceOf(DomainError);
   const de = caught as DomainError;
   expect(de.code).toBe("E_BAD_PAYLOAD");
-  const refusal = refusalText(de.message);
+  const refusal = de.message;
   for (const clause of clauses) {
     expect(refusal, `refusal must contain clause: ${clause}`).toContain(clause);
   }
