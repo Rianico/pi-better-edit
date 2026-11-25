@@ -27,7 +27,7 @@
 
 ### Miscellaneous Chores
 
-* **changelog:** re-attribute the diagnostic-rendering entries to the PR that landed them, so the ledger's provenance resolves against a commit reachable from `HEAD`.
+* **changelog:** re-attribute the diagnostic-rendering entries to the PR that landed them, so the ledger's provenance resolves against a commit reachable from `HEAD`. (#350)
 
 * **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#349)
 ## [2.21.0] - 2026-11-25
