@@ -107,7 +107,7 @@ function batchAbortImporters(): string[] {
 const ROWLESS_ALLOWLIST: { key: string; reason: string }[] = [];
 const VERDICT_ALLOWLIST: { key: string; reason: string }[] = [
   {
-    key: "src/edit-response.ts:456",
+    key: "src/edit-response.ts",
     reason: "batchAbort's own verdict renderer; every other site routes through it",
   },
 ];
@@ -115,7 +115,10 @@ const VERDICT_ALLOWLIST: { key: string; reason: string }[] = [
 describe("batch rejection assembler (#334)", () => {
   it("calls batchAbort in exactly one place in src/, inside the seam", () => {
     const hits = producerCalls("batchAbort");
-    expect(hits).toEqual(["src/mutation-engine/batch-rejection.ts:86"]);
+    expect(hits.map((hit) => hit.replace(/:\d+$/, ""))).toEqual([
+      "src/mutation-engine/batch-rejection.ts",
+    ]);
+    expect(hits).toHaveLength(1);
   });
 
   it("imports batchAbort in exactly one place in src/, inside the seam", () => {
@@ -131,7 +134,10 @@ describe("batch rejection assembler (#334)", () => {
         if (line.includes("Batch rejected:")) hits.push(`${file}:${index + 1}`);
       }
     }
-    expect(hits).toEqual(VERDICT_ALLOWLIST.map((entry) => entry.key));
+    expect(hits.map((hit) => hit.replace(/:\d+$/, ""))).toEqual(
+      VERDICT_ALLOWLIST.map((entry) => entry.key),
+    );
+    expect(hits).toHaveLength(VERDICT_ALLOWLIST.length);
   });
 
   it("calls recordRejectionServe in exactly one place in src/, inside the seam", () => {
