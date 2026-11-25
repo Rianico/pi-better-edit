@@ -2,7 +2,12 @@ import { stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { contentChecksum } from "../hashline/hasher.js";
 import { isValidHashList } from "../hashline/alphabet.js";
-import { CANON_VERSION, ANCHOR_GENERATION, canonDigest } from "../hashline/hash-identity.js";
+import {
+  CANON_VERSION,
+  ANCHOR_GENERATION,
+  canonDigest,
+  rawDigest,
+} from "../hashline/hash-identity.js";
 import type { HashSnapshotUpsertOptions } from "./snapshot-io.js";
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
@@ -15,13 +20,14 @@ import {
   recordServedMirrorInTransaction,
   retireAbsentLeases,
 } from "../served-session/session.js";
-import { pairSnapshots, type LineDescriptor } from "../hashline/patience-pairing.js";
+import { pairLineage, type LineageLine } from "../hashline/patience-pairing.js";
 import { vacuumSnapshots } from "./vacuum.js";
 import type { VacuumResult } from "./vacuum.js";
 
 export { vacuumSnapshots };
 export { snapshotIOFor } from "./snapshot-io.js";
 export type { HashSnapshotIO, HashSnapshotUpsertOptions } from "./snapshot-io.js";
+export type { SnapshotLineageLine } from "./snapshot-io.js";
 export type { VacuumResult };
 export {
   VACUUM_GLOBAL_BUDGET_BYTES,
@@ -57,9 +63,13 @@ interface SnapshotStmts {
   ) => { line_number: number; anchor: string; canon_hash: string }[];
   setSnapshotStatKey: (snapshotId: number, statKey: string) => void;
   latestSnapshot: (path: string) => { snapshot_id: number } | undefined;
-  lineageIdentities: (
-    snapshotId: number,
-  ) => { line_number: number; line_id: number; canon_hash: string }[];
+  lineageIdentities: (snapshotId: number) => {
+    line_number: number;
+    line_id: number;
+    canon_hash: string;
+    anchor: string;
+    raw_hash: string | null;
+  }[];
   allPaths: () => { path: string }[];
   countSnapshots: (path: string) => number;
   countLeases: (path: string) => number;
@@ -80,6 +90,7 @@ interface SnapshotStmts {
     lineNumber: number,
     lineId: number,
     canonHash: string,
+    rawHash: string,
     anchor: string,
   ) => void;
 }
@@ -114,7 +125,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
   );
   const lineageIdentitiesStmt = db.prepare(
-    "SELECT line_number, line_id, canon_hash FROM line_lineage " +
+    "SELECT line_number, line_id, canon_hash, anchor, raw_hash FROM line_lineage " +
       "WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
   const allPathsStmt = db.prepare(
@@ -144,8 +155,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "RETURNING snapshot_id",
   );
   const insertLineageStmt = db.prepare(
-    "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
-      "VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, raw_hash, anchor) " +
+      "VALUES (?, ?, ?, ?, ?, ?)",
   );
   return {
     findSnapshot: (...params) => findStmt.get(...params) as SnapshotRef | undefined,
@@ -163,12 +174,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
         canon_hash: string;
       }[],
     setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
-    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these three columns.
+    // SAFETY: `node:sqlite` rows are untyped; `lineageIdentitiesStmt` selects exactly these five columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
         line_id: number;
         canon_hash: string;
+        anchor: string;
+        raw_hash: string | null;
       }[],
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `path`.
     allPaths: () => allPathsStmt.all() as unknown as { path: string }[],
@@ -196,8 +209,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       ) as { snapshot_id: number } | undefined;
       return row?.snapshot_id;
     },
-    insertLineage: (snapshotId, lineNumber, lineId, canonHash, anchor) => {
-      insertLineageStmt.run(snapshotId, lineNumber, lineId, canonHash, anchor);
+    insertLineage: (snapshotId, lineNumber, lineId, canonHash, rawHash, anchor) => {
+      insertLineageStmt.run(snapshotId, lineNumber, lineId, canonHash, rawHash, anchor);
     },
   };
 }
@@ -251,6 +264,43 @@ export function positionsByIdentity(
     map.set(lineId, currLine);
   }
   return map;
+}
+
+/**
+ * One row of the latest committed lineage: the line's coordinate, its immutable identity, the canon digest
+ * pairing reads, the raw-line digest ordinal carry proves one spelling from, and the anchor the session
+ * served for it.
+ */
+export interface SnapshotLineageEntry {
+  lineNumber: number;
+  lineId: number;
+  canonHash: string;
+  anchor: string;
+  /** `raw_hash`; `undefined` on a legacy row, which is no raw evidence and fails the carry gate closed. */
+  rawHash?: string | undefined;
+}
+
+/**
+ * The newest committed lineage for `path`, in line order — the evidence a checksum-miss alignment pairs
+ * drifted content against. `undefined` when the path has no committed snapshot or its lineage is empty, so
+ * the caller can tell "no prior" apart from "prior with zero lines" and falls back to fresh allocation.
+ */
+export function latestLineageFor(
+  store: HashStore,
+  path: string,
+): SnapshotLineageEntry[] | undefined {
+  const stmts = snapshotStmts(store.db);
+  const latest = stmts.latestSnapshot(path);
+  if (!latest) return undefined;
+  const rows = stmts.lineageIdentities(latest.snapshot_id);
+  if (rows.length === 0) return undefined;
+  return rows.map((row) => ({
+    lineNumber: row.line_number,
+    lineId: row.line_id,
+    canonHash: row.canon_hash,
+    anchor: row.anchor,
+    rawHash: row.raw_hash ?? undefined,
+  }));
 }
 
 export function cacheKey(checksum: string): string {
@@ -564,9 +614,10 @@ function workingBufferIdentities(
 }
 
 /**
- * Pairs S_final's lines against S_latest (spec §3.1.3.2 / §3.2.4 step 1): every line the patience
- * engine pairs keeps its exact previous `line_id`; unpaired lines are the batch's inserted lines and
- * take a fresh counter block. With no prior snapshot for the path, every line is unpaired.
+ * Pairs S_final's lines against S_latest (spec §3.1.3.2 / §3.2.4 step 1): every line `pairLineage` pairs
+ * keeps its exact previous `line_id`, including a homogeneous run's ordinal carry; unpaired lines are the
+ * batch's inserted lines and take a fresh counter block. With no prior snapshot for the path, every line
+ * is unpaired.
  */
 function pairAgainstLatest(store: HashStore, path: string, lines: string[]): InheritedIdentities {
   const inherited = new Map<number, number>();
@@ -575,16 +626,18 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   if (!latest) return { inherited };
   const previous = stmts.lineageIdentities(latest.snapshot_id);
   if (previous.length === 0) return { inherited };
-  const prevLines: LineDescriptor[] = previous.map((row) => ({
+  const prev: LineageLine[] = previous.map((row) => ({
     lineNumber: row.line_number,
     canonHash: row.canon_hash,
+    rawHash: row.raw_hash ?? undefined,
   }));
-  const currLines: LineDescriptor[] = lines.map((line, index) => ({
+  const curr: LineageLine[] = lines.map((line, index) => ({
     lineNumber: index + 1,
     canonHash: canonDigest(line),
+    rawHash: rawDigest(line),
   }));
   const byLineNumber = new Map(previous.map((row) => [row.line_number, row.line_id]));
-  for (const [prevLine, currLine] of pairSnapshots(prevLines, currLines)) {
+  for (const [prevLine, currLine] of pairLineage(prev, curr)) {
     const lineId = byLineNumber.get(prevLine);
     if (lineId !== undefined) inherited.set(currLine, lineId);
   }
@@ -718,7 +771,14 @@ function materializeSnapshotInTxn(
   for (const [index, hash] of hashes.entries()) {
     const lineNumber = index + 1;
     const lineId = inherited.get(lineNumber) ?? nextFreshId++;
-    stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[index] ?? ""), hash);
+    stmts.insertLineage(
+      insertedId,
+      lineNumber,
+      lineId,
+      canonDigest(lines[index] ?? ""),
+      rawDigest(lines[index] ?? ""),
+      hash,
+    );
   }
   if (retireLeases) {
     retireAbsentLeases(store.db, path, insertedId, Date.now());

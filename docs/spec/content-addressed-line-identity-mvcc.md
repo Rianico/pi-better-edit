@@ -229,7 +229,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
           The newly inserted lines receive $[start\_id \dots start\_id + N_{inserted} - 1]$. The counter is the sole, universal allocator across all write paths, preventing counter lag or duplicate ID issuance.
        3. **Commit Snapshot & Lineage**:
           Insert `file_snapshots (path, snapshot_hash, line_count, created_at, committed = 1)`. On concurrent conflict (`ON CONFLICT (path, snapshot_hash) DO NOTHING`), roll back local allocations and adopt the canonical `snapshot_id` and `line_lineage`.
-          Insert `line_lineage` rows mapping each line coordinate ($1 \dots N$) to its `(line_id, canon_hash, anchor)`.
+          Insert `line_lineage` rows mapping each line coordinate ($1 \dots N$) to its `(line_id, canon_hash, raw_hash, anchor)`.
        4. **Authoritative Retirement Update**: The commit transaction executes the authoritative retirement update (§3.1.3.3) on `served_leases` for any active leases on `file_path` whose leased `line_id`s were deleted by the batch:
 
           ```sql
@@ -318,7 +318,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 
 1. **Storage Sizing & Global Eviction Ordering**:
    - Total global CAS database budget: **50 MB**.
-   - Per-path retention: $\min(10, \max(2, \lfloor 10\text{MB} / \text{snapshot\_lineage\_bytes} \rfloor))$ where $\text{snapshot\_lineage\_bytes} \approx 40\text{ bytes} \times \text{line\_count}$.
+   - Per-path retention: $\min(10, \max(2, \lfloor 10\text{MB} / \text{snapshot\_lineage\_bytes} \rfloor))$ where $\text{snapshot\_lineage\_bytes} \approx 52\text{ bytes} \times \text{line\_count}$.
     - **Eviction Priority**:
       - Pinned snapshots: Snapshots referenced by active `served_leases` (within 7-day TTL), `file_undo` restored targets (`file_undo.snapshot_hash`), or `retired_at` within 1 hour are **PINNED** and never evicted.
       - Unpinned snapshots: Eviction runs across all paths globally in order of **oldest `created_at`** until total size $\le 50\text{ MB}$ and per-path limits hold.
@@ -347,7 +347,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 │                                STORAGE TIER                                      │
 │  src/hash-store.ts & src/snapshot-store/{index.ts,vacuum.ts}                     │
 │  - file_snapshots: (snapshot_id PK, path, snapshot_hash, line_count, committed)  │
-│  - line_lineage: (snapshot_id, line_number PK) -> (line_id, canon, anchor)       │
+│  - line_lineage: (snapshot_id, line_number) -> (line_id, canon, raw_hash, anchor)│
 │  - line_id_counters: (path PK, next_id) [Atomic integer block allocation]       │
 │  - served_leases: (session_id, path, anchor PK) -> (line_id, retired_at)         │
 │  - file_undo: (path PK, snapshot_hash [restored], content, ...) [Pinned by Vacuum]│
@@ -418,6 +418,7 @@ CREATE TABLE IF NOT EXISTS line_lineage (
     line_id INTEGER NOT NULL,             -- Monotonic integer surrogate
     canon_hash TEXT NOT NULL,             -- xxh32(canon)
     anchor TEXT NOT NULL,                 -- Authoritative presentation anchor of record (persisted verbatim)
+    raw_hash TEXT,                        -- xxh32(raw line); NULL on pre-#344 rows (nullable)
     PRIMARY KEY (snapshot_id, line_number),
     FOREIGN KEY (snapshot_id) REFERENCES file_snapshots(snapshot_id) ON DELETE CASCADE
 );

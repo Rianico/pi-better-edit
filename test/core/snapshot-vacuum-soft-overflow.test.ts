@@ -207,7 +207,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
         db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
       ).n;
       expect(pinnedAfter).toBeGreaterThanOrEqual(pinnedBefore);
-      expect(VACUUM_LINEAGE_BYTES_PER_LINE).toBe(40);
+      expect(VACUUM_LINEAGE_BYTES_PER_LINE).toBe(52);
     });
   });
 });

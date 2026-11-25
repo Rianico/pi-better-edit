@@ -176,8 +176,12 @@ function totalBytes(db: DatabaseSync): number {
   return row.n * VACUUM_LINEAGE_BYTES_PER_LINE;
 }
 
-/** 6 versions x 12_000_000 lineage bytes = 72 MB, i.e. over the 50 MB hard budget. */
-const BIG_LINES = 300_000;
+/**
+ * Priced at the per-line figure `VACUUM_LINEAGE_BYTES_PER_LINE` charges: 220_000 lines x 52 bytes = 11.44 MB per
+ * version, so 6 versions (68.64 MB) overflow the 50 MB hard budget and evicting the 2 oldest lands at 45.76 MB.
+ * One path still clears the 10 MB per-path budget, keeping the floor-of-2 case reachable.
+ */
+const BIG_LINES = 220_000;
 const BIG_FILES = 6;
 
 function seedBigStore(db: DatabaseSync): void {

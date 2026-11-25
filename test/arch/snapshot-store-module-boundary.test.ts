@@ -29,7 +29,7 @@ describe("snapshot-store module boundary", () => {
     expect(snapshotStore.VACUUM_PER_PATH_BUDGET_BYTES).toBe(10 * 1024 * 1024);
     expect(snapshotStore.VACUUM_MAX_SNAPSHOTS_PER_PATH).toBe(10);
     expect(snapshotStore.VACUUM_MIN_SNAPSHOTS_PER_PATH).toBe(2);
-    expect(snapshotStore.VACUUM_LINEAGE_BYTES_PER_LINE).toBe(40);
+    expect(snapshotStore.VACUUM_LINEAGE_BYTES_PER_LINE).toBe(52);
     expect(snapshotStore.VACUUM_RETIRED_PIN_MS).toBe(60 * 60 * 1000);
   });
 

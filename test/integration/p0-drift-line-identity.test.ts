@@ -7,6 +7,7 @@ import {
   extractHash,
   anchorRows,
 } from "../support/fixtures";
+import { loadBlockedHashes, sessionKeyFor } from "../../src/served-session/session.js";
 
 const SMALL_CPP = `int f1(int x) {
 \tif (x > 0) {
@@ -477,8 +478,7 @@ function alpha() {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "reserve.txt" }, undefined, undefined, ctx);
       const lines1 = anchorRows(getText(r1));
-      const _bravoHash1 = extractHash(lines1[1]!);
-
+      expect(lines1).toHaveLength(3);
       await writeFile(path, "head1\nhead2\nalpha\nbravo\ncharlie\n", "utf-8");
 
       const r2 = await readTool.execute("r2", { file: "reserve.txt" }, undefined, undefined, ctx);
@@ -599,6 +599,317 @@ function alpha() {
       const finalContent = await readFile(path, "utf-8");
       expect(finalContent).toBe("first line\nsecond line modified after undo\nthird line\n");
       expect(getText(edit2Res)).toContain("Successfully edited");
+    });
+  });
+});
+
+/**
+ * T3 (#345): identity must survive a homogeneous duplicate run WITHOUT an intervening read, a deleted twin
+ * must be tombstoned by the drifted full read that discovered it, and a clean success must omit
+ * `driftNotice` instead of emitting an empty string.
+ */
+describe("T3 — homogeneous lineage carry, tombstones, and driftNotice shape (#345)", () => {
+  const RUN_SHRUNK = "head\n  }\n  }\ntail\n";
+  const RUN_FOUR = "head\n  }\n  }\n  }\n  }\ntail\n";
+
+  it("a homogeneous shrink edit succeeds on the surviving ordinal anchor without a read", async () => {
+    await withTempFile("run-shrink.txt", RUN_FOUR, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const readRes = await readTool.execute(
+        "r1",
+        { file: "run-shrink.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const firstBrace = extractHash(anchorRows(getText(readRes))[1]!);
+
+      await writeFile(path, RUN_SHRUNK, "utf-8");
+
+      const editRes = await editTool.execute(
+        "e1",
+        {
+          file: "run-shrink.txt",
+          edits: [{ anchor_from: firstBrace, anchor_to: firstBrace, text: "  } // edited" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(await readFile(path, "utf-8")).toBe("head\n  } // edited\n  }\ntail\n");
+      expect(getText(editRes)).toContain("Successfully edited");
+    });
+  });
+
+  it("a homogeneous shrink edit on the retired overflow copy fails closed with E_TARGET_LOST", async () => {
+    await withTempFile("run-shrink-overflow.txt", RUN_FOUR, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const readRes = await readTool.execute(
+        "r1",
+        { file: "run-shrink-overflow.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const fourthBrace = extractHash(anchorRows(getText(readRes))[4]!);
+
+      await writeFile(path, RUN_SHRUNK, "utf-8");
+
+      const editPromise = editTool.execute(
+        "e1",
+        {
+          file: "run-shrink-overflow.txt",
+          edits: [{ anchor_from: fourthBrace, anchor_to: fourthBrace, text: "  } // edited" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      await expect(editPromise).rejects.toThrow(/E_TARGET_LOST/);
+      expect(await readFile(path, "utf-8")).toBe(RUN_SHRUNK);
+    });
+  });
+
+  it("a homogeneous growth edit succeeds on a surviving ordinal anchor without a read", async () => {
+    await withTempFile("run-grow.txt", RUN_SHRUNK, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const readRes = await readTool.execute(
+        "r1",
+        { file: "run-grow.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const secondBrace = extractHash(anchorRows(getText(readRes))[2]!);
+
+      await writeFile(path, RUN_FOUR, "utf-8");
+
+      const editRes = await editTool.execute(
+        "e1",
+        {
+          file: "run-grow.txt",
+          edits: [{ anchor_from: secondBrace, anchor_to: secondBrace, text: "  } // second" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(await readFile(path, "utf-8")).toBe("head\n  }\n  } // second\n  }\n  }\ntail\n");
+      expect(getText(editRes)).toContain("Successfully edited");
+    });
+  });
+
+  it("a deleted twin is tombstoned by the drifted full read and never reused", async () => {
+    await withTempFile("twins.txt", "x\na\ny\na\nz\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute("r1", { file: "twins.txt" }, undefined, undefined, ctx);
+      const deleted = extractHash(anchorRows(getText(r1))[1]!);
+
+      await writeFile(path, "x\ny\na\nz\n", "utf-8");
+
+      const r2 = await readTool.execute("r2", { file: "twins.txt" }, undefined, undefined, ctx);
+      const zAnchor = extractHash(anchorRows(getText(r2))[3]!);
+      const sessionKey = sessionKeyFor(ctx);
+      expect([...(await loadBlockedHashes(sessionKey, path))]).toContain(deleted);
+
+      await editTool.execute(
+        "e1",
+        {
+          file: "twins.txt",
+          edits: [{ anchor_from: zAnchor, anchor_to: zAnchor, text: "a", at: "before" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const r3 = await readTool.execute("r3", { file: "twins.txt" }, undefined, undefined, ctx);
+      const twinRows = anchorRows(getText(r3)).filter((row) => row.endsWith("│a"));
+      expect(twinRows).toHaveLength(2);
+      for (const row of twinRows) expect(extractHash(row)).not.toBe(deleted);
+    });
+  });
+
+  it("a clean success omits details.driftNotice instead of emitting an empty string", async () => {
+    await withTempFile("clean.txt", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute("r1", { file: "clean.txt" }, undefined, undefined, ctx);
+      const beta = extractHash(anchorRows(getText(r1))[1]!);
+
+      const editRes = await editTool.execute(
+        "e1",
+        { file: "clean.txt", edits: [{ anchor_from: beta, anchor_to: beta, text: "BETA" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
+      expect(
+        (editRes as { details?: { driftNotice?: unknown } }).details?.driftNotice,
+      ).toBeUndefined();
+    });
+  });
+
+  it("an exterior content change outside the edited range still yields a non-empty drift notice", async () => {
+    await withTempFile("zone3.txt", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute("r1", { file: "zone3.txt" }, undefined, undefined, ctx);
+      const alpha = extractHash(anchorRows(getText(r1))[0]!);
+
+      await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
+
+      const editRes = await editTool.execute(
+        "e1",
+        { file: "zone3.txt", edits: [{ anchor_from: alpha, anchor_to: alpha, text: "ALPHA" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const notice = (editRes as { details?: { driftNotice?: unknown } }).details?.driftNotice;
+      expect(typeof notice).toBe("string");
+      expect((notice as string).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("a survivor twin edit succeeds without an intervening drifted read, and a second turn also succeeds", async () => {
+    await withTempFile("survivor-twin.txt", "x\na\ny\na\nz\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute(
+        "r1",
+        { file: "survivor-twin.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const rows = anchorRows(getText(r1));
+      const deleted = extractHash(rows[1]!);
+      const survivor = extractHash(rows[3]!);
+
+      await writeFile(path, "x\ny\na\nz\n", "utf-8");
+
+      const e1 = await editTool.execute(
+        "e1",
+        {
+          file: "survivor-twin.txt",
+          edits: [{ anchor_from: survivor, anchor_to: survivor, text: "A" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(getText(e1)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("x\ny\nA\nz\n");
+      expect(deleted).not.toBe(survivor);
+
+      const r2 = await readTool.execute(
+        "r2",
+        { file: "survivor-twin.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const aAnchor = extractHash(anchorRows(getText(r2))[2]!);
+      await editTool.execute(
+        "e2",
+        {
+          file: "survivor-twin.txt",
+          edits: [{ anchor_from: aAnchor, anchor_to: aAnchor, text: "A2" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(await readFile(path, "utf-8")).toBe("x\ny\nA2\nz\n");
+    });
+  });
+
+  it("the deleted twin anchor rejects E_TARGET_LOST through load-time alignment and leaves bytes unchanged", async () => {
+    await withTempFile("deleted-twin.txt", "x\na\ny\na\nz\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute(
+        "r1",
+        { file: "deleted-twin.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const deleted = extractHash(anchorRows(getText(r1))[1]!);
+
+      await writeFile(path, "x\ny\na\nz\n", "utf-8");
+
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            file: "deleted-twin.txt",
+            edits: [{ anchor_from: deleted, anchor_to: deleted, text: "A" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/E_TARGET_LOST/);
+      expect(await readFile(path, "utf-8")).toBe("x\ny\na\nz\n");
+    });
+  });
+
+  it("a homogeneous shrink accepts a second edit across turns without a re-derivation failure", async () => {
+    await withTempFile("run-shrink-turns.txt", RUN_FOUR, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const r1 = await readTool.execute(
+        "r1",
+        { file: "run-shrink-turns.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const rows = anchorRows(getText(r1));
+      const firstBrace = extractHash(rows[1]!);
+      const secondBrace = extractHash(rows[2]!);
+
+      await writeFile(path, RUN_SHRUNK, "utf-8");
+
+      await editTool.execute(
+        "e1",
+        {
+          file: "run-shrink-turns.txt",
+          edits: [{ anchor_from: firstBrace, anchor_to: firstBrace, text: "  } // first" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(await readFile(path, "utf-8")).toBe("head\n  } // first\n  }\ntail\n");
+
+      const r2 = await readTool.execute(
+        "r2",
+        { file: "run-shrink-turns.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(anchorRows(getText(r2))).toHaveLength(4);
+
+      const e2 = await editTool.execute(
+        "e2",
+        {
+          file: "run-shrink-turns.txt",
+          edits: [{ anchor_from: secondBrace, anchor_to: secondBrace, text: "  } // second" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(getText(e2)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("head\n  } // first\n  } // second\ntail\n");
     });
   });
 });

@@ -142,6 +142,14 @@ _Avoid_: fuzzy rebase, coordinate shift
 The four-phase diff alignment algorithm (pins → minimal-Δ LIS backbone → zip → unique-embedding LCS leaf) mapping line lineage between successive file snapshots ([ADR-0001](docs/adr/0001-content-addressed-line-identity-cas-mvcc.md)).
 _Avoid_: heuristic pairing, diff guessing
 
+**homogeneous run**:
+A contiguous block of lines having 100% identical raw bytes whose count changes under exterior drift without intervening pins. Identity carries ordinally (1..M) to surviving lines; excess lines (>M) retire fail-closed as `[E_TARGET_LOST]`. Distinct from distinguishable duplicates bounded by unique pins.
+_Avoid_: duplicate block, identical block
+
+**pin boundary**:
+A landmark in line alignment — either a unique line within an interval or an immutable file extreme (BOF or EOF) — that rigidly brackets ambiguous duplicate sequences and proves identity across snapshots.
+_Avoid_: landmark, boundary line
+
 **lease** (served lease):
 The `served_leases` row that binds a served anchor to the immutable `line_id` it denotes for the snapshot actually served: `(session_id, file_path, anchor) -> line_id, served_snapshot_hash, retired_at`. `serve` is the only operation that may create one, and it upserts atomically — re-serving an anchor replaces the row (fresh `line_id`, `retired_at = NULL`) instead of failing closed or leaving a stale slot. An edit resolves its lease strictly read-only.
 _Avoid_: reservation, lock, epoch

@@ -223,10 +223,11 @@ export function buildBatchResult(sections: BatchSection[], isDryRun = false): TR
   const literalDeclarations = sections.reduce((n, s) => n + (s.literalDeclarations ?? 0), 0);
   const allNoop = appliedTotal === 0;
   const warnings = sections.flatMap((s) => s.warnings ?? []);
-  const driftNotice = sections
+  const noticeText = sections
     .map((s) => s.driftNotice)
     .filter((d): d is string => d !== undefined)
     .join("\n\n");
+  const driftNotice = noticeText.length > 0 ? noticeText : undefined;
 
   if (allNoop) {
     const text = isDryRun

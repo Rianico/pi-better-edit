@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes } from "../../src/hashline/hash-identity.js";
+import { defaultHashIdentity, lineHashes } from "../../src/hashline/hash-identity.js";
+import { loadHashStore } from "../../src/hash-store.js";
+import { snapshotIOFor } from "../../src/snapshot-store";
 import { applyEdit } from "../../src/hashline/apply.js";
 import type { HEdit } from "../../src/hashline/resolve.js";
 import {
@@ -206,5 +208,313 @@ describe("stable hashing with duplicate content lines", () => {
       expect(survivingHashes).toContain(secondBHash);
       expect(survivingHashes).toContain(thirdBHash);
     });
+  });
+});
+
+/**
+ * A checksum miss is what an external rewrite looks like. The prior lineage is still the best evidence of
+ * which line is which, so the drift must be aligned against it with the same pin-bounded pairing the edit
+ * path uses: a surviving duplicate keeps its own anchor, a deleted twin's anchor retires, and an ambiguous
+ * interval retires instead of guessing. Every call uses `retireLeases: true`, mirroring the read path.
+ */
+describe("checksum miss aligns drifted content against the latest lineage", () => {
+  it("external deletion of the first duplicate twin preserves the survivor's exact anchor", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t1-delete-first.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("x\na\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+    const deleted = prior[1]!;
+    const survivor = prior[3]!;
+    expect(deleted).not.toBe(survivor);
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("x\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[2]).toBe(survivor);
+    expect(drifted).not.toContain(deleted);
+    expect(retired.has(deleted)).toBe(true);
+  });
+
+  it("a retired twin is tombstoned and never resurrected by fresh allocation", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t1-tombstone.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("x\na\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+    const deleted = prior[1]!;
+    const survivor = prior[3]!;
+
+    const retired = new Set<string>();
+    await defaultHashIdentity.hashesFor("x\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+    expect(retired.has(deleted)).toBe(true);
+
+    const grown = await defaultHashIdentity.hashesFor("x\ny\na\nz\na\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      blockedHashes: retired,
+    });
+
+    expect(grown[2]).toBe(survivor);
+    expect(grown[4]).not.toBe(deleted);
+    expect(grown).not.toContain(deleted);
+    expect(retired.has(deleted)).toBe(true);
+  });
+
+  it("a 2-to-1 homogeneous shrink carries the surviving prefix anchor", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-homogeneous-shrink.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("x\na\na\ny\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+    const firstA = prior[1]!;
+    const secondA = prior[2]!;
+    expect(firstA).not.toBe(secondA);
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("x\na\ny\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[1]).toBe(firstA);
+    expect(retired.has(secondA)).toBe(true);
+    expect(retired.has(firstA)).toBe(false);
+    expect(drifted).not.toContain(secondA);
+  });
+
+  it("a homogeneous run shrink carries the surviving prefix and retires the overflow", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-run-shrink.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("head\n  }\n  }\n  }\n  }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("head\n  }\n  }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[0]).toBe(prior[0]);
+    expect(drifted[1]).toBe(prior[1]);
+    expect(drifted[2]).toBe(prior[2]);
+    expect(drifted[3]).toBe(prior[5]);
+    expect(retired.has(prior[3]!)).toBe(true);
+    expect(retired.has(prior[4]!)).toBe(true);
+    expect(drifted).not.toContain(prior[3]!);
+    expect(drifted).not.toContain(prior[4]!);
+  });
+
+  it("a homogeneous run growth carries the prior prefix and allocates a fresh tail", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-run-growth.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("head\n  }\n  }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    const drifted = await defaultHashIdentity.hashesFor("head\n  }\n  }\n  }\n  }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    expect(drifted[0]).toBe(prior[0]);
+    expect(drifted[1]).toBe(prior[1]);
+    expect(drifted[2]).toBe(prior[2]);
+    expect(drifted[5]).toBe(prior[3]);
+    expect(prior).not.toContain(drifted[3]);
+    expect(prior).not.toContain(drifted[4]);
+    expect(drifted[3]).not.toBe(drifted[4]);
+  });
+
+  it("indentation-differing neighbours are never ordinal-carried", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-indent-neighbours.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("head\n  }\n    }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("head\n    }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[0]).toBe(prior[0]);
+    expect(drifted[2]).toBe(prior[3]);
+    expect(drifted[1]).not.toBe(prior[1]);
+    expect(drifted[1]).not.toBe(prior[2]);
+    expect(retired.has(prior[1]!)).toBe(true);
+    expect(retired.has(prior[2]!)).toBe(true);
+  });
+
+  it("a legacy NULL raw digest is no evidence, so a homogeneous gap never carries", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-legacy-null-raw.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("x\na\na\ny\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+    const firstA = prior[1]!;
+    const secondA = prior[2]!;
+
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — NULL raw_hash (a pre-#344 row) is no evidence, never a match.
+    store.db
+      .prepare(
+        "UPDATE line_lineage SET raw_hash = NULL WHERE snapshot_id = (SELECT MAX(snapshot_id) FROM file_snapshots WHERE path = ?)",
+      )
+      .run(path);
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("x\na\ny\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[1]).not.toBe(firstA);
+    expect(drifted[1]).not.toBe(secondA);
+    expect(retired.has(firstA)).toBe(true);
+    expect(retired.has(secondA)).toBe(true);
+  });
+
+  it("a prior gap mixing spellings never ordinal-carries (reviewer counterexample)", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-mixed-spellings.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("head\n  }\nmid\n    }\n  }\ntail\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor(
+      "head\n  }\nmid\n    }\n    }\n    }\ntail\n",
+      {
+        path,
+        snapshotIO,
+        retireLeases: true,
+        retiredHashes: retired,
+      },
+    );
+
+    // Ref: docs/adr/0013-anchor-identity-derives-from-raw-bytes.md — head/mid/tail pin, so the unpaired interval is exactly the mixed-spelling gap.
+    expect(drifted[0]).toBe(prior[0]);
+    expect(drifted[2]).toBe(prior[2]);
+    expect(drifted[6]).toBe(prior[5]);
+    for (const index of [3, 4, 5]) {
+      expect(drifted[index]).not.toBe(prior[3]);
+      expect(drifted[index]).not.toBe(prior[4]);
+    }
+    expect(retired.has(prior[3]!)).toBe(true);
+    expect(retired.has(prior[4]!)).toBe(true);
+  });
+
+  it("a run that is not its spelling's first occurrence still carries", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t2-second-occurrence-run.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("  }\nheader\n  }\n  }\nfooter\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    const retired = new Set<string>();
+    const drifted = await defaultHashIdentity.hashesFor("  }\nheader\n  }\nfooter\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+      retiredHashes: retired,
+    });
+
+    expect(drifted[0]).toBe(prior[0]);
+    expect(drifted[2]).toBe(prior[2]);
+    expect(retired.has(prior[3]!)).toBe(true);
+    expect(drifted).not.toContain(prior[3]!);
+  });
+
+  it("the walk aligns a checksum miss without persisting, so a later aligned call yields the same anchors", async () => {
+    const store = await loadHashStore();
+    const snapshotIO = snapshotIOFor(store);
+    const path = "/lane-i338/t1-walk-alignment.txt";
+
+    const prior = await defaultHashIdentity.hashesFor("x\na\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+    const deleted = prior[1]!;
+    const survivor = prior[3]!;
+
+    const retired = new Set<string>();
+    const plan = await defaultHashIdentity.anchorsForWalk("x\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      persist: false,
+      retiredHashes: retired,
+    });
+
+    expect(plan.assign).toBeUndefined();
+    expect(plan.cached).toBeDefined();
+
+    const eager = await defaultHashIdentity.hashesFor("x\ny\na\nz\n", {
+      path,
+      snapshotIO,
+      retireLeases: true,
+    });
+
+    expect(plan.cached).toEqual(eager);
+    expect(eager[2]).toBe(survivor);
+    expect(retired.has(deleted)).toBe(true);
   });
 });
