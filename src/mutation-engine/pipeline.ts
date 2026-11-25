@@ -13,7 +13,7 @@ import {
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
-import { snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
+import { getSnapshot, snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
 import { applyEdit } from "../hashline/apply.js";
 import { buildNeverServedEditHint } from "../served-session/serve-render.js";
 import { resEdit, type HEdit, type NEdit } from "../hashline/resolve.js";
@@ -758,6 +758,7 @@ async function runMutations(
     absolutePath,
     served,
     endingCounts,
+    retiredHashes: loadedRetiredHashes,
   } = await loadEditFile({
     path,
     cwd,
@@ -852,7 +853,7 @@ async function runMutations(
     reportDiagnostic("mutation-engine", "Failed to load served canon digests for batch:", error);
     baseCanonDigests = [];
   }
-  const batchBlockedHashes = new Set<string>();
+  const batchBlockedHashes = new Set<string>(loadedRetiredHashes);
   try {
     for (const hash of await createSessionHandle(
       sessionKey,
@@ -864,7 +865,7 @@ async function runMutations(
   } catch (error) {
     reportDiagnostic("mutation-engine", "Failed to load legacy blocked hashes for batch:", error);
   }
-  const accumulatedRemoved = new Set<string>();
+  const accumulatedRemoved = new Set<string>(loadedRetiredHashes);
 
   for (let index = 0; index < items.length; index++) {
     abortIf(options?.signal);
@@ -1035,7 +1036,16 @@ async function runMutations(
       },
       snapshotIOFor(hashStore),
       false,
+      batchBlockedHashes,
     );
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the snapshot committed for this exact content is the identity every read serves, so it outranks an anchor a tombstone just forced away from.
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — a preview reads the same identity but never cleans up: the corrupt-row policy is "keep", so an unpersisted turn cannot delete a row it never owned.
+    const committed = getSnapshot(hashStore, absolutePath, result, isPreview ? "keep" : "delete");
+    if (committed !== undefined && committed.length === resultHashes.length) {
+      resultHashes = committed;
+      // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the identity names the ADOPTED snapshot, not the working buffer's spliced ids, because downstream leases and undo claims read `line_id` against the committed rows. `workingBufferIds` IS the `positionsByIdentity` inversion.
+      currentIds = workingBufferIds(hashStore, absolutePath, result);
+    }
   }
   const resultLineIds = isPreview ? [] : currentIds;
 
@@ -1102,6 +1112,25 @@ export async function previewEdits(
 }
 
 /**
+ * The one projection of a file's change (#326): the commit helper and both `apply` sites read their
+ * rendered rows here, so no response re-projects a file the pipeline already rendered. Context 1 is
+ * the applied-diff fold every apply result has used; the pre-batch served mirror goes in so a removal
+ * the caller never saw keeps its blank gutter, which the retired fallback omitted.
+ */
+function renderedDiffFor(file: ProcessedEditFile, dryRun = false): ReturnType<typeof genDiff> {
+  return genDiff(
+    file.originalNormalized,
+    file.result,
+    1,
+    file.resultHashes,
+    file.originalHashes,
+    undefined,
+    file.served,
+    dryRun,
+  );
+}
+
+/**
  * The post-write commit for ONE file whose bytes are already on disk: the refusal/noop-loop
  * tally clears, the legacy retire mirror, and the authoritative snapshot/lineage/lease/served-
  * mirror transaction. Shared verbatim by the single-file path and `runCutTransaction` — one
@@ -1135,15 +1164,7 @@ async function finishCommittedFile(
     }
   }
   const resultLineCount = visLines(file.result).length;
-  const diffInfo = genDiff(
-    file.originalNormalized,
-    file.result,
-    1,
-    file.resultHashes,
-    file.originalHashes,
-    undefined,
-    file.served,
-  );
+  const diffInfo = renderedDiffFor(file);
   if (diffInfo.unservedRemovedLines.length > 0) {
     file.warnings.push(
       formatWarning("W_UNSERVED_INTERIOR", {
@@ -1348,6 +1369,10 @@ async function runCutTransaction(
  * serializes EVERY file it will rename for the whole plan+commit, and the queues are taken in sorted order so
  * two calls with swapped target/source cannot deadlock; copy items never widen the lock set, because a copy's
  * foreign file stays read-only.
+ *
+ * A dry run takes the preview branch and must serve nothing, so the flag is derived from BOTH the
+ * request and the options and then forwarded explicitly: `options` alone would drop a request-derived
+ * `dry_run`, and the diff renderer cannot tell the hypothetical run apart from a plain preview.
  */
 export async function apply(
   request: NormalizedEditRequest,
@@ -1361,10 +1386,18 @@ export async function apply(
   raw: ProcessedEditFile;
   toolResult: ReturnType<typeof buildBatchResult>;
 }> {
-  const isPreview = options?.noPersist === true;
+  const isDryRun = request.dry_run === true || options?.dryRun === true;
+  const isPreview = options?.noPersist === true || isDryRun;
   if (isPreview) {
-    const file = await runMutations(request, cwd, options);
-    const toolResult = buildBatchResult([toSection(file)]);
+    const file = await runMutations(request, cwd, {
+      ...options,
+      noPersist: true,
+      ...(isDryRun ? { dryRun: true } : {}),
+    });
+    const toolResult = buildBatchResult(
+      [toSection(file, renderedDiffFor(file, isDryRun))],
+      isDryRun,
+    );
     const diff = toolResult.details.diff ?? "";
     return {
       result: file.result,
@@ -1401,7 +1434,7 @@ export async function apply(
     });
 
     if (file.appliedCount === 0) {
-      const toolResult = buildBatchResult([toSection(file)]);
+      const toolResult = buildBatchResult([toSection(file, renderedDiffFor(file))]);
       return {
         result: file.result,
         diff: "",

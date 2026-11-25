@@ -643,6 +643,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const details = event.details as import("../edit-response.js").EditDetails | undefined;
     if (details?.metrics?.classification === "noop") return undefined;
     if (!details?.diff) return undefined;
+    // Ref: docs/spec/served-state-range-verification.md — a dry run's rows are hypothetical: nothing it shows is addressable, so record no serve.
+    if (details.dryRun === true) return undefined;
 
     const { content, servedRows } = deps.finalizeToolResult(details);
     if (details.servedByPath && details.servedByPath.length > 0) {

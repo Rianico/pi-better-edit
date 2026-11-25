@@ -101,16 +101,21 @@ function fmtDiffLine(prefix: " " | "+" | "-", line: string, hash: string | undef
 const UNTOUCHED_MARKER: unique symbol = Symbol("untouched");
 const isUntouchedMarker = (line: string | symbol): line is symbol => line === UNTOUCHED_MARKER;
 
+/**
+ * Render the added side of one diff part. Under a dry run the row it would have added has no identity
+ * the session could honour, so it prints the empty gutter and records no served row.
+ */
 function pushAddedLines(
   displayLines: string[],
   effectiveNewHashes: string[],
   newLineNum: { value: number },
   output: string[],
   servedRows: ServedRow[],
+  dryRun = false,
 ): void {
   for (let k = 0; k < displayLines.length; k++) {
     const line = displayLines[k]!;
-    const hash = effectiveNewHashes[newLineNum.value - 1];
+    const hash = dryRun ? undefined : effectiveNewHashes[newLineNum.value - 1];
     output.push(fmtDiffLine("+", line, hash));
     const subRow = subRowForLine(line, "added");
     if (subRow !== undefined) output.push(subRow);
@@ -178,6 +183,166 @@ function contextLinesToShow(
   return { linesToShow, skipStart, skipMiddle };
 }
 
+/** The renderer's own line split: `split("\n")` with the trailing empty element dropped. */
+function renderLines(content: string): string[] {
+  const lines = content.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+/** One alignment entry in render order: the old/new line index each rendered row consumes. */
+type AlignmentEntry =
+  | { readonly kind: "context"; readonly oldIndex: number; readonly newIndex: number }
+  | { readonly kind: "removed"; readonly oldIndex: number }
+  | { readonly kind: "added"; readonly newIndex: number };
+
+function flattenParts(parts: readonly Diff.Change[]): AlignmentEntry[] {
+  const entries: AlignmentEntry[] = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+  for (const part of parts) {
+    const count = renderLines(part.value).length;
+    if (part.added) {
+      for (let k = 0; k < count; k++) entries.push({ kind: "added", newIndex: newIndex + k });
+      newIndex += count;
+    } else if (part.removed) {
+      for (let k = 0; k < count; k++) entries.push({ kind: "removed", oldIndex: oldIndex + k });
+      oldIndex += count;
+    } else {
+      for (let k = 0; k < count; k++) {
+        entries.push({ kind: "context", oldIndex: oldIndex + k, newIndex: newIndex + k });
+      }
+      oldIndex += count;
+      newIndex += count;
+    }
+  }
+  return entries;
+}
+
+interface LineMatch {
+  readonly oldIndex: number;
+  readonly newIndex: number;
+}
+
+/**
+ * Order-preserving greedy pairing of old lines to new lines by line identity. Old lines are walked
+ * ascending and each takes the earliest still-unclaimed new index after the previous match, so the
+ * result is a monotone alignment: every matched index pair is used at most once.
+ */
+function matchLinesByAnchor(
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  oldHashes: readonly string[],
+  newHashes: readonly string[],
+): LineMatch[] {
+  const newIndexesByHash = new Map<string, number[]>();
+  for (let j = 0; j < newHashes.length; j++) {
+    const hash = newHashes[j]!;
+    const indexes = newIndexesByHash.get(hash);
+    if (indexes === undefined) newIndexesByHash.set(hash, [j]);
+    else indexes.push(j);
+  }
+  const matches: LineMatch[] = [];
+  let lastNewIndex = -1;
+  for (let i = 0; i < oldHashes.length; i++) {
+    const candidates = newIndexesByHash.get(oldHashes[i]!);
+    if (candidates === undefined) continue;
+    const newIndex = candidates.find((j) => j > lastNewIndex && newLines[j] === oldLines[i]);
+    if (newIndex === undefined) continue;
+    matches.push({ oldIndex: i, newIndex });
+    lastNewIndex = newIndex;
+  }
+  return matches;
+}
+
+function changePart(kind: "context" | "removed" | "added", lines: readonly string[]): Diff.Change {
+  return {
+    value: lines.map((line) => `${line}\n`).join(""),
+    count: lines.length,
+    added: kind === "added",
+    removed: kind === "removed",
+  };
+}
+
+/** Rebuild `parts` from a monotone match list: gaps keep their old/new order, matches merge. */
+function rebuildParts(
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  matches: readonly LineMatch[],
+): Diff.Change[] {
+  const parts: Diff.Change[] = [];
+  let oldCursor = 0;
+  let newCursor = 0;
+  let contextRun: string[] = [];
+  const flushContext = (): void => {
+    if (contextRun.length === 0) return;
+    parts.push(changePart("context", contextRun));
+    contextRun = [];
+  };
+  for (const match of matches) {
+    if (match.oldIndex > oldCursor) {
+      flushContext();
+      parts.push(changePart("removed", oldLines.slice(oldCursor, match.oldIndex)));
+    }
+    if (match.newIndex > newCursor) {
+      flushContext();
+      parts.push(changePart("added", newLines.slice(newCursor, match.newIndex)));
+    }
+    contextRun.push(oldLines[match.oldIndex]!);
+    oldCursor = match.oldIndex + 1;
+    newCursor = match.newIndex + 1;
+  }
+  flushContext();
+  if (oldCursor < oldLines.length) parts.push(changePart("removed", oldLines.slice(oldCursor)));
+  if (newCursor < newLines.length) parts.push(changePart("added", newLines.slice(newCursor)));
+  return parts;
+}
+
+/**
+ * Anchor refinement of the text diff (#326). A context pairing is valid only when both sides name the
+ * SAME line identity: Myers pairs byte-identical lines by position, so two equal `dup` lines are
+ * interchangeable to it — but not to the anchors, where the replaced line's anchor is retired and the
+ * survivor keeps its own. Line identity therefore refines the text pairing, never the reverse.
+ *
+ * Returns `parts` untouched when no context pair disagrees on identity, and also when nothing matches
+ * at all — a rewrite retires every identity, so the text diff is already the best projection there.
+ */
+function refinePartsByAnchor(
+  parts: readonly Diff.Change[],
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  oldHashes: readonly string[],
+  newHashes: readonly string[],
+): readonly Diff.Change[] {
+  const disagrees = flattenParts(parts).some(
+    (entry) => entry.kind === "context" && oldHashes[entry.oldIndex] !== newHashes[entry.newIndex],
+  );
+  if (!disagrees) return parts;
+  const matches = matchLinesByAnchor(oldLines, newLines, oldHashes, newHashes);
+  if (matches.length === 0) return parts;
+  return rebuildParts(oldLines, newLines, matches);
+}
+
+/**
+ * The alignment `genDiff` renders. Myers text pairing is the base; both sides' anchors refine it only
+ * when each array covers its own content line-for-line. A side without anchors stays on the text-only
+ * path: the renderer cannot tell line identities apart there, so it must not guess.
+ */
+function diffParts(
+  oldContent: string,
+  newContent: string,
+  oldContentHashes: string[] | undefined,
+  newContentHashes: string[] | undefined,
+): readonly Diff.Change[] {
+  const parts = Diff.diffLines(oldContent, newContent);
+  if (!Array.isArray(oldContentHashes) || !Array.isArray(newContentHashes)) return parts;
+  const oldLines = renderLines(oldContent);
+  const newLines = renderLines(newContent);
+  if (oldContentHashes.length !== oldLines.length) return parts;
+  if (newContentHashes.length !== newLines.length) return parts;
+  return refinePartsByAnchor(parts, oldLines, newLines, oldContentHashes, newContentHashes);
+}
+
 function collectUnservedRemoved(
   displayLines: string[],
   firstOldLine: number,
@@ -191,16 +356,11 @@ function collectUnservedRemoved(
   }
 }
 /**
- * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that
- * position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
- * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file
- * position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
+ * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
+ * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
  * ` - ... [N lines deleted] ...` advances the old cursor past N deleted rows (cursor-exact); a served mirror adds the unserved count.
- * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses
- * to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows`
- * mirror exactly the rendered context/addition rows (position + hash). `firstChangedLine`/`lastChangedLine` bracket the changed
- * new-content lines (1-indexed, `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the position
- * where the removed text sat, so an end-of-file deletion may name one line past the last new line, and both are absent on a no-op.
+ * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows` mirror exactly the rendered context/addition rows (position + hash); a `dryRun` records none and blanks its added gutters, because a run that commits nothing serves nothing.
+ * `firstChangedLine`/`lastChangedLine` bracket the changed new-content lines (1-indexed, `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the position where the removed text sat, so an end-of-file deletion may name one line past the last new line, and both are absent on a no-op.
  */
 export function genDiff(
   oldContent: string,
@@ -210,6 +370,7 @@ export function genDiff(
   oldContentHashes?: string[],
   filePath?: string,
   served?: readonly (string | null)[],
+  dryRun = false,
 ): {
   diff: string;
   firstChangedLine: number | undefined;
@@ -238,7 +399,7 @@ export function genDiff(
         })()
       : defaultHashIdentity.hashesForSync(newContent, filePath));
 
-  const parts = Diff.diffLines(oldContent, newContent);
+  const parts = diffParts(oldContent, newContent, oldContentHashes, newContentHashes);
   const output: string[] = [];
   const servedRows: ServedRow[] = [];
   let newLineNum = 1;
@@ -259,7 +420,7 @@ export function genDiff(
       if (firstChangedLine === undefined) firstChangedLine = newLineNum;
       if (part.added) {
         const n = { value: newLineNum };
-        pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows);
+        pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows, dryRun);
         newLineNum = n.value;
         lastChangedLine = newLineNum - 1;
       } else {
@@ -300,7 +461,7 @@ export function genDiff(
         }
         const hash = effectiveNewHashes[newLineNum - 1];
         output.push(fmtDiffLine(" ", line, hash));
-        if (hash !== undefined) {
+        if (hash !== undefined && !dryRun) {
           servedRows.push({ position: newLineNum - 1, hash });
         }
         newLineNum++;

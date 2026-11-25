@@ -155,13 +155,19 @@ export async function readNormFile(
 ): Promise<NormFile> {
   const norm = await decodeNormText(path, cwd, options);
   const hashStore = options?.store ?? (await loadHashStore());
+  const retired = new Set<string>();
   const fileHashes = await defaultHashIdentity.hashesFor(norm.normalized, {
     path: norm.absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
     retireLeases: true,
+    retiredHashes: retired,
   });
-  return { ...norm, fileHashes };
+  return {
+    ...norm,
+    fileHashes,
+    ...(retired.size > 0 ? { retiredHashes: [...retired] } : {}),
+  };
 }
 
 export async function anchorWalkFor(

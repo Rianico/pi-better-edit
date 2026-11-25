@@ -447,9 +447,7 @@ describe("edit response composition (M3 #15)", () => {
     const result = buildBatchResult([
       {
         path: "a.ts",
-        originalNormalized: "alpha\n",
         result: "beta\n",
-        originalHashes: ["o0"],
         resultHashes: ["r0"],
         resultHash: "snap-a",
         warnings: undefined,

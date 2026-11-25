@@ -8,10 +8,13 @@
  *  - #62: anchors on the same line numbers are invariant across any read sequence (unchanged file)
  *  - #61: no silent miswrite to a different line sharing the same canon
  *  - #63: literal `HASH│` content (0 matched) writes through unchanged
+ *  - #145: a dry-run preview matches the later apply and commits nothing
  */
 import { describe, expect, it } from "vitest";
-import { readFile } from "fs/promises";
+import { readFile, stat, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
+import { NOOP_LOOP_THRESHOLD } from "../../src/constants.js";
+import { loadHashStore } from "../../src/hash-store.js";
 
 /** Six byte-identical function groups — the downstream #61/#62 fixture (41 lines). */
 const SMALL_CPP = Array.from({ length: 6 }, (_, i) => {
@@ -206,6 +209,205 @@ describe("downstream #63 — literal HASH│ content in text", () => {
         ),
       ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
       expect(await readFile(path, "utf-8")).toBe("one\ntwo\nthree\n");
+    });
+  });
+});
+
+/**
+ * The rendered diff body of an edit response: the file banner onward, with each row's gutter
+ * reduced to its `+`/`-`/` ` marker. A dry run prints an empty 4-space gutter where a live run
+ * prints anchors, so only this projection is comparable across the two.
+ */
+function diffBody(text: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^--- .+ ---$/.test(line));
+  expect(start, "the response must render a file banner").toBeGreaterThanOrEqual(0);
+  return lines
+    .slice(start)
+    .map((line) => line.replace(/^([ +-]).{4}│/, "$1"))
+    .join("\n");
+}
+
+/** Undo rows this worker's store holds — a dry run must append none. */
+async function undoRowCount(): Promise<number> {
+  const store = await loadHashStore();
+  const row = store.db.prepare("SELECT COUNT(*) AS n FROM file_undo").get() as { n: number };
+  return row.n;
+}
+
+/** The domain code a tool call rejects with, or a marker naming the unexpected outcome. */
+async function rejectionCode(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return /E_[A-Z_]+/.exec(message)?.[0] ?? "no-code";
+  }
+  return "no-rejection";
+}
+
+describe("downstream #145 — read-only edit preview (dry_run)", () => {
+  it("previews exactly the bytes a later apply writes and commits nothing", async () => {
+    const content = "line1\nline2\nline3\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const served = rows(await read(readTool, ctx, "r1", 1, 3, "sample.txt"));
+
+      const edits = [
+        { anchor_from: served[0]!.hash, anchor_to: served[0]!.hash, text: "line1-modified" },
+        { anchor_from: served[2]!.hash, anchor_to: served[2]!.hash, text: "line3-modified" },
+      ];
+      const mtimeBefore = (await stat(path)).mtimeMs;
+      const undoBefore = await undoRowCount();
+
+      const dry = await editTool.execute(
+        "e1",
+        { file: "sample.txt", dry_run: true, edits },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(await readFile(path, "utf-8"), "the preview writes nothing").toBe(content);
+      expect((await stat(path)).mtimeMs, "the preview touches no bytes").toBe(mtimeBefore);
+      expect(await undoRowCount(), "the preview appends no undo row").toBe(undoBefore);
+      const dryBody = diffBody(getText(dry));
+
+      const live = await editTool.execute(
+        "e2",
+        { file: "sample.txt", edits },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const liveText = getText(live);
+
+      expect(diffBody(liveText), "the preview equals the applied diff row for row").toBe(dryBody);
+      expect(await readFile(path, "utf-8")).toBe("line1-modified\nline2\nline3-modified\n");
+      expect(liveText.startsWith("Successfully edited"), liveText).toBe(true);
+    });
+  });
+
+  it("rejects a stale range fail-closed with the same code as the live arm", async () => {
+    await withTempFile("sample.txt", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const served = rows(await read(readTool, ctx, "r1", 1, 3, "sample.txt"));
+
+      await writeFile(path, "alpha\nbeta\nGAMMA\n", "utf-8");
+      const staleBytes = "alpha\nbeta\nGAMMA\n";
+      const mtimeBefore = (await stat(path)).mtimeMs;
+
+      const edits = [
+        { anchor_from: served[0]!.hash, anchor_to: served[0]!.hash, text: "ALPHA" },
+        { anchor_from: served[2]!.hash, anchor_to: served[2]!.hash, text: "GAMMA-2" },
+      ];
+      const dryCode = await rejectionCode(() =>
+        editTool.execute(
+          "e1",
+          { file: "sample.txt", dry_run: true, edits },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+
+      expect(dryCode, "a dry run is never more permissive than the write").toMatch(
+        /E_STALE_ANCHOR|E_TARGET_LOST|E_STALE_RANGE/,
+      );
+      expect(await readFile(path, "utf-8"), "no partial apply").toBe(staleBytes);
+      expect((await stat(path)).mtimeMs).toBe(mtimeBefore);
+
+      const liveCode = await rejectionCode(() =>
+        editTool.execute("e2", { file: "sample.txt", edits }, undefined, undefined, ctx),
+      );
+      expect(liveCode, "the live arm rejects with the preview's own code").toBe(dryCode);
+      expect(await readFile(path, "utf-8")).toBe(staleBytes);
+      expect((await stat(path)).mtimeMs).toBe(mtimeBefore);
+    });
+  });
+
+  it("locks no version: the same edit still rejects after an external write, and fresh anchors write", async () => {
+    await withTempFile("sample.txt", "first\nsecond\nthird\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const served = rows(await read(readTool, ctx, "r1", 1, 3, "sample.txt"));
+      const staleEdit = {
+        file: "sample.txt",
+        edits: [{ anchor_from: served[1]!.hash, anchor_to: served[1]!.hash, text: "SECOND" }],
+      };
+
+      await editTool.execute("e1", { ...staleEdit, dry_run: true }, undefined, undefined, ctx);
+      await writeFile(path, "first\nexternal\nthird\n", "utf-8");
+
+      const rejected = await rejectionCode(() =>
+        editTool.execute("e2", staleEdit, undefined, undefined, ctx),
+      );
+      expect(rejected, "a preview grants no lock over the old bytes").toMatch(
+        /E_STALE_ANCHOR|E_TARGET_LOST|E_STALE_RANGE/,
+      );
+      expect(await readFile(path, "utf-8")).toBe("first\nexternal\nthird\n");
+
+      const fresh = rows(await read(readTool, ctx, "r2", 1, 3, "sample.txt"));
+      await editTool.execute(
+        "e3",
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: fresh[1]!.hash, anchor_to: fresh[1]!.hash, text: "written" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(await readFile(path, "utf-8"), "fresh anchors still write").toBe(
+        "first\nwritten\nthird\n",
+      );
+    });
+  });
+
+  it("never advances the live noop loop", async () => {
+    const content = "aaa\nbbb\nccc\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const served = rows(await read(readTool, ctx, "r1", 1, 3, "sample.txt"));
+      const noopEdit = [{ anchor_from: served[1]!.hash, anchor_to: served[1]!.hash, text: "bbb" }];
+
+      for (let attempt = 0; attempt < NOOP_LOOP_THRESHOLD + 2; attempt++) {
+        const result = await editTool.execute(
+          "e1",
+          { file: "sample.txt", dry_run: true, edits: noopEdit },
+          undefined,
+          undefined,
+          ctx,
+        );
+        const details = result.details as { classification?: string };
+        expect(getText(result), `attempt ${attempt + 1} previews the noop`).toContain(
+          "[DRY RUN] No changes would be made",
+        );
+        expect(details.classification, `attempt ${attempt + 1} stays a noop`).toBe("noop");
+      }
+
+      const liveNoop = await editTool.execute(
+        "e2",
+        { file: "sample.txt", edits: noopEdit },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const liveText = getText(liveNoop);
+      expect(liveText).toContain("No changes made");
+      expect(liveText, "previews tally nothing").not.toContain("NOOP_LOOP");
+      expect(await readFile(path, "utf-8")).toBe(content);
+
+      await editTool.execute(
+        "e3",
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: served[0]!.hash, anchor_to: served[0]!.hash, text: "AAA" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(await readFile(path, "utf-8")).toBe("AAA\nbbb\nccc\n");
     });
   });
 });

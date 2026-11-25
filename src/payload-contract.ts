@@ -68,6 +68,7 @@ export type NormalizedEditRequest = {
   file: string;
   edits: NormalizedEditItem[];
   mode?: EditMode;
+  dry_run?: boolean | null;
 };
 
 /** The wire-folded request (the admission analyzer's view): canonical keys, pre-union. */
@@ -75,6 +76,7 @@ type PreAdmissionRequest = {
   file: string;
   edits: EditItem[];
   mode?: EditMode;
+  dry_run?: boolean | null;
 };
 type NormalizedPayload = NormalizedEditRequest & {
   readonly [normalizedEdit]: true;
@@ -173,6 +175,16 @@ export const editToolSchema = Type.Object(
       maxItems: EDITS_MAX_ITEMS,
     }),
     mode: Type.Optional(Type.Union([editModeSchema, Type.Null()])),
+    // Ref: docs/.archive_adrs/0036-optional-wire-fields-declared-nullable.md
+    dry_run: Type.Optional(
+      Type.Union([
+        Type.Boolean({
+          description:
+            "Optional; defaults to false. When true, validates anchors and leases and computes the diff without writing to disk, recording undo, or updating leases.",
+        }),
+        Type.Null(),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -198,6 +210,7 @@ export const EDIT_GUIDELINES: string[] = [
   "edit: after success the diff serves fresh `HASH│content` rows: context rows and `+` rows. Copy new anchors from the diff for your next call. Verify that the diff matches your intended mutation.",
   "edit: a `[W_*]` line or a `[USER]` line in `content` is informational, not a refusal. An `[E_*]` token and the line it opens is your retry instruction or a rejection: in a batch, the verdict line names the audience and `K of N`, and each `- edit[i] (path) [E_*]:` bullet opens that item's instruction. Rows under `Current range (fresh read):` or `Current range:` are recorded as served when shown; a rejection that shows no rows grants none.",
   "edit: batch independent ranges in one `edits` array. Inside it, every edit validates BEFORE the first rename, and any failure there writes nothing. A foreign `cut` writes its files in a fixed order, and a defeated rollback restores captured bytes or is repaired on the next run.",
+  "edit: use `dry_run: true` when validating complex multi-range changes, high-value work, or upon explicit user request. Do not routine dry-run standard edits to avoid doubling round-trip turns.",
 ];
 
 function quoted(keys: string[]): string {
@@ -375,14 +388,14 @@ function analyzeRequest(input: unknown): Admission {
     return { ok: false, message: `Edit request is not an object. ${EDIT_SHAPE_LINE}` };
   }
   const rec = input as Record<string, unknown>;
-  const rootBase = new Set(["file", "edits", "mode"]);
+  const rootBase = new Set(["file", "edits", "mode", "dry_run"]);
   const rootOffending = Object.keys(rec).filter((key) => !rootBase.has(key));
   if (rootOffending.length > 0) {
     return {
       ok: false,
       message:
         `Edit request has unsupported field(s) ${quoted(rootOffending)}; it is exactly ` +
-        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal" }.`,
+        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal", dry_run?: boolean }.`,
     };
   }
   let mode: EditMode | undefined;
@@ -394,6 +407,16 @@ function analyzeRequest(input: unknown): Admission {
       };
     }
     mode = rec.mode;
+  }
+  let dryRun: boolean | undefined;
+  if ("dry_run" in rec && !isAbsentValue(rec.dry_run)) {
+    if (typeof rec.dry_run !== "boolean") {
+      return {
+        ok: false,
+        message: `Edit request "dry_run" must be a boolean (absent means false). ${EDIT_SHAPE_LINE}`,
+      };
+    }
+    dryRun = rec.dry_run;
   }
   if (!("file" in rec)) {
     return {
@@ -433,8 +456,10 @@ function analyzeRequest(input: unknown): Admission {
   if (failures.length > 0) {
     return { ok: false, message: failures.join(" ") };
   }
-  if (mode !== undefined) return { ok: true, request: { file, edits: edited, mode } };
-  return { ok: true, request: { file, edits: edited } };
+  const request: PreAdmissionRequest = { file, edits: edited };
+  if (mode !== undefined) request.mode = mode;
+  if (dryRun !== undefined) request.dry_run = dryRun;
+  return { ok: true, request };
 }
 
 export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined {
@@ -462,10 +487,12 @@ export function normReq(input: unknown): NormReqResult {
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by analyzeRequest refusing invalid shapes
   if (!admitted.ok) return input as NormReqResult;
   const items = admitted.request.edits.map(normalizedItemFrom);
-  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } =
-    admitted.request.mode !== undefined
-      ? { file: admitted.request.file, edits: items, mode: admitted.request.mode }
-      : { file: admitted.request.file, edits: items };
+  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } = {
+    file: admitted.request.file,
+    edits: items,
+  };
+  if (admitted.request.mode !== undefined) record.mode = admitted.request.mode;
+  record.dry_run = admitted.request.dry_run ?? false;
   Object.defineProperty(record, normalizedEdit, {
     value: true,
     enumerable: false,
@@ -489,7 +516,7 @@ export function getPreviewInput(args: unknown): { file: string; edits: EditItem[
   return req;
 }
 
-const ROOT_KS = new Set(["file", "edits", "mode"]);
+const ROOT_KS = new Set(["file", "edits", "mode", "dry_run"]);
 
 const PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
 
@@ -534,7 +561,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     request,
     ROOT_KS,
     "Edit request",
-    'Pass "file" (the text file to edit), "edits", and optional "mode" ("general" | "literal").',
+    'Pass "file" (the text file to edit), "edits", optional "mode" ("general" | "literal"), and optional "dry_run" (boolean).',
   );
 
   const modeValue = (request as Record<string, unknown>).mode;
@@ -543,6 +570,13 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
       message:
         'Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
         EDIT_SHAPE_LINE,
+    });
+  }
+  const dryRunValue = (request as Record<string, unknown>).dry_run;
+  if (dryRunValue !== undefined && typeof dryRunValue !== "boolean") {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request "dry_run" must be a boolean (absent means false). ' + EDIT_SHAPE_LINE,
     });
   }
 
