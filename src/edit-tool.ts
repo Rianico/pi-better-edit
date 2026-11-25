@@ -52,10 +52,12 @@ export function createEditTool(): EditTool {
         ctx as unknown as { sessionManager?: { getSessionId(): string } },
       );
       // SAFETY: canonical is validated NormalizedEditRequest after assertReq — trusted inside boundary
+      const isDryRun = canonical.dry_run === true;
       const result = await engineExecute(canonical as NormalizedEditRequest, ctx.cwd, {
-        accessMode: constants.R_OK | constants.W_OK,
+        accessMode: isDryRun ? constants.R_OK : constants.R_OK | constants.W_OK,
         ...(signal !== undefined ? { signal } : {}),
         sessionKey,
+        ...(isDryRun ? { noPersist: true, dryRun: true } : {}),
       });
       if (isMutationSuccess(result)) {
         // SAFETY: toolResult is validated by isMutationSuccess discriminated union guard

@@ -1091,7 +1091,7 @@ export async function previewEdits(
  * the applied-diff fold every apply result has used; the pre-batch served mirror goes in so a removal
  * the caller never saw keeps its blank gutter, which the retired fallback omitted.
  */
-function renderedDiffFor(file: ProcessedEditFile): ReturnType<typeof genDiff> {
+function renderedDiffFor(file: ProcessedEditFile, dryRun = false): ReturnType<typeof genDiff> {
   return genDiff(
     file.originalNormalized,
     file.result,
@@ -1100,6 +1100,7 @@ function renderedDiffFor(file: ProcessedEditFile): ReturnType<typeof genDiff> {
     file.originalHashes,
     undefined,
     file.served,
+    dryRun,
   );
 }
 
@@ -1342,6 +1343,10 @@ async function runCutTransaction(
  * serializes EVERY file it will rename for the whole plan+commit, and the queues are taken in sorted order so
  * two calls with swapped target/source cannot deadlock; copy items never widen the lock set, because a copy's
  * foreign file stays read-only.
+ *
+ * A dry run takes the preview branch and must serve nothing, so the flag is derived from BOTH the
+ * request and the options and then forwarded explicitly: `options` alone would drop a request-derived
+ * `dry_run`, and the diff renderer cannot tell the hypothetical run apart from a plain preview.
  */
 export async function apply(
   request: NormalizedEditRequest,
@@ -1355,10 +1360,18 @@ export async function apply(
   raw: ProcessedEditFile;
   toolResult: ReturnType<typeof buildBatchResult>;
 }> {
-  const isPreview = options?.noPersist === true;
+  const isDryRun = request.dry_run === true || options?.dryRun === true;
+  const isPreview = options?.noPersist === true || isDryRun;
   if (isPreview) {
-    const file = await runMutations(request, cwd, options);
-    const toolResult = buildBatchResult([toSection(file, renderedDiffFor(file))]);
+    const file = await runMutations(request, cwd, {
+      ...options,
+      noPersist: true,
+      ...(isDryRun ? { dryRun: true } : {}),
+    });
+    const toolResult = buildBatchResult(
+      [toSection(file, renderedDiffFor(file, isDryRun))],
+      isDryRun,
+    );
     const diff = toolResult.details.diff ?? "";
     return {
       result: file.result,
