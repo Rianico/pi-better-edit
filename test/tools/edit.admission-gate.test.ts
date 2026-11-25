@@ -6,12 +6,10 @@ import { assertReq, normReq } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 /**
- * The substring every rejection still shares. Per-class reasons replaced the old one-hint-for-
- * everything prefix, and the refusal wording names the "payload field", so only the canonical
- * payload phrase is common to all of them.
+ * The substring every shape-verdict refusal shares: the short shape line. Item-level
+ * refusals name the field instead.
  */
-const PAYLOAD_HINT = "exactly one payload";
-
+const PAYLOAD_HINT = "Edit payload:";
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {
   const { ctx, readTool } = setupIntegrationTest(cwd);
   const hashes = await lineHashes("aaa\nbbb\n", `${cwd}/sample.ts`);
@@ -114,7 +112,6 @@ describe("edit admission gate — shared payload hint", () => {
       { file: 123, edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
       { file: "", edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
       { file: "   ", edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
-      { file: "sample.ts", edits: [{ anchor_from: "aB3", anchor_to: "cD4" }] },
       "bare-string",
     ];
     const messages = shapes.map((shape) => messageOf(shape));
@@ -122,6 +119,9 @@ describe("edit admission gate — shared payload hint", () => {
       expect(message).toContain("[E_BAD_PAYLOAD]");
       expect(message).toContain(PAYLOAD_HINT);
     }
+    expect(
+      messageOf({ file: "sample.ts", edits: [{ anchor_from: "aB3", anchor_to: "cD4" }] }),
+    ).toContain("carries no payload");
   });
 
   it("fails closed for a valid file with malformed edits and for a non-object", () => {
@@ -130,7 +130,7 @@ describe("edit admission gate — shared payload hint", () => {
       edits: [{ anchor_from: "aB3", anchor_to: "cD4" }],
     });
     expect(badEdits).toContain("[E_BAD_PAYLOAD]");
-    expect(badEdits).toContain(PAYLOAD_HINT);
+    expect(badEdits).toContain("carries no payload");
     const nonObject = messageOf("bare-string");
     expect(nonObject).toContain("[E_BAD_PAYLOAD]");
     expect(nonObject).toContain(PAYLOAD_HINT);

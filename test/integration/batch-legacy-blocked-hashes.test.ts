@@ -4,9 +4,9 @@ import { withTempFile, setupIntegrationTest, getText, extractHash } from "../sup
 import { loadHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, sessionKeyFor } from "../../src/served-session/session.js";
 
-/** The atomicity trailer every item failure in a multi-item call must carry (spec §3.2.3). */
-const ATOMICITY_TRAILER =
-  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+/** The unified batch-rejection verdict line every multi-item rejection carries (spec #329 §4). */
+const BATCH_VERDICT =
+  /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m;
 
 async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<string[]> {
   const result = await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
@@ -46,7 +46,7 @@ describe("batch legacy blocked-hashes atomicity (#117)", () => {
         .catch((error: unknown) => error)) as Error;
 
       expect(rejection.message).toContain("[E_SUSPICIOUS_TEXT]");
-      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message).toMatch(BATCH_VERDICT);
       expect(await readFile(path, "utf-8")).toBe(content);
 
       const after = await createSessionHandle(sessionKey, path, store).loadBlockedHashes();

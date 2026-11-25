@@ -44,6 +44,11 @@ export interface LoadedEditFile {
   absolutePath: string;
   served: (string | null)[];
   blockedHashes: ReadonlySet<string>;
+  /**
+   * Anchors the edit load's alignment retired (lines the latest lineage held, this content does not). The
+   * pipeline tombstones them, so a drifted edit cannot leave a deleted line's anchor reusable.
+   */
+  retiredHashes: ReadonlySet<string>;
   canonDigests: (string | null)[];
 }
 
@@ -54,6 +59,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     originalEnding,
     fileHashes,
     hadUtf8DecodeErrors,
+    retiredHashes,
     absolutePath,
     endingCounts,
   } = await readNormFile(source.path, source.cwd, {
@@ -94,6 +100,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     served,
     blockedHashes,
     canonDigests,
+    retiredHashes: new Set(retiredHashes),
   };
 }
 

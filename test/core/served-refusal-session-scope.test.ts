@@ -3,7 +3,7 @@
  * bounded.
  *
  * The tally only sharpens the `(submission N×)` clause of `E_SUSPICIOUS_TEXT`
- * (`suspiciousTail` in `src/domain-errors.ts`); it gates nothing. Keying it by
+ * (rendered once in `src/domain-errors.ts`); it gates nothing. Keying it by
  * absolute path alone let two sessions sharing a path inherit each other's count and
  * let a long-running process retain one entry per refused path forever.
  */
@@ -135,7 +135,7 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
         .execute("e1", payload, undefined, undefined, sessionA)
         .catch((error: unknown) => error as Error);
       expect(aSecond.message).toContain("submission 2");
-      expect(aSecond.message).toContain("Identical refusal");
+      expect(aSecond.message).not.toContain("Identical refusal");
 
       const bFirst = await editTool
         .execute("e1", payload, undefined, undefined, sessionB)

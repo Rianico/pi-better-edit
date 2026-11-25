@@ -34,7 +34,7 @@ describe("assertReq", () => {
       assertReq(
         normReq({ file: null, edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }] }),
       ),
-    ).toThrow("exactly");
+    ).toThrow('"file" must be a non-empty string');
   });
 
   it("rejects malformed shapes and member types", () => {
@@ -56,7 +56,7 @@ describe("assertReq", () => {
 });
 
 describe("anchor validation order", () => {
-  it("rejects malformed anchors before any file I/O", async () => {
+  it("reports the file-load error before admission failures for a missing file", async () => {
     const tool = buildToolDef();
     await expect(
       tool.execute(
@@ -69,7 +69,7 @@ describe("anchor validation order", () => {
         undefined,
         { cwd: "/tmp", sessionManager: testSessionManager } as any,
       ),
-    ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
+    ).rejects.toThrow(/\[E_NOT_FOUND\]/);
   });
 });
 describe("prepareArguments normalization", () => {
@@ -115,7 +115,7 @@ describe("prepareArguments normalization", () => {
     for (const args of bad) {
       expect(() => tool.prepareArguments!(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
       expect(() => tool.prepareArguments!(args)).toThrow(
-        /canonical payload|it is exactly \{ file|an item is exactly/,
+        /Edit payload:|it is exactly \{ file|an item is exactly/,
       );
     }
   });

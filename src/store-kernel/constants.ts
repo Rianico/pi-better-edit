@@ -13,7 +13,7 @@ export const HASH_STORE_BUSY_TIMEOUT = 250;
  * Schema evolution itself is additive or rename-preserving, never a drop.
  */
 // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
-export const HASH_STORE_VERSION = 11;
+export const HASH_STORE_VERSION = 12;
 
 const BUSY_MAX_ATTEMPTS = 8;
 const BUSY_BACKOFF_BASE_MS = 50;

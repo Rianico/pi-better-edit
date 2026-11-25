@@ -4,8 +4,43 @@
 
 ### Bug Fixes
 
-* **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)
+* **edit:** render every batch rejection through one grammar: a `[MODEL] Batch rejected: K of N edits failed; nothing was written.` verdict line, then one bullet per failing item carrying that item's own code with rows and `Options:` indented beneath it. The atomicity trailer is deleted and overlaps fold in as the later item's `[E_BATCH_ABORT]` failure. (#323)
+* **edit:** record the rows a batch-overlap refusal serves as leases, so a retry can reuse a shown anchor with no re-read; the guideline no longer tells the model to re-read after an overlap refusal. (#332)
+* **edit:** route foreign-reference failures through the batch verdict: a multi-item call with an unresolvable `text_ref` now renders `[MODEL] Batch rejected: K of N edits failed; nothing was written.` with one bullet per failing item instead of the first bare error; a 1-item call keeps the bare error. (#330)
+* **edit:** merge gate-validation failures into the single post-load verdict: the span gate returns validation failures instead of throwing, and the merge site unions materialization, parse, and gate failures in call order with `total` as the call's item count and a recorder built from the loaded file; overlap still throws through the seam, and a file-load error now surfaces before admission failures. (#341)
 * **canon:** fence stored canon evidence by the full `CANON_VERSION:ANCHOR_GENERATION` snapshot epoch. A snapshot, lease or stat stamp from an earlier canon no longer pairs `line_id`s against today's digests, resolves an anchor, or adopts on stat identity, so a pre-v4 lease cannot carry its line identity across an external intra-line whitespace rewrite. Anchors read under a prior canon need a fresh read; same-epoch leases, pairing and stat adoption stand. `undo_last_edit` re-derives a prior-epoch pin on restore, so its lease names the current epoch and serves the next edit without an intermediate read. No migration or schema change. (#340)
+
+### Code Refactoring
+
+* **edit:** assemble every batch rejection through one seam that builds the error, records the rows it shows, then throws; every row-carrying rejection now mirrors rows through the one recorder, including the noop-loop rejection (previously leased without observer notify). (#334)
+
+### Performance Improvements
+
+* **edit:** trim refusal rendering to one shape line: drop the echoed request bytes, the inlined canonical-payload paragraph, the duplicate batch-noop warning, the repeated suspicious-text count, and a redundant sentence and doubled periods. (#327)
+
+### Documentation
+
+* **edit:** align the served description and guidelines with the emitted shapes: both `Current range` headings are named with their lease rule, `[USER]` lines are stated as informational `content`, and the retry instruction is an `[E_*]` token with the line it opens. (#328)
+
+### Tests
+
+* **edit:** ratchet the warning-header producers: a new arch test holds that no string literal under `src/` outside `src/domain-errors.ts` contains a rendered `[MODEL]/[USER] [W_...]` header or a bare `[W_CODE]` token, with an empty size-pinned allowlist; the three sanctioned render sites (`formatWarning`, `formatReadWarning`, `DomainError`) are pinned. (#348)
+
+### Miscellaneous Chores
+
+* **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#342)
+## [2.21.0] - 2026-11-25
+
+### Features
+
+* **edit:** admit optional `dry_run` in the edit payload contract and execute as a validated, non-persisting preview. A dry-run execution runs standard validation, generates the hypothetical diff with blank line gutters and suppressed anchors, returns `[DRY RUN]` in the response header and `details.dryRun: true`, and skips all file writes, undo recording, and session lease mutations. (#346)
+
+### Bug Fixes
+
+* **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)
+* **store:** align a checksum miss against the latest committed lineage with pin-bounded pairing, so an externally deleted duplicate twin retires its own anchor and the surviving twin keeps its exact prior anchor instead of inheriting the deleted twin's. Unpaired anchors return through `HashOptions.retiredHashes` for the session tombstone; ambiguous intervals fail closed. (#347)
+* **store:** carry anchors ordinally across one contiguous homogeneous raw-byte run on a checksum miss, so an external shrink keeps the surviving prefix's anchors and retires the overflow, while a run crossing an indentation or whitespace change fails closed. Lineage now persists a per-line raw digest (`raw_hash`) to prove the run holds one spelling. (#347)
+* **store:** give anchors and line ids one pairing owner, so a homogeneous run's shrink or growth edit resolves on the surviving ordinal without an intervening read and only the overflow copy retires. A drifted full read now tombstones the anchors its alignment retired, a drifted edit tombstones its own, and a clean success omits `details.driftNotice` instead of emitting an empty string. (#347)
 
 ## [2.20.0] - 2026-11-24
 

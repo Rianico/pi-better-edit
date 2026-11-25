@@ -109,8 +109,8 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
 
       expect(envelope.code).toBe("E_STALE_RANGE");
       expect(envelope.message).toContain(`edit[1] (${batchName})`);
-      expect(envelope.message).toContain(
-        "The whole edit call was rejected and NOTHING was written",
+      expect(envelope.message).toMatch(
+        /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m,
       );
       assertPayloadPreserved(envelope, "E_STALE_RANGE");
       const driftedHashes = await fileHashesFor(join(cwd, batchName), drifted);

@@ -7,7 +7,7 @@ import { reportDiagnostic } from "../diagnostics.js";
 /**
  * The CAS store is a bounded cache: 50 MB globally, and
  * `min(10, max(2, floor(10 MB / snapshot_lineage_bytes)))` versions per path, where
- * `snapshot_lineage_bytes ≈ 40 × line_count`; eviction is global, oldest-`created_at` first.
+ * `snapshot_lineage_bytes ≈ 52 × line_count`; eviction is global, oldest-`created_at` first.
  * Identity wins over budget: a snapshot a live anchor can still resolve through — an active lease,
  * an undo restore target, or a lease retired inside the 1-hour grace — is PINNED. An all-pinned
  * candidate set defers instead: a soft overflow that lapses with the 7-day TTL, which
@@ -19,7 +19,7 @@ export const VACUUM_SOFT_OVERFLOW_BYTES = 100 * 1024 * 1024;
 export const VACUUM_PER_PATH_BUDGET_BYTES = 10 * 1024 * 1024;
 export const VACUUM_MAX_SNAPSHOTS_PER_PATH = 10;
 export const VACUUM_MIN_SNAPSHOTS_PER_PATH = 2;
-export const VACUUM_LINEAGE_BYTES_PER_LINE = 40;
+export const VACUUM_LINEAGE_BYTES_PER_LINE = 52;
 export const VACUUM_RETIRED_PIN_MS = 60 * 60 * 1000;
 
 /** Bounds for one vacuum pass; the policy values are the module-level production constants. */

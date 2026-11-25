@@ -1,9 +1,9 @@
 /**
  * SAFETY: snapshot-io — the persistence seam between a hash identity and the snapshot store.
  *
- * `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a two-method interface
- * (`get` / `upsert`). That seam belongs to the store: it owns the rows, the cache key and the
- * transaction, and identity stays free of store shape — a caller names its store, gets an IO.
+ * `HashIdentity.hashesFor` caches and persists through `HashSnapshotIO`, a three-method interface
+ * (`get` / `upsert` / `latestLineage`). That seam belongs to the store: it owns the rows, the cache key
+ * and the transaction, and identity stays free of store shape — a caller names its store, gets an IO.
  *
  * Explicit parameter over an ambient default. docs/.archive_adrs/0002-session-keyed-served-state.md's import-time install let a bare
  * `lineHashes(content, path)` choose whichever store happened to be open in the process, so a
@@ -11,7 +11,20 @@
  * (or `persist: false` when they only derive anchors); nothing installs a process-wide IO.
  */
 import type { HashStore } from "../hash-store.js";
-import { cacheKey, getSnapshot, upsertSnapshot } from "./index.js";
+import { cacheKey, getSnapshot, latestLineageFor, upsertSnapshot } from "./index.js";
+
+/** One line of the newest committed lineage, as the checksum-miss alignment consumes it. */
+export interface SnapshotLineageLine {
+  lineNumber: number;
+  anchor: string;
+  canonHash: string;
+  /**
+   * `line_lineage.raw_hash` — xxh32 of the RAW line, the exact spelling this row was written for.
+   * Optional because legacy rows predate #344 and carry NULL: a missing digest is NO raw evidence, so a
+   * consumer that needs one (the ordinal-carry gate) must fail closed rather than assume a match.
+   */
+  rawHash?: string | undefined;
+}
 
 export interface HashSnapshotUpsertOptions {
   /**
@@ -57,9 +70,10 @@ export interface HashSnapshotUpsertOptions {
 }
 
 /**
- * The two operations an identity needs from the snapshot store: look up the anchors this content
- * already has, and persist the ones it derived. Both are best-effort at the call site (a failed
- * persist loses cache, never correctness), so the seam stays two methods wide.
+ * The three operations an identity needs from the snapshot store: look up the anchors this content
+ * already has, persist the ones it derived, and read the latest committed lineage to align a checksum
+ * miss against. All are best-effort at the call site (a failed persist or lineage read loses cache,
+ * never correctness; a missing lineage falls back to fresh allocation), so the seam stays three methods wide.
  */
 export interface HashSnapshotIO {
   get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
@@ -71,6 +85,11 @@ export interface HashSnapshotIO {
     content: string,
     options?: HashSnapshotUpsertOptions,
   ): Promise<void>;
+  /**
+   * The newest committed lineage for `path`, the evidence a checksum-miss alignment pairs against. Absent
+   * when the path holds no committed snapshot, which tells the caller to allocate fresh anchors instead.
+   */
+  latestLineage(path: string): Promise<SnapshotLineageLine[] | undefined>;
 }
 
 /** Binds the snapshot store's read/write entry points to one store, as an identity's persistence seam. */
@@ -85,6 +104,9 @@ export function snapshotIOFor(store: HashStore): HashSnapshotIO {
         { path, snapshotHash: cacheKey(checksum), lineCount, hashes, content },
         options,
       );
+    },
+    async latestLineage(path) {
+      return latestLineageFor(store, path);
     },
   };
 }

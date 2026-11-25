@@ -138,7 +138,7 @@ describe("outline fold after an explicit served read (batch coordinates)", () =>
       expect(refused.code).toBe("E_STALE_RANGE");
       expect(refused.message).toContain("line 10-13");
       expect(refused.message).toContain("is hidden by an outline fold");
-      expect(refused.message).toContain("NOTHING was written");
+      expect(refused.message).toContain("nothing was written");
       expect(await readFile(path, "utf8")).toBe(SAMPLE);
       const result = await edit([{ anchor_from: at(5), anchor_to: at(8), text: "" }]);
       expect(getText(result)).toContain("Successfully edited");

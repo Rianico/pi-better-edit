@@ -17,6 +17,8 @@ export interface PipelineOptions {
   signal?: AbortSignal;
   store?: HashStore;
   noPersist?: boolean;
+  /** Dry run = `noPersist` plus one rule: the hypothetical diff serves no anchor. */
+  dryRun?: boolean;
   sessionKey?: string;
   /**
    * TEST-ONLY fault-injection seam (ticket-04b §3): invoked inside a foreign-source cut transaction

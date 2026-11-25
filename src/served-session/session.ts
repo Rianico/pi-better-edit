@@ -1118,6 +1118,7 @@ export function createSessionHandle(
       snapshotId?: string;
       contentHash?: string;
       isFullRead?: boolean;
+      blockedHashes?: Iterable<string>;
     }): Promise<void> {
       if (input.rows.length === 0 && !input.fullReadHashes) return;
       const store = await resolveStore();
@@ -1156,11 +1157,10 @@ export function createSessionHandle(
           if (isFullRead && input.snapshotId)
             servedStmts(store.db).metaUpsertEpoch(sessionKey, path, input.snapshotId, Date.now());
         } else {
-          if (isFullRead && input.snapshotId)
-            servedStmts(store.db).metaUpsertEpoch(sessionKey, path, input.snapshotId, Date.now());
           const disp = displacedHashes(current, updated);
           if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
         }
+        addRetiredAnchors(store, sessionKey, path, input.blockedHashes ?? []);
       });
       if (input.rows.length > 0)
         grantLeasesForRows(store, sessionKey, path, input.rows, input.contentHash);

@@ -152,6 +152,8 @@ const MIGRATION_COLUMNS = {
     effective_ending: "TEXT",
     pre_image_mixed: "INTEGER",
   },
+  // Ref: docs/spec/content-addressed-line-identity-mvcc.md (#344): nullable, so a legacy row reads as no raw evidence and fails closed.
+  line_lineage: { raw_hash: "TEXT" },
   served_session_meta: {
     outline_folds: "TEXT",
     hashes: "TEXT",
@@ -398,6 +400,7 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
       "line_id INTEGER NOT NULL, " +
       "canon_hash TEXT NOT NULL, " +
       "anchor TEXT NOT NULL, " +
+      "raw_hash TEXT, " +
       "PRIMARY KEY (snapshot_id, line_number), " +
       "FOREIGN KEY (snapshot_id) REFERENCES file_snapshots(snapshot_id) ON DELETE CASCADE" +
       ")",
@@ -409,6 +412,8 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   renameGenerationColumn(db, "file_snapshots");
   // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   addColumnIfMissing(db, "file_snapshots", "stat_key");
+  // Ref: docs/spec/content-addressed-line-identity-mvcc.md (#344): nullable so legacy rows survive the ALTER as NULL.
+  addColumnIfMissing(db, "line_lineage", "raw_hash");
   db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_path_stat ON file_snapshots (path, stat_key)");
   if (sweepSettledByOpen(db) || storeStampMatches(db)) return;
 

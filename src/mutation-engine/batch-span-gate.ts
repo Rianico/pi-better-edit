@@ -2,9 +2,8 @@
  * SAFETY: Batch span-gate owner — baseline (`S_curr`) span resolution, batch
  * disjointness, and the working buffer's `line_id` bookkeeping for the
  * mutation pipeline. Pure pre-mutation gate: the only store touches it
- * performs are reads, plus the reject-and-serve recording the pipeline owns
- * (`recordRejectionServe`, passed in through the context — it stays with the
- * store seam). Vocabulary (GLOSSARY.md): span, served span, reject-and-serve,
+ * performs are reads; every failure returns for the single post-preflight merge,
+ * which records through the store seam. Vocabulary
  * line identity — preserved.
  */
 
@@ -19,9 +18,7 @@ import {
   fmtServedRows,
   type ServedRow,
 } from "../served-session/serve-render.js";
-import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
-import { batchAbortFor, batchAbortForMany } from "../edit-response.js";
-
+import { positionsByIdentity } from "../snapshot-store";
 function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
   const endHash = edit.hash_bounds[1].hash;
@@ -90,9 +87,16 @@ export function spliceWorkingBufferIds(
 }
 
 interface BaselineSpan {
-  index: number;
+  itemIndex: number;
+  arrayPos: number;
   startLine: number;
   endLine: number;
+}
+
+/** One gate input: the compacted edit plus its position in the call's `edits[]` array. */
+export interface BatchSpanEntry {
+  edit: HEdit;
+  itemIndex: number;
 }
 
 /** The baseline (`S_curr`) state one batch's spans are resolved against, before anything mutates. */
@@ -100,24 +104,9 @@ export interface BaselineSpanContext {
   served: (string | null)[];
   identity: LeaseSpanSource;
   spanMode?: SpanMode;
-  sessionKey: string;
-  absolutePath: string;
-  isPreview: boolean;
   path: string;
   originalHashes: string[];
   originalNormalized: string;
-  /**
-   * Injected rather than imported: the pipeline owns the store seam a rejection serve records
-   * through, so the pre-mutation gate and the sequential mutate loop share one recorder.
-   */
-  recordRejectionServe: (args: {
-    error: DomainError;
-    sessionKey: string;
-    absolutePath: string;
-    isPreview: boolean;
-    lineCount: number;
-    contentHash: string | undefined;
-  }) => Promise<void>;
 }
 
 /**
@@ -130,32 +119,23 @@ export interface BaselineSpanContext {
  *
  * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines are mutated state the overlap gate
  * must see (invariant 5). A copy's source is read, not mutated, so it adds no span.
- * Rejections aggregate in `assertBatchSpansDisjoint`, so this seam records the rows each failing edit owes and rethrows the raw diagnostic — the `edit[i] (path) failed:` envelope lands once, at aggregation.
+ * Rejections aggregate in `assertBatchSpansDisjoint`, so this seam rethrows the raw diagnostic — the batch bullet lands once, at the merge.
  */
 async function resolveBaselineSpans(
   edit: HEdit,
-  index: number,
+  itemIndex: number,
+  arrayPos: number,
   ctx: BaselineSpanContext,
 ): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
-  const abort = async (error: unknown): Promise<never> => {
-    if (error instanceof DomainError) {
-      await ctx.recordRejectionServe({
-        error,
-        sessionKey: ctx.sessionKey,
-        absolutePath: ctx.absolutePath,
-        isPreview: ctx.isPreview,
-        lineCount: ctx.originalHashes.length,
-        contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
-      });
-    }
+  const abort = (error: unknown): Promise<never> => {
     throw error;
   };
   const spanOf = (leased: LeasedEditResolution): BaselineSpan => {
     const from = leased.resolved.hash_bounds[0].line;
     const to = leased.resolved.hash_bounds[1].line;
-    return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
+    return { itemIndex, arrayPos, startLine: Math.min(from, to), endLine: Math.max(from, to) };
   };
   // HACK: dead pre-heal — `resolveLeasedEdit` heals a reversed pair itself and the span below is order-proof via `Math.min`/`Math.max`, so this survives only until the heal-path cleanup pass.
   const fixed = swapReversedRanges(edit, fileHashes, []);
@@ -192,58 +172,53 @@ async function resolveBaselineSpans(
 }
 
 /**
- * Overlapping or nested spans in one `edits[]` array reject the entire batch before the first
- * mutation (spec §3.2.3): the preceding-delta working buffer is only well-defined for spans that are
- * strictly ordered, so a batch that would edit one line twice is a model error, not a merge.
- *
- * Validation aggregates instead of failing fast, since every item resolves against the same pure
- * pre-batch snapshot: one failing edit cannot mask another, and invalid anchors leave no coordinates
- * to compare, so validation rejections throw before the overlap scan. A move's target and its retired
- * source are one item, never a batch conflict — `applyEdit` refuses that overlap itself
- * (`E_BAD_PAYLOAD`) and the four touching spellings stay legal noops (ticket-02b P1-B) — and the
- * abort still serves the rejected rows, like the sequential abort, so a retry needs no re-read.
+ * Batch span gate: every failure returns for the single post-preflight merge.
+ * Every item resolves against the same pure pre-batch snapshot, so one bad anchor cannot mask
+ * another; invalid anchors leave no coordinates (failed entries contribute no spans, so the
+ * pair scan stays safe), and validation plus overlap failures return as one union.
  */
 export async function assertBatchSpansDisjoint(
-  edits: HEdit[],
+  entries: BatchSpanEntry[],
   ctx: BaselineSpanContext,
-): Promise<void> {
-  if (edits.length < 2) return;
+): Promise<{ error: DomainError; index: number }[]> {
+  if (entries.length === 0) return [];
   const spans: BaselineSpan[] = [];
   const failures: { error: DomainError; index: number }[] = [];
-  for (let index = 0; index < edits.length; index++) {
+  for (let arrayPos = 0; arrayPos < entries.length; arrayPos++) {
+    const entry = entries[arrayPos]!;
     try {
-      spans.push(...(await resolveBaselineSpans(edits[index]!, index, ctx)));
+      spans.push(...(await resolveBaselineSpans(entry.edit, entry.itemIndex, arrayPos, ctx)));
     } catch (error) {
       if (!(error instanceof DomainError)) throw error;
-      failures.push({ error, index });
+      failures.push({ error, index: entry.itemIndex });
     }
-  }
-  if (failures.length === 1) {
-    const only = failures[0]!;
-    throw batchAbortFor({ error: only.error, index: only.index, path: ctx.path });
-  }
-  if (failures.length > 1) {
-    throw batchAbortForMany({ failures, path: ctx.path });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
-      if (a.index === b.index) continue;
+      if (a.itemIndex === b.itemIndex) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         const originalLines = splitLines(ctx.originalNormalized);
-        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
-        throw new DomainError("E_BATCH_ABORT", {
-          earlierIndex: a.index,
-          laterIndex: b.index,
+        const rows = serveRowsForEdit(entries[b.arrayPos]!.edit, ctx.originalHashes);
+        const error = new DomainError("E_BATCH_ABORT", {
+          earlierIndex: a.itemIndex,
+          laterIndex: b.itemIndex,
           earlierStart: a.startLine,
           earlierEnd: a.endLine,
           laterStart: b.startLine,
           laterEnd: b.endLine,
           path: ctx.path,
+          servedRows: rows ?? [],
           servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
         });
+        failures.push({
+          error,
+          index: b.itemIndex,
+        });
+        return failures;
       }
     }
   }
+  return failures;
 }

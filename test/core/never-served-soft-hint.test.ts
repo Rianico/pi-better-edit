@@ -306,12 +306,14 @@ describe("noop edit carries no never-served hint", () => {
 
 describe("guideline tier contract", () => {
   it("grades MODEL lines by tier: W_* informational, E_* retry-or-reject", async () => {
-    const line = EDIT_GUIDELINES.find((g) => g.includes("[MODEL]") && g.includes("content"));
+    // Given the batch verdict carries the audience while bullets carry codes, no single served line may pair [MODEL] with [E_*].
+    const line = EDIT_GUIDELINES.find((g) => g.includes("content") && g.includes("[E_*]"));
     expect(line).toBeDefined();
     expect(line!).toContain("[W_*]");
     expect(line!).toContain("informational");
     expect(line!).toContain("[E_*]");
     expect(line!).toContain("retry instruction or a rejection");
+    expect(line!).not.toMatch(/\[MODEL\][^\n]*\[E_\*\]/);
     expect(line!).toContain("Current range (fresh read):");
     expect(line!).not.toContain("No action is required");
     const promptText = await readFile(
@@ -320,7 +322,7 @@ describe("guideline tier contract", () => {
     );
     const promptLine = promptText
       .split("\n")
-      .find((l) => l.includes("[MODEL]") && l.includes("content"));
+      .find((l) => l.includes("content") && l.includes("[E_*]"));
     expect(promptLine).toBeDefined();
     expect(`- ${line}`).toBe(promptLine);
   });

@@ -357,7 +357,7 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
 });
 
 describe("rejected edits — pre-load failures write zero serves (#69)", () => {
-  it("malformed anchors throw before any serve write", async () => {
+  it("file-load errors surface before admission failures with zero serve writes", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const absPath = join(home, "nope.txt");
@@ -376,7 +376,7 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
           home,
           { store, sessionKey: "s1" },
         ),
-      ).rejects.toThrow(/E_MALFORMED_ANCHOR/);
+      ).rejects.toThrow(/E_NOT_FOUND/);
       expect(getServed(store, "s1", absPath)).toEqual([]);
       expect(await loadEpochId("s1", absPath)).toBeUndefined();
     });
@@ -885,8 +885,8 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
 
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain(
-        "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.",
+      expect(rejection.message).toMatch(
+        /^\[MODEL\] Batch rejected: \d+ of \d+ edits? failed; nothing was written\.$/m,
       );
 
       expect(await readFile(path, "utf-8")).toBe(ORIGINAL);

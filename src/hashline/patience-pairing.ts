@@ -16,6 +16,15 @@ export interface LineDescriptor {
   canonHash: string;
 }
 
+/**
+ * One line's pairing evidence: `canonHash` for the engine, `rawHash` for homogeneous-run carry. A
+ * `rawHash` is absent on a legacy (pre-#344) lineage row, where the canon alone cannot prove the run's
+ * one spelling — the carry gate then fails closed rather than carrying on no evidence.
+ */
+export interface LineageLine extends LineDescriptor {
+  rawHash?: string | undefined;
+}
+
 export interface AnchorPin {
   prevLine: number;
   currLine: number;
@@ -25,6 +34,10 @@ export interface PairingOptions {
   /**
    * Production callers omit this so the dynamic `MAX(100000, 4*(prev+curr))` guard applies; tests
    * inject a tiny budget to prove the guard halts alignment instead of silently recursing past it.
+   *
+   * Bounds the `pairSnapshots` engine only. `pairLineage`'s homogeneous-run carry runs after the
+   * engine, is O(n) over byte-identical runs, and is neither charged against nor halved by this
+   * budget — an exhausted budget leaves those gaps to the ordinal carry, not to retirement.
    */
   scanBudget?: number;
   /**
@@ -65,8 +78,8 @@ export function pairingScanBudget(prevCount: number, currCount: number): number 
  * guess it. `prefix + suffix` never exceeds the shorter length, so the runs cannot overlap.
  */
 function forcedBoundaryRun(
-  prevLines: LineDescriptor[],
-  currLines: LineDescriptor[],
+  prevLines: readonly LineDescriptor[],
+  currLines: readonly LineDescriptor[],
 ): { prefix: number; suffix: number } {
   const limit = Math.min(prevLines.length, currLines.length);
   if (limit === 0) return { prefix: 0, suffix: 0 };
@@ -200,8 +213,8 @@ function pinDisplacement(pin: AnchorPin): number {
  * absent on one side, so pairing it would guess.
  */
 export function findUniquePins(
-  prevLines: LineDescriptor[],
-  currLines: LineDescriptor[],
+  prevLines: readonly LineDescriptor[],
+  currLines: readonly LineDescriptor[],
   pStart: number,
   pEnd: number,
   cStart: number,
@@ -313,8 +326,8 @@ export function findStablePinBackbone(pins: AnchorPin[]): AnchorPin[] {
  * `isUnique` stays exact under the cap.
  */
 export function computeLCSPaths(
-  prevLines: LineDescriptor[],
-  currLines: LineDescriptor[],
+  prevLines: readonly LineDescriptor[],
+  currLines: readonly LineDescriptor[],
   pStart: number,
   pEnd: number,
   cStart: number,
@@ -420,8 +433,8 @@ export function assertMonotonicPairing(pairing: Map<number, number>): void {
  * `line_id`s fail-closed downstream.
  */
 export function pairSnapshots(
-  prevLines: LineDescriptor[],
-  currLines: LineDescriptor[],
+  prevLines: readonly LineDescriptor[],
+  currLines: readonly LineDescriptor[],
   options?: PairingOptions,
 ): Map<number, number> {
   const pairing = new Map<number, number>();
@@ -495,6 +508,83 @@ export function pairSnapshots(
       pairing.set(pEnd + offset, cEnd + offset);
     }
   }
+  assertMonotonicPairing(pairing);
+  return pairing;
+}
+
+/**
+ * The gaps `pairSnapshots` leaves UNPAIRED when each side is one contiguous raw-uniform run. No unique pin
+ * exists inside such a run, so the ordinal is the only reading left: the k-th copy answers the k-th copy,
+ * a current tail allocates fresh, and prior overflow retires. Sole owner of that rule for BOTH callers —
+ * anchor alignment and `line_id` inheritance — so the two cannot drift apart.
+ *
+ * Fail-closed gates: the CURRENT gap is raw-uniform by digest, and every PRIOR row of the gap carries the
+ * run's canon AND its raw digest. The canon folds edge whitespace, so only the raw digest separates
+ * `"    }"` from `"  }"`; an absent digest (a legacy row, or a caller with no raw evidence) is no
+ * evidence, so the gap is skipped. Pairs are added in order, so monotonicity still holds.
+ */
+function carryHomogeneousRuns(
+  prev: readonly LineageLine[],
+  curr: readonly LineageLine[],
+  pairing: Map<number, number>,
+): void {
+  const bounds: AnchorPin[] = [{ prevLine: 0, currLine: 0 }];
+  for (const [prevLine, currLine] of [...pairing.entries()].sort((a, b) => a[0] - b[0])) {
+    bounds.push({ prevLine, currLine });
+  }
+  bounds.push({ prevLine: prev.length + 1, currLine: curr.length + 1 });
+
+  for (let i = 1; i < bounds.length; i++) {
+    const lower = bounds[i - 1]!;
+    const upper = bounds[i]!;
+    const pStart = lower.prevLine + 1;
+    const pEnd = upper.prevLine - 1;
+    const cStart = lower.currLine + 1;
+    const cEnd = upper.currLine - 1;
+    if (pStart > pEnd || cStart > cEnd) continue;
+
+    const first = curr[cStart - 1]!;
+    const runRaw = first.rawHash;
+    if (runRaw === undefined) continue;
+    let currentUniform = true;
+    for (let c = cStart + 1; c <= cEnd; c++) {
+      if (curr[c - 1]!.rawHash !== runRaw) {
+        currentUniform = false;
+        break;
+      }
+    }
+    if (!currentUniform) continue;
+
+    let carried = 0;
+    let priorUniform = true;
+    for (let p = pStart; p <= pEnd; p++) {
+      const row = prev[p - 1];
+      if (row === undefined || row.canonHash !== first.canonHash || row.rawHash !== runRaw) {
+        priorUniform = false;
+        break;
+      }
+      carried++;
+    }
+    if (!priorUniform) continue;
+
+    const carry = Math.min(carried, cEnd - cStart + 1);
+    for (let j = 0; j < carry; j++) pairing.set(pStart + j, cStart + j);
+  }
+}
+
+/**
+ * Pair a prior lineage against fresh lines: the pin-bounded engine first, then the homogeneous-run
+ * ordinal carry for the gaps it leaves UNPAIRED. Both anchor assignment and `line_id` inheritance call
+ * here, so a homogeneous shrink or growth resolves the same way whether or not an intervening read
+ * re-minted identities.
+ */
+export function pairLineage(
+  prev: readonly LineageLine[],
+  curr: readonly LineageLine[],
+  options?: PairingOptions,
+): Map<number, number> {
+  const pairing = pairSnapshots(prev, curr, options);
+  carryHomogeneousRuns(prev, curr, pairing);
   assertMonotonicPairing(pairing);
   return pairing;
 }

@@ -781,6 +781,9 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
               ? { snapshotId: entry.snapshotId }
               : {}),
             isFullRead,
+            ...(entry.prepared.retiredHashes !== undefined
+              ? { blockedHashes: entry.prepared.retiredHashes }
+              : {}),
           });
           if (isFullRead) await session.clearDrift();
           if (entry.mode === "outline") {

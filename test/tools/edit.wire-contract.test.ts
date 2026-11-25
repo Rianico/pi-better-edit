@@ -48,15 +48,6 @@ function admit(raw: unknown): NormalizedEditRequest {
   return canonical as NormalizedEditRequest;
 }
 
-/**
- * Drops the `Received:` echo `describeReceived` appends to every item-level refusal, so an
- * assertion matches refusal CLAUSES and cannot be echo-satisfied by the submitted JSON.
- */
-function refusalText(message: string): string {
-  const echo = message.indexOf("Received:");
-  return echo === -1 ? message : message.slice(0, echo);
-}
-
 function expectBadPayload(raw: unknown, ...clauses: string[]): void {
   let caught: unknown;
   try {
@@ -67,7 +58,7 @@ function expectBadPayload(raw: unknown, ...clauses: string[]): void {
   expect(caught, "admission must reject").toBeInstanceOf(DomainError);
   const de = caught as DomainError;
   expect(de.code).toBe("E_BAD_PAYLOAD");
-  const refusal = refusalText(de.message);
+  const refusal = de.message;
   for (const clause of clauses) {
     expect(refusal, `refusal must contain clause: ${clause}`).toContain(clause);
   }
@@ -1071,12 +1062,13 @@ describe("Edit wire contract — served schema declares optional null (ADR-0036)
   const itemProps = item.properties!;
   const refProps = itemProps.text_ref!.anyOf![0]!.properties!;
 
-  it("admits null in each of the five optional fields", () => {
+  it("admits null in each of the optional fields", () => {
     const optional: Record<string, unknown> = {
       "edits[].text": itemProps.text,
       "edits[].text_ref": itemProps.text_ref,
       "edits[].at": itemProps.at,
       mode: root.properties!.mode,
+      dry_run: root.properties!.dry_run,
       "edits[].text_ref.file": refProps.file,
     };
     for (const [name, property] of Object.entries(optional)) {
@@ -1106,5 +1098,59 @@ describe("Edit wire contract — served schema declares optional null (ADR-0036)
         { type: "null" },
       ],
     });
+  });
+});
+
+/**
+ * `dry_run` is the one root field outside the payload vocabulary: it selects preview or write.
+ * Admission treats it like `mode` — boolean or null, absent meaning false — and normalization
+ * always materializes a concrete boolean, so no downstream seam re-derives the default.
+ */
+describe("Edit wire contract — dry_run root field (T1)", () => {
+  const literalItem = { anchor_from: "a1B", anchor_to: "c2D", text: "T" };
+
+  function withDryRun(dry_run: unknown, edits: unknown[] = [literalItem]): unknown {
+    return { ...(req(edits) as Record<string, unknown>), dry_run };
+  }
+
+  it("defaults an absent dry_run to false", () => {
+    expect(admit(req([literalItem])).dry_run).toBe(false);
+  });
+
+  it("reads a null dry_run as absent", () => {
+    expect(admit(withDryRun(null)).dry_run).toBe(false);
+  });
+
+  it("carries an explicit true through normalization", () => {
+    expect(admit(withDryRun(true)).dry_run).toBe(true);
+  });
+
+  it("carries an explicit false through normalization", () => {
+    expect(admit(withDryRun(false)).dry_run).toBe(false);
+  });
+
+  it("refuses a non-boolean dry_run", () => {
+    expectBadPayload(withDryRun("yes"), 'Edit request "dry_run" must be a boolean');
+    expectBadPayload(withDryRun(1), 'Edit request "dry_run" must be a boolean');
+  });
+
+  it("keeps the root gate and the item gate fail-closed around dry_run", () => {
+    expectBadPayload(
+      { ...(req([literalItem]) as Record<string, unknown>), dry_run: true, extra: 1 },
+      'unsupported field(s) "extra"',
+    );
+    expectBadPayload(
+      {
+        ...(req([{ anchor_from: "a1B", anchor_to: "c2D" }]) as Record<string, unknown>),
+        dry_run: true,
+      },
+      "carries no payload",
+    );
+  });
+
+  it("refuses a non-boolean dry_run at the assertReq seam", () => {
+    const admitted = admit(req([literalItem]));
+    (admitted as unknown as Record<string, unknown>).dry_run = "yes";
+    expect(() => assertReq(admitted)).toThrow(/dry_run" must be a boolean/);
   });
 });

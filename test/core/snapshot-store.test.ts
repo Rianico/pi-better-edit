@@ -254,7 +254,8 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
       const store = await loadHashStore();
       const counters: number[] = [];
       for (let i = 0; i < 5; i++) {
-        const content = "line\n".repeat(i + 1);
+        // Ref: docs/spec/content-addressed-line-identity-mvcc.md — each version's first line is unique, so the growth is a genuine insertion; a homogeneous run inherits its line_ids ordinally and would hold the counter steady.
+        const content = `v${i}\n` + "line\n".repeat(i);
         put(store, "/grow.ts", content, ["AAAA"]);
         const db = openRaw(home);
         counters.push(nextId(db, "/grow.ts")!);

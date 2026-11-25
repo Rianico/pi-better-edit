@@ -13,7 +13,7 @@ import {
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
-import { snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
+import { getSnapshot, snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
 import { applyEdit } from "../hashline/apply.js";
 import { buildNeverServedEditHint } from "../served-session/serve-render.js";
 import { resEdit, type HEdit, type NEdit } from "../hashline/resolve.js";
@@ -29,7 +29,6 @@ import {
   UNVERIFIED_HEADLINE,
   type DomainErrorCode,
 } from "../domain-errors.js";
-import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
@@ -45,13 +44,8 @@ import type {
   NormalizedEditItem,
   NormalizedEditRequest,
 } from "../payload-contract.js";
-import {
-  batchAbortFor,
-  batchAbortForMany,
-  buildBatchResult,
-  toSection,
-  wrapParseFailure,
-} from "../edit-response.js";
+import { buildBatchResult, toSection } from "../edit-response.js";
+import { throwBatchRejection } from "./batch-rejection.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
 import type { PipelineOptions, ProcessedEditFile, ForeignCutRecord } from "./types.js";
 import {
@@ -203,14 +197,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       if (input.baselineLineOf !== undefined && error.servedRows.length > 0) {
         return input.onRejected(shiftedBufferRejection(error, input.baselineLineOf));
       }
-      await recordRejectionServe({
-        error,
-        sessionKey: input.sessionKey,
-        absolutePath: input.absolutePath,
-        isPreview: input.isPreview,
-        lineCount: input.hashes.length,
-        contentHash: input.isPreview ? undefined : snapshotHashFor(input.content),
-      });
       return input.onRejected(error);
     }
     throw error;
@@ -349,38 +335,6 @@ function relabelHeadline(
 }
 
 /**
- * Records the reject-and-serve rows a rejected edit owes the model, so the anchors it serves are
- * usable without a re-read (README reject-and-serve contract). The pre-mutation span gate and the
- * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
- * A rowless rejection (a target-lost refusal, pinned by the seam oracle) returns before anything leases:
- * there is nothing to serve, and every window that identifies the model's range still leases through the
- * rows below. A preview is a containment boundary — mirroring its rows would let an edit that was never
- * applied satisfy the read guard.
- */
-async function recordRejectionServe(args: {
-  error: DomainError;
-  sessionKey: string;
-  absolutePath: string;
-  isPreview: boolean;
-  lineCount: number;
-  contentHash: string | undefined;
-}): Promise<void> {
-  if (args.error.servedRows.length === 0) return;
-  if (!args.isPreview) {
-    notifyServedSpans({
-      filePath: args.absolutePath,
-      spans: servedRowsToSpans(args.error.servedRows),
-      source: "reject-and-serve",
-    });
-  }
-  const handle = createSessionHandle(args.sessionKey, args.absolutePath);
-  if (args.isPreview) {
-    await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);
-    return;
-  }
-  await handle.recordServeFeedback(args.error.servedRows, "live", args.lineCount, args.contentHash);
-}
-
 /**
  * The one exhaustive view of the payload union for text consumers: the noop-loop tracker discriminates
  * its noop episodes with this, so a new union arm must add a case here or `assertNever` fails typecheck.
@@ -417,11 +371,17 @@ type ParsedItem = { edit: HEdit } | { noopInsert: true };
  * mode travels twice (`payload.mode` and `span.mode`) and only the top-level one is consumed; a
  * disagreement is refused rather than silently resolved, because admission folds the wire `text_ref`.
  */
-function parseEdits(items: NormalizedEditRequest["edits"], path: string): ParsedItem[] {
-  const parsed: ParsedItem[] = [];
+async function parseEdits(
+  items: (NormalizedEditItem | null)[],
+): Promise<{ parsed: (ParsedItem | null)[]; failures: { error: Error; index: number }[] }> {
+  const parsed: (ParsedItem | null)[] = [];
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
-    const item = items[index]!;
+    const item = items[index];
+    if (item === null || item === undefined) {
+      parsed.push(null);
+      continue;
+    }
     try {
       const payload = item.payload;
       let text: string;
@@ -471,18 +431,12 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
         }),
       });
     } catch (error) {
-      if (items.length === 1) throw error;
       failures.push({ error: error instanceof Error ? error : new Error(String(error)), index });
+      parsed.push(null);
+      continue;
     }
   }
-  if (failures.length === 1) {
-    const only = failures[0]!;
-    throw wrapParseFailure(only.error, only.index, path);
-  }
-  if (failures.length > 1) {
-    throw batchAbortForMany({ failures, path });
-  }
-  return parsed;
+  return { parsed, failures };
 }
 
 /**
@@ -551,18 +505,26 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
       if (error.code === "E_TARGET_LOST") return error;
       return foreignLeasedWrap(error, refFile);
     }
-    const cause = error.cause ?? error.details.cause ?? "never-served";
-    return new DomainError("E_STALE_ANCHOR", {
-      headline:
-        `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
-        `(rejection: ${error.code}). Nothing was written; no rows of ${refFile} were served by this call.`,
-      cause,
-    });
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md
+    return unreachableForeignRejection(error);
   }
-  return new DomainError("E_STALE_ANCHOR", {
-    headline: `the foreign-source reference to ${refFile} did not resolve. Nothing was written.`,
-    cause: "never-served",
-  });
+  // Ref: docs/spec/content-addressed-line-identity-mvcc.md
+  return unreachableForeignRejection(error);
+}
+
+/**
+ * Dead-tail backstop for the foreign path (#342): the only throwing callee above is
+ * `resolveLeasedEdit` (via the `materializeForeignItem` try block), whose foreign-path
+ * throw set is `E_UNKNOWN_ANCHOR` / `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE` /
+ * `E_TARGET_LOST`, and `E_STALE_RANGE` (`E_UNSERVED_RANGE` takes no `spanMode` here).
+ * All five are consumed by the passthrough sets above, so reaching here needs a new
+ * throwing callee in the try block or a new code outside both sets. A `DomainError`
+ * passes through with its own code and message; anything else is rethrown as-is, or
+ * wrapped in a plain `Error` when the thrown value is not one.
+ */
+function unreachableForeignRejection(error: unknown): never {
+  if (error instanceof Error) throw error;
+  throw new Error("the foreign-source reference failed to resolve.", { cause: error });
 }
 
 /**
@@ -573,8 +535,7 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
-    `state (rejection: ${error.code}). No rows of ${refFile} were served by this call. Nothing ` +
-    `was written.`;
+    `state (rejection: ${error.code}). No rows of ${refFile} were served by this call.`;
   const cause = error.cause ?? error.details.cause ?? "never-served";
   const firstOffending =
     error.firstOffendingLine !== undefined ? { firstOffendingLine: error.firstOffendingLine } : {};
@@ -678,17 +639,24 @@ function collapseSpanToText(span: string[]): string {
 /**
  * One read+load+lease per RESOLVED path per batch: without the memo, a foreign file that changes on disk
  * between two items would materialize two revisions into one call with no diagnostic — correctness, not
- * performance. The map is batch-scoped, because a global cache would go stale.
+ * performance. The map is batch-scoped, because a global cache would go stale. A failed item contributes
+ * only to the failure list: a failed item leaves a null hole at its call index, so the
+ * merge site can union both stages' failures in call order before refusing.
  */
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
   input: { cwd: string; file: string; store: HashStore; sessionKey: string },
-): Promise<{ items: NormalizedEditItem[]; cuts: ForeignCutRecord[] }> {
+): Promise<{
+  items: (NormalizedEditItem | null)[];
+  cuts: ForeignCutRecord[];
+  failures: { error: Error; index: number }[];
+}> {
   const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
   const cuts: ForeignCutRecord[] = [];
-  if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
+  if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts, failures: [] };
   const views = new Map<string, Promise<ForeignServedView>>();
-  const out: NormalizedEditItem[] = [];
+  const out: (NormalizedEditItem | null)[] = [];
+  const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     const refFile = refFiles[index];
@@ -707,9 +675,34 @@ async function materializeForeignReferences(
       });
       views.set(key, view);
     }
-    out.push(await materializeForeignItem(item, refFile, await view, cuts));
+    try {
+      out.push(await materializeForeignItem(item, refFile, await view, cuts));
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error;
+      failures.push({ error, index });
+      out.push(null);
+      continue;
+    }
   }
-  return { items: out, cuts };
+  return { items: out, cuts, failures };
+}
+
+/**
+ * The pre-admission merge above refuses every null hole, so a null reaching here needs a new
+ * null producer in the stages above: surface it through the registry's invariant failure naming
+ * the stage rather than casting it away. Unreachable while the merge check holds.
+ */
+function requireMerged<T>(list: (T | null)[], stage: string): T[] {
+  const intact: T[] = [];
+  for (const entry of list) {
+    if (entry === null) {
+      throw new DomainError("E_INTERNAL_INVARIANT", {
+        message: `batch ${stage} left a null hole after the pre-admission union. Nothing was written.`,
+      });
+    }
+    intact.push(entry);
+  }
+  return intact;
 }
 
 /**
@@ -734,12 +727,13 @@ async function runMutations(
   const spanMode = resolveSpanMode(cwd);
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = requireSessionKey(options?.sessionKey);
-  const { items, cuts: foreignCuts } = await materializeForeignReferences(request.edits, {
+  const materialization = await materializeForeignReferences(request.edits, {
     cwd,
     file: path,
     store: hashStore,
     sessionKey,
   });
+  const foreignCuts = materialization.cuts;
   const warnings: string[] = [];
   let neverServedTotal = 0;
   const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
@@ -753,11 +747,7 @@ async function runMutations(
 
   const isPreview = options?.noPersist === true;
 
-  const parsed = parseEdits(items, path);
-  const realEdits: HEdit[] = [];
-  for (const one of parsed) {
-    if ("edit" in one) realEdits.push(one.edit);
-  }
+  const { parsed: rawParsed, failures: parseFailures } = await parseEdits(materialization.items);
 
   const {
     normalized: originalNormalized,
@@ -768,6 +758,7 @@ async function runMutations(
     absolutePath,
     served,
     endingCounts,
+    retiredHashes: loadedRetiredHashes,
   } = await loadEditFile({
     path,
     cwd,
@@ -784,25 +775,48 @@ async function runMutations(
     throw new DomainError("E_LOSSY_TEXT", { path });
   }
 
-  if (realEdits.length > 1) {
-    await assertBatchSpansDisjoint(realEdits, {
-      served,
-      identity: leaseSpanSource({
-        store: hashStore,
+  const gateEntries: { edit: HEdit; itemIndex: number }[] = [];
+  for (let itemIndex = 0; itemIndex < rawParsed.length; itemIndex++) {
+    const one = rawParsed[itemIndex]!;
+    if (one !== null && "edit" in one) gateEntries.push({ edit: one.edit, itemIndex });
+  }
+
+  const hasPreFailures = materialization.failures.length > 0 || parseFailures.length > 0;
+  const gateFailures =
+    gateEntries.length > 1 || (hasPreFailures && gateEntries.length > 0)
+      ? await assertBatchSpansDisjoint(gateEntries, {
+          served,
+          identity: leaseSpanSource({
+            store: hashStore,
+            sessionKey,
+            absolutePath,
+            content: originalNormalized,
+          }),
+          spanMode,
+          path,
+          originalHashes,
+          originalNormalized,
+        })
+      : [];
+  const earlyFailures = [...materialization.failures, ...parseFailures, ...gateFailures].sort(
+    (a, b) => a.index - b.index,
+  );
+  if (earlyFailures.length > 0) {
+    return throwBatchRejection({
+      failures: earlyFailures,
+      total: request.edits.length,
+      path,
+      record: {
         sessionKey,
         absolutePath,
-        content: originalNormalized,
-      }),
-      sessionKey,
-      absolutePath,
-      spanMode,
-      isPreview,
-      path,
-      originalHashes,
-      originalNormalized,
-      recordRejectionServe,
+        isPreview,
+        lineCount: originalHashes.length,
+        contentHash: isPreview ? undefined : snapshotHashFor(originalNormalized),
+      },
     });
   }
+  const items = requireMerged(materialization.items, "materialization");
+  const parsed = requireMerged(rawParsed, "parse");
 
   let currentContent = originalNormalized;
   let currentHashes = originalHashes;
@@ -839,7 +853,7 @@ async function runMutations(
     reportDiagnostic("mutation-engine", "Failed to load served canon digests for batch:", error);
     baseCanonDigests = [];
   }
-  const batchBlockedHashes = new Set<string>();
+  const batchBlockedHashes = new Set<string>(loadedRetiredHashes);
   try {
     for (const hash of await createSessionHandle(
       sessionKey,
@@ -851,7 +865,7 @@ async function runMutations(
   } catch (error) {
     reportDiagnostic("mutation-engine", "Failed to load legacy blocked hashes for batch:", error);
   }
-  const accumulatedRemoved = new Set<string>();
+  const accumulatedRemoved = new Set<string>(loadedRetiredHashes);
 
   for (let index = 0; index < items.length; index++) {
     abortIf(options?.signal);
@@ -886,10 +900,19 @@ async function runMutations(
       spanMode,
       ...(isPreview ? {} : { currentIds }),
       ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
-      onRejected: async (error) => {
-        if (items.length === 1) throw error;
-        throw batchAbortFor({ error, index, path });
-      },
+      onRejected: (error) =>
+        throwBatchRejection({
+          failures: [{ error, index }],
+          total: items.length,
+          path,
+          record: {
+            sessionKey,
+            absolutePath,
+            isPreview,
+            lineCount: currentHashes.length,
+            contentHash: isPreview ? undefined : snapshotHashFor(currentContent),
+          },
+        }),
     });
 
     const range = outcome.range;
@@ -925,19 +948,23 @@ async function runMutations(
         hashes: currentHashes,
         lines: splitLines(currentContent),
         sessionKey,
-        contentHash: snapshotHashFor(currentContent),
         ...(!isPreview && currentContent !== originalNormalized ? { baselineLineOf } : {}),
       });
       if (decision.action === "reject") {
-        if (items.length === 1) throw decision.error;
-        throw batchAbortFor({ error: decision.error, index, path });
+        return throwBatchRejection({
+          failures: [{ error: decision.error, index }],
+          total: items.length,
+          path,
+          record: {
+            sessionKey,
+            absolutePath,
+            isPreview,
+            lineCount: currentHashes.length,
+            contentHash: isPreview ? undefined : snapshotHashFor(currentContent),
+          },
+        });
       }
       if (decision.action === "warn") warnings.push(decision.notice);
-      if (items.length > 1) {
-        warnings.push(
-          `edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
-        );
-      }
       pushNoopWarnings(outcome.anchorWarnings);
       continue;
     }
@@ -1009,7 +1036,16 @@ async function runMutations(
       },
       snapshotIOFor(hashStore),
       false,
+      batchBlockedHashes,
     );
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the snapshot committed for this exact content is the identity every read serves, so it outranks an anchor a tombstone just forced away from.
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md — a preview reads the same identity but never cleans up: the corrupt-row policy is "keep", so an unpersisted turn cannot delete a row it never owned.
+    const committed = getSnapshot(hashStore, absolutePath, result, isPreview ? "keep" : "delete");
+    if (committed !== undefined && committed.length === resultHashes.length) {
+      resultHashes = committed;
+      // Ref: docs/spec/content-addressed-line-identity-mvcc.md — the identity names the ADOPTED snapshot, not the working buffer's spliced ids, because downstream leases and undo claims read `line_id` against the committed rows. `workingBufferIds` IS the `positionsByIdentity` inversion.
+      currentIds = workingBufferIds(hashStore, absolutePath, result);
+    }
   }
   const resultLineIds = isPreview ? [] : currentIds;
 
@@ -1081,7 +1117,7 @@ export async function previewEdits(
  * the applied-diff fold every apply result has used; the pre-batch served mirror goes in so a removal
  * the caller never saw keeps its blank gutter, which the retired fallback omitted.
  */
-function renderedDiffFor(file: ProcessedEditFile): ReturnType<typeof genDiff> {
+function renderedDiffFor(file: ProcessedEditFile, dryRun = false): ReturnType<typeof genDiff> {
   return genDiff(
     file.originalNormalized,
     file.result,
@@ -1090,6 +1126,7 @@ function renderedDiffFor(file: ProcessedEditFile): ReturnType<typeof genDiff> {
     file.originalHashes,
     undefined,
     file.served,
+    dryRun,
   );
 }
 
@@ -1332,6 +1369,10 @@ async function runCutTransaction(
  * serializes EVERY file it will rename for the whole plan+commit, and the queues are taken in sorted order so
  * two calls with swapped target/source cannot deadlock; copy items never widen the lock set, because a copy's
  * foreign file stays read-only.
+ *
+ * A dry run takes the preview branch and must serve nothing, so the flag is derived from BOTH the
+ * request and the options and then forwarded explicitly: `options` alone would drop a request-derived
+ * `dry_run`, and the diff renderer cannot tell the hypothetical run apart from a plain preview.
  */
 export async function apply(
   request: NormalizedEditRequest,
@@ -1345,10 +1386,18 @@ export async function apply(
   raw: ProcessedEditFile;
   toolResult: ReturnType<typeof buildBatchResult>;
 }> {
-  const isPreview = options?.noPersist === true;
+  const isDryRun = request.dry_run === true || options?.dryRun === true;
+  const isPreview = options?.noPersist === true || isDryRun;
   if (isPreview) {
-    const file = await runMutations(request, cwd, options);
-    const toolResult = buildBatchResult([toSection(file, renderedDiffFor(file))]);
+    const file = await runMutations(request, cwd, {
+      ...options,
+      noPersist: true,
+      ...(isDryRun ? { dryRun: true } : {}),
+    });
+    const toolResult = buildBatchResult(
+      [toSection(file, renderedDiffFor(file, isDryRun))],
+      isDryRun,
+    );
     const diff = toolResult.details.diff ?? "";
     return {
       result: file.result,

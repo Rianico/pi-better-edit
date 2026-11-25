@@ -101,16 +101,21 @@ function fmtDiffLine(prefix: " " | "+" | "-", line: string, hash: string | undef
 const UNTOUCHED_MARKER: unique symbol = Symbol("untouched");
 const isUntouchedMarker = (line: string | symbol): line is symbol => line === UNTOUCHED_MARKER;
 
+/**
+ * Render the added side of one diff part. Under a dry run the row it would have added has no identity
+ * the session could honour, so it prints the empty gutter and records no served row.
+ */
 function pushAddedLines(
   displayLines: string[],
   effectiveNewHashes: string[],
   newLineNum: { value: number },
   output: string[],
   servedRows: ServedRow[],
+  dryRun = false,
 ): void {
   for (let k = 0; k < displayLines.length; k++) {
     const line = displayLines[k]!;
-    const hash = effectiveNewHashes[newLineNum.value - 1];
+    const hash = dryRun ? undefined : effectiveNewHashes[newLineNum.value - 1];
     output.push(fmtDiffLine("+", line, hash));
     const subRow = subRowForLine(line, "added");
     if (subRow !== undefined) output.push(subRow);
@@ -351,16 +356,11 @@ function collectUnservedRemoved(
   }
 }
 /**
- * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that
- * position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
- * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file
- * position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
+ * genDiff is the single diff projection (#169). Every emitted row's anchor equals the true new-file line content hash at that position; removed rows carry the true old-file hash when old hashes are provided. Markers hide exactly their span:
+ * ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING emitted anchor at its true file position (whether those rows are addressable is a property of the serve that carries this projection, not of this renderer), and
  * ` - ... [N lines deleted] ...` advances the old cursor past N deleted rows (cursor-exact); a served mirror adds the unserved count.
- * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses
- * to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows`
- * mirror exactly the rendered context/addition rows (position + hash). `firstChangedLine`/`lastChangedLine` bracket the changed
- * new-content lines (1-indexed, `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the position
- * where the removed text sat, so an end-of-file deletion may name one line past the last new line, and both are absent on a no-op.
+ * Collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172); at context 0 every non-empty middle gap collapses to a single counted marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed. `servedRows` mirror exactly the rendered context/addition rows (position + hash); a `dryRun` records none and blanks its added gutters, because a run that commits nothing serves nothing.
+ * `firstChangedLine`/`lastChangedLine` bracket the changed new-content lines (1-indexed, `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the position where the removed text sat, so an end-of-file deletion may name one line past the last new line, and both are absent on a no-op.
  */
 export function genDiff(
   oldContent: string,
@@ -370,6 +370,7 @@ export function genDiff(
   oldContentHashes?: string[],
   filePath?: string,
   served?: readonly (string | null)[],
+  dryRun = false,
 ): {
   diff: string;
   firstChangedLine: number | undefined;
@@ -419,7 +420,7 @@ export function genDiff(
       if (firstChangedLine === undefined) firstChangedLine = newLineNum;
       if (part.added) {
         const n = { value: newLineNum };
-        pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows);
+        pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows, dryRun);
         newLineNum = n.value;
         lastChangedLine = newLineNum - 1;
       } else {
@@ -460,7 +461,7 @@ export function genDiff(
         }
         const hash = effectiveNewHashes[newLineNum - 1];
         output.push(fmtDiffLine(" ", line, hash));
-        if (hash !== undefined) {
+        if (hash !== undefined && !dryRun) {
           servedRows.push({ position: newLineNum - 1, hash });
         }
         newLineNum++;

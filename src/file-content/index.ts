@@ -27,6 +27,7 @@ import {
   fmtReadPreview,
   StatIdentityMismatchError,
   type ReadWindow,
+  type RenderAnchors,
   type ShownRange,
 } from "./preview.js";
 import { findStatSnapshotFor } from "../snapshot-store";
@@ -86,6 +87,12 @@ export interface PrepareResult {
    */
   // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
   statAdoption?: StatAdoption;
+  /**
+   * Anchors the checksum-miss alignment retired while serving this page (see `AnchorWalk.retired`). The
+   * read path persists them as session tombstones, so no later fresh allocation resurrects a deleted line's
+   * anchor. Absent when the alignment retired nothing.
+   */
+  retiredHashes?: string[];
   /**
    * The terminator counts over the WHOLE file's raw bytes, whatever window this page shows. Present
    * for text and absent for the directory, binary and image early returns, which decode no text.
@@ -230,13 +237,17 @@ export async function prepareFile(
       }
     }
   }
+  let retiredHashes: string[] | undefined;
   if (preview === undefined) {
-    const anchors = verbatim
-      ? []
-      : await anchorWalkFor(norm.normalized, norm.absolutePath, {
-          ...(options?.store !== undefined ? { store: options.store } : {}),
-          ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
-        });
+    let anchors: RenderAnchors = [];
+    if (!verbatim) {
+      const plan = await anchorWalkFor(norm.normalized, norm.absolutePath, {
+        ...(options?.store !== undefined ? { store: options.store } : {}),
+        ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
+      });
+      anchors = plan;
+      retiredHashes = plan.retired;
+    }
     preview = await fmtReadPreview(
       norm.normalized,
       previewOptions,
@@ -274,6 +285,7 @@ export async function prepareFile(
     ...(preview.shownRange !== undefined ? { shownRange: preview.shownRange } : {}),
     ...(statKey !== undefined ? { statKey } : {}),
     ...(statAdoption !== undefined ? { statAdoption } : {}),
+    ...(retiredHashes !== undefined ? { retiredHashes } : {}),
     endingCounts: norm.endingCounts,
   };
 }

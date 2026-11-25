@@ -77,7 +77,7 @@ describe("edit payload contract", () => {
       additionalProperties?: unknown;
     };
 
-    expect(Object.keys(root.properties).sort()).toEqual(["edits", "file", "mode"]);
+    expect(Object.keys(root.properties).sort()).toEqual(["dry_run", "edits", "file", "mode"]);
     expect(Object.keys(item.properties).sort()).toEqual([
       "anchor_from",
       "anchor_to",
@@ -88,6 +88,16 @@ describe("edit payload contract", () => {
     expect(root.additionalProperties).toBe(false);
     expect(item.additionalProperties).toBe(false);
 
+    const validator = Compile(editToolSchema);
+    const withDryRun = (dry_run: unknown) => ({
+      file: "sample.ts",
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
+      dry_run,
+    });
+    expect(validator.Check(withDryRun(true))).toBe(true);
+    expect(validator.Check(withDryRun(null))).toBe(true);
+    expect(validator.Check(withDryRun("yes"))).toBe(false);
+    expect(validator.Check(withDryRun(1))).toBe(false);
     const aliases = [
       "path",
       "filePath",
@@ -132,7 +142,7 @@ describe("edit payload contract", () => {
       edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
     };
     expect(normReq(legacyKeys)).toBe(legacyKeys);
-    expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("exactly");
+    expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("Edit payload:");
     expect(() =>
       assertReq({
         file: "sample.ts",
