@@ -162,7 +162,6 @@ export async function loadForeignServedView(input: {
  * `served_leases`; the `line_id` -> current-line map comes from the working buffer's own identity map
  * when one is in flight (a chained batch edit), else from `line_lineage(C)` when the edit load path
  * materialized C, else from an in-memory `pairSnapshots(S_latest, content)` for preview. Nothing is
- * written: the edit path never re-stamps a lease.
  * written: the edit path never re-stamps a lease. A lease from a superseded snapshot epoch — anchor
  * generation or canon version (#339) — is never honoured, because the open-time sweep cannot cover
  * rows written after it and a prior canon's `line_id` pairing is not evidence under today's canon;

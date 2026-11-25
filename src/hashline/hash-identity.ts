@@ -89,12 +89,12 @@ export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
  * 28-code-point whitespace class below, never an interior run, so intra-line whitespace is significant: a foreign
  * writer that rewrites whitespace inside a line — inside a string literal too, `"a b"` -> `"ab"` — changes the canon
  * string, so `canonDigest` no longer reproduces the digest the lease recorded, pairing breaks and the edit rejects
- * fail-closed on the retired lease.
- * Prior versions: v3 (issue #22) fixed the frozen 28-code-point class below, replacing the v2 ASCII-only class of
- * docs/.archive_adrs/0005-whitespace-insensitive-anchors.md; the amendment and migration notes are in
- * docs/.archive_adrs/0029-canon-v3-frozen-whitespace-class.md. Snapshot keys carry the version first
- * (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so pre-v4 rows are inert cache misses rebuilt on the next
- * read — no migration needed, and no pre-v4 constant is retained.
+ * fail-closed on the retired lease. Prior versions: v3 (issue #22) fixed the frozen class below, replacing v2's
+ * ASCII-only class of docs/.archive_adrs/0005-whitespace-insensitive-anchors.md; the amendment and migration
+ * notes are in docs/.archive_adrs/0029-canon-v3-frozen-whitespace-class.md. Snapshot keys carry the version first
+ * (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a prior-canon row's key is stale: raw anchors stay valid,
+ * while the canon evidence beside them stays fenced by the epoch (`src/snapshot-store/epoch.ts`); no migration runs
+ * and no pre-v4 constant is retained.
  */
 export const CANON_VERSION = 4;
 
@@ -106,9 +106,9 @@ export const CANON_VERSION = 4;
  * and a canon-seeded identity cannot tell `const s = "a`+NBSP+`b";` from `const s = "a b";`; (3) the all-digit reservation and
  * (4) the probe stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
  *
- * Single owner of the literal: anchor-bearing artifacts (the undo/snapshot generation gate and the open-time sweep) read this
- * axis only, never `CANON_VERSION`; the snapshot cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a
- * canon-only change misses the cache without invalidating anchor state while a generation change invalidates both.
+ * Single owner of the literal: anchor reuse (the undo restore fallback, `anchorsForSnapshotHash`, the open-time
+ * sweep) reads this axis only. A generation change invalidates both the anchors and the stored canon evidence; a
+ * canon-only change keeps the raw anchors valid and fences only the evidence (`src/snapshot-store/epoch.ts`).
  */
 export const ANCHOR_GENERATION = 2;
 

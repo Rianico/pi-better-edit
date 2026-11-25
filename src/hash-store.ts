@@ -301,8 +301,10 @@ function writeStoreStamp(db: DatabaseSync): void {
  */
 /**
  * A served snapshot hash is `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`, so this pattern
- * keeps leases across a canon-only change and sweeps them on a generation change; pre-rename
- * two-part rows carry no middle component and never match, so they sweep as unknown.
+ * retains leases across a canon-only change and sweeps them on a generation change. Retention only,
+ * never validity: a prior-canon lease is kept and then fenced from resolution by the epoch check, so
+ * the sweep never has to move for a canon change. Pre-rename two-part rows carry no middle component
+ * and never match, so they sweep as unknown.
  */
 const FOREIGN_LEASE_LIKE = `%:${ANCHOR_GENERATION}:%`;
 

@@ -4,6 +4,12 @@ import { contentChecksum } from "../hashline/hasher.js";
 import { isValidHashList } from "../hashline/alphabet.js";
 import { CANON_VERSION, ANCHOR_GENERATION, canonDigest } from "../hashline/hash-identity.js";
 import type { HashSnapshotUpsertOptions } from "./snapshot-io.js";
+import {
+  epochKey,
+  isCurrentRawAnchorGeneration,
+  isCurrentSnapshotEpoch,
+  parseEpoch,
+} from "./epoch.js";
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
 import { loadHashStore, onStoreOpen, ensureSnapshotTables, type HashStore } from "../hash-store.js";
@@ -19,6 +25,7 @@ import { pairSnapshots, type LineDescriptor } from "../hashline/patience-pairing
 import { vacuumSnapshots } from "./vacuum.js";
 import type { VacuumResult } from "./vacuum.js";
 
+export { isCurrentRawAnchorGeneration, isCurrentSnapshotEpoch } from "./epoch.js";
 export { vacuumSnapshots };
 export { snapshotIOFor } from "./snapshot-io.js";
 export type { HashSnapshotIO, HashSnapshotUpsertOptions } from "./snapshot-io.js";
@@ -256,7 +263,7 @@ export function positionsByIdentity(
 }
 
 export function cacheKey(checksum: string): string {
-  return `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`;
+  return epochKey({ canonVersion: CANON_VERSION, anchorGeneration: ANCHOR_GENERATION }) + checksum;
 }
 
 export function getSnapshot(
@@ -292,29 +299,16 @@ export function getSnapshot(
 }
 
 /**
- * Whether a snapshot cache key belongs to the current epoch: both `CANON_VERSION` and `ANCHOR_GENERATION`.
- * Raw-byte anchors survive a canon-only change, but the canon evidence stored beside them — lineage and
- * lease `canon_hash`, and the `line_id`s paired through it — is only comparable to today's `canonDigest`
- * under the canon that wrote it (issue #339). Every seam that reuses that evidence gates on this.
- */
-export function isCurrentSnapshotEpoch(snapshotHash: string): boolean {
-  return snapshotHash.startsWith(cacheKey(""));
-}
-/**
  * The committed `line_lineage` anchors of `(path, snapshotHash)`. `undo_last_edit` serves these
  * verbatim when it adopts the pinned snapshot (spec §3.1.4 step 4: anchors are never re-derived),
- * so the restored rows are exactly the rows the adopted `line_id`s were leased for.
+ * so the restored rows are exactly the rows the adopted `line_id`s were leased for. Generation-only:
+ * raw anchors are a function of raw bytes, so a canon-only change leaves them valid.
  */
-/** Whether a snapshot cache key belongs to the current anchor generation. Single owner: the middle component. */
-export function isCurrentAnchorGeneration(snapshotHash: string): boolean {
-  const [, generation] = snapshotHash.split(":");
-  return generation === String(ANCHOR_GENERATION);
-}
 export async function anchorsForSnapshotHash(
   path: string,
   snapshotHash: string,
 ): Promise<string[] | undefined> {
-  if (!isCurrentAnchorGeneration(snapshotHash)) return undefined;
+  if (!isCurrentRawAnchorGeneration(parseEpoch(snapshotHash)?.anchorGeneration)) return undefined;
   const store = await loadHashStore();
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
   if (!row || row.anchor_generation !== ANCHOR_GENERATION) return undefined;
@@ -384,9 +378,9 @@ export type SnapshotAdoptOptions = HashSnapshotUpsertOptions;
 /**
  * Adopts the committed snapshot named by `descriptor.snapshotHash` (or materializes it on a
  * retention miss) inside `BEGIN IMMEDIATE` / `withBusyRetry`. Callers that hold an explicit pin —
- * `undo_last_edit` reads `file_undo.snapshot_hash` (spec §3.1.2) — pass it so the restore binds to
- * the canonical snapshot instead of re-deriving the hash, and so a cache hit provably issues zero
- * `line_id_counters` allocations.
+ * `undo_last_edit` reads `file_undo.snapshot_hash` (spec §3.1.2) — pass it only on the current
+ * epoch; a foreign-epoch pin is re-derived by the caller, so adoption binds to the canonical
+ * current-epoch snapshot and a cache hit provably issues zero `line_id_counters` allocations.
  *
  * `options.leases` makes the adoption the WHOLE restore transaction: the authoritative
  * retirement update and the served-line lease upsert commit or roll back together with it.
@@ -397,9 +391,9 @@ export async function adoptPinnedSnapshotFor(
   descriptor: SnapshotDescriptor,
   options?: SnapshotAdoptOptions,
 ): Promise<void> {
-  if (!isCurrentAnchorGeneration(descriptor.snapshotHash)) {
+  if (!isCurrentSnapshotEpoch(descriptor.snapshotHash)) {
     throw new DomainError("E_INTERNAL_INVARIANT", {
-      message: `Refusing to adopt snapshot from another anchor generation: ${JSON.stringify(descriptor.snapshotHash)}.`,
+      message: `Refusing to adopt snapshot from another snapshot epoch: ${JSON.stringify(descriptor.snapshotHash)}.`,
     });
   }
   const store = await loadHashStore();
@@ -431,13 +425,6 @@ export interface StatMatchedSnapshot {
   anchorsInRange: (start: number, end: number) => StatLineageRow[];
 }
 
-function checksumOf(snapshotHash: string): string | undefined {
-  const generationSeparator = snapshotHash.indexOf(":");
-  const checksumSeparator =
-    generationSeparator < 0 ? -1 : snapshotHash.indexOf(":", generationSeparator + 1);
-  return checksumSeparator < 0 ? undefined : snapshotHash.slice(checksumSeparator + 1);
-}
-
 /**
  * Finds the committed snapshot whose stamped stat identity names this file version (docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md).
  *
@@ -466,7 +453,7 @@ export async function findStatSnapshotFor(
     ) {
       return undefined;
     }
-    const checksum = checksumOf(row.snapshot_hash);
+    const checksum = parseEpoch(row.snapshot_hash)?.checksum;
     if (checksum === undefined) {
       return undefined;
     }

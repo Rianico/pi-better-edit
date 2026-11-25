@@ -27,7 +27,8 @@ import {
   adoptPinnedSnapshotFor,
   anchorsForSnapshotHash,
   getSnapshot,
-  isCurrentAnchorGeneration,
+  isCurrentRawAnchorGeneration,
+  isCurrentSnapshotEpoch,
   snapshotHashFor,
   vacuumSnapshots,
 } from "../../src/snapshot-store";
@@ -242,6 +243,22 @@ describe("generation bump refuses pre-v3 anchors", () => {
         getText(await readTool.execute("r1", { file: "p.txt" }, undefined, undefined, ctx)),
       );
       expect(served.map((r) => r.hash)).toEqual(await fileHashesFor(absP, PRE));
+    });
+  });
+
+  it("a parseable foreign-canon descriptor is rejected by the epoch tripwire", async () => {
+    await withTempFile("c.txt", PRE, async ({ cwd }) => {
+      const absC = join(cwd, "c.txt");
+      await expect(
+        adoptPinnedSnapshotFor({
+          path: absC,
+          snapshotHash: `${CANON_VERSION - 1}:${ANCHOR_GENERATION}:${contentChecksum(PRE)}`,
+          lineCount: 3,
+          hashes: contentOnlyHashes(PRE),
+          content: PRE,
+        }),
+      ).rejects.toThrow(/another snapshot epoch/);
+      expect(await readFile(absC, "utf-8")).toBe(PRE);
     });
   });
 
@@ -853,7 +870,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     });
   });
 
-  it("a canon-only change keeps anchor state while a generation change invalidates it", async () => {
+  it("a canon-only change keeps the raw anchors while its stored canon evidence stays fenced", async () => {
     // Ref: docs/.archive_adrs/0031-file-scoped-anchors-residual-and-generation-discipline.md
     await withTempFile("k.txt", PRE, async ({ cwd }) => {
       const absK = join(cwd, "k.txt");
@@ -873,10 +890,12 @@ describe("generation bump refuses pre-v3 anchors", () => {
             "VALUES (?,?,?,?,1,?)",
         )
         .run(absK, genDriftKey, 4, Date.now(), 999);
-      expect(isCurrentAnchorGeneration(canonDriftKey)).toBe(true);
-      expect(isCurrentAnchorGeneration(genDriftKey)).toBe(false);
-      expect(isCurrentAnchorGeneration(`2:${cs}`)).toBe(false);
-      expect(isCurrentAnchorGeneration(snapshotHashFor(PRE))).toBe(true);
+      expect(isCurrentSnapshotEpoch(canonDriftKey)).toBe(false);
+      expect(isCurrentSnapshotEpoch(snapshotHashFor(PRE))).toBe(true);
+      expect(isCurrentSnapshotEpoch(genDriftKey)).toBe(false);
+      expect(isCurrentSnapshotEpoch(`2:${cs}`)).toBe(false);
+      expect(isCurrentRawAnchorGeneration(ANCHOR_GENERATION)).toBe(true);
+      expect(isCurrentRawAnchorGeneration(999)).toBe(false);
       sweepNow(store.db);
       const left = store.db
         .prepare("SELECT snapshot_hash AS h FROM file_snapshots WHERE path = ?")

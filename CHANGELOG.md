@@ -5,7 +5,7 @@
 ### Bug Fixes
 
 * **edit:** pair duplicate lines in the applied diff by anchor identity instead of Myers text position, so a removed row names the line actually removed and survivors keep their own anchor. The response pipeline now takes one caller-supplied `renderedDiff` projection — the dead single-file builder and the second render are gone. (#331)
-* **canon:** fence stored canon evidence by the full `CANON_VERSION:ANCHOR_GENERATION` snapshot epoch. A snapshot, lease or stat stamp persisted under an earlier canon no longer pairs `line_id`s against today's digests, resolves an anchor, or adopts on stat identity, so a pre-v4 lease cannot carry its line identity across an external intra-line whitespace rewrite. Anchors read under a prior canon need a fresh read; same-epoch leases, pairing and stat adoption are unchanged. No migration or schema change. (#340)
+* **canon:** fence stored canon evidence by the full `CANON_VERSION:ANCHOR_GENERATION` snapshot epoch. A snapshot, lease or stat stamp from an earlier canon no longer pairs `line_id`s against today's digests, resolves an anchor, or adopts on stat identity, so a pre-v4 lease cannot carry its line identity across an external intra-line whitespace rewrite. Anchors read under a prior canon need a fresh read; same-epoch leases, pairing and stat adoption stand. `undo_last_edit` re-derives a prior-epoch pin on restore, so its lease names the current epoch and serves the next edit without an intermediate read. No migration or schema change. (#340)
 
 ## [2.20.0] - 2026-11-24
 
