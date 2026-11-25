@@ -17,6 +17,8 @@ import {
   anchorsForSnapshotHash,
   snapshotHashFor,
   snapshotIOFor,
+  isCurrentRawAnchorGeneration,
+  isCurrentSnapshotEpoch,
 } from "./snapshot-store";
 import { loadHashStore } from "./hash-store.js";
 import { sessionKeyFor } from "./served-session/session.js";
@@ -51,7 +53,8 @@ export interface UndoEntry {
   resultContent: string;
   /**
    * The committed `file_snapshots.snapshot_hash` of `content` — the restored target pinned for
-   * vacuum retention and adopted by the undo revert (spec §3.1.2, issue #82).
+   * vacuum retention and adopted by the undo revert (spec §3.1.2, issue #82). Reused only on the
+   * current snapshot epoch; a foreign-epoch pin is re-derived on restore (§7.2.9).
    */
   snapshotHash?: string | null;
   /**
@@ -315,21 +318,21 @@ async function undoCorrelatedTransaction(
       for (const { member, raw } of currents) {
         const { text: currentStripped } = stripBOM(raw);
         const currentNormalized = toLF(currentStripped);
-        const storedIsCurrentGeneration = member.anchorGeneration === ANCHOR_GENERATION;
-        const restoredContentHash = storedIsCurrentGeneration
-          ? (member.snapshotHash ?? snapshotHashFor(member.content))
+        const rawAnchorsReusable = isCurrentRawAnchorGeneration(member.anchorGeneration);
+        const restoredContentHash = isCurrentSnapshotEpoch(member.snapshotHash)
+          ? member.snapshotHash
           : snapshotHashFor(member.content);
         const restoredLineCount = splitLines(member.content).length;
         let restoredHashes: string[];
         try {
           restoredHashes =
             (await anchorsForSnapshotHash(member.absolutePath, restoredContentHash)) ??
-            (storedIsCurrentGeneration
+            (rawAnchorsReusable
               ? member.hashes
               : await restoreHashes(member.content, member.absolutePath));
         } catch (error) {
           reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
-          restoredHashes = storedIsCurrentGeneration
+          restoredHashes = rawAnchorsReusable
             ? member.hashes
             : await restoreHashes(member.content, member.absolutePath);
         }
@@ -653,9 +656,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
             // SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.
             ctx as unknown as { sessionManager?: { getSessionId(): string } },
           );
-          const storedIsCurrentGeneration = (undo.anchorGeneration ?? 0) === ANCHOR_GENERATION;
-          const restoredContentHash = storedIsCurrentGeneration
-            ? (undo.snapshotHash ?? snapshotHashFor(undo.content))
+          const rawAnchorsReusable = isCurrentRawAnchorGeneration(undo.anchorGeneration);
+          const restoredContentHash = isCurrentSnapshotEpoch(undo.snapshotHash)
+            ? undo.snapshotHash
             : snapshotHashFor(undo.content);
           const restoredLineCount = splitLines(undo.content).length;
           // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
@@ -663,12 +666,12 @@ export function regEditUndo(pi: ExtensionAPI): void {
           try {
             restoredHashes =
               (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ??
-              (storedIsCurrentGeneration
+              (rawAnchorsReusable
                 ? undo.hashes
                 : await restoreHashes(undo.content, mutationTargetPath));
           } catch (error) {
             reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
-            restoredHashes = storedIsCurrentGeneration
+            restoredHashes = rawAnchorsReusable
               ? undo.hashes
               : await restoreHashes(undo.content, mutationTargetPath);
           }

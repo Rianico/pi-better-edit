@@ -18,7 +18,7 @@ import {
   loadOutlineFolds,
   type ServedLease,
 } from "../served-session/session.js";
-import { snapshotHashFor, positionsByIdentity, isCurrentAnchorGeneration } from "../snapshot-store";
+import { snapshotHashFor, positionsByIdentity, isCurrentSnapshotEpoch } from "../snapshot-store";
 import { DomainError } from "../domain-errors.js";
 import { identityPositions } from "./batch-span-gate.js";
 import { reportDiagnostic } from "../diagnostics.js";
@@ -169,10 +169,10 @@ export async function loadForeignServedView(input: {
  * `served_leases`; the `line_id` -> current-line map comes from the working buffer's own identity map
  * when one is in flight (a chained batch edit), else from `line_lineage(C)` when the edit load path
  * materialized C, else from an in-memory `pairSnapshots(S_latest, content)` for preview. Nothing is
- * written: the edit path never re-stamps a lease.
- * written: the edit path never re-stamps a lease. A lease from a superseded anchor generation is
- * never honoured, because the open-time sweep cannot cover rows written after it; and `anchorHomes`
- * stays a callback so the session-wide home lookup costs nothing on the happy path.
+ * written: the edit path never re-stamps a lease. A lease from a superseded snapshot epoch — anchor
+ * generation or canon version (#339) — is never honoured, because the open-time sweep cannot cover
+ * rows written after it and a prior canon's `line_id` pairing is not evidence under today's canon;
+ * and `anchorHomes` stays a callback so the session-wide home lookup costs nothing on the happy path.
  */
 export function leaseSpanSource(input: {
   store: HashStore;
@@ -185,7 +185,7 @@ export function leaseSpanSource(input: {
   // Ref: docs/.archive_adrs/0045-ttl-ends-lease-resolution.md
   const now = Date.now();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
-    if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
+    if (!isCurrentSnapshotEpoch(lease.served_snapshot_hash)) continue;
     if (isExpiredActiveLease(lease, now)) continue;
     byAnchor.set(lease.anchor, lease);
   }

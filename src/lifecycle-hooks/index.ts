@@ -587,7 +587,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       });
       try {
         clearServedRefusals(sessionKey, absolutePath);
-      } catch {}
+      } catch {
+        // HACK: refused-row cleanup is best-effort; a store failure must not fail the auto-read.
+      }
       const autoReadHeader = formatPageHeader({
         label: BASH_AUTO_READ_LABEL,
         file: writtenPath,
@@ -837,7 +839,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               renderedBlocks++;
               pos += consumed.length;
             }
-          } catch {}
+          } catch {
+            // HACK: one unexpected render failure falls back to raw output; renderedBlocks === 0 returns undefined.
+          }
           dbg("done", { renderedBlocks, pos, len: observed.length });
           if (renderedBlocks === 0) return undefined;
           const rest = observed.slice(pos);
@@ -1169,7 +1173,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               resolved.add(abs);
               if (resolved.size > 1) return true;
             }
-          } catch {}
+          } catch {
+            // HACK: an unresolvable target is not a hit; the scan continues with the next token.
+          }
         }
         idx = raw.indexOf(":", idx + 1);
       }
