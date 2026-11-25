@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.21.1] - 2026-11-25
+
 ### Bug Fixes
 
 * **edit:** render every batch rejection through one grammar: a `[MODEL] Batch rejected: K of N edits failed; nothing was written.` verdict line, then one bullet per failing item carrying that item's own code with rows and `Options:` indented beneath it. The atomicity trailer is deleted and overlaps fold in as the later item's `[E_BATCH_ABORT]` failure. (#349)
@@ -31,6 +33,7 @@
 * **changelog:** re-attribute the diagnostic-rendering entries to the PR that landed them, so the ledger's provenance resolves against a commit reachable from `HEAD`. (#350)
 
 * **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#349)
+
 ## [2.21.0] - 2026-11-25
 
 ### Features
