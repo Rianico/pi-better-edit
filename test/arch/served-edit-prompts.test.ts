@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { writeFile, readFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "path";
 import { DomainError, formatWarning } from "../../src/domain-errors.js";
 import { batchAbort, finalizeResult } from "../../src/edit-response.js";
@@ -519,6 +519,166 @@ describe("served edit prompts name the emitted shapes (T3 #328)", () => {
       expect(error.message.match(/nothing was written/gi) ?? []).toHaveLength(1);
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("1\n2\n3\n");
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("B\nb\nc\nd\n");
+    });
+  });
+
+  it("merges a parse failure and a foreign failure into one verdict in call order", async () => {
+    await withTempDir("served-foreign-twostage-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const t = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const s = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "X" },
+              {
+                anchor_from: t[1]!,
+                anchor_to: t[1]!,
+                text_ref: {
+                  anchor_from: s[0]!,
+                  anchor_to: s[1]!,
+                  file: "b.txt",
+                  mode: "copy" as const,
+                },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message.split("\n")[0] ?? "").toBe(
+        "[MODEL] Batch rejected: 2 of 2 edits failed; nothing was written.",
+      );
+      expect(error.message).toContain("- edit[0] (a.txt) [E_MALFORMED_ANCHOR]:");
+      expect(error.message).toContain("- edit[1] (a.txt) [E_UNKNOWN_ANCHOR]:");
+      expect(error.message.indexOf("- edit[0]")).toBeLessThan(error.message.indexOf("- edit[1]"));
+      expect((error as Error & { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+      expect(await readFile(join(cwd, "b.txt"), "utf-8")).toBe("x\ny\nz\n");
+    });
+  });
+
+  it("sorts mirrored two-stage failures by call index, not by stage", async () => {
+    await withTempDir("served-foreign-twostage-mirror-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const t = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const s = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              {
+                anchor_from: t[0]!,
+                anchor_to: t[0]!,
+                text_ref: {
+                  anchor_from: s[0]!,
+                  anchor_to: s[1]!,
+                  file: "b.txt",
+                  mode: "copy" as const,
+                },
+              },
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "Y" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message.split("\n")[0] ?? "").toBe(
+        "[MODEL] Batch rejected: 2 of 2 edits failed; nothing was written.",
+      );
+      expect(error.message.indexOf("- edit[0]")).toBeLessThan(error.message.indexOf("- edit[1]"));
+      expect(error.message).toContain("- edit[0] (a.txt) [E_UNKNOWN_ANCHOR]:");
+      expect(error.message).toContain("- edit[1] (a.txt) [E_MALFORMED_ANCHOR]:");
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+    });
+  });
+
+  it("keeps a single parse failure truthful in a 2-item call", async () => {
+    await withTempDir("served-parse-single-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      const t = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              { anchor_from: t[0]!, anchor_to: t[0]!, text: "ONE" },
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "Y" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message.split("\n")[0] ?? "").toBe(
+        "[MODEL] Batch rejected: 1 of 2 edits failed; nothing was written.",
+      );
+      expect(error.message).toContain("- edit[1] (a.txt) [E_MALFORMED_ANCHOR]:");
+      expect((error as Error & { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+    });
+  });
+
+  it("keeps a 1-item parse failure on the bare error with no batch envelope", async () => {
+    await withTempDir("served-parse-bare-", async (cwd) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          { file: "a.txt", edits: [{ anchor_from: "ZZ", anchor_to: "ZZ", text: "Y" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message).toMatch(/^\[MODEL\] \[E_MALFORMED_ANCHOR\]/);
+      expect(error.message).not.toContain("Batch rejected:");
+      expect((error as Error & { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+    });
+  });
+
+  it("reports the file-load error before admission failures for a missing file", async () => {
+    await withTempDir("served-load-before-admission-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx);
+      await unlink(join(cwd, "a.txt"));
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          { file: "a.txt", edits: [{ anchor_from: "ZZ", anchor_to: "ZZ", text: "Y" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect((error as Error & { code?: unknown }).code).toBe("E_NOT_FOUND");
+      expect(error.message).toContain("a.txt");
     });
   });
 });

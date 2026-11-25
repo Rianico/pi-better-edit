@@ -5,7 +5,7 @@ import { createSessionHandle } from "../served-session/session.js";
 
 /**
  * Records the reject-and-serve rows a rejected edit owes the model, so the anchors it serves are
- * usable without a re-read (README reject-and-serve contract). The pre-mutation span gate and the
+ * usable without a re-read (README reject-and-serve contract). The single post-preflight merge and the
  * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
  * A rowless rejection (a target-lost refusal, pinned by the seam oracle) returns before anything leases:
  * there is nothing to serve, and every window that identifies the model's range still leases through the
@@ -36,7 +36,7 @@ async function recordRejectionServe(args: {
   await handle.recordServeFeedback(args.error.servedRows, "live", args.lineCount, args.contentHash);
 }
 
-/** The store identity a rejection serve records through — owned by the pipeline, like the gate does today. */
+/** The store identity a rejection serve records through — owned by the pipeline. */
 export interface BatchRejectionRecorder {
   sessionKey: string;
   absolutePath: string;
@@ -50,11 +50,10 @@ export interface BatchRejectionRecorder {
  * records the rows it shows, then throws — forgetting to record stops being
  * possible rather than reviewable. A 1-item call (`total === 1`) throws the
  * bare `failures[0].error` with no verdict line, exactly as the single-item
- * sites did; anything larger builds through `batchAbort`. Rowless allowlist
- * (no `record`): parse failures (`E_MALFORMED_ANCHOR` has no `servedRows`;
- * the `E_BAD_PAYLOAD`/`E_INTERNAL_INVARIANT` payloads here never set one)
- * and foreign aggregation (`foreignRejection` drops leased rows, passing only
- * never-served codes). Rows without a recorder throw `TypeError`, never skip.
+ * sites did; anything larger builds through `batchAbort`. Every site carries a recorder;
+ * rowless failures (parse `E_MALFORMED_ANCHOR` with no `servedRows`, foreign aggregation
+ * passing only never-served codes) early-return through it with nothing to record.
+ * Rows without a recorder still throw `TypeError`, never skip.
  */
 export async function throwBatchRejection(args: {
   failures: BatchFailure[];

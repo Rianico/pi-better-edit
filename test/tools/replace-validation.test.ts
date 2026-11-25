@@ -56,7 +56,7 @@ describe("assertReq", () => {
 });
 
 describe("anchor validation order", () => {
-  it("rejects malformed anchors before any file I/O", async () => {
+  it("reports the file-load error before admission failures for a missing file", async () => {
     const tool = buildToolDef();
     await expect(
       tool.execute(
@@ -69,7 +69,7 @@ describe("anchor validation order", () => {
         undefined,
         { cwd: "/tmp", sessionManager: testSessionManager } as any,
       ),
-    ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
+    ).rejects.toThrow(/\[E_NOT_FOUND\]/);
   });
 });
 describe("prepareArguments normalization", () => {

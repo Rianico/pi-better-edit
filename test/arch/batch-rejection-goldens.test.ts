@@ -1,10 +1,20 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { initHasher, fileHashesFor, lineHashes } from "../../src/hashline/hash-identity.js";
+import {
+  contentOnlyHashes,
+  initHasher,
+  fileHashesFor,
+  lineHashes,
+} from "../../src/hashline/hash-identity.js";
 import { SPAN_MODE_ENV_VAR } from "../../src/span-mode-config.js";
-import { setupIntegrationTest, withTempDir } from "../support/fixtures.js";
-
+import {
+  anchorRows,
+  extractHash,
+  getText,
+  setupIntegrationTest,
+  withTempDir,
+} from "../support/fixtures.js";
 /**
  * Batch-rejection goldens (#334): each scenario renders through the real tool
  * seam and asserts the FULL model-facing message with `toBe`, so any byte the
@@ -190,6 +200,189 @@ describe("batch rejection goldens (#334)", () => {
       expect(error.message.replace(cwd, "<cwd>")).toBe(
         '[MODEL] [E_UNKNOWN_ANCHOR] <cwd>/q.txt has not served the anchor "ZZZZ".',
       );
+    });
+  });
+
+  it("pins a two-stage rejection with one bullet per stage in call order", async () => {
+    await withTempDir("batch-golden-twostage-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const target = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const foreign = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "X" },
+              {
+                anchor_from: target[1]!,
+                anchor_to: target[1]!,
+                text_ref: {
+                  anchor_from: foreign[0]!,
+                  anchor_to: foreign[1]!,
+                  file: "b.txt",
+                  mode: "copy",
+                },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message).toBe(
+        "[MODEL] Batch rejected: 2 of 2 edits failed; nothing was written.\n" +
+          '- edit[0] (a.txt) [E_MALFORMED_ANCHOR]: The anchor "ZZ" is not valid: Expected a 4-char alphanumeric anchor (e.g. "aB3x").\n' +
+          `- edit[1] (a.txt) [E_UNKNOWN_ANCHOR]: b.txt has not served the anchors "${foreign[0]}", "${foreign[1]}".`,
+      );
+    });
+  });
+
+  it("pins a gate-validation plus foreign failure in call order (literal probe)", async () => {
+    await withTempDir("batch-golden-gate-foreign-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await writeFile(join(cwd, "a.txt"), "1\n2\n3\n", "utf-8");
+      await writeFile(join(cwd, "b.txt"), "x\ny\nz\n", "utf-8");
+      const target = anchorRows(
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+      ).map(extractHash);
+      const foreign = await contentOnlyHashes("x\ny\nz\n");
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "a.txt",
+            edits: [
+              { anchor_from: "zzzz", anchor_to: "zzzz", text: "X" },
+              {
+                anchor_from: target[1]!,
+                anchor_to: target[1]!,
+                text_ref: {
+                  anchor_from: foreign[0]!,
+                  anchor_to: foreign[1]!,
+                  file: "b.txt",
+                  mode: "copy",
+                },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message).toBe(
+        "[MODEL] Batch rejected: 2 of 2 edits failed; nothing was written.\n" +
+          '- edit[0] (a.txt) [E_UNKNOWN_ANCHOR]: a.txt has not served the anchor "zzzz".\n' +
+          `- edit[1] (a.txt) [E_UNKNOWN_ANCHOR]: b.txt has not served the anchors "${foreign[0]}", "${foreign[1]}".`,
+      );
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      expect(await readFile(join(cwd, "a.txt"), "utf-8")).toBe("1\n2\n3\n");
+      expect(await readFile(join(cwd, "b.txt"), "utf-8")).toBe("x\ny\nz\n");
+    });
+  });
+
+  it("pins a malformed plus overlapping pair in call order (composition)", async () => {
+    await withTempDir("batch-golden-composition-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const path = join(cwd, "sample.ts");
+      await writeFile(path, "aaa\nbbb\nccc\n", "utf-8");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "sample.ts",
+            edits: [
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "X" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "XX" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      const currentHashes = fileHashesFor(path, "aaa\nbbb\nccc\n");
+      expect(error.message).toBe(
+        "[MODEL] Batch rejected: 2 of 3 edits failed; nothing was written.\n" +
+          '- edit[0] (sample.ts) [E_MALFORMED_ANCHOR]: The anchor "ZZ" is not valid: Expected a 4-char alphanumeric anchor (e.g. "aB3x").\n' +
+          "- edit[2] (sample.ts) [E_BATCH_ABORT]: its span (lines 2-2) overlaps edit[1] (lines 2-2) at lines 2-2.\n" +
+          "  Current range:\n" +
+          `  ${currentHashes[1]}│bbb\n` +
+          "  Options: merge the overlapping items into one span; or split them across separate calls.",
+      );
+      expect((error as Error & { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+
+  it("pins a gate-validation plus overlapping pair in call order (gate composition)", async () => {
+    await withTempDir("batch-golden-gate-composition-", async (cwd) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const path = join(cwd, "sample.ts");
+      await writeFile(path, "aaa\nbbb\nccc\n", "utf-8");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "sample.ts",
+            edits: [
+              { anchor_from: "zzzz", anchor_to: "zzzz", text: "X" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "XX" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      const currentHashes = fileHashesFor(path, "aaa\nbbb\nccc\n");
+      expect(error.message).toBe(
+        "[MODEL] Batch rejected: 2 of 3 edits failed; nothing was written.\n" +
+          '- edit[0] (sample.ts) [E_UNKNOWN_ANCHOR]: sample.ts has not served the anchor "zzzz".\n' +
+          "- edit[2] (sample.ts) [E_BATCH_ABORT]: its span (lines 2-2) overlaps edit[1] (lines 2-2) at lines 2-2.\n" +
+          "  Current range:\n" +
+          `  ${currentHashes[1]}│bbb\n` +
+          "  Options: merge the overlapping items into one span; or split them across separate calls.",
+      );
+      expect((error as Error & { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+
+  it("pins a missing target file preempting a malformed item with the bare load error", async () => {
+    await withTempDir("batch-golden-missing-", async (cwd) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      // When the target file is missing, the load preempts merged failures: the bare answer is the accepted consequence of the single call-wide merge — reverting would discard a surviving item's validation failure.
+      const error = await fails(
+        editTool.execute(
+          "e1",
+          {
+            file: "missing.txt",
+            edits: [
+              { anchor_from: "ZZ", anchor_to: "ZZ", text: "X" },
+              { anchor_from: "abcd", anchor_to: "abcd", text: "Y" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      expect(error.message).not.toContain("Batch rejected:");
+      expect(error.message).toBe("[MODEL] [E_NOT_FOUND] File not found: missing.txt.");
     });
   });
 });

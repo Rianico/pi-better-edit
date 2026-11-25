@@ -104,17 +104,7 @@ function batchAbortImporters(): string[] {
   }
   return hits;
 }
-const ROWLESS_ALLOWLIST: { key: string; reason: string }[] = [
-  {
-    key: "src/mutation-engine/pipeline.ts:parseEdits",
-    reason: "parse failures never carry servedRows, so no recorder is owed",
-  },
-  {
-    key: "src/mutation-engine/pipeline.ts:materializeForeignReferences",
-    reason: "foreignRejection drops leased rows and passes only never-served codes",
-  },
-];
-
+const ROWLESS_ALLOWLIST: { key: string; reason: string }[] = [];
 const VERDICT_ALLOWLIST: { key: string; reason: string }[] = [
   {
     key: "src/edit-response.ts:456",
@@ -125,7 +115,7 @@ const VERDICT_ALLOWLIST: { key: string; reason: string }[] = [
 describe("batch rejection assembler (#334)", () => {
   it("calls batchAbort in exactly one place in src/, inside the seam", () => {
     const hits = producerCalls("batchAbort");
-    expect(hits).toEqual(["src/mutation-engine/batch-rejection.ts:87"]);
+    expect(hits).toEqual(["src/mutation-engine/batch-rejection.ts:86"]);
   });
 
   it("imports batchAbort in exactly one place in src/, inside the seam", () => {
@@ -146,22 +136,21 @@ describe("batch rejection assembler (#334)", () => {
 
   it("calls recordRejectionServe in exactly one place in src/, inside the seam", () => {
     const hits = producerCalls("recordRejectionServe");
-    expect(hits).toEqual(["src/mutation-engine/batch-rejection.ts:80"]);
+    expect(hits).toEqual(["src/mutation-engine/batch-rejection.ts:79"]);
   });
 
-  it("keeps the no-recorder allowlist at its post-refactor size, each with a reason", () => {
-    expect(ROWLESS_ALLOWLIST).toHaveLength(2);
-    for (const entry of ROWLESS_ALLOWLIST) expect(entry.reason.length).toBeGreaterThan(0);
-    const bare = seamCalls().filter((call) => !call.hasRecord);
-    const bareKeys = bare.map((call) => `${call.file}:${call.fn}`).sort();
-    expect(bareKeys).toEqual([
-      "src/mutation-engine/pipeline.ts:materializeForeignReferences",
-      "src/mutation-engine/pipeline.ts:materializeForeignReferences",
-      "src/mutation-engine/pipeline.ts:parseEdits",
-      "src/mutation-engine/pipeline.ts:parseEdits",
+  it("pins the seam-call set itself (file+function) before the recorder filter", () => {
+    expect(seamCalls().map((call) => `${call.file}#${call.fn}`)).toEqual([
+      "src/mutation-engine/pipeline.ts#runMutations",
+      "src/mutation-engine/pipeline.ts#runMutations",
+      "src/mutation-engine/pipeline.ts#runMutations",
     ]);
-    const allowed = new Set(ROWLESS_ALLOWLIST.map((entry) => entry.key));
-    expect(bareKeys.every((key) => allowed.has(key))).toBe(true);
+  });
+
+  it("keeps the no-recorder allowlist empty: every seam call carries a recorder", () => {
+    expect(ROWLESS_ALLOWLIST).toHaveLength(0);
+    const bare = seamCalls().filter((call) => !call.hasRecord);
+    expect(bare).toEqual([]);
   });
 
   it("throws TypeError, never a silent skip, when rows arrive with no recorder", async () => {

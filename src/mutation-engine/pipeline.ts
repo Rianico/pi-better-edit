@@ -372,13 +372,16 @@ type ParsedItem = { edit: HEdit } | { noopInsert: true };
  * disagreement is refused rather than silently resolved, because admission folds the wire `text_ref`.
  */
 async function parseEdits(
-  items: NormalizedEditRequest["edits"],
-  path: string,
-): Promise<ParsedItem[]> {
-  const parsed: ParsedItem[] = [];
+  items: (NormalizedEditItem | null)[],
+): Promise<{ parsed: (ParsedItem | null)[]; failures: { error: Error; index: number }[] }> {
+  const parsed: (ParsedItem | null)[] = [];
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
-    const item = items[index]!;
+    const item = items[index];
+    if (item === null || item === undefined) {
+      parsed.push(null);
+      continue;
+    }
     try {
       const payload = item.payload;
       let text: string;
@@ -428,22 +431,12 @@ async function parseEdits(
         }),
       });
     } catch (error) {
-      if (items.length === 1) throw error;
       failures.push({ error: error instanceof Error ? error : new Error(String(error)), index });
+      parsed.push(null);
+      continue;
     }
   }
-  if (failures.length === 1) {
-    const only = failures[0]!;
-    return throwBatchRejection({
-      failures: [{ error: only.error, index: only.index }],
-      total: items.length,
-      path,
-    });
-  }
-  if (failures.length > 1) {
-    return throwBatchRejection({ failures, total: items.length, path });
-  }
-  return parsed;
+  return { parsed, failures };
 }
 
 /**
@@ -647,17 +640,22 @@ function collapseSpanToText(span: string[]): string {
  * One read+load+lease per RESOLVED path per batch: without the memo, a foreign file that changes on disk
  * between two items would materialize two revisions into one call with no diagnostic — correctness, not
  * performance. The map is batch-scoped, because a global cache would go stale. A failed item contributes
- * only to the failure list: both exits below throw, so a partial `out` is never returned.
+ * only to the failure list: a failed item leaves a null hole at its call index, so the
+ * merge site can union both stages' failures in call order before refusing.
  */
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
   input: { cwd: string; file: string; store: HashStore; sessionKey: string },
-): Promise<{ items: NormalizedEditItem[]; cuts: ForeignCutRecord[] }> {
+): Promise<{
+  items: (NormalizedEditItem | null)[];
+  cuts: ForeignCutRecord[];
+  failures: { error: Error; index: number }[];
+}> {
   const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
   const cuts: ForeignCutRecord[] = [];
-  if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
+  if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts, failures: [] };
   const views = new Map<string, Promise<ForeignServedView>>();
-  const out: NormalizedEditItem[] = [];
+  const out: (NormalizedEditItem | null)[] = [];
   const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
@@ -682,14 +680,29 @@ async function materializeForeignReferences(
     } catch (error) {
       if (!(error instanceof DomainError)) throw error;
       failures.push({ error, index });
+      out.push(null);
       continue;
     }
   }
-  if (failures.length === 1 && items.length === 1)
-    return throwBatchRejection({ failures, total: 1, path: input.file });
-  if (failures.length > 0)
-    return throwBatchRejection({ failures, total: items.length, path: input.file });
-  return { items: out, cuts };
+  return { items: out, cuts, failures };
+}
+
+/**
+ * The pre-admission merge above refuses every null hole, so a null reaching here needs a new
+ * null producer in the stages above: surface it through the registry's invariant failure naming
+ * the stage rather than casting it away. Unreachable while the merge check holds.
+ */
+function requireMerged<T>(list: (T | null)[], stage: string): T[] {
+  const intact: T[] = [];
+  for (const entry of list) {
+    if (entry === null) {
+      throw new DomainError("E_INTERNAL_INVARIANT", {
+        message: `batch ${stage} left a null hole after the pre-admission union. Nothing was written.`,
+      });
+    }
+    intact.push(entry);
+  }
+  return intact;
 }
 
 /**
@@ -714,12 +727,13 @@ async function runMutations(
   const spanMode = resolveSpanMode(cwd);
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = requireSessionKey(options?.sessionKey);
-  const { items, cuts: foreignCuts } = await materializeForeignReferences(request.edits, {
+  const materialization = await materializeForeignReferences(request.edits, {
     cwd,
     file: path,
     store: hashStore,
     sessionKey,
   });
+  const foreignCuts = materialization.cuts;
   const warnings: string[] = [];
   let neverServedTotal = 0;
   const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
@@ -733,12 +747,7 @@ async function runMutations(
 
   const isPreview = options?.noPersist === true;
 
-  const parsed = await parseEdits(items, path);
-  const gateEntries: { edit: HEdit; itemIndex: number }[] = [];
-  for (let itemIndex = 0; itemIndex < parsed.length; itemIndex++) {
-    const one = parsed[itemIndex]!;
-    if ("edit" in one) gateEntries.push({ edit: one.edit, itemIndex });
-  }
+  const { parsed: rawParsed, failures: parseFailures } = await parseEdits(materialization.items);
 
   const {
     normalized: originalNormalized,
@@ -765,28 +774,48 @@ async function runMutations(
     throw new DomainError("E_LOSSY_TEXT", { path });
   }
 
-  if (gateEntries.length > 1) {
-    await assertBatchSpansDisjoint(
-      gateEntries,
-      {
-        served,
-        identity: leaseSpanSource({
-          store: hashStore,
-          sessionKey,
-          absolutePath,
-          content: originalNormalized,
-        }),
+  const gateEntries: { edit: HEdit; itemIndex: number }[] = [];
+  for (let itemIndex = 0; itemIndex < rawParsed.length; itemIndex++) {
+    const one = rawParsed[itemIndex]!;
+    if (one !== null && "edit" in one) gateEntries.push({ edit: one.edit, itemIndex });
+  }
+
+  const hasPreFailures = materialization.failures.length > 0 || parseFailures.length > 0;
+  const gateFailures =
+    gateEntries.length > 1 || (hasPreFailures && gateEntries.length > 0)
+      ? await assertBatchSpansDisjoint(gateEntries, {
+          served,
+          identity: leaseSpanSource({
+            store: hashStore,
+            sessionKey,
+            absolutePath,
+            content: originalNormalized,
+          }),
+          spanMode,
+          path,
+          originalHashes,
+          originalNormalized,
+        })
+      : [];
+  const earlyFailures = [...materialization.failures, ...parseFailures, ...gateFailures].sort(
+    (a, b) => a.index - b.index,
+  );
+  if (earlyFailures.length > 0) {
+    return throwBatchRejection({
+      failures: earlyFailures,
+      total: request.edits.length,
+      path,
+      record: {
         sessionKey,
         absolutePath,
-        spanMode,
         isPreview,
-        path,
-        originalHashes,
-        originalNormalized,
+        lineCount: originalHashes.length,
+        contentHash: isPreview ? undefined : snapshotHashFor(originalNormalized),
       },
-      items.length,
-    );
+    });
   }
+  const items = requireMerged(materialization.items, "materialization");
+  const parsed = requireMerged(rawParsed, "parse");
 
   let currentContent = originalNormalized;
   let currentHashes = originalHashes;
