@@ -512,18 +512,26 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
       if (error.code === "E_TARGET_LOST") return error;
       return foreignLeasedWrap(error, refFile);
     }
-    const cause = error.cause ?? error.details.cause ?? "never-served";
-    return new DomainError("E_STALE_ANCHOR", {
-      headline:
-        `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
-        `(rejection: ${error.code}); no rows of ${refFile} were served by this call.`,
-      cause,
-    });
+    // Ref: docs/spec/content-addressed-line-identity-mvcc.md
+    return unreachableForeignRejection(error);
   }
-  return new DomainError("E_STALE_ANCHOR", {
-    headline: `the foreign-source reference to ${refFile} did not resolve.`,
-    cause: "never-served",
-  });
+  // Ref: docs/spec/content-addressed-line-identity-mvcc.md
+  return unreachableForeignRejection(error);
+}
+
+/**
+ * Dead-tail backstop for the foreign path (#342): the only throwing callee above is
+ * `resolveLeasedEdit` (via the `materializeForeignItem` try block), whose foreign-path
+ * throw set is `E_UNKNOWN_ANCHOR` / `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE` /
+ * `E_TARGET_LOST`, and `E_STALE_RANGE` (`E_UNSERVED_RANGE` takes no `spanMode` here).
+ * All five are consumed by the passthrough sets above, so reaching here needs a new
+ * throwing callee in the try block or a new code outside both sets. A `DomainError`
+ * passes through with its own code and message; anything else is rethrown as-is, or
+ * wrapped in a plain `Error` when the thrown value is not one.
+ */
+function unreachableForeignRejection(error: unknown): never {
+  if (error instanceof Error) throw error;
+  throw new Error("the foreign-source reference failed to resolve.", { cause: error });
 }
 
 /**
