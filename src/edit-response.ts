@@ -425,7 +425,6 @@ export function batchAbort(args: { failures: BatchFailure[]; total: number; path
   return wrapped;
 }
 
-
 /**
  * The batch-result section for one processed file — the pipeline's fact mapped to the model envelope.
  * `renderedDiff` is the projection of that file's change; the caller that committed the bytes owns it,

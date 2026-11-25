@@ -575,8 +575,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
   const dryRunValue = (request as Record<string, unknown>).dry_run;
   if (dryRunValue !== undefined && typeof dryRunValue !== "boolean") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message:
-        'Edit request "dry_run" must be a boolean (absent means false). ' + EDIT_SHAPE_LINE,
+      message: 'Edit request "dry_run" must be a boolean (absent means false). ' + EDIT_SHAPE_LINE,
     });
   }
 
