@@ -4,30 +4,32 @@
 
 ### Bug Fixes
 
-* **edit:** render every batch rejection through one grammar: a `[MODEL] Batch rejected: K of N edits failed; nothing was written.` verdict line, then one bullet per failing item carrying that item's own code with rows and `Options:` indented beneath it. The atomicity trailer is deleted and overlaps fold in as the later item's `[E_BATCH_ABORT]` failure. (#323)
-* **edit:** record the rows a batch-overlap refusal serves as leases, so a retry can reuse a shown anchor with no re-read; the guideline no longer tells the model to re-read after an overlap refusal. (#332)
-* **edit:** route foreign-reference failures through the batch verdict: a multi-item call with an unresolvable `text_ref` now renders `[MODEL] Batch rejected: K of N edits failed; nothing was written.` with one bullet per failing item instead of the first bare error; a 1-item call keeps the bare error. (#330)
-* **edit:** merge gate-validation failures into the single post-load verdict: the span gate returns validation failures instead of throwing, and the merge site unions materialization, parse, and gate failures in call order with `total` as the call's item count and a recorder built from the loaded file; overlap still throws through the seam, and a file-load error now surfaces before admission failures. (#341)
+* **edit:** render every batch rejection through one grammar: a `[MODEL] Batch rejected: K of N edits failed; nothing was written.` verdict line, then one bullet per failing item carrying that item's own code with rows and `Options:` indented beneath it. The atomicity trailer is deleted and overlaps fold in as the later item's `[E_BATCH_ABORT]` failure. (#349)
+* **edit:** record the rows a batch-overlap refusal serves as leases, so a retry can reuse a shown anchor with no re-read; the guideline no longer tells the model to re-read after an overlap refusal. (#349)
+* **edit:** route foreign-reference failures through the batch verdict: a multi-item call with an unresolvable `text_ref` now renders `[MODEL] Batch rejected: K of N edits failed; nothing was written.` with one bullet per failing item instead of the first bare error; a 1-item call keeps the bare error. (#349)
+* **edit:** merge gate-validation failures into the single post-load verdict: the span gate returns validation failures instead of throwing, and the merge site unions materialization, parse, and gate failures in call order with `total` as the call's item count and a recorder built from the loaded file; overlap still throws through the seam, and a file-load error now surfaces before admission failures. (#349)
 
 ### Code Refactoring
 
-* **edit:** assemble every batch rejection through one seam that builds the error, records the rows it shows, then throws; every row-carrying rejection now mirrors rows through the one recorder, including the noop-loop rejection (previously leased without observer notify). (#334)
+* **edit:** assemble every batch rejection through one seam that builds the error, records the rows it shows, then throws; every row-carrying rejection now mirrors rows through the one recorder, including the noop-loop rejection (previously leased without observer notify). (#349)
 
 ### Performance Improvements
 
-* **edit:** trim refusal rendering to one shape line: drop the echoed request bytes, the inlined canonical-payload paragraph, the duplicate batch-noop warning, the repeated suspicious-text count, and a redundant sentence and doubled periods. (#327)
+* **edit:** trim refusal rendering to one shape line: drop the echoed request bytes, the inlined canonical-payload paragraph, the duplicate batch-noop warning, the repeated suspicious-text count, and a redundant sentence and doubled periods. (#349)
 
 ### Documentation
 
-* **edit:** align the served description and guidelines with the emitted shapes: both `Current range` headings are named with their lease rule, `[USER]` lines are stated as informational `content`, and the retry instruction is an `[E_*]` token with the line it opens. (#328)
+* **edit:** align the served description and guidelines with the emitted shapes: both `Current range` headings are named with their lease rule, `[USER]` lines are stated as informational `content`, and the retry instruction is an `[E_*]` token with the line it opens. (#349)
 
 ### Tests
 
-* **edit:** ratchet the warning-header producers: a new arch test holds that no string literal under `src/` outside `src/domain-errors.ts` contains a rendered `[MODEL]/[USER] [W_...]` header or a bare `[W_CODE]` token, with an empty size-pinned allowlist; the three sanctioned render sites (`formatWarning`, `formatReadWarning`, `DomainError`) are pinned. (#348)
+* **edit:** ratchet the warning-header producers: a new arch test holds that no string literal under `src/` outside `src/domain-errors.ts` contains a rendered `[MODEL]/[USER] [W_...]` header or a bare `[W_CODE]` token, with an empty size-pinned allowlist; the three sanctioned render sites (`formatWarning`, `formatReadWarning`, `DomainError`) are pinned. (#349)
 
 ### Miscellaneous Chores
 
-* **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#342)
+* **changelog:** re-attribute the diagnostic-rendering entries to the PR that landed them, so the ledger's provenance resolves against a commit reachable from `HEAD`. (#350)
+
+* **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#349)
 ## [2.21.0] - 2026-11-25
 
 ### Features
