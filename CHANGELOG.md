@@ -21,6 +21,10 @@
 
 * **edit:** align the served description and guidelines with the emitted shapes: both `Current range` headings are named with their lease rule, `[USER]` lines are stated as informational `content`, and the retry instruction is an `[E_*]` token with the line it opens. (#328)
 
+### Tests
+
+* **edit:** ratchet the warning-header producers: a new arch test holds that no string literal under `src/` outside `src/domain-errors.ts` contains a rendered `[MODEL]/[USER] [W_...]` header or a bare `[W_CODE]` token, with an empty size-pinned allowlist; the three sanctioned render sites (`formatWarning`, `formatReadWarning`, `DomainError`) are pinned. (#348)
+
 ### Miscellaneous Chores
 
 * **edit:** delete the two unreachable `E_STALE_ANCHOR` fallback headlines in the foreign-reference rejection path: the only throwing callee's five codes are all consumed by the passthrough sets, so the fallbacks are dead. Non-DomainError failures now rethrow unchanged, and a test pins the exact code and message for each reachable foreign rejection. No rendered message changes. (#342)
