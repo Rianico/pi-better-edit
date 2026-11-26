@@ -4,7 +4,7 @@
 
 ### Features
 
-* **lifecycle:** claim the SQLite store handle per session and close it when the last session detaches. Closing truncates the WAL, a teardown never creates `hash-store.sqlite`, and persisted leases, snapshots, lineage rows and undo records stay. A host that disposes a raw session calls the exported `releaseHashStore` to release the handle.
+* **lifecycle:** claim the SQLite store handle per session and close it when the last session detaches. Closing truncates the WAL, a teardown never creates `hash-store.sqlite`, and persisted leases, snapshots, lineage rows and undo records stay. A host that disposes a raw session calls the exported `releaseHashStore` to release the handle. (#362)
 
 ### Bug Fixes
 
