@@ -15,7 +15,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { janitorPass, registerJanitorHooks, type JanitorOutcome } from "../../src/store-janitor";
+import {
+  janitorPass,
+  registerJanitorHooks,
+  type JanitorEvent,
+  type JanitorOutcome,
+} from "../../src/store-janitor";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { CANON_VERSION } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
@@ -345,5 +350,70 @@ describe("the janitor's silent case", () => {
     }
     expect(consoleSpy.info).not.toHaveBeenCalled();
     expect(consoleSpy.error).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The shutdown hand-off: the pass must run FIRST, because it maintains the handle the detach is
+ * about to close, and it must not be able to strand the detach — a failed maintenance run leaves
+ * the throttle row unwritten, never an owner attached to a dead session.
+ */
+describe("the janitor's shutdown hand-off", () => {
+  it("runs the pass before detaching, and only on session_shutdown", async () => {
+    const order: string[] = [];
+    const { pi, handlerFor } = fakePi();
+    registerJanitorHooks(pi as never, {
+      runJanitor: async (event: JanitorEvent) => {
+        order.push(`pass:${event}`);
+        return run();
+      },
+      afterShutdownPass: async () => {
+        order.push("detach");
+      },
+    });
+
+    await handlerFor("session_start")();
+    expect(order).toEqual(["pass:session_start"]);
+
+    await handlerFor("session_shutdown")();
+    expect(order).toEqual(["pass:session_start", "pass:session_shutdown", "detach"]);
+  });
+
+  it("still detaches when the pass rejects", async () => {
+    const order: string[] = [];
+    const { pi, handlerFor } = fakePi();
+    clearDiagnostics();
+    registerJanitorHooks(pi as never, {
+      runJanitor: async (event: JanitorEvent) => {
+        order.push(`pass:${event}`);
+        throw new Error("store unavailable");
+      },
+      afterShutdownPass: async () => {
+        order.push("detach");
+      },
+    });
+
+    await expect(handlerFor("session_shutdown")()).resolves.toBeUndefined();
+
+    expect(order).toEqual(["pass:session_shutdown", "detach"]);
+    expect(janitorRecords()).not.toHaveLength(0);
+  });
+
+  it("contains a rejecting detach and reports it instead of failing the hook", async () => {
+    const { pi, handlerFor } = fakePi();
+    clearDiagnostics();
+    registerJanitorHooks(pi as never, {
+      runJanitor: async () => run(),
+      afterShutdownPass: async () => {
+        throw new Error("handle still owned");
+      },
+    });
+
+    await expect(handlerFor("session_shutdown")()).resolves.toBeUndefined();
+
+    const records = janitorRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]?.level).toBe("error");
+    expect(records[0]?.message).toContain("session detach failed");
   });
 });

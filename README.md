@@ -409,6 +409,12 @@ Pure views and searches (`cat`, `cat -n`, `nl -ba`, `head`, `tail`, `sed -n`, `g
 ### 2. Multi-Version Snapshot Lineage
 Every file modification commits a new CAS snapshot to `file_snapshots`. The `line_lineage` table tracks the monotonic `line_id` for every line coordinate, maintaining coordinate-independent identity across arbitrary external shifts.
 
+### 3. Store Lifecycle in a Host
+
+`AgentSessionRuntime.dispose()` emits `session_shutdown`. The janitor pass runs first, and the store handle closes once the last session detaches: the WAL is truncated, and every persisted lease, snapshot, and undo record is kept. A teardown never creates `hash-store.sqlite`, even when nothing opened it.
+
+A host that calls raw `AgentSession.dispose()` emits no `session_shutdown`, so it must `await releaseHashStore({ force: true })` — exported from the package root. On Windows the released handle is what makes the state directory deletable. See [ADR-0020](docs/adr/0020-session-scoped-store-attachment-and-detachment.md).
+
 ---
 
 ## Error and Warning Contract

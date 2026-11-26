@@ -13,6 +13,7 @@ import {
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
+import { inStoreScope } from "../store-lifecycle.js";
 import { getSnapshot, snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
 import { applyEdit } from "../hashline/apply.js";
 import { buildNeverServedEditHint } from "../served-session/serve-render.js";
@@ -1103,7 +1104,15 @@ async function runMutations(
   };
 }
 
-export async function previewEdits(
+export function previewEdits(
+  request: NormalizedEditRequest,
+  cwd: string,
+  options?: Omit<PipelineOptions, "noPersist">,
+): ReturnType<typeof previewEditsUnscoped> {
+  return inStoreScope(() => previewEditsUnscoped(request, cwd, options));
+}
+
+async function previewEditsUnscoped(
   request: NormalizedEditRequest,
   cwd: string,
   options?: Omit<PipelineOptions, "noPersist">,
@@ -1363,6 +1372,23 @@ async function runCutTransaction(
   };
 }
 
+type ApplyOutcome = {
+  result: string;
+  diff: string;
+  drift: string | undefined;
+  metrics: ReturnType<typeof buildBatchResult>["details"]["metrics"];
+  raw: ProcessedEditFile;
+  toolResult: ReturnType<typeof buildBatchResult>;
+};
+
+export function apply(
+  request: NormalizedEditRequest,
+  cwd: string,
+  options?: PipelineOptions,
+): Promise<ApplyOutcome> {
+  return inStoreScope(() => applyUnscoped(request, cwd, options));
+}
+
 /**
  * Repair runs first: a previous run that crashed inside a cut's two-rename window left a durable intent, and
  * it must be resolved before this call layers undo rows and leases over that state. A cut transaction
@@ -1374,18 +1400,11 @@ async function runCutTransaction(
  * request and the options and then forwarded explicitly: `options` alone would drop a request-derived
  * `dry_run`, and the diff renderer cannot tell the hypothetical run apart from a plain preview.
  */
-export async function apply(
+async function applyUnscoped(
   request: NormalizedEditRequest,
   cwd: string,
   options?: PipelineOptions,
-): Promise<{
-  result: string;
-  diff: string;
-  drift: string | undefined;
-  metrics: ReturnType<typeof buildBatchResult>["details"]["metrics"];
-  raw: ProcessedEditFile;
-  toolResult: ReturnType<typeof buildBatchResult>;
-}> {
+): Promise<ApplyOutcome> {
   const isDryRun = request.dry_run === true || options?.dryRun === true;
   const isPreview = options?.noPersist === true || isDryRun;
   if (isPreview) {

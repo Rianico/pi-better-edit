@@ -13,6 +13,8 @@ export interface PreviewHost {
 export type PreviewCompute = (args: unknown, cwd: string) => Promise<RPreview>;
 
 export class DebouncedPreview {
+  readonly #armed = new Set<RRState>();
+
   constructor(
     private readonly compute: PreviewCompute,
     private readonly debounceMs: number = PREVIEW_DEBOUNCE_MS,
@@ -33,6 +35,7 @@ export class DebouncedPreview {
     const previewGeneration = (state.previewGeneration ?? 0) + 1;
     state.previewGeneration = previewGeneration;
     const armedSessionId = this.getSessionId?.();
+    this.#armed.add(state);
     state.previewTimer = setTimeout(() => {
       delete state.previewTimer;
       if (this.getSessionId && this.getSessionId() !== armedSessionId) {
@@ -54,11 +57,15 @@ export class DebouncedPreview {
             };
             host.invalidate();
           }
+        })
+        .finally(() => {
+          if (state.previewGeneration === previewGeneration) this.#armed.delete(state);
         });
     }, this.debounceMs);
   }
 
   cancel(state: RRState): void {
+    this.#armed.delete(state);
     if (state.previewTimer) {
       clearTimeout(state.previewTimer);
       delete state.previewTimer;
@@ -69,11 +76,22 @@ export class DebouncedPreview {
   }
 
   clearResult(state: RRState): void {
+    this.#armed.delete(state);
     if (state.previewTimer) {
       clearTimeout(state.previewTimer);
       delete state.previewTimer;
     }
     delete state.preview;
     state.previewGeneration = (state.previewGeneration ?? 0) + 1;
+  }
+
+  /**
+   * Cancels every armed entry: a pending debounce timer never fires, and a compute already running
+   * is generation-guarded, so it can never publish its result after the cancel. An entry stays
+   * armed from arm time until its compute settles, which is how a cancel reaches an in-flight one.
+   */
+  cancelArmed(): void {
+    // oxlint-disable-next-line unicorn/no-useless-spread -- cancel mutates the set, so the walk reads a snapshot
+    for (const state of [...this.#armed]) this.cancel(state);
   }
 }

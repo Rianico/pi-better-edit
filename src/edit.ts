@@ -27,6 +27,7 @@ import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
 import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
+import { inStoreScope, scopedTool } from "./store-lifecycle.js";
 
 void EDIT_DESCRIPTION;
 /** SAFETY: @deprecated Import from "./payload-contract.js" — payload-contract is the single source (docs/.archive_adrs/0007-merged-edit-payload-hoisted-path.md). */
@@ -53,11 +54,16 @@ export async function compPreview(
   ctx: PreviewContext,
 ): Promise<RPreview> {
   const tool = createEditTool();
-  return tool.preview(request, cwd, ctx);
+  return inStoreScope(() => tool.preview(request, cwd, ctx));
 }
 
 type ToolDef = ToolDefinition<TSchema, EditDetails, RRState> & {
   renderShell?: "default" | "self";
+  /**
+   * Cancels the preview this tool armed: a pending debounce timer never fires, and a compute already
+   * running is generation-guarded, so it cannot publish after the cancel. Idempotent.
+   */
+  cancelArmedPreview(): void;
 };
 
 export function buildToolDef(
@@ -71,7 +77,8 @@ export function buildToolDef(
   const presenter = createTuiPresenter(
     (req, cwd) => {
       const sessionManager = getSessionManager?.();
-      return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
+      const previewCtx = sessionManager === undefined ? {} : { sessionManager };
+      return inStoreScope(() => tool.preview(req, cwd, previewCtx));
     },
     () => getSessionManager?.()?.getSessionId(),
   );
@@ -90,6 +97,7 @@ export function buildToolDef(
       }
     },
     renderShell: "default",
+    cancelArmedPreview: () => presenter.preview.cancelArmed(),
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
@@ -119,5 +127,7 @@ export function regEdit(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;
   });
-  pi.registerTool(buildToolDef(() => sessionManager));
+  const def = buildToolDef(() => sessionManager);
+  pi.registerTool(scopedTool(def));
+  pi.on("session_shutdown", () => def.cancelArmedPreview());
 }

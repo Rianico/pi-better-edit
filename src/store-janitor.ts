@@ -24,7 +24,8 @@ import {
   loadHashStore,
   servedLeaseExpiryCutoff,
 } from "./hash-store.js";
-import { isBusyError, markRun, due, withBusyRetry } from "./store-kernel/index.js";
+import { cachedOpenStore, isBusyError, markRun, due, withBusyRetry } from "./store-kernel/index.js";
+import { inStoreScope } from "./store-lifecycle.js";
 import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-kernel/settings.js";
 import type { ConfigOnWarn } from "./json-config.js";
 import { VACUUM_RETIRED_PIN_MS } from "./snapshot-store";
@@ -53,6 +54,9 @@ export const JANITOR_META_KEY = "janitor_at";
  * `deactivate` event, so a timer-based trigger is impossible rather than unimplemented.
  */
 export const JANITOR_EVENTS = ["session_start", "session_shutdown"] as const;
+
+/** One wired lifecycle event, named where the wiring decides what the pass may open. */
+export type JanitorEvent = (typeof JANITOR_EVENTS)[number];
 
 /** The rows one janitor run removed, per family. */
 interface JanitorDeletions {
@@ -87,7 +91,7 @@ interface CompactionOutcome {
 export interface JanitorOutcome {
   /** Whether the run happened at all. `false` means the throttle or the mode said no. */
   readonly ran: boolean;
-  readonly reason?: "off" | "throttled";
+  readonly reason?: "off" | "throttled" | "cold";
   readonly deleted: JanitorDeletions;
   readonly compacted: CompactionOutcome;
   /** Whether the run's deep check found the store damaged (only ever set on a run that happened). */
@@ -110,7 +114,7 @@ const NOTHING_COMPACTED: CompactionOutcome = {
   reclaimedBytes: 0,
 };
 
-function skipped(reason: "off" | "throttled"): JanitorOutcome {
+function skipped(reason: "off" | "throttled" | "cold"): JanitorOutcome {
   return {
     ran: false,
     reason,
@@ -337,6 +341,20 @@ export interface JanitorPassOptions {
   readonly onWarn?: ConfigOnWarn;
   /** The heal step, injectable so a test can observe a detected failure without damaging a store. */
   readonly heal?: () => Promise<boolean>;
+  /**
+   * Whether the pass may OPEN a cold store. `session_shutdown` passes `false`: a teardown runs on
+   * every reason (`quit | reload | new | resume | fork`), and creating `hash-store.sqlite` for a
+   * session that never used the store would leave a file behind for nothing. Defaults to `true`.
+   */
+  readonly openIfCold?: boolean;
+}
+
+/**
+ * The barrier entry point: a pass runs inside the slot's drain scope, so a concurrent close — a
+ * session's last detach, a release — waits for it instead of closing the handle under it.
+ */
+export function janitorPass(options: JanitorPassOptions = {}): Promise<JanitorOutcome> {
+  return inStoreScope(() => janitorPassUnscoped(options));
 }
 
 /**
@@ -344,12 +362,16 @@ export interface JanitorPassOptions {
  * damaged store to the open path's recovery. Never throws for a store problem — the caller here is a
  * lifecycle hook, and a maintenance item must not break the session it runs in.
  */
-export async function janitorPass(options: JanitorPassOptions = {}): Promise<JanitorOutcome> {
+async function janitorPassUnscoped(options: JanitorPassOptions = {}): Promise<JanitorOutcome> {
   const settings =
     options.settings ?? resolveStoreJanitorSettings(options.cwd ?? process.cwd(), options.onWarn);
   if (settings.mode === "off") return skipped("off");
 
-  const db = options.db ?? (await loadHashStore()).db;
+  let db = options.db;
+  if (db === undefined) {
+    if (options.openIfCold === false && !handleIsOpen()) return skipped("cold");
+    db = (await loadHashStore()).db;
+  }
   const outcome = runJanitor({ db, now: options.now ?? Date.now(), settings });
   if (!outcome.ran || !outcome.deepCheckFailed) return outcome;
 
@@ -357,9 +379,25 @@ export async function janitorPass(options: JanitorPassOptions = {}): Promise<Jan
   return { ...outcome, rebuilt: healed };
 }
 
+/**
+ * Whether the cache holds a live handle. Reads the cache alone: a cold teardown must not reach
+ * `loadHashStore`, because that call is what CREATES the store file.
+ */
+function handleIsOpen(): boolean {
+  const cached = cachedOpenStore();
+  return cached !== null && cached.db.isOpen;
+}
+
 export interface JanitorHookDeps {
   /** The pass one lifecycle event triggers; overridden in tests so wiring can be observed. */
-  readonly runJanitor: () => Promise<JanitorOutcome>;
+  readonly runJanitor: (event: JanitorEvent) => Promise<JanitorOutcome>;
+  /**
+   * Runs after the `session_shutdown` pass, however that pass ended. Production MUST supply the
+   * session detach: a handler wired without it keeps the handle's owner alive and never releases it,
+   * so the store outlives every session. Defaults to a no-op so a test double that only needs
+   * `runJanitor` stays a one-member override.
+   */
+  readonly afterShutdownPass: () => Promise<void>;
 }
 
 /**
@@ -371,7 +409,7 @@ export interface JanitorHookDeps {
 type JanitorWarningSurface = "console" | "log";
 
 /** The surface each wired event publishes on. Keyed by the tuple, so a new event cannot be silent. */
-const WARNING_SURFACE_BY_EVENT: Record<(typeof JANITOR_EVENTS)[number], JanitorWarningSurface> = {
+const WARNING_SURFACE_BY_EVENT: Record<JanitorEvent, JanitorWarningSurface> = {
   session_start: "console",
   session_shutdown: "log",
 };
@@ -424,7 +462,21 @@ function printJanitorWarning(warning: JanitorWarning): void {
       if (warning.level === "info") console.info(line);
       else console.error(line);
     }
-  } catch {}
+  } catch (error) {
+    reportDiagnostic("store-janitor", "[store-janitor] warning surface refused the line:", error);
+  }
+}
+
+/**
+ * The hand-off, contained like the pass it follows: a detach that throws is reported and dropped,
+ * because a close failing must not reject the host's `session_shutdown` with no diagnostic.
+ */
+async function detachAfterShutdownPass(detach: () => Promise<void>): Promise<void> {
+  try {
+    await detach();
+  } catch (error) {
+    reportDiagnostic("store-janitor", "[store-janitor] session detach failed:", error);
+  }
 }
 
 /**
@@ -435,21 +487,26 @@ function printJanitorWarning(warning: JanitorWarning): void {
  * WHY `session_shutdown` is wired even though the runtime is being torn down: on `quit` the exit path
  * still runs `shutdownDb` (the WAL checkpoint's single owner), and the pass itself is synchronous
  * SQLite work with no awaits of its own inside the run — a handler that cannot finish simply leaves
- * the throttle row unwritten, and the next session_start runs the sweep instead.
+ * the throttle row unwritten, and the next session_start runs the sweep instead. That event's pass
+ * never OPENS a cold store (`openIfCold: false`), and its `finally` detaches the session's claim
+ * after the pass, for every reason, so the janitor always maintains the handle it is closing.
  */
 export function registerJanitorHooks(
   pi: ExtensionAPI,
   overrides: Partial<JanitorHookDeps> = {},
 ): void {
   const deps: JanitorHookDeps = {
-    runJanitor: () => janitorPass(),
+    runJanitor: (event) => janitorPass({ openIfCold: event === "session_start" }),
+    afterShutdownPass: async () => {},
     ...overrides,
   };
-  const handlerFor = (surface: JanitorWarningSurface) => async (): Promise<void> => {
+  const handlerFor = (event: JanitorEvent) => async (): Promise<void> => {
     try {
-      publishJanitorWarning(await deps.runJanitor(), surface);
+      publishJanitorWarning(await deps.runJanitor(event), WARNING_SURFACE_BY_EVENT[event]);
     } catch (error) {
       reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
+    } finally {
+      if (event === "session_shutdown") await detachAfterShutdownPass(deps.afterShutdownPass);
     }
   };
   // SAFETY: `pi.on` is typed per event name while `JANITOR_EVENTS` is a runtime tuple, so the
@@ -458,6 +515,6 @@ export function registerJanitorHooks(
   const register = (pi as unknown as { on: (event: string, handler: () => Promise<void>) => void })
     .on;
   for (const event of JANITOR_EVENTS) {
-    register.call(pi, event, handlerFor(WARNING_SURFACE_BY_EVENT[event]));
+    register.call(pi, event, handlerFor(event));
   }
 }

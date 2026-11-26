@@ -10,13 +10,18 @@ import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
 import { attachIOBridgeAdapter } from "./src/integrations/pi-lens/io-bridge-adapter.js";
 import { registerJanitorHooks } from "./src/store-janitor.js";
 import { createReadSpanProvider } from "./src/read-expansion/read-provider.js";
+import { createStoreSession } from "./src/store-lifecycle.js";
 
 export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
+export { createStoreSession, releaseHashStore } from "./src/store-lifecycle.js";
 
 /**
  * The extension entry point. The IO-bridge adapter subscribes both seams before any tool can
  * serve or mutate a file, so the session's first read, edit or write is already mirrored
  * whenever a bridge is present.
+ *
+ * The store claim is registered AHEAD of the lifecycle handler that opens the store, so the handle
+ * already has an owner when `session_start` prunes it.
  */
 export default function (pi: ExtensionAPI): void {
   regRead(pi, { spanProvider: createReadSpanProvider() });
@@ -31,6 +36,9 @@ export default function (pi: ExtensionAPI): void {
 
   const hooks = createLifecycleHooks();
 
+  const session = createStoreSession();
+  pi.on("session_start", () => session.attach());
+
   // SAFETY: pi.on is typed for known lifecycle events only — string key widening needed to register lifecycle hooks whose contract is validated by createLifecycleHooks and matches runtime pi.on behavior.
   (pi as unknown as { on: (e: string, h: unknown) => void }).on(
     "session_start",
@@ -44,5 +52,5 @@ export default function (pi: ExtensionAPI): void {
     hooks.onToolResult as unknown as never,
   );
 
-  registerJanitorHooks(pi);
+  registerJanitorHooks(pi, { afterShutdownPass: () => session.detach() });
 }

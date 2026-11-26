@@ -7,6 +7,7 @@ import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
 import type { ServedRow } from "./served-session/serve-render.js";
 import { loadHashStore, type HashStore } from "./hash-store.js";
+import { scopedTool } from "./store-lifecycle.js";
 import { sessionFromContext, sessionKeyFor } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf } from "./utils.js";
@@ -396,426 +397,431 @@ export function regRead(pi: ExtensionAPI, options?: { spanProvider?: SpanProvide
   const builtinReadDef = createReadToolDefinition("");
   const builtinRenderCall = builtinReadDef.renderCall as any;
   const builtinRenderResult = builtinReadDef.renderResult as any;
-  pi.registerTool({
-    name: "read",
-    label: "Read",
-    description: R_DESC,
-    promptSnippet: R_SNIPPET,
-    promptGuidelines: readGuide(),
-    renderCall: (args: ReadRenderArgs, theme, context) => {
-      const projected = projectReadRenderArgs(args);
-      const lastComponent = context.lastComponent;
-      const call: Component = builtinRenderCall({ ...args, ...projected }, theme, {
-        ...context,
-        lastComponent: lastComponent
-          ? (readCallBases.get(lastComponent) ?? lastComponent)
-          : lastComponent,
-      });
-      // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
-      if (projected.windowsCount === undefined) return call;
-      const suffix = ` (${projected.windowsCount} windows)`;
-      const suffixWidth = visibleWidth(suffix);
-      const wrapped: Component = {
-        invalidate: () => call.invalidate(),
-        render: (width: number): string[] => {
-          if (width <= 0) return [];
-          if (width <= suffixWidth) return [truncateToWidth(suffix.trimStart(), width)];
-          const budget = width - suffixWidth;
-          return call
-            .render(budget)
-            .map((line, index) => truncateToWidth(line, budget) + (index === 0 ? suffix : ""));
-        },
-      };
-      readCallBases.set(wrapped, call);
-      return wrapped;
-    },
-    renderResult: (result, options, theme, context) => {
-      // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
-      // SAFETY: carry a retired shape that `Static<TParams>` does not model; the projection keys on
-      // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D5).
-      const args = context.args as ReadRenderArgs;
-      return builtinRenderResult(result, options, theme, {
-        ...context,
-        args: { ...args, ...projectReadRenderArgs(args) },
-      });
-    },
-    parameters: readToolSchema,
-    ...readOutputContract,
-    prepareArguments: (args: unknown) => {
-      try {
-        const prepared = normalizeReadPayload(args as RawReadParams);
-        guardWindowsArray(prepared);
-        // SAFETY: `normalizeReadPayload` emits the admitted schema shape (legacy aliases folded, windows guarded).
-        // SAFETY: TypeScript cannot express that relation; pi validates the returned value against `readToolSchema` next.
-        return prepared as unknown as Static<typeof readToolSchema>;
-      } catch (error) {
-        throw withPayloadSubject(error, "read");
-      }
-    },
-
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      try {
-        const request = admitReadRequest(params as RawReadParams);
-        const cwd = ctx.cwd as string;
-        const sessionCtx = ctx as { sessionManager?: { getSessionId(): string } };
-        abortIf(signal);
-        // Ref: docs/spec/search-and-read-evolution.md
-        const needsStore =
-          request.mode !== "verbatim" ||
-          request.windows?.some((window) => window.kind === "anchor") === true;
-        const store = needsStore ? await loadHashStore() : undefined;
-        const ordered: OrderedOutcome[] = [];
-        let builtinImageRead: ReturnType<typeof createReadTool> | undefined;
-        const readImageViaBuiltin = async (absolutePath: string) => {
-          builtinImageRead ??= createReadTool(cwd);
-          return builtinImageRead.execute(_toolCallId, { path: absolutePath }, signal);
+  pi.registerTool(
+    scopedTool({
+      name: "read",
+      label: "Read",
+      description: R_DESC,
+      promptSnippet: R_SNIPPET,
+      promptGuidelines: readGuide(),
+      renderCall: (args: ReadRenderArgs, theme, context) => {
+        const projected = projectReadRenderArgs(args);
+        const lastComponent = context.lastComponent;
+        const call: Component = builtinRenderCall({ ...args, ...projected }, theme, {
+          ...context,
+          lastComponent: lastComponent
+            ? (readCallBases.get(lastComponent) ?? lastComponent)
+            : lastComponent,
+        });
+        // Ref: docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md
+        if (projected.windowsCount === undefined) return call;
+        const suffix = ` (${projected.windowsCount} windows)`;
+        const suffixWidth = visibleWidth(suffix);
+        const wrapped: Component = {
+          invalidate: () => call.invalidate(),
+          render: (width: number): string[] => {
+            if (width <= 0) return [];
+            if (width <= suffixWidth) return [truncateToWidth(suffix.trimStart(), width)];
+            const budget = width - suffixWidth;
+            return call
+              .render(budget)
+              .map((line, index) => truncateToWidth(line, budget) + (index === 0 ? suffix : ""));
+          },
         };
-        let remainingServedLines = SERVED_MAX_LINES;
+        readCallBases.set(wrapped, call);
+        return wrapped;
+      },
+      renderResult: (result, options, theme, context) => {
+        // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
+        // SAFETY: carry a retired shape that `Static<TParams>` does not model; the projection keys on
+        // SAFETY: `file`/`path`/`windows`/`files`, so history still renders (docs/.archive_adrs/0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md D5).
+        const args = context.args as ReadRenderArgs;
+        return builtinRenderResult(result, options, theme, {
+          ...context,
+          args: { ...args, ...projectReadRenderArgs(args) },
+        });
+      },
+      parameters: readToolSchema,
+      ...readOutputContract,
+      prepareArguments: (args: unknown) => {
+        try {
+          const prepared = normalizeReadPayload(args as RawReadParams);
+          guardWindowsArray(prepared);
+          // SAFETY: `normalizeReadPayload` emits the admitted schema shape (legacy aliases folded, windows guarded).
+          // SAFETY: TypeScript cannot express that relation; pi validates the returned value against `readToolSchema` next.
+          return prepared as unknown as Static<typeof readToolSchema>;
+        } catch (error) {
+          throw withPayloadSubject(error, "read");
+        }
+      },
 
-        {
-          const target = request;
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        try {
+          const request = admitReadRequest(params as RawReadParams);
+          const cwd = ctx.cwd as string;
+          const sessionCtx = ctx as { sessionManager?: { getSessionId(): string } };
           abortIf(signal);
-          const mode = request.mode;
-          // Ref: docs/adr/0016-outline-mode-point-anchors.md
-          let outlineOffsets: Array<{ kind: "offset"; offset: number; limit: number }> | undefined;
-          if (mode === "outline") {
-            const outlineOf = (
-              spanProvider as
-                | { outline?: (file: string) => Promise<readonly OutlineSymbol[]> }
-                | undefined
-            )?.outline;
-            const symbols = (await outlineOf?.(toCwd(target.file, cwd))) ?? [];
-            const lines = [
-              ...new Set(
-                symbols
-                  .map((symbol) => symbol.line)
-                  .filter((line) => Number.isInteger(line) && line >= 1),
-              ),
-            ].sort((a, b) => a - b);
-            outlineOffsets = lines.map((line) => ({
-              kind: "offset" as const,
-              offset: line,
-              limit: 1,
-            }));
-          }
-          const requested = outlineOffsets ?? target.windows;
-          const cap = mode !== "verbatim" ? { maxLines: remainingServedLines } : {};
-          const wantsAnchor =
-            outlineOffsets === undefined &&
-            target.windows?.some((window) => window.kind === "anchor") === true;
-          let preloaded: LFile | undefined = wantsAnchor
-            ? await loadFileKindAndText(toCwd(target.file, cwd), {
-                ...cap,
-                displayPath: target.file,
-              })
-            : undefined;
-          let resolvedText: NormText | undefined;
-          if (preloaded !== undefined && preloaded.kind === "text") {
-            resolvedText = await decodeNormText(target.file, cwd, {
-              ...(signal !== undefined ? { signal } : {}),
-              ...cap,
-              preloadedFile: preloaded,
-            });
-          }
-          let resolver: AnchorResolver | undefined;
-          if (store !== undefined && resolvedText !== undefined) {
-            resolver = {
-              sessionKey: sessionFromContext(sessionCtx, resolvedText.absolutePath).sessionKey,
-              absolutePath: resolvedText.absolutePath,
-              normalized: resolvedText.normalized,
-              store,
-            };
-          }
-          const plan: WindowPlan =
-            outlineOffsets !== undefined
-              ? {
-                  windows: outlineOffsets.map(({ offset, limit }) => ({ offset, limit })),
-                  warnings: [
-                    ...(target.windows !== undefined && target.windows.length > 0
-                      ? [OUTLINE_IGNORED_WINDOWS_WARNING]
-                      : []),
-                    ...(outlineOffsets.length === 0 ? ["[No symbols found.]"] : []),
-                  ],
-                  omittedAll: outlineOffsets.length === 0,
-                }
-              : planWindows(target, resolver);
-          const noteMode =
-            spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0
-              ? resolveSelectionRangeModeWithSource(cwd, (reason) =>
-                  reportWarning("read-expansion", reason),
-                )
+          // Ref: docs/spec/search-and-read-evolution.md
+          const needsStore =
+            request.mode !== "verbatim" ||
+            request.windows?.some((window) => window.kind === "anchor") === true;
+          const store = needsStore ? await loadHashStore() : undefined;
+          const ordered: OrderedOutcome[] = [];
+          let builtinImageRead: ReturnType<typeof createReadTool> | undefined;
+          const readImageViaBuiltin = async (absolutePath: string) => {
+            builtinImageRead ??= createReadTool(cwd);
+            return builtinImageRead.execute(_toolCallId, { path: absolutePath }, signal);
+          };
+          let remainingServedLines = SERVED_MAX_LINES;
+
+          {
+            const target = request;
+            abortIf(signal);
+            const mode = request.mode;
+            // Ref: docs/adr/0016-outline-mode-point-anchors.md
+            let outlineOffsets:
+              | Array<{ kind: "offset"; offset: number; limit: number }>
+              | undefined;
+            if (mode === "outline") {
+              const outlineOf = (
+                spanProvider as
+                  | { outline?: (file: string) => Promise<readonly OutlineSymbol[]> }
+                  | undefined
+              )?.outline;
+              const symbols = (await outlineOf?.(toCwd(target.file, cwd))) ?? [];
+              const lines = [
+                ...new Set(
+                  symbols
+                    .map((symbol) => symbol.line)
+                    .filter((line) => Number.isInteger(line) && line >= 1),
+                ),
+              ].sort((a, b) => a - b);
+              outlineOffsets = lines.map((line) => ({
+                kind: "offset" as const,
+                offset: line,
+                limit: 1,
+              }));
+            }
+            const requested = outlineOffsets ?? target.windows;
+            const cap = mode !== "verbatim" ? { maxLines: remainingServedLines } : {};
+            const wantsAnchor =
+              outlineOffsets === undefined &&
+              target.windows?.some((window) => window.kind === "anchor") === true;
+            let preloaded: LFile | undefined = wantsAnchor
+              ? await loadFileKindAndText(toCwd(target.file, cwd), {
+                  ...cap,
+                  displayPath: target.file,
+                })
               : undefined;
-          const singlePage =
-            requested?.length === 1 && requested[0]?.kind === "offset"
-              ? { offset: requested[0].offset, limit: requested[0].limit }
-              : undefined;
-          const noteWanted =
-            noteMode?.value === "on" &&
-            spanProvider !== undefined &&
-            plan.windows !== undefined &&
-            plan.windows.length > 0;
-          if (noteWanted) {
-            preloaded ??= await loadFileKindAndText(toCwd(target.file, cwd), {
-              ...cap,
-              displayPath: target.file,
-            });
-            if (preloaded.kind === "text") {
-              resolvedText ??= await decodeNormText(target.file, cwd, {
+            let resolvedText: NormText | undefined;
+            if (preloaded !== undefined && preloaded.kind === "text") {
+              resolvedText = await decodeNormText(target.file, cwd, {
                 ...(signal !== undefined ? { signal } : {}),
                 ...cap,
                 preloadedFile: preloaded,
               });
             }
-          }
-          const note =
-            noteWanted && resolvedText !== undefined
-              ? await selectionRangeNote({
-                  file: toCwd(target.file, cwd),
-                  windows: plan.windows,
-                  totalLines: visibleLineTotal(
-                    resolvedText.normalized,
-                    walkLines(resolvedText.normalized).total,
-                  ),
-                  provider: spanProvider,
-                  enabled: true,
-                })
-              : undefined;
-          if (note?.failure !== undefined && noteMode !== undefined) {
-            recordProviderFailure(
-              {
+            let resolver: AnchorResolver | undefined;
+            if (store !== undefined && resolvedText !== undefined) {
+              resolver = {
+                sessionKey: sessionFromContext(sessionCtx, resolvedText.absolutePath).sessionKey,
+                absolutePath: resolvedText.absolutePath,
+                normalized: resolvedText.normalized,
+                store,
+              };
+            }
+            const plan: WindowPlan =
+              outlineOffsets !== undefined
+                ? {
+                    windows: outlineOffsets.map(({ offset, limit }) => ({ offset, limit })),
+                    warnings: [
+                      ...(target.windows !== undefined && target.windows.length > 0
+                        ? [OUTLINE_IGNORED_WINDOWS_WARNING]
+                        : []),
+                      ...(outlineOffsets.length === 0 ? ["[No symbols found.]"] : []),
+                    ],
+                    omittedAll: outlineOffsets.length === 0,
+                  }
+                : planWindows(target, resolver);
+            const noteMode =
+              spanProvider !== undefined && plan.windows !== undefined && plan.windows.length > 0
+                ? resolveSelectionRangeModeWithSource(cwd, (reason) =>
+                    reportWarning("read-expansion", reason),
+                  )
+                : undefined;
+            const singlePage =
+              requested?.length === 1 && requested[0]?.kind === "offset"
+                ? { offset: requested[0].offset, limit: requested[0].limit }
+                : undefined;
+            const noteWanted =
+              noteMode?.value === "on" &&
+              spanProvider !== undefined &&
+              plan.windows !== undefined &&
+              plan.windows.length > 0;
+            if (noteWanted) {
+              preloaded ??= await loadFileKindAndText(toCwd(target.file, cwd), {
+                ...cap,
+                displayPath: target.file,
+              });
+              if (preloaded.kind === "text") {
+                resolvedText ??= await decodeNormText(target.file, cwd, {
+                  ...(signal !== undefined ? { signal } : {}),
+                  ...cap,
+                  preloadedFile: preloaded,
+                });
+              }
+            }
+            const note =
+              noteWanted && resolvedText !== undefined
+                ? await selectionRangeNote({
+                    file: toCwd(target.file, cwd),
+                    windows: plan.windows,
+                    totalLines: visibleLineTotal(
+                      resolvedText.normalized,
+                      walkLines(resolvedText.normalized).total,
+                    ),
+                    provider: spanProvider,
+                    enabled: true,
+                  })
+                : undefined;
+            if (note?.failure !== undefined && noteMode !== undefined) {
+              recordProviderFailure(
+                {
+                  file: target.file,
+                  mode,
+                  source: note.failure.source,
+                  reason: note.failure.reason,
+                  ...(plan.windows === undefined
+                    ? {}
+                    : {
+                        requested: plan.windows.map((window) => ({
+                          startLine: window.offset,
+                          endLine: window.offset + window.limit - 1,
+                        })),
+                      }),
+                },
+                sessionKeyFor(sessionCtx),
+                noteMode.source,
+              );
+            }
+            const prepared = await prepareFile(target.file, cwd, {
+              ...(signal !== undefined ? { signal } : {}),
+              ...(singlePage !== undefined
+                ? { offset: singlePage.offset, limit: singlePage.limit }
+                : plan.windows !== undefined
+                  ? { windows: plan.windows }
+                  : {}),
+              maxLines: remainingServedLines,
+              ...(plan.windows !== undefined && plan.windows.length > 1 && note !== undefined
+                ? { noteClauses: note.clauses }
+                : {}),
+              ...(mode !== "verbatim" && store !== undefined ? { store } : {}),
+              noPersist: true,
+              render: mode === "verbatim" ? "verbatim" : "served",
+              ...(outlineOffsets !== undefined ? { derivedWindows: true } : {}),
+            });
+            if (prepared.kind === "image") {
+              const imageResult = await readImageViaBuiltin(prepared.absolutePath);
+              return "structuredContent" in imageResult &&
+                imageResult.structuredContent !== undefined
+                ? imageResult
+                : withReadOutput(imageResult);
+            }
+            if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
+            const readWarning = readWarningFor(prepared.endingCounts, cwd);
+            ordered.push({
+              kind: "file",
+              entry: {
                 file: target.file,
                 mode,
-                source: note.failure.source,
-                reason: note.failure.reason,
-                ...(plan.windows === undefined
+                plan,
+                ...(plan.windows?.length === 1 && note?.clauses[0] !== undefined
+                  ? { noteClause: note.clauses[0] }
+                  : {}),
+                prepared,
+                ...(readWarning !== undefined ? { readWarning } : {}),
+                ...(plan.omittedAll
                   ? {}
                   : {
-                      requested: plan.windows.map((window) => ({
-                        startLine: window.offset,
-                        endLine: window.offset + window.limit - 1,
-                      })),
+                      ...(prepared.truncation !== undefined
+                        ? { truncation: prepared.truncation }
+                        : {}),
+                      ...(prepared.nextOffset !== undefined
+                        ? { nextOffset: prepared.nextOffset }
+                        : {}),
                     }),
               },
-              sessionKeyFor(sessionCtx),
-              noteMode.source,
-            );
+            });
+            if (mode !== "verbatim") remainingServedLines -= prepared.lineTotals.split;
           }
-          const prepared = await prepareFile(target.file, cwd, {
-            ...(signal !== undefined ? { signal } : {}),
-            ...(singlePage !== undefined
-              ? { offset: singlePage.offset, limit: singlePage.limit }
-              : plan.windows !== undefined
-                ? { windows: plan.windows }
-                : {}),
-            maxLines: remainingServedLines,
-            ...(plan.windows !== undefined && plan.windows.length > 1 && note !== undefined
-              ? { noteClauses: note.clauses }
-              : {}),
-            ...(mode !== "verbatim" && store !== undefined ? { store } : {}),
-            noPersist: true,
-            render: mode === "verbatim" ? "verbatim" : "served",
-            ...(outlineOffsets !== undefined ? { derivedWindows: true } : {}),
-          });
-          if (prepared.kind === "image") {
-            const imageResult = await readImageViaBuiltin(prepared.absolutePath);
-            return "structuredContent" in imageResult && imageResult.structuredContent !== undefined
-              ? imageResult
-              : withReadOutput(imageResult);
-          }
-          if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
-          const readWarning = readWarningFor(prepared.endingCounts, cwd);
-          ordered.push({
-            kind: "file",
-            entry: {
-              file: target.file,
-              mode,
-              plan,
-              ...(plan.windows?.length === 1 && note?.clauses[0] !== undefined
-                ? { noteClause: note.clauses[0] }
-                : {}),
-              prepared,
-              ...(readWarning !== undefined ? { readWarning } : {}),
-              ...(plan.omittedAll
-                ? {}
-                : {
-                    ...(prepared.truncation !== undefined
-                      ? { truncation: prepared.truncation }
-                      : {}),
-                    ...(prepared.nextOffset !== undefined
-                      ? { nextOffset: prepared.nextOffset }
-                      : {}),
-                  }),
-            },
-          });
-          if (mode !== "verbatim") remainingServedLines -= prepared.lineTotals.split;
-        }
-        const results: FileResult[] = ordered.flatMap((outcome) =>
-          outcome.kind === "file" ? [outcome.entry] : [],
-        );
-        const preparedFiles = results.filter(isPrepared);
-        for (const entry of preparedFiles) {
-          if (entry.mode === "verbatim" || entry.plan.omittedAll) continue;
-          const adopted = entry.prepared.statAdoption;
-          if (adopted !== undefined) {
-            // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
-            entry.snapshotId = adopted.snapshotId;
-            continue;
-          }
-          try {
-            entry.snapshotId = (
-              await fileSnap(
-                entry.prepared.absolutePath,
-                contentChecksum(entry.prepared.normalized),
-                entry.prepared.stats,
-              )
-            ).snapshotId;
-          } catch {
-            entry.snapshotId = undefined;
-          }
-        }
-
-        const single = results.length === 1 ? preparedFiles[0] : undefined;
-        const firstTruncation = preparedFiles.find(
-          (entry) => entry.truncation !== undefined,
-        )?.truncation;
-        const anyTruncated = firstTruncation !== undefined;
-        const content: RoutedContent[] = ordered.every((outcome) => outcome.kind === "file")
-          ? [{ type: "text", text: results.map(sectionText).join("\n\n") }]
-          : routedContent(ordered);
-        const metrics = {
-          truncated: anyTruncated,
-          ...(single?.nextOffset !== undefined ? { next_offset: single.nextOffset } : {}),
-        };
-
-        const servedEntries = preparedFiles.filter(
-          (entry) => entry.mode !== "verbatim" && !entry.plan.omittedAll,
-        );
-        if (servedEntries.length === 0) {
-          const emptyOutline = preparedFiles.find(
-            (entry) => entry.mode === "outline" && entry.plan.omittedAll,
+          const results: FileResult[] = ordered.flatMap((outcome) =>
+            outcome.kind === "file" ? [outcome.entry] : [],
           );
-          if (emptyOutline !== undefined) {
-            try {
-              await sessionFromContext(
-                sessionCtx,
-                emptyOutline.prepared.absolutePath,
-              ).recordOutlineFolds([]);
-            } catch (error) {
-              reportDiagnostic("read", "Failed to clear outline fold record:", error);
+          const preparedFiles = results.filter(isPrepared);
+          for (const entry of preparedFiles) {
+            if (entry.mode === "verbatim" || entry.plan.omittedAll) continue;
+            const adopted = entry.prepared.statAdoption;
+            if (adopted !== undefined) {
+              // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
+              entry.snapshotId = adopted.snapshotId;
+              continue;
             }
+            try {
+              entry.snapshotId = (
+                await fileSnap(
+                  entry.prepared.absolutePath,
+                  contentChecksum(entry.prepared.normalized),
+                  entry.prepared.stats,
+                )
+              ).snapshotId;
+            } catch {
+              entry.snapshotId = undefined;
+            }
+          }
+
+          const single = results.length === 1 ? preparedFiles[0] : undefined;
+          const firstTruncation = preparedFiles.find(
+            (entry) => entry.truncation !== undefined,
+          )?.truncation;
+          const anyTruncated = firstTruncation !== undefined;
+          const content: RoutedContent[] = ordered.every((outcome) => outcome.kind === "file")
+            ? [{ type: "text", text: results.map(sectionText).join("\n\n") }]
+            : routedContent(ordered);
+          const metrics = {
+            truncated: anyTruncated,
+            ...(single?.nextOffset !== undefined ? { next_offset: single.nextOffset } : {}),
+          };
+
+          const servedEntries = preparedFiles.filter(
+            (entry) => entry.mode !== "verbatim" && !entry.plan.omittedAll,
+          );
+          if (servedEntries.length === 0) {
+            const emptyOutline = preparedFiles.find(
+              (entry) => entry.mode === "outline" && entry.plan.omittedAll,
+            );
+            if (emptyOutline !== undefined) {
+              try {
+                await sessionFromContext(
+                  sessionCtx,
+                  emptyOutline.prepared.absolutePath,
+                ).recordOutlineFolds([]);
+              } catch (error) {
+                reportDiagnostic("read", "Failed to clear outline fold record:", error);
+              }
+            }
+            return withReadOutput({
+              content,
+              details:
+                single?.mode === "verbatim"
+                  ? {
+                      ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
+                      ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
+                      metrics,
+                    }
+                  : {
+                      ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
+                      metrics,
+                    },
+            });
+          }
+
+          const sessionKey = sessionFromContext(
+            sessionCtx,
+            servedEntries[0]!.prepared.absolutePath,
+          ).sessionKey;
+          // Ref: docs/spec/content-addressed-line-identity-mvcc.md
+          try {
+            // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
+            const unmatched: PreparedTarget[] = [];
+            for (const entry of servedEntries) {
+              const adopted = entry.prepared.statAdoption;
+              const statKey = entry.prepared.statKey;
+              if (adopted === undefined || statKey === undefined) {
+                unmatched.push(entry);
+                continue;
+              }
+              const committed = await adoptStatSnapshotFor(
+                {
+                  path: entry.prepared.absolutePath,
+                  statKey,
+                  snapshotHash: adopted.snapshotHash,
+                },
+                { retireLeases: true, leases: { sessionKey, rows: servedRowsOf(entry) } },
+              );
+              if (!committed) unmatched.push(entry);
+            }
+            if (unmatched.length > 0) {
+              const enrollments = await Promise.all(
+                unmatched.map(async (entry) => ({
+                  descriptor: {
+                    path: entry.prepared.absolutePath,
+                    snapshotHash: snapshotHashFor(entry.prepared.normalized),
+                    lineCount: entry.prepared.lineTotals.split,
+                    hashes: await fullHashesFor(entry, store),
+                    content: entry.prepared.normalized,
+                  },
+                  options: {
+                    retireLeases: true,
+                    leases: { sessionKey, rows: servedRowsOf(entry) },
+                    ...(entry.prepared.statKey !== undefined
+                      ? { statKey: entry.prepared.statKey }
+                      : {}),
+                  },
+                })),
+              );
+              await upsertSnapshotsFor(enrollments);
+            }
+          } catch (error) {
+            reportDiagnostic("read", "Failed to commit read-path snapshot materialization:", error);
+          }
+          for (const entry of servedEntries) {
+            const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);
+            const isFullRead = entry.plan.windows === undefined && entry.truncation === undefined;
+            await session.recordEpoch({
+              rows: servedRowsOf(entry),
+              lineCount: entry.prepared.lineTotals.visible,
+              // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
+              ...(isFullRead ? { fullReadHashes: entry.prepared.fileHashes } : {}),
+              ...(isFullRead && entry.snapshotId !== undefined
+                ? { snapshotId: entry.snapshotId }
+                : {}),
+              isFullRead,
+              ...(entry.prepared.retiredHashes !== undefined
+                ? { blockedHashes: entry.prepared.retiredHashes }
+                : {}),
+            });
+            if (isFullRead) await session.clearDrift();
+            if (entry.mode === "outline") {
+              const servedLines = servedRowsOf(entry)
+                .map((row) => row.position + 1)
+                .sort((a, b) => a - b);
+              await session.recordOutlineFolds(outlineFoldRanges(servedLines));
+            }
+            notifyServedSpans({
+              filePath: entry.prepared.absolutePath,
+              spans: servedRowsToSpans(entry.prepared.served),
+              source: "read",
+              content: entry.prepared.normalized,
+            });
           }
           return withReadOutput({
             content,
-            details:
-              single?.mode === "verbatim"
-                ? {
-                    ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
-                    ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
-                    metrics,
-                  }
-                : {
-                    ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
-                    metrics,
-                  },
+            details: single
+              ? {
+                  ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
+                  ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
+                  ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
+                  metrics,
+                }
+              : {
+                  ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
+                  metrics,
+                },
           });
-        }
-
-        const sessionKey = sessionFromContext(
-          sessionCtx,
-          servedEntries[0]!.prepared.absolutePath,
-        ).sessionKey;
-        // Ref: docs/spec/content-addressed-line-identity-mvcc.md
-        try {
-          // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
-          const unmatched: PreparedTarget[] = [];
-          for (const entry of servedEntries) {
-            const adopted = entry.prepared.statAdoption;
-            const statKey = entry.prepared.statKey;
-            if (adopted === undefined || statKey === undefined) {
-              unmatched.push(entry);
-              continue;
-            }
-            const committed = await adoptStatSnapshotFor(
-              {
-                path: entry.prepared.absolutePath,
-                statKey,
-                snapshotHash: adopted.snapshotHash,
-              },
-              { retireLeases: true, leases: { sessionKey, rows: servedRowsOf(entry) } },
-            );
-            if (!committed) unmatched.push(entry);
-          }
-          if (unmatched.length > 0) {
-            const enrollments = await Promise.all(
-              unmatched.map(async (entry) => ({
-                descriptor: {
-                  path: entry.prepared.absolutePath,
-                  snapshotHash: snapshotHashFor(entry.prepared.normalized),
-                  lineCount: entry.prepared.lineTotals.split,
-                  hashes: await fullHashesFor(entry, store),
-                  content: entry.prepared.normalized,
-                },
-                options: {
-                  retireLeases: true,
-                  leases: { sessionKey, rows: servedRowsOf(entry) },
-                  ...(entry.prepared.statKey !== undefined
-                    ? { statKey: entry.prepared.statKey }
-                    : {}),
-                },
-              })),
-            );
-            await upsertSnapshotsFor(enrollments);
-          }
         } catch (error) {
-          reportDiagnostic("read", "Failed to commit read-path snapshot materialization:", error);
+          throw withPayloadSubject(error, "read");
         }
-        for (const entry of servedEntries) {
-          const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);
-          const isFullRead = entry.plan.windows === undefined && entry.truncation === undefined;
-          await session.recordEpoch({
-            rows: servedRowsOf(entry),
-            lineCount: entry.prepared.lineTotals.visible,
-            // Ref: docs/.archive_adrs/0043-unchanged-file-adopts-on-stat-identity.md
-            ...(isFullRead ? { fullReadHashes: entry.prepared.fileHashes } : {}),
-            ...(isFullRead && entry.snapshotId !== undefined
-              ? { snapshotId: entry.snapshotId }
-              : {}),
-            isFullRead,
-            ...(entry.prepared.retiredHashes !== undefined
-              ? { blockedHashes: entry.prepared.retiredHashes }
-              : {}),
-          });
-          if (isFullRead) await session.clearDrift();
-          if (entry.mode === "outline") {
-            const servedLines = servedRowsOf(entry)
-              .map((row) => row.position + 1)
-              .sort((a, b) => a - b);
-            await session.recordOutlineFolds(outlineFoldRanges(servedLines));
-          }
-          notifyServedSpans({
-            filePath: entry.prepared.absolutePath,
-            spans: servedRowsToSpans(entry.prepared.served),
-            source: "read",
-            content: entry.prepared.normalized,
-          });
-        }
-        return withReadOutput({
-          content,
-          details: single
-            ? {
-                ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
-                ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
-                ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
-                metrics,
-              }
-            : {
-                ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
-                metrics,
-              },
-        });
-      } catch (error) {
-        throw withPayloadSubject(error, "read");
-      }
-    },
-  });
+      },
+    }),
+  );
 }

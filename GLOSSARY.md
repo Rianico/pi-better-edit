@@ -336,6 +336,14 @@ _Avoid_: single-root config, shared config directory
 The event-driven background SQLite maintenance runner invoked on `session_start` and `session_shutdown`, applying hard 7-day lease TTL deletion and conditional autocommit `VACUUM` ([ADR-0005](docs/adr/0005-store-janitor-two-root-lifecycle.md)).
 _Avoid_: store worker, background daemon
 
+**store attachment**:
+One session's idempotent ownership token on the store handle: acquired on `session_start` without opening the database, held until detachment, and counted so the last owner out is the only one that may close. Two in-process sessions are two owners ([ADR-0020](docs/adr/0020-session-scoped-store-attachment-and-detachment.md)).
+_Avoid_: store refcount, handle lease
+
+**store detachment**:
+Releasing that token on `session_shutdown` for every reason (`quit | reload | new | resume | fork`). Only a real `1 → 0` makes a close due: in-flight scopes drain first, then `shutdownDb` truncates the WAL and closes, and every persisted lease, snapshot, lineage row and undo record survives. A new attachment before the drain completes cancels the close ([ADR-0020](docs/adr/0020-session-scoped-store-attachment-and-detachment.md)).
+_Avoid_: store close, store teardown
+
 **stdout byte gate**:
 The fail-closed verification barrier in Bash view interception ensuring raw captured command stdout byte-matches the re-read disk slice before replacing tool output with anchored rows ([ADR-0006](docs/adr/0006-ast-guarded-bash-view-interception.md)).
 _Avoid_: parser trust, unverified preview

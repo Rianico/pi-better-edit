@@ -235,4 +235,159 @@ describe("DebouncedPreview", () => {
       vi.useRealTimers();
     }
   });
+
+  it("cancelArmed stops a pending compute from ever running", async () => {
+    vi.useFakeTimers();
+    try {
+      const compute = vi.fn(async () => ({ diff: "D" }));
+      const controller = new DebouncedPreview(compute);
+      const { host, state } = makeHost();
+      controller.renderCall(host, sampleArgs);
+      expect(state.previewTimer).toBeDefined();
+
+      controller.cancelArmed();
+
+      expect(state.previewTimer).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS + 1);
+      expect(compute).not.toHaveBeenCalled();
+      expect(state.preview).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a second cancelArmed changes nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const compute = vi.fn(async () => ({ diff: "D" }));
+      const controller = new DebouncedPreview(compute);
+      const { host, state } = makeHost();
+      controller.renderCall(host, sampleArgs);
+      controller.cancelArmed();
+      const generation = state.previewGeneration;
+
+      controller.cancelArmed();
+
+      expect(state.previewGeneration).toBe(generation);
+      expect(state.previewTimer).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS + 1);
+      expect(compute).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a fired preview leaves the armed set so cancelArmed spares its settled result", async () => {
+    vi.useFakeTimers();
+    try {
+      const compute = vi.fn(async () => ({ diff: "D" }));
+      const controller = new DebouncedPreview(compute);
+      const settled = makeHost();
+      controller.renderCall(settled.host, sampleArgs);
+      const invalidated = settled.invalidated;
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
+      await invalidated;
+      expect(settled.state.preview).toEqual({ diff: "D" });
+
+      const fresh = makeHost();
+      controller.renderCall(fresh.host, otherArgs);
+      expect(fresh.state.previewTimer).toBeDefined();
+
+      controller.cancelArmed();
+
+      expect(settled.state.preview).toEqual({ diff: "D" });
+      expect(settled.state.argsKey).toBeDefined();
+      expect(fresh.state.previewTimer).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS + 1);
+      expect(compute).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancelArmed stops a compute already running from publishing when it settles", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveCompute: ((preview: RPreview) => void) | undefined;
+      const controller = new DebouncedPreview(
+        (_args: unknown, _cwd: string) =>
+          new Promise<RPreview>((resolve) => {
+            resolveCompute = resolve;
+          }),
+      );
+      const invalidate = vi.fn();
+      const { host, state } = makeHost({ invalidate });
+      controller.renderCall(host, sampleArgs);
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
+      expect(resolveCompute).toBeDefined();
+      const armedGeneration = state.previewGeneration;
+
+      controller.cancelArmed();
+
+      expect(state.previewGeneration).toBe((armedGeneration ?? 0) + 1);
+      resolveCompute!({ diff: "STALE" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(state.preview).toBeUndefined();
+      expect(invalidate).not.toHaveBeenCalled();
+
+      const settledGeneration = state.previewGeneration;
+      controller.cancelArmed();
+      expect(state.previewGeneration).toBe(settledGeneration);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a settled compute publishes once and leaves the armed set", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new DebouncedPreview(async () => ({ diff: "D" }));
+      const invalidate = vi.fn();
+      const { host, state } = makeHost({ invalidate });
+      controller.renderCall(host, sampleArgs);
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(state.preview).toEqual({ diff: "D" });
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      const settledGeneration = state.previewGeneration;
+
+      controller.cancelArmed();
+
+      expect(state.previewGeneration).toBe(settledGeneration);
+      expect(state.preview).toEqual({ diff: "D" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a settling stale compute does not disarm the newer preview armed after it", async () => {
+    vi.useFakeTimers();
+    try {
+      const resolvers: Array<(preview: RPreview) => void> = [];
+      const controller = new DebouncedPreview(
+        (_args: unknown, _cwd: string) =>
+          new Promise<RPreview>((resolve) => {
+            resolvers.push(resolve);
+          }),
+      );
+      const { host, state } = makeHost();
+      controller.renderCall(host, sampleArgs);
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
+      controller.renderCall(host, otherArgs);
+      expect(state.previewTimer).toBeDefined();
+
+      resolvers[0]!({ diff: "STALE" });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const armedGeneration = state.previewGeneration;
+      controller.cancelArmed();
+
+      expect(state.previewGeneration).toBe((armedGeneration ?? 0) + 1);
+      await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS + 1);
+      expect(resolvers).toHaveLength(1);
+      expect(state.preview).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
