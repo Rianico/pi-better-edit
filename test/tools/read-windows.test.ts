@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { lineHashes } from "../../src/hashline/hash-identity";
 import { describe, expect, it } from "vitest";
 import { MAX_READ_WINDOWS } from "../../src/constants";
 import { fmtReadPreview } from "../../src/read";
@@ -334,6 +335,185 @@ describe("read tool — windows", () => {
       const text = getText(result);
       expect(text).not.toContain("[Lines ");
       expect(rowsOf(text)).toEqual(["line 2", "line 3"]);
+    });
+  });
+});
+
+describe("fmtReadPreview — windows share one budget without shrinking the line cap", () => {
+  const CAP = 400;
+  const LINES = 1000;
+
+  it("omits a window its first recoverable row cannot fit, and still renders a later small one", async () => {
+    const content = ["x".repeat(200), "y".repeat(200), "line 3", "line 4"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+          { offset: 3, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Lines 1-1 of 4 total]");
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 170B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("[Line 2: ");
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 3-4 of 4 total]");
+    expect(result.text).toContain("│line 3");
+    expect(result.served.map((row) => row.position)).toEqual([0, 2, 3]);
+    expect(result.truncation?.truncated).toBe(true);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+
+  it("stops a window mid-way at the remaining budget and says so in its header only", async () => {
+    const content = ["x".repeat(200), "line 2", "y".repeat(199), "line 4"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 2 },
+          { offset: 4, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Lines 2-2 of 4 total; stopped at 170B]");
+    expect(result.text).toContain("│line 2");
+    expect(result.text).not.toContain("[Line 3: ");
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 4-4 of 4 total]");
+    expect(result.served.map((row) => row.position)).toEqual([0, 1, 3]);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+
+  it("cites the intrinsic line cap, not the shrunken budget, for a later oversized line", async () => {
+    const content = ["x".repeat(200), "y".repeat(500), "line 3"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Line 2: 507B; not shown.]");
+    expect(result.text).toContain("[Line 2 exceeds the 400B limit; the read tool cannot show it.]");
+    expect(result.text).not.toContain("170B limit");
+    expect(result.served.map((row) => row.position)).toEqual([0]);
+  });
+
+  it("omits a mixed window whose leading recoverable row misses the budget, without warning", async () => {
+    const content = ["x".repeat(200), "y".repeat(199), "z".repeat(500)].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 170B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).not.toContain("[Line 2: ");
+    expect(result.text).not.toContain("[Line 3: ");
+    expect(result.served.map((row) => row.position)).toEqual([0]);
+    expect(result.truncation?.truncated).toBe(true);
+  });
+});
+
+describe("read tool — multi-window budget vs intrinsic line cap", () => {
+  const BIG = "x".repeat(40_000);
+  const MID = "y".repeat(25_000);
+  const CONTENT = [BIG, "short two", MID, "tiny"].join("\n") + "\n";
+
+  it("marks the page truncated, refuses an unserved omitted line, then edits it after a standalone read", async () => {
+    await withTempFile("huge.txt", CONTENT, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const windowed = await readTool.execute(
+        "r1",
+        {
+          file: "huge.txt",
+          windows: [
+            { offset: 1, limit: 1 },
+            { offset: 3, limit: 1 },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(windowed.details.metrics.truncated).toBe(true);
+
+      const hashes = await lineHashes(CONTENT, home.testPath);
+      const omitted = hashes[2]!;
+      let rejected: Error | undefined;
+      try {
+        await editTool.execute(
+          "e1",
+          {
+            file: "huge.txt",
+            edits: [{ anchor_from: omitted, anchor_to: omitted, text: "replaced" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+      } catch (error) {
+        rejected = error as Error;
+      }
+      expect(rejected?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+      expect(await readFile(path, "utf-8")).toBe(CONTENT);
+
+      const alone = await readTool.execute(
+        "r2",
+        { file: "huge.txt", offset: 3, limit: 1 },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const aloneText = getText(alone);
+      expect(aloneText).toContain(MID);
+      expect(aloneText).toContain("[huge.txt (lines 3-3 of 4 total)]");
+      const row = aloneText.split("\n").find((line) => /^[A-Za-z0-9]{4}│/.test(line));
+      const anchor = extractHash(row!);
+
+      const edited = await editTool.execute(
+        "e3",
+        {
+          file: "huge.txt",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "replaced" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(edited)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe(
+        [BIG, "short two", "replaced", "tiny"].join("\n") + "\n",
+      );
     });
   });
 });

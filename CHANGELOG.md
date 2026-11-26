@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **read:** separate the intrinsic per-line cap from the remaining response budget in multi-window reads: a window whose first recoverable row misses the budget is omitted with a remaining-budget notice and leaves the budget for later windows, a partly fitting window stops in its own header, and an oversized notice always names the full per-line limit instead of the shrunken remainder. (#361)
+
 ## [2.21.1] - 2026-11-25
 
 ### Bug Fixes

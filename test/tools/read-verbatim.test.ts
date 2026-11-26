@@ -508,3 +508,81 @@ describe("read verbatim — exhaustiveness guard", () => {
     });
   });
 });
+
+describe("fmtReadPreview — verbatim windows share one budget without shrinking the line cap", () => {
+  it("omits a recoverable verbatim window that misses the budget and still renders a later one", async () => {
+    const content = ["x".repeat(177), "y".repeat(250), "line 3"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+          { offset: 3, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      400,
+      1000,
+    );
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 200B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 3-3 of 3 total]");
+    expect(result.text).toContain("line 3");
+    expect(result.served).toEqual([]);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+});
+
+describe("fmtReadPreview — verbatim multi-window budget vs intrinsic line cap", () => {
+  it("omits a recoverable verbatim window with the budget notice and keeps a later window", async () => {
+    const content = ["x".repeat(40_000), "short two", "y".repeat(25_000), "tiny"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 3, limit: 1 },
+          { offset: 4, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+    );
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 10.9KB read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 4-4 of 4 total]");
+    expect(result.served).toEqual([]);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+
+  it("cites the intrinsic cap for a verbatim oversized line in a later window", async () => {
+    const content =
+      ["x".repeat(40_000), "short two", "y".repeat(25_000), "z".repeat(60_000)].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 4, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+    );
+    expect(result.text).toContain("[Line 4: 58.6KB; not shown.]");
+    expect(result.text).toContain(
+      "[Line 4 exceeds the 50.0KB limit; the read tool cannot show it.]",
+    );
+    expect(result.text).not.toContain("10.9KB limit");
+    expect(result.served).toEqual([]);
+  });
+});
