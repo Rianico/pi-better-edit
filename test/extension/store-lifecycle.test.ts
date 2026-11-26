@@ -23,8 +23,9 @@ import {
   __isStoreOpen,
 } from "../../src/hash-store";
 import { releaseHashStore } from "../../src/store-lifecycle";
+import type { RRState } from "../../src/edit-render";
+import { PREVIEW_DEBOUNCE_MS } from "../../src/preview-controller";
 import { anchorRows, extractHash, getText, getWritableTempRoot } from "../support/fixtures";
-
 interface TestCtx {
   readonly cwd: string;
   readonly sessionManager: { getSessionId(): string };
@@ -45,6 +46,8 @@ interface ToolHandle {
     onUpdate: undefined,
     ctx: TestCtx,
   ): Promise<ServedResult>;
+  /** The tool's own call-preview renderer, when it registers one. */
+  renderCall?(args: unknown, theme: unknown, context: unknown): unknown;
 }
 
 /** One registered lifecycle handler, as the host stores it. */
@@ -295,6 +298,52 @@ describe("store lifecycle through the entry point", () => {
 
       expect(__isStoreOpen()).toBe(false);
       expect(existsSync(hashStorePath())).toBe(false);
+    });
+  });
+
+  it("cancels an armed preview on session_shutdown so nothing reopens the store", async () => {
+    await withSessionDir("pi-session-preview-", async (dir, ctx) => {
+      await writeFile(join(dir, "sample.ts"), "alpha\nbeta\ngamma\n", "utf-8");
+      const running = makeLifecyclePi();
+      register(running.pi);
+      await running.emit("session_start", { reason: "startup" }, ctx);
+      const served = await toolFor(running, "read").execute(
+        "r1",
+        { file: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const anchor = extractHash(anchorRows(getText(served))[0]!);
+      const editTool = toolFor(running, "edit");
+      const renderCall = editTool.renderCall;
+      if (renderCall === undefined) throw new Error('the entry point exposed no "edit" renderCall');
+
+      const state: RRState = {};
+      renderCall(
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "alpha edited" }],
+        },
+        { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+        {
+          cwd: dir,
+          executionStarted: false,
+          argsComplete: true,
+          state,
+          expanded: false,
+          lastComponent: undefined,
+          invalidate: () => {},
+        },
+      );
+      expect(state.previewTimer).toBeDefined();
+      expect(__isStoreOpen()).toBe(true);
+
+      await running.emit("session_shutdown", { reason: "quit" }, ctx);
+      await new Promise((resolve) => setTimeout(resolve, PREVIEW_DEBOUNCE_MS + 100));
+
+      expect(__isStoreOpen()).toBe(false);
+      expect(storeLifecycleSlot.ownerCount).toBe(0);
     });
   });
 });

@@ -59,6 +59,13 @@ export async function compPreview(
 
 type ToolDef = ToolDefinition<TSchema, EditDetails, RRState> & {
   renderShell?: "default" | "self";
+  /**
+   * Cancels the debounced preview timer this tool armed, and bumps every armed state's generation so
+   * an in-flight compute cannot publish. Wired to `session_shutdown` as a UI-cancel subscriber, not
+   * a second store-teardown handler: it clears timers only, is idempotent, and is correct in any
+   * order relative to the janitor's coordinated shutdown, because it opens or closes nothing itself.
+   */
+  cancelArmedPreview(): void;
 };
 
 export function buildToolDef(
@@ -92,6 +99,7 @@ export function buildToolDef(
       }
     },
     renderShell: "default",
+    cancelArmedPreview: () => presenter.preview.cancelArmed(),
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       try {
@@ -121,5 +129,7 @@ export function regEdit(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;
   });
-  pi.registerTool(scopedTool(buildToolDef(() => sessionManager)));
+  const def = buildToolDef(() => sessionManager);
+  pi.registerTool(scopedTool(def));
+  pi.on("session_shutdown", () => def.cancelArmedPreview());
 }
