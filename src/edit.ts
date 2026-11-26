@@ -60,10 +60,8 @@ export async function compPreview(
 type ToolDef = ToolDefinition<TSchema, EditDetails, RRState> & {
   renderShell?: "default" | "self";
   /**
-   * Cancels the debounced preview timer this tool armed, and bumps every armed state's generation so
-   * an in-flight compute cannot publish. Wired to `session_shutdown` as a UI-cancel subscriber, not
-   * a second store-teardown handler: it clears timers only, is idempotent, and is correct in any
-   * order relative to the janitor's coordinated shutdown, because it opens or closes nothing itself.
+   * Cancels the preview this tool armed: a pending debounce timer never fires, and a compute already
+   * running is generation-guarded, so it cannot publish after the cancel. Idempotent.
    */
   cancelArmedPreview(): void;
 };

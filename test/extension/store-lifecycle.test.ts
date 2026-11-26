@@ -346,4 +346,59 @@ describe("store lifecycle through the entry point", () => {
       expect(storeLifecycleSlot.ownerCount).toBe(0);
     });
   });
+
+  it("keeps an in-flight preview from publishing after session_shutdown cancels it", async () => {
+    await withSessionDir("pi-session-preview-inflight-", async (dir, ctx) => {
+      await writeFile(join(dir, "sample.ts"), "alpha\nbeta\ngamma\n", "utf-8");
+      const running = makeLifecyclePi();
+      register(running.pi);
+      await running.emit("session_start", { reason: "startup" }, ctx);
+      const served = await toolFor(running, "read").execute(
+        "r1",
+        { file: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const anchor = extractHash(anchorRows(getText(served))[0]!);
+      const editTool = toolFor(running, "edit");
+      const renderCall = editTool.renderCall;
+      if (renderCall === undefined) throw new Error('the entry point exposed no "edit" renderCall');
+      const state: RRState = {};
+      const invalidate = vi.fn();
+
+      vi.useFakeTimers();
+      try {
+        renderCall(
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: anchor, anchor_to: anchor, text: "alpha edited" }],
+          },
+          { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+          {
+            cwd: dir,
+            executionStarted: false,
+            argsComplete: true,
+            state,
+            expanded: false,
+            lastComponent: undefined,
+            invalidate,
+          },
+        );
+        expect(state.previewTimer).toBeDefined();
+        await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
+
+        expect(storeLifecycleSlot.inFlightCount).toBe(2);
+        expect(state.preview).toBeUndefined();
+
+        await running.emit("session_shutdown", { reason: "quit" }, ctx);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(state.preview).toBeUndefined();
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(__isStoreOpen()).toBe(false);
+    });
+  });
 });

@@ -37,7 +37,6 @@ export class DebouncedPreview {
     const armedSessionId = this.getSessionId?.();
     this.#armed.add(state);
     state.previewTimer = setTimeout(() => {
-      this.#armed.delete(state);
       delete state.previewTimer;
       if (this.getSessionId && this.getSessionId() !== armedSessionId) {
         this.cancel(state);
@@ -58,6 +57,9 @@ export class DebouncedPreview {
             };
             host.invalidate();
           }
+        })
+        .finally(() => {
+          if (state.previewGeneration === previewGeneration) this.#armed.delete(state);
         });
     }, this.debounceMs);
   }
@@ -84,8 +86,9 @@ export class DebouncedPreview {
   }
 
   /**
-   * Stops every armed timer and bumps each state's generation, so no compute already in flight can
-   * publish a result once the session that armed it is gone.
+   * Cancels every armed entry: a pending debounce timer never fires, and a compute already running
+   * is generation-guarded, so it can never publish its result after the cancel. An entry stays
+   * armed from arm time until its compute settles, which is how a cancel reaches an in-flight one.
    */
   cancelArmed(): void {
     // oxlint-disable-next-line unicorn/no-useless-spread -- cancel mutates the set, so the walk reads a snapshot
