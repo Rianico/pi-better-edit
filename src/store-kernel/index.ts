@@ -11,5 +11,7 @@ export {
   resolveBusyBudget,
   withBusyRetry,
 } from "./busy.js";
+export { StoreLifecycleSlot } from "./lifecycle-slot.js";
+export type { StoreLifecycleSlotOptions } from "./lifecycle-slot.js";
 export { due, markRun } from "./periodic.js";
 export { HASH_STORE_BUSY_TIMEOUT, HASH_STORE_VERSION } from "./constants.js";

@@ -11,6 +11,7 @@ import {
   resolveBusyBudget,
   setCachedOpenStore,
   withBusyRetry,
+  StoreLifecycleSlot,
   type BusyBudget,
 } from "./store-kernel/index.js";
 import { ANCHOR_GENERATION, CANON_VERSION } from "./hashline/hash-identity.js";
@@ -102,6 +103,16 @@ let exitHandlerRegistered = false;
  * One slot is enough because opens are serialized: `loadHashStore` keeps one `opening` promise per path.
  */
 let openStamp: { readonly db: DatabaseSync; readonly due: boolean } | null = null;
+
+/**
+ * The one lifecycle ledger for the cached handle: who keeps it open, and when a close lands. Bound
+ * to `shutdownHashStore` (the sole WAL-truncate owner) and `__isStoreOpen` (the cache's own truth),
+ * so the slot decides WHEN and `shutdownDb` stays the only place that truncates and closes.
+ */
+export const storeLifecycleSlot = new StoreLifecycleSlot({
+  close: shutdownHashStore,
+  isOpen: __isStoreOpen,
+});
 
 /** Whether the open that owns this connection has already settled the generation sweep. */
 function sweepSettledByOpen(db: DatabaseSync): boolean {
@@ -715,17 +726,19 @@ function shutdownDb(db: DatabaseSync): void {
  * written after them) and the caller's `db` is stale: re-read with `loadHashStore`, never reuse it.
  */
 export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> {
-  const current = cachedOpenStore();
-  if (current === null || !current.db.isOpen) return false;
-  if (isHealthy(current.db)) return false;
-  reportDiagnostic(
-    "hash-store",
-    "[hash-store] deep check found the store damaged, quarantining and rebuilding",
-  );
-  shutdownHashStore();
-  await quarantineStore(current.path);
-  await openStore(current.path, budget);
-  return true;
+  return storeLifecycleSlot.withScope(async () => {
+    const current = cachedOpenStore();
+    if (current === null || !current.db.isOpen) return false;
+    if (isHealthy(current.db)) return false;
+    reportDiagnostic(
+      "hash-store",
+      "[hash-store] deep check found the store damaged, quarantining and rebuilding",
+    );
+    shutdownHashStore();
+    await quarantineStore(current.path);
+    await openStore(current.path, budget);
+    return true;
+  });
 }
 
 /**
@@ -899,19 +912,21 @@ function triggerUseTimeHeal(generation: DatabaseSync, storePath: string, error: 
  * but no `quick_check`, because the failing statement already proved the damage. Never rejects:
  * a heal that itself fails is reported, and the next `loadHashStore` opens normally.
  */
-async function runUseTimeHeal(storePath: string, generation: DatabaseSync): Promise<void> {
-  try {
-    await Promise.resolve();
-    const cached = cachedOpenStore();
-    if (cached === null || cached.db !== generation) return;
-    shutdownHashStore();
-    await quarantineStore(storePath);
-    await openStore(storePath);
-  } catch (error) {
-    reportDiagnostic("hash-store", "[hash-store] use-time quarantine failed:", error);
-  } finally {
-    if (useTimeHeal !== null && useTimeHeal.generation === generation) useTimeHeal = null;
-  }
+function runUseTimeHeal(storePath: string, generation: DatabaseSync): Promise<void> {
+  return storeLifecycleSlot.withScope(async () => {
+    try {
+      await Promise.resolve();
+      const cached = cachedOpenStore();
+      if (cached === null || cached.db !== generation) return;
+      shutdownHashStore();
+      await quarantineStore(storePath);
+      await openStore(storePath);
+    } catch (error) {
+      reportDiagnostic("hash-store", "[hash-store] use-time quarantine failed:", error);
+    } finally {
+      if (useTimeHeal !== null && useTimeHeal.generation === generation) useTimeHeal = null;
+    }
+  });
 }
 
 async function openStore(storePath: string, budget?: BusyBudget): Promise<HashStore> {
@@ -972,25 +987,44 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
 }
 
 /**
+ * Hands out an OPEN handle only. The slot closes the handle at the end of its last in-flight scope,
+ * which can be the scope that just opened this one, so a resolved `open` promise is not proof of a
+ * live connection: wait out the drain that closed it, then open again. Termination holds because
+ * the retry awaits that drain first, and a fresh drain needs a fresh external detach or release.
+ */
+async function reopenIfDrained(
+  opened: Promise<HashStore>,
+  budget?: BusyBudget,
+): Promise<HashStore> {
+  const store = await opened;
+  if (store.db.isOpen) return store;
+  await storeLifecycleSlot.awaitDrainingClose();
+  return loadHashStore(budget);
+}
+
+/**
  * Open (or return the cached) store. `budget` shapes the contention wait of THIS open; production
  * callers pass nothing, and a cached open returns immediately without consulting it.
  */
-export function loadHashStore(budget?: BusyBudget): Promise<HashStore> {
+export async function loadHashStore(budget?: BusyBudget): Promise<HashStore> {
+  await storeLifecycleSlot.awaitDrainingClose();
   const healing = useTimeHeal;
   if (healing !== null) return healing.promise.then(() => loadHashStore(budget));
   const storePath = hashStorePath();
   const cached = cachedOpenStore();
   if (cached && cached.path === storePath && cached.db.isOpen) {
-    return Promise.resolve({ db: cached.db, engine: "node:sqlite" });
+    return { db: cached.db, engine: "node:sqlite" };
   }
   if (opening && opening.path === storePath) {
-    return opening.promise;
+    return reopenIfDrained(opening.promise, budget);
   }
-  const promise = openStore(storePath, budget).finally(() => {
-    if (opening?.path === storePath) opening = null;
-  });
+  const promise = storeLifecycleSlot
+    .withScope(() => openStore(storePath, budget))
+    .finally(() => {
+      if (opening?.path === storePath) opening = null;
+    });
   opening = { path: storePath, promise };
-  return promise;
+  return reopenIfDrained(promise, budget);
 }
 
 export function shutdownHashStore(): void {
