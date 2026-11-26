@@ -6,6 +6,8 @@ Date: 2026-10-30
 
 Accepted
 
+Amended by [0020. Session-Scoped Store Attachment and Detachment](0020-session-scoped-store-attachment-and-detachment.md).
+
 ## Context
 
 The SQLite Content-Addressed Store (CAS) retains snapshots, line lineages, and session leases across sessions to power zero-token rebasing and undo functionality. Without automated lifecycle management, disk usage grows unbounded.
