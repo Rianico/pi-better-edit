@@ -27,6 +27,7 @@ import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
 import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
+import { inStoreScope, scopedTool } from "./store-lifecycle.js";
 
 void EDIT_DESCRIPTION;
 /** SAFETY: @deprecated Import from "./payload-contract.js" — payload-contract is the single source (docs/.archive_adrs/0007-merged-edit-payload-hoisted-path.md). */
@@ -53,7 +54,7 @@ export async function compPreview(
   ctx: PreviewContext,
 ): Promise<RPreview> {
   const tool = createEditTool();
-  return tool.preview(request, cwd, ctx);
+  return inStoreScope(() => tool.preview(request, cwd, ctx));
 }
 
 type ToolDef = ToolDefinition<TSchema, EditDetails, RRState> & {
@@ -71,7 +72,8 @@ export function buildToolDef(
   const presenter = createTuiPresenter(
     (req, cwd) => {
       const sessionManager = getSessionManager?.();
-      return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
+      const previewCtx = sessionManager === undefined ? {} : { sessionManager };
+      return inStoreScope(() => tool.preview(req, cwd, previewCtx));
     },
     () => getSessionManager?.()?.getSessionId(),
   );
@@ -119,5 +121,5 @@ export function regEdit(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;
   });
-  pi.registerTool(buildToolDef(() => sessionManager));
+  pi.registerTool(scopedTool(buildToolDef(() => sessionManager)));
 }

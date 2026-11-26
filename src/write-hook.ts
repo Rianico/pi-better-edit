@@ -5,7 +5,12 @@
  * @module pi-better-edit/write-hook
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolCallEvent,
+  ToolCallEventResult,
+} from "@earendil-works/pi-coding-agent";
 import { abortIf, splitLines } from "./utils.js";
 import { resolveTarget } from "./fs-write.js";
 import { toCwd } from "./paths.js";
@@ -16,6 +21,7 @@ import {
   trackServedWriteRefusal,
 } from "./served-session/serve-render.js";
 import { reportDiagnostic } from "./diagnostics.js";
+import { inStoreScope } from "./store-lifecycle.js";
 
 export { findServedHashEcho };
 
@@ -71,53 +77,51 @@ export async function servedHashEchoDenial(
   });
 }
 
+/** The write guard body: deny before dispatch; an infrastructure failure fails open. */
+async function writeGuardUnscoped(
+  event: ToolCallEvent,
+  ctx: ExtensionContext,
+): Promise<ToolCallEventResult | undefined> {
+  if (event.toolName !== "write") return;
+  const input = event.input as Record<string, unknown> | undefined;
+  const rawPath = input?.path as unknown;
+  const content = input?.content as unknown;
+  if (typeof rawPath !== "string" || typeof content !== "string") return;
+  const modeValue = (input as Record<string, unknown>)?.mode;
+  const mode: "general" | "literal" = modeValue === "literal" ? "literal" : "general";
+
+  const cwd = ctx.cwd;
+  // SAFETY: ExtensionAPI ctx carries sessionManager at runtime; cast narrows to sessionKeyFor's expected shape which is validated by sessionKeyFor's internal guards.
+  const sessionKey = sessionKeyFor(
+    ctx as unknown as { sessionManager?: { getSessionId(): string } },
+  );
+  const signal = ctx.signal;
+  try {
+    const io: WriteHookIO = {
+      resolve: async (p: string, c: string, sig?: AbortSignal) => {
+        abortIf(sig);
+        return resolveTarget(toCwd(p, c));
+      },
+    };
+    const reason = await servedHashEchoDenial(io, rawPath, content, cwd, sessionKey, signal, mode);
+    if (reason !== undefined) {
+      return { block: true, reason };
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    reportDiagnostic(
+      "write-hook",
+      `pi-better-edit: pre-write served hash guard failed open: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return;
+}
+
 /**
  * SAFETY: Register the pre-write served hash echo guard on the calling extension's scope.
  * The guard denies before dispatch; infrastructure failures fail open so the
  * plugin never breaks an otherwise valid write.
  */
 export function registerWriteHook(pi: ExtensionAPI): void {
-  pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "write") return;
-    const input = event.input as Record<string, unknown> | undefined;
-    const rawPath = input?.path as unknown;
-    const content = input?.content as unknown;
-    if (typeof rawPath !== "string" || typeof content !== "string") return;
-    const modeValue = (input as Record<string, unknown>)?.mode;
-    const mode: "general" | "literal" = modeValue === "literal" ? "literal" : "general";
-
-    const cwd = ctx.cwd;
-    // SAFETY: ExtensionAPI ctx carries sessionManager at runtime; cast narrows to sessionKeyFor's expected shape which is validated by sessionKeyFor's internal guards.
-    const sessionKey = sessionKeyFor(
-      ctx as unknown as { sessionManager?: { getSessionId(): string } },
-    );
-    const signal = ctx.signal;
-    try {
-      const io: WriteHookIO = {
-        resolve: async (p: string, c: string, sig?: AbortSignal) => {
-          abortIf(sig);
-          return resolveTarget(toCwd(p, c));
-        },
-      };
-      const reason = await servedHashEchoDenial(
-        io,
-        rawPath,
-        content,
-        cwd,
-        sessionKey,
-        signal,
-        mode,
-      );
-      if (reason !== undefined) {
-        return { block: true, reason };
-      }
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      reportDiagnostic(
-        "write-hook",
-        `pi-better-edit: pre-write served hash guard failed open: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    return;
-  });
+  pi.on("tool_call", (event, ctx) => inStoreScope(() => writeGuardUnscoped(event, ctx)));
 }

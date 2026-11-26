@@ -524,3 +524,31 @@ describe("the WAL checkpoint's single owner", () => {
     });
   });
 });
+
+describe("the cold teardown", () => {
+  it("returns a cold skip without creating the store file", async () => {
+    await withStoreDir("pi-janitor-cold-", async () => {
+      expect(existsSync(hashStorePath())).toBe(false);
+
+      const outcome = await janitorPass({
+        openIfCold: false,
+        now: NOW,
+        settings: SETTINGS,
+        cwd: ".",
+      });
+
+      expect(outcome.ran).toBe(false);
+      expect(outcome.reason).toBe("cold");
+      expect(existsSync(hashStorePath())).toBe(false);
+    });
+  });
+
+  it("still opens the store when the pass may open it, which is the default", async () => {
+    await withStoreDir("pi-janitor-open-", async () => {
+      const outcome = await janitorPass({ now: NOW, settings: SETTINGS, cwd: "." });
+
+      expect(outcome.ran).toBe(true);
+      expect(existsSync(hashStorePath())).toBe(true);
+    });
+  });
+});

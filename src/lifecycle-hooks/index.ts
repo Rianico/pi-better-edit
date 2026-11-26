@@ -56,6 +56,7 @@ import { runDisplayTransform as defaultRunDisplayTransform } from "../bash-displ
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
 import { reportDiagnostic, reportInfo, reportWarning } from "../diagnostics.js";
 import { DomainError } from "../domain-errors.js";
+import { inStoreScope } from "../store-lifecycle.js";
 import {
   AUTO_READ_MAX,
   BASH_SEARCH_MAX_FILES,
@@ -471,7 +472,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
   }
 
-  async function handleSessionStart(_event: unknown, ctx: ToolContext): Promise<void> {
+  function handleSessionStart(_event: unknown, ctx: ToolContext): Promise<void> {
+    return inStoreScope(() => handleSessionStartUnscoped(_event, ctx));
+  }
+
+  async function handleSessionStartUnscoped(_event: unknown, ctx: ToolContext): Promise<void> {
     warnedBashViewSessions.clear();
     await deps.initHasher();
     try {
@@ -1611,7 +1616,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return shown;
   }
 
-  async function handleToolResult(
+  function handleToolResult(
+    event: ToolResultEvent,
+    ctx: ToolContext,
+  ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
+    return inStoreScope(() => handleToolResultUnscoped(event, ctx));
+  }
+
+  async function handleToolResultUnscoped(
     event: ToolResultEvent,
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {

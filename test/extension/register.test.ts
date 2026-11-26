@@ -29,6 +29,7 @@ describe("extension registration", () => {
       "session_start",
       "session_start",
       "session_start",
+      "session_start",
       "tool_call",
       "tool_call",
       "tool_result",

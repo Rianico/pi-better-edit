@@ -22,6 +22,7 @@ import {
 } from "./snapshot-store";
 import { loadHashStore } from "./hash-store.js";
 import { sessionKeyFor } from "./served-session/session.js";
+import { scopedTool } from "./store-lifecycle.js";
 import { readBytes, resolveTarget, writeAtomic } from "./fs-write.js";
 import { toCwd } from "./paths.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "./constants.js";
@@ -542,257 +543,267 @@ async function undoCorrelatedTransaction(
 }
 
 export function regEditUndo(pi: ExtensionAPI): void {
-  pi.registerTool({
-    name: "undo_last_edit",
-    label: "Undo Last Edit",
-    description: loadP("../prompts/undo-last-edit.md"),
-    promptSnippet: loadP("../prompts/undo-last-edit-snippet.md"),
-    promptGuidelines: loadGuide("../prompts/undo-last-edit-guidelines.md"),
-    parameters: Type.Object({
-      path: Type.String({
-        description: "Path to the file to undo",
+  pi.registerTool(
+    scopedTool({
+      name: "undo_last_edit",
+      label: "Undo Last Edit",
+      description: loadP("../prompts/undo-last-edit.md"),
+      promptSnippet: loadP("../prompts/undo-last-edit-snippet.md"),
+      promptGuidelines: loadGuide("../prompts/undo-last-edit-guidelines.md"),
+      parameters: Type.Object({
+        path: Type.String({
+          description: "Path to the file to undo",
+        }),
       }),
-    }),
 
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      try {
-        const path = params.path;
-        const absolutePath = toCwd(path, ctx.cwd);
-        const mutationTargetPath = await resolveTarget(absolutePath);
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        try {
+          const path = params.path;
+          const absolutePath = toCwd(path, ctx.cwd);
+          const mutationTargetPath = await resolveTarget(absolutePath);
 
-        const undo = await getUndo(mutationTargetPath);
-        if (!undo) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No undo history for ${path}. There is no previous edit to revert.`,
-              },
-            ],
-            isError: true,
-            details: {},
-          };
-        }
+          const undo = await getUndo(mutationTargetPath);
+          if (!undo) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `No undo history for ${path}. There is no previous edit to revert.`,
+                },
+              ],
+              isError: true,
+              details: {},
+            };
+          }
 
-        // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md
-        const effectiveEnding = undo.effectiveEnding ?? undo.originalEnding;
-        if (undo.transactionId !== null && undo.transactionId !== undefined) {
-          try {
-            return await undoCorrelatedTransaction(
-              undo.transactionId,
-              mutationTargetPath,
-              path,
-              ctx,
-            );
-          } catch (error) {
-            reportDiagnostic("edit-undo", "Unexpected failure in correlated undo:", error);
-            const stamped = withPayloadSubject(error, "undo_last_edit");
-            if (stamped instanceof DomainError && stamped.code === "E_BAD_PAYLOAD") {
+          // Ref: docs/adr/0019-eol-rewrite-normalized-undo-and-the-eol-config.md
+          const effectiveEnding = undo.effectiveEnding ?? undo.originalEnding;
+          if (undo.transactionId !== null && undo.transactionId !== undefined) {
+            try {
+              return await undoCorrelatedTransaction(
+                undo.transactionId,
+                mutationTargetPath,
+                path,
+                ctx,
+              );
+            } catch (error) {
+              reportDiagnostic("edit-undo", "Unexpected failure in correlated undo:", error);
+              const stamped = withPayloadSubject(error, "undo_last_edit");
+              if (stamped instanceof DomainError && stamped.code === "E_BAD_PAYLOAD") {
+                return {
+                  content: [{ type: "text" as const, text: stamped.message }],
+                  isError: true,
+                  details: {},
+                };
+              }
+              const err = error as { name?: string; message?: string };
               return {
-                content: [{ type: "text" as const, text: stamped.message }],
+                content: [
+                  {
+                    type: "text" as const,
+                    text: new DomainError("E_UNKNOWN", {
+                      errorName: err.name ?? "Error",
+                      message: err.message ?? String(error),
+                    }).message,
+                  },
+                ],
                 isError: true,
                 details: {},
               };
             }
-            const err = error as { name?: string; message?: string };
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: new DomainError("E_UNKNOWN", {
-                    errorName: err.name ?? "Error",
-                    message: err.message ?? String(error),
-                  }).message,
-                },
-              ],
-              isError: true,
-              details: {},
-            };
           }
-        }
 
-        return withFileMutationQueue(mutationTargetPath, async () => {
-          const currentBytes = await readBytes(mutationTargetPath).catch((error: unknown) => {
-            if (errCode(error) === "ENOENT") return undefined;
-            throw error;
-          });
+          return withFileMutationQueue(mutationTargetPath, async () => {
+            const currentBytes = await readBytes(mutationTargetPath).catch((error: unknown) => {
+              if (errCode(error) === "ENOENT") return undefined;
+              throw error;
+            });
 
-          if (currentBytes === undefined) {
-            await clearUndo(mutationTargetPath);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: new DomainError("E_UNDO_STALE", { path, reason: "deleted" }).message,
-                },
-              ],
-              isError: true,
-              details: {},
-            };
-          }
-          if (
-            !currentBytes.equals(
-              Buffer.from(undo.bom + restoreEndings(undo.resultContent, effectiveEnding), "utf-8"),
-            )
-          ) {
-            await clearUndo(mutationTargetPath);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: new DomainError("E_UNDO_STALE", { path, reason: "modified" }).message,
-                },
-              ],
-              isError: true,
-              details: {},
-            };
-          }
-          const currentRaw = currentBytes.toString("utf-8");
+            if (currentBytes === undefined) {
+              await clearUndo(mutationTargetPath);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: new DomainError("E_UNDO_STALE", { path, reason: "deleted" }).message,
+                  },
+                ],
+                isError: true,
+                details: {},
+              };
+            }
+            if (
+              !currentBytes.equals(
+                Buffer.from(
+                  undo.bom + restoreEndings(undo.resultContent, effectiveEnding),
+                  "utf-8",
+                ),
+              )
+            ) {
+              await clearUndo(mutationTargetPath);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: new DomainError("E_UNDO_STALE", { path, reason: "modified" }).message,
+                  },
+                ],
+                isError: true,
+                details: {},
+              };
+            }
+            const currentRaw = currentBytes.toString("utf-8");
 
-          const { text: currentStripped } = stripBOM(currentRaw);
-          const currentNormalized = toLF(currentStripped);
-          const sessionKeyForUndo = sessionKeyFor(
-            // SAFETY: the pi context is typed for the extension host, which exposes `sessionManager`
-            // SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.
-            ctx as unknown as { sessionManager?: { getSessionId(): string } },
-          );
-          const rawAnchorsReusable = isCurrentRawAnchorGeneration(undo.anchorGeneration);
-          const restoredContentHash = isCurrentSnapshotEpoch(undo.snapshotHash)
-            ? undo.snapshotHash
-            : snapshotHashFor(undo.content);
-          const restoredLineCount = splitLines(undo.content).length;
-          // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
-          let restoredHashes: string[];
-          try {
-            restoredHashes =
-              (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ??
-              (rawAnchorsReusable
+            const { text: currentStripped } = stripBOM(currentRaw);
+            const currentNormalized = toLF(currentStripped);
+            const sessionKeyForUndo = sessionKeyFor(
+              // SAFETY: the pi context is typed for the extension host, which exposes `sessionManager`
+              // SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.
+              ctx as unknown as { sessionManager?: { getSessionId(): string } },
+            );
+            const rawAnchorsReusable = isCurrentRawAnchorGeneration(undo.anchorGeneration);
+            const restoredContentHash = isCurrentSnapshotEpoch(undo.snapshotHash)
+              ? undo.snapshotHash
+              : snapshotHashFor(undo.content);
+            const restoredLineCount = splitLines(undo.content).length;
+            // Ref: docs/.archive_adrs/0013-pos-free-roundtrip-optimization.md
+            let restoredHashes: string[];
+            try {
+              restoredHashes =
+                (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ??
+                (rawAnchorsReusable
+                  ? undo.hashes
+                  : await restoreHashes(undo.content, mutationTargetPath));
+            } catch (error) {
+              reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
+              restoredHashes = rawAnchorsReusable
                 ? undo.hashes
-                : await restoreHashes(undo.content, mutationTargetPath));
-          } catch (error) {
-            reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
-            restoredHashes = rawAnchorsReusable
-              ? undo.hashes
-              : await restoreHashes(undo.content, mutationTargetPath);
-          }
-          const currentHashes = await restoreHashes(currentNormalized, mutationTargetPath);
-          const remainingUndoCounts = new Map<string, number>();
-          for (const line of visLines(undo.content)) {
-            remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
-          }
-          let linesAddedByEdit = 0;
-          for (const line of visLines(currentNormalized)) {
-            const remaining = remainingUndoCounts.get(line) ?? 0;
-            if (remaining > 0) remainingUndoCounts.set(line, remaining - 1);
-            else linesAddedByEdit++;
-          }
-          let linesRemovedByEdit = 0;
-          for (const remaining of remainingUndoCounts.values()) linesRemovedByEdit += remaining;
-          const restoredRange = changedRange(currentNormalized, undo.content);
-          const undoDiffResult = genDiff(
-            currentNormalized,
-            undo.content,
-            1,
-            restoredHashes,
-            currentHashes,
-          );
-          const undoDiff = undoDiffResult.diff;
-          const undoDenseRows = denseServeRows(restoredHashes);
-          const curSet = new Set(currentHashes);
-          const restoredSet = new Set(restoredHashes);
-          const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
+                : await restoreHashes(undo.content, mutationTargetPath);
+            }
+            const currentHashes = await restoreHashes(currentNormalized, mutationTargetPath);
+            const remainingUndoCounts = new Map<string, number>();
+            for (const line of visLines(undo.content)) {
+              remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
+            }
+            let linesAddedByEdit = 0;
+            for (const line of visLines(currentNormalized)) {
+              const remaining = remainingUndoCounts.get(line) ?? 0;
+              if (remaining > 0) remainingUndoCounts.set(line, remaining - 1);
+              else linesAddedByEdit++;
+            }
+            let linesRemovedByEdit = 0;
+            for (const remaining of remainingUndoCounts.values()) linesRemovedByEdit += remaining;
+            const restoredRange = changedRange(currentNormalized, undo.content);
+            const undoDiffResult = genDiff(
+              currentNormalized,
+              undo.content,
+              1,
+              restoredHashes,
+              currentHashes,
+            );
+            const undoDiff = undoDiffResult.diff;
+            const undoDenseRows = denseServeRows(restoredHashes);
+            const curSet = new Set(currentHashes);
+            const restoredSet = new Set(restoredHashes);
+            const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
 
-          const deferredSyncWarnings: string[] = [];
+            const deferredSyncWarnings: string[] = [];
 
-          await writeAtomic(
-            mutationTargetPath,
-            undo.bom + restoreEndings(undo.content, effectiveEnding),
-          );
+            await writeAtomic(
+              mutationTargetPath,
+              undo.bom + restoreEndings(undo.content, effectiveEnding),
+            );
 
-          try {
-            await adoptPinnedSnapshotFor(
-              {
-                path: mutationTargetPath,
-                snapshotHash: restoredContentHash,
-                lineCount: restoredLineCount,
-                hashes: restoredHashes,
-                content: undo.content,
-              },
-              {
-                retireLeases: true,
-                leases: { sessionKey: sessionKeyForUndo, rows: undoDenseRows },
-                servedMirror: {
-                  sessionKey: sessionKeyForUndo,
-                  rows: undoDenseRows,
-                  shape: { lineCount: restoredLineCount, clearFrom: 0 },
-                  retireAnchors: displacedAnchors,
+            try {
+              await adoptPinnedSnapshotFor(
+                {
+                  path: mutationTargetPath,
+                  snapshotHash: restoredContentHash,
+                  lineCount: restoredLineCount,
+                  hashes: restoredHashes,
+                  content: undo.content,
                 },
-              },
-            );
-          } catch (error) {
-            reportDiagnostic("edit-undo", "Failed to commit the undo restore transaction:", error);
-            deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
-          }
+                {
+                  retireLeases: true,
+                  leases: { sessionKey: sessionKeyForUndo, rows: undoDenseRows },
+                  servedMirror: {
+                    sessionKey: sessionKeyForUndo,
+                    rows: undoDenseRows,
+                    shape: { lineCount: restoredLineCount, clearFrom: 0 },
+                    retireAnchors: displacedAnchors,
+                  },
+                },
+              );
+            } catch (error) {
+              reportDiagnostic(
+                "edit-undo",
+                "Failed to commit the undo restore transaction:",
+                error,
+              );
+              deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
+            }
 
-          await clearUndo(mutationTargetPath);
+            await clearUndo(mutationTargetPath);
 
-          const parts: string[] = [`Undone last edit on ${path}.`];
-          if (linesAddedByEdit > 0 || linesRemovedByEdit > 0) {
+            const parts: string[] = [`Undone last edit on ${path}.`];
+            if (linesAddedByEdit > 0 || linesRemovedByEdit > 0) {
+              parts.push(
+                `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
+              );
+            }
+            if (undo.preImageMixed) {
+              parts.push(
+                `Restored at ${endingName(effectiveEnding)}; the pre-edit mixture is not restored.`,
+              );
+            }
             parts.push(
-              `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
+              deferredSyncWarnings.length > 0
+                ? "File reverted; store synchronization is deferred (see the warning below), so the diff rows are not anchored for follow-up edits until the next read."
+                : "File reverted; diff rows carry fresh anchors for follow-up edits.",
             );
-          }
-          if (undo.preImageMixed) {
-            parts.push(
-              `Restored at ${endingName(effectiveEnding)}; the pre-edit mixture is not restored.`,
-            );
-          }
-          parts.push(
-            deferredSyncWarnings.length > 0
-              ? "File reverted; store synchronization is deferred (see the warning below), so the diff rows are not anchored for follow-up edits until the next read."
-              : "File reverted; diff rows carry fresh anchors for follow-up edits.",
-          );
-          parts.push(...deferredSyncWarnings);
+            parts.push(...deferredSyncWarnings);
 
-          const firstChangedLine =
-            restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine;
-          const lastChangedLine = restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine;
-          const details: EditDetails = {
-            diff: undoDiff,
-            ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
-            ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
-            resultLineCount: visLines(undo.content).length,
-            servedRows: undoDenseRows,
-            contentHash: restoredContentHash,
-            ...(deferredSyncWarnings.length > 0 ? { warnings: deferredSyncWarnings } : {}),
-            metrics: buildMetrics({
-              classification: "applied",
-              editsAttempted: 1,
-              noopEditsCount: 0,
-              warningsCount: deferredSyncWarnings.length,
-              ...(restoredRange?.firstChangedLine !== undefined
-                ? { firstChangedLine: restoredRange.firstChangedLine }
-                : {}),
-              ...(restoredRange?.lastChangedLine !== undefined
-                ? { lastChangedLine: restoredRange.lastChangedLine }
-                : {}),
-              addedLines: linesRemovedByEdit,
-              removedLines: linesAddedByEdit,
-            }),
-          };
-          return {
-            content: [
-              {
-                type: "text",
-                text: parts.join("\n"),
-              },
-            ],
-            details,
-          };
-        });
-      } catch (error) {
-        throw withPayloadSubject(error, "undo_last_edit");
-      }
-    },
-  });
+            const firstChangedLine =
+              restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine;
+            const lastChangedLine =
+              restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine;
+            const details: EditDetails = {
+              diff: undoDiff,
+              ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
+              ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
+              resultLineCount: visLines(undo.content).length,
+              servedRows: undoDenseRows,
+              contentHash: restoredContentHash,
+              ...(deferredSyncWarnings.length > 0 ? { warnings: deferredSyncWarnings } : {}),
+              metrics: buildMetrics({
+                classification: "applied",
+                editsAttempted: 1,
+                noopEditsCount: 0,
+                warningsCount: deferredSyncWarnings.length,
+                ...(restoredRange?.firstChangedLine !== undefined
+                  ? { firstChangedLine: restoredRange.firstChangedLine }
+                  : {}),
+                ...(restoredRange?.lastChangedLine !== undefined
+                  ? { lastChangedLine: restoredRange.lastChangedLine }
+                  : {}),
+                addedLines: linesRemovedByEdit,
+                removedLines: linesAddedByEdit,
+              }),
+            };
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: parts.join("\n"),
+                },
+              ],
+              details,
+            };
+          });
+        } catch (error) {
+          throw withPayloadSubject(error, "undo_last_edit");
+        }
+      },
+    }),
+  );
 }
