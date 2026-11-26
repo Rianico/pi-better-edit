@@ -337,3 +337,108 @@ describe("read tool — windows", () => {
     });
   });
 });
+
+describe("fmtReadPreview — windows share one budget without shrinking the line cap", () => {
+  const CAP = 400;
+  const LINES = 1000;
+
+  it("omits a window its first recoverable row cannot fit, and still renders a later small one", async () => {
+    const content = ["x".repeat(200), "y".repeat(200), "line 3", "line 4"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+          { offset: 3, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Lines 1-1 of 4 total]");
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 170B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("[Line 2: ");
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 3-4 of 4 total]");
+    expect(result.text).toContain("│line 3");
+    expect(result.served.map((row) => row.position)).toEqual([0, 2, 3]);
+    expect(result.truncation?.truncated).toBe(true);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+
+  it("stops a window mid-way at the remaining budget and says so in its header only", async () => {
+    const content = ["x".repeat(200), "line 2", "y".repeat(199), "line 4"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 2 },
+          { offset: 4, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Lines 2-2 of 4 total; stopped at 170B]");
+    expect(result.text).toContain("│line 2");
+    expect(result.text).not.toContain("[Line 3: ");
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 4-4 of 4 total]");
+    expect(result.served.map((row) => row.position)).toEqual([0, 1, 3]);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+
+  it("cites the intrinsic line cap, not the shrunken budget, for a later oversized line", async () => {
+    const content = ["x".repeat(200), "y".repeat(500), "line 3"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain("[Line 2: 507B; not shown.]");
+    expect(result.text).toContain("[Line 2 exceeds the 400B limit; the read tool cannot show it.]");
+    expect(result.text).not.toContain("170B limit");
+    expect(result.served.map((row) => row.position)).toEqual([0]);
+  });
+
+  it("omits a mixed window whose leading recoverable row misses the budget, without warning", async () => {
+    const content = ["x".repeat(200), "y".repeat(199), "z".repeat(500)].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      CAP,
+      LINES,
+    );
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 170B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).not.toContain("[Line 2: ");
+    expect(result.text).not.toContain("[Line 3: ");
+    expect(result.served.map((row) => row.position)).toEqual([0]);
+    expect(result.truncation?.truncated).toBe(true);
+  });
+});

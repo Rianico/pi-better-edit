@@ -508,3 +508,32 @@ describe("read verbatim — exhaustiveness guard", () => {
     });
   });
 });
+
+describe("fmtReadPreview — verbatim windows share one budget without shrinking the line cap", () => {
+  it("omits a recoverable verbatim window that misses the budget and still renders a later one", async () => {
+    const content = ["x".repeat(177), "y".repeat(250), "line 3"].join("\n") + "\n";
+    const result = await fmtReadPreview(
+      content,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 1 },
+          { offset: 2, limit: 1 },
+          { offset: 3, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      400,
+      1000,
+    );
+    expect(result.text).toContain(
+      "[Window does not fit in the remaining 200B read budget; not shown. Re-read it on its own.]",
+    );
+    expect(result.text).not.toContain("exceeds the");
+    expect(result.text).toContain("[Lines 3-3 of 3 total]");
+    expect(result.text).toContain("line 3");
+    expect(result.served).toEqual([]);
+    expect(result.truncation?.truncatedBy).toBe("bytes");
+  });
+});
